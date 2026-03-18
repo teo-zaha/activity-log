@@ -11,7 +11,7 @@
   display: flex;
   align-items: center;
   gap: 16px;
-  padding: 10px 20px;
+  padding: 15px;
   flex-wrap: wrap;
 }
 
@@ -58,24 +58,65 @@
   justify-content: flex-end;
 }
 
-.ctrl-field {
-  width: 155px;
+.ctrl-input-wrap {
+  display: inline-flex;
+  align-items: center;
+  width: 200px;
+  height: 38px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+  padding: 0 4px 0 10px;
+  box-sizing: border-box;
+  transition: border-color 0.15s ease;
 
-  // Compact field height
-  --mdc-outlined-text-field-container-height: 38px;
-  --mat-form-field-container-height: 38px;
-  // Remove bottom margin so the field visually centers with buttons
-  margin-bottom: 0 !important;
+  &:focus-within {
+    border-color: #3b82f6;
+  }
 
-  // Use theme text colors
-  input, mat-select {
-    color: var(--text-primary);
-    font-size: 14px;
+  // Hide the default Material form-field wrapper inside toggle
+  mat-datepicker-toggle {
+    flex-shrink: 0;
+    color: var(--text-secondary);
+
+    button {
+      width: 28px;
+      height: 28px;
+      line-height: 28px;
+    }
+
+    .mat-icon-button, .mdc-icon-button {
+      width: 28px;
+      height: 28px;
+      padding: 2px;
+    }
   }
 }
 
-.ctrl-range {
-  width: 180px;
+.ctrl-label {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text-secondary);
+  white-space: nowrap;
+  padding-right: 6px;
+  border-right: 1px solid var(--border);
+  margin-right: 6px;
+  flex-shrink: 0;
+}
+
+.ctrl-input {
+  flex: 1;
+  min-width: 0;
+  border: none;
+  outline: none;
+  background: transparent;
+  color: var(--text-primary);
+  font-size: 14px;
+  font-family: Inter, sans-serif;
+
+  &::placeholder {
+    color: var(--text-tertiary);
+  }
 }
 
 // ── Buttons ────────────────────────────────────────────────────────────────
