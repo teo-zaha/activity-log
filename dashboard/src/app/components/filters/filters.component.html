@@ -2,10 +2,10 @@
   <div class="sidebar-section">
     <span class="section-label">View</span>
     <div class="view-toggle">
-      <button class="view-btn" [class.active]="activity.currentView() === 'list'" (click)="activity.currentView.set('list')"><mat-icon>view_list</mat-icon>List</button>
-      <button class="view-btn" [class.active]="activity.currentView() === 'day'" (click)="activity.currentView.set('day')"><mat-icon>calendar_today</mat-icon>Day</button>
-      <button class="view-btn" [class.active]="activity.currentView() === 'workweek'" (click)="activity.currentView.set('workweek')"><mat-icon>view_week</mat-icon>Work Week</button>
-      <button class="view-btn" [class.active]="activity.currentView() === 'week'" (click)="activity.currentView.set('week')"><mat-icon>calendar_view_week</mat-icon>Week</button>
+      <button class="view-btn" [class.active]="activity.currentView() === 'list'" (click)="activity.setView('list')"><mat-icon>view_list</mat-icon>List</button>
+      <button class="view-btn" [class.active]="activity.currentView() === 'day'" (click)="activity.setView('day')"><mat-icon>calendar_today</mat-icon>Day</button>
+      <button class="view-btn" [class.active]="activity.currentView() === 'workweek'" (click)="activity.setView('workweek')"><mat-icon>view_week</mat-icon>Work Week</button>
+      <button class="view-btn" [class.active]="activity.currentView() === 'week'" (click)="activity.setView('week')"><mat-icon>calendar_view_week</mat-icon>Week</button>
     </div>
   </div>
 
