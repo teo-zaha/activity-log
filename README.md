@@ -1,10 +1,10 @@
-# activity-log - your MONI companion when your outlook calendar just aint doing it
+# activity-log
 
-A unified activity tracker that aggregates everything you did into a single timeline. 
+A unified activity tracker that aggregates everything you did into a single timeline — commits, GitLab events, Jira issues, calendar meetings, and system events.
 
 Two ways to use it:
 - **UI mode** — start a local web server, open the dashboard in your browser, explore interactively
-- **CLI mode** — run a single command, get a JSON file, no server needed
+- **CLI mode** — run a single command, get a file, no server needed
 
 ## Screenshots
 
@@ -24,6 +24,8 @@ Two ways to use it:
 | **Outlook** | Calendar events (via local Outlook desktop app) |
 | **System** | Boot, shutdown, sleep, and wake events (Windows Event Log) |
 
+When a local git commit matches a GitLab push event (same commit SHA), they are merged into a single **git/lab** entry instead of appearing twice.
+
 ## Requirements
 
 - [Node.js](https://nodejs.org) >= 20
@@ -37,9 +39,7 @@ Two ways to use it:
 git clone https://github.com/wiwiwi-inc-tm/activity-log.git
 cd activity-log
 pnpm install
-
-# Configure credentials (GitLab, Jira — see Environment variables below)
-cp .env.example .env
+cp .env.example .env   # fill in your credentials
 ```
 
 ---
@@ -59,7 +59,11 @@ pnpm build:dashboard
 pnpm start
 ```
 
-Open [http://localhost:3000](http://localhost:3000). The last 30 days are collected automatically on startup. Use the date picker in the header to change the range and re-collect on the fly.
+Open [http://localhost:3000](http://localhost:3000). The last 30 days are collected automatically on startup. Use the date pickers in the header to change the range and re-collect on the fly.
+
+The header has two export buttons:
+- **Markdown** (`description` icon) — downloads a `.md` summary of the current filtered view
+- **JSON** (`data_object` icon) — downloads the raw entries as `.json`
 
 ### Development mode (hot reload)
 
@@ -71,12 +75,12 @@ pnpm dev
 
 ---
 
-## Option B — CLI (JSON output, no server)
+## Option B — CLI
 
-No dashboard build needed. Just run:
+No dashboard build needed.
 
 ```bash
-pnpm collect                                         # last 30 days → activity_log.json
+pnpm collect                          # last 30 days → logs/activity_log.json
 pnpm collect --range today
 pnpm collect --range yesterday
 pnpm collect --range week
@@ -84,11 +88,29 @@ pnpm collect --range lastweek
 pnpm collect --range month
 pnpm collect --range lastmonth
 pnpm collect --since 2026-03-01 --until 2026-03-18
-pnpm collect --since 2026-03-01 --until 2026-03-18 --output march.json
-pnpm collect --since 2026-03-01 --until 2026-03-18 --git-dirs /path/to/repo1,/path/to/repo2
 ```
 
-Output is written to `activity_log.json` by default (override with `--output`).
+### Output format
+
+Default output is JSON. Use `--format markdown` to get a Markdown summary instead:
+
+```bash
+pnpm collect --format json            # → logs/activity_log.json  (default)
+pnpm collect --format markdown        # → logs/activity_log.md
+```
+
+Override the output path with `--output`:
+
+```bash
+pnpm collect --range week --output reports/week.json
+pnpm collect --range week --format markdown --output reports/week.md
+```
+
+### Other options
+
+```bash
+--git-dirs /path/to/repo1,/path/to/repo2   # scan specific repos instead of auto-discovering
+```
 
 ---
 
@@ -120,7 +142,8 @@ activity-log/
 │   ├── server.ts              Express server (UI mode)
 │   ├── cli.ts                 Standalone CLI (CLI mode)
 │   ├── types.ts               Shared TypeScript types
-│   ├── utils.ts               Date utilities
+│   ├── utils.ts               Date utilities, markdown formatter, git/gitlab merge
+│   ├── cache.ts               File-based TTL cache for API responses
 │   └── collect/
 │       ├── git.ts             Local Git collector
 │       ├── gitlab.ts          GitLab API collector
@@ -132,6 +155,7 @@ activity-log/
 │       ├── components/        header, filters, timeline, calendar views
 │       ├── services/          ActivityService, ThemeService
 │       └── models/            TypeScript interfaces
+├── logs/                      Generated output (gitignored)
 ├── .env.example
 ├── package.json
 └── README.md
