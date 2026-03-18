@@ -7,25 +7,25 @@
     </div>
 
     <div class="controls">
-      <mat-form-field appearance="outline" subscriptSizing="dynamic" class="ctrl-field">
-        <mat-label>From</mat-label>
-        <input matInput [matDatepicker]="pickerFrom"
-          [value]="parseDateStr(activity.dateFrom())"
-          [max]="parseDateStr(activity.dateTo())"
+      <div class="ctrl-input-wrap">
+        <span class="ctrl-label">From</span>
+        <input class="ctrl-input" [matDatepicker]="pickerFrom" placeholder=""
+          [ngModel]="dateFromObj()"
+          [max]="dateToObj()"
           (dateChange)="activity.dateFrom.set(fmtDate($event.value))">
-        <mat-datepicker-toggle matIconSuffix [for]="pickerFrom"></mat-datepicker-toggle>
+        <mat-datepicker-toggle [for]="pickerFrom"></mat-datepicker-toggle>
         <mat-datepicker #pickerFrom></mat-datepicker>
-      </mat-form-field>
+      </div>
 
-      <mat-form-field appearance="outline" subscriptSizing="dynamic" class="ctrl-field">
-        <mat-label>To</mat-label>
-        <input matInput [matDatepicker]="pickerTo"
-          [value]="parseDateStr(activity.dateTo())"
-          [min]="parseDateStr(activity.dateFrom())"
+      <div class="ctrl-input-wrap">
+        <span class="ctrl-label">To</span>
+        <input class="ctrl-input" [matDatepicker]="pickerTo" placeholder=""
+          [ngModel]="dateToObj()"
+          [min]="dateFromObj()"
           (dateChange)="activity.dateTo.set(fmtDate($event.value))">
-        <mat-datepicker-toggle matIconSuffix [for]="pickerTo"></mat-datepicker-toggle>
+        <mat-datepicker-toggle [for]="pickerTo"></mat-datepicker-toggle>
         <mat-datepicker #pickerTo></mat-datepicker>
-      </mat-form-field>
+      </div>
 
       <button class="btn-apply" (click)="apply()" [disabled]="activity.isLoading()"
         [class.loading]="activity.isLoading()" matTooltip="Collect activity for selected range">

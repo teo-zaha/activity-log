@@ -1,6 +1,7 @@
 {
   "name": "activity-log-dashboard",
   "version": "0.1.0",
+  "author": "Teodora Zaharinova <teodora.zaharinova@inform-software.com>",
   "private": true,
   "scripts": {
     "start": "ng serve",

@@ -1,4 +1,4 @@
-import { Component, inject } from '@angular/core'
+import { Component, inject, computed } from '@angular/core'
 import { FormsModule } from '@angular/forms'
 import { MatButtonModule } from '@angular/material/button'
 import { MatIconModule } from '@angular/material/icon'
@@ -32,6 +32,9 @@ export class HeaderComponent {
   protected readonly activity = inject(ActivityService)
   protected readonly theme = inject(ThemeService)
 
+  protected readonly dateFromObj = computed(() => this.parseDateStr(this.activity.dateFrom()))
+  protected readonly dateToObj   = computed(() => this.parseDateStr(this.activity.dateTo()))
+
 
   protected apply(): void {
     void this.activity.collect(this.activity.dateFrom(), this.activity.dateTo())
@@ -44,7 +47,10 @@ export class HeaderComponent {
 
   protected fmtDate(d: Date | null): string {
     if (!d) return ''
-    return d.toISOString().slice(0, 10)
+    const y = d.getFullYear()
+    const m = String(d.getMonth() + 1).padStart(2, '0')
+    const day = String(d.getDate()).padStart(2, '0')
+    return `${y}-${m}-${day}`
   }
 
   protected exportMd(): void {
