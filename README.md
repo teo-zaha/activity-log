@@ -1,6 +1,6 @@
-# activity-log
+# activity-log - your MONI companion when your outlook calendar just aint doing it
 
-A unified activity tracker that aggregates everything you did into a single timeline.
+A unified activity tracker that aggregates everything you did into a single timeline. 
 
 Two ways to use it:
 - **UI mode** — start a local web server, open the dashboard in your browser, explore interactively
