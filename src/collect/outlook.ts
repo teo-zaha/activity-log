@@ -18,6 +18,8 @@ export async function collectOutlook(opts: CollectOptions): Promise<OutlookEntry
   assertValidDate(opts.until, 'until')
 
   const ps = `
+    [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
+    $OutputEncoding = [System.Text.Encoding]::UTF8
     try {
       $ol = New-Object -ComObject Outlook.Application -ErrorAction Stop
     } catch {
