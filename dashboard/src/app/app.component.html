@@ -1,0 +1,33 @@
+<mat-progress-bar mode="indeterminate" class="top-loader" [class.visible]="activity.isLoading()" />
+
+<app-header />
+
+@if (activity.error()) {
+  <div class="error-banner">
+    <span class="material-icons">error_outline</span>
+    {{ activity.error() }}
+  </div>
+}
+
+<main>
+  <app-filters />
+
+  <div class="main-content">
+    @switch (activity.currentView()) {
+      @case ('list') {
+        <app-timeline />
+      }
+      @case ('day') {
+        <app-day-view />
+      }
+      @case ('workweek') {
+        <app-week-view />
+      }
+      @case ('week') {
+        <app-week-view />
+      }
+    }
+  </div>
+</main>
+
+<app-event-detail />

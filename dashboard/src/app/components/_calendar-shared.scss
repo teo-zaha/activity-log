@@ -1,0 +1,79 @@
+// Shared mixins and styles for day-view and week-view
+
+@mixin nav-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 20px;
+  border-bottom: 1px solid var(--border-subtle);
+  flex-shrink: 0;
+  background: var(--surface);
+}
+
+@mixin nav-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 34px;
+  height: 34px;
+  border: none;
+  background: transparent;
+  color: var(--text-secondary);
+  border-radius: 6px;
+  cursor: pointer;
+  font-family: Inter, sans-serif;
+  font-size: 14px;
+  transition: background 0.15s ease, color 0.15s ease;
+
+  .material-icons { font-size: 20px; }
+
+  &:hover {
+    background: var(--surface-hover);
+    color: var(--text-primary);
+  }
+}
+
+@mixin event-styles {
+  .cal-event {
+    position: absolute;
+    border-radius: 5px;
+    padding: 3px 7px;
+    font-size: 13px;
+    font-weight: 500;
+    cursor: pointer;
+    overflow: hidden;
+    border-left: 3px solid;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    transition: filter 0.1s ease, box-shadow 0.1s ease;
+    z-index: 1;
+
+    &:hover {
+      filter: brightness(0.93);
+      box-shadow: 0 2px 6px rgba(0,0,0,0.15);
+      z-index: 2;
+    }
+
+    &-git     { background: var(--badge-git-bg);     color: var(--badge-git-fg);     border-color: var(--badge-git-accent); }
+    &-gitlab  { background: var(--badge-gitlab-bg);  color: var(--badge-gitlab-fg);  border-color: var(--badge-gitlab-accent); }
+    &-jira    { background: var(--badge-jira-bg);    color: var(--badge-jira-fg);    border-color: var(--badge-jira-accent); }
+    &-outlook { background: var(--badge-outlook-bg); color: var(--badge-outlook-fg); border-color: var(--badge-outlook-accent); }
+    &-system  { background: #cbd5e1; color: #1e293b; border-color: #475569; }
+  }
+
+  .cal-event-icon {
+    font-size: 11px;
+    line-height: 1;
+    flex-shrink: 0;
+    opacity: 0.85;
+  }
+
+  .cal-event-title {
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    line-height: 1.3;
+    min-width: 0;
+  }
+}

@@ -1,0 +1,48 @@
+<header class="app-header">
+  <div class="header-inner">
+
+    <div class="brand">
+      <span class="brand-icon material-icons">timeline</span>
+      <span class="brand-title">Activity Log</span>
+    </div>
+
+    <div class="controls">
+      <mat-form-field appearance="outline" subscriptSizing="dynamic" class="ctrl-field">
+        <mat-label>From</mat-label>
+        <input matInput [matDatepicker]="pickerFrom"
+          [value]="parseDateStr(activity.dateFrom())"
+          [max]="parseDateStr(activity.dateTo())"
+          (dateChange)="activity.dateFrom.set(fmtDate($event.value))">
+        <mat-datepicker-toggle matIconSuffix [for]="pickerFrom"></mat-datepicker-toggle>
+        <mat-datepicker #pickerFrom></mat-datepicker>
+      </mat-form-field>
+
+      <mat-form-field appearance="outline" subscriptSizing="dynamic" class="ctrl-field">
+        <mat-label>To</mat-label>
+        <input matInput [matDatepicker]="pickerTo"
+          [value]="parseDateStr(activity.dateTo())"
+          [min]="parseDateStr(activity.dateFrom())"
+          (dateChange)="activity.dateTo.set(fmtDate($event.value))">
+        <mat-datepicker-toggle matIconSuffix [for]="pickerTo"></mat-datepicker-toggle>
+        <mat-datepicker #pickerTo></mat-datepicker>
+      </mat-form-field>
+
+      <button class="btn-apply" (click)="apply()" [disabled]="activity.isLoading()"
+        [class.loading]="activity.isLoading()" matTooltip="Collect activity for selected range">
+        @if (activity.isLoading()) {
+          <span class="material-icons spin">sync</span>
+        } @else {
+          <span class="material-icons">play_arrow</span>
+        }
+        {{ activity.isLoading() ? 'Collecting…' : 'Apply' }}
+      </button>
+
+      <button class="btn-icon" (click)="exportMd()" [disabled]="!activity.meta()"
+        matTooltip="Export Markdown summary">
+        <span class="material-icons">download</span>
+      </button>
+
+    </div>
+
+  </div>
+</header>

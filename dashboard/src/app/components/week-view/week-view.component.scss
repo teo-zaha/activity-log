@@ -1,0 +1,210 @@
+@use '../calendar-shared' as cal;
+
+:host {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+}
+
+.week-view {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  overflow: hidden;
+  min-height: 0;
+}
+
+.cal-nav {
+  @include cal.nav-bar;
+}
+
+.nav-btn {
+  @include cal.nav-button;
+}
+
+.nav-controls {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  margin-left: auto;
+  background: var(--surface-alt);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 3px;
+}
+
+.zoom-controls {
+  margin-left: 6px;
+}
+
+.zoom-reset-btn {
+  padding: 0 8px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  min-width: unset;
+  color: var(--text-secondary);
+
+  &.at-default {
+    opacity: 0.35;
+    pointer-events: none;
+  }
+}
+
+.today-btn {
+  padding: 0 22px;
+  font-size: 14px;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  min-width: unset;
+}
+
+.cal-title {
+  font-size: 18px;
+  font-weight: 600;
+  color: var(--text-primary);
+  margin: 0;
+}
+
+// ── Day column headers ─────────────────────────────────────────────────────
+
+.week-col-headers {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  display: flex;
+  align-items: stretch;
+  flex-shrink: 0;
+  border-bottom: 1px solid var(--border-subtle);
+  background: var(--surface);
+}
+
+.time-gutter {
+  width: 52px;
+  flex-shrink: 0;
+  border-right: 1px solid var(--border-subtle);
+}
+
+.day-col-hdr {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 6px 4px;
+  gap: 2px;
+  cursor: pointer;
+  border-left: 1px solid var(--border-subtle);
+  transition: background 0.12s ease;
+  min-width: 0;
+
+  &:hover {
+    background: var(--surface-hover);
+  }
+
+  &.is-today {
+    .day-date {
+      background: #3b82f6;
+      color: #fff;
+      border-radius: 50%;
+      width: 26px;
+      height: 26px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .day-weekday { color: #3b82f6; }
+  }
+
+  &.is-selected:not(.is-today) {
+    .day-date {
+      background: var(--surface-hover);
+      border-radius: 50%;
+      width: 26px;
+      height: 26px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+  }
+}
+
+.day-weekday {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text-tertiary);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.day-date {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+// ── Scrollable grid ────────────────────────────────────────────────────────
+
+.cal-scroll {
+  flex: 1;
+  overflow-y: auto;
+  overflow-x: hidden;
+}
+
+.week-grid {
+  position: relative;
+}
+
+.hour-slot {
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 64px;
+  display: flex;
+  align-items: flex-start;
+  pointer-events: none;
+}
+
+.hour-label {
+  width: 52px;
+  flex-shrink: 0;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text-tertiary);
+  text-align: right;
+  padding-right: 10px;
+  padding-top: 4px;
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+}
+
+.hour-line {
+  flex: 1;
+  border-top: 1px solid var(--border-subtle);
+  margin-top: 6px;
+}
+
+// ── Day columns ────────────────────────────────────────────────────────────
+
+.week-body {
+  position: absolute;
+  left: 52px;
+  right: 0;
+  top: 0;
+  bottom: 0;
+  display: flex;
+}
+
+.day-col {
+  flex: 1;
+  position: relative;
+  border-left: 1px solid var(--border-subtle);
+  min-width: 0;
+
+  &.is-today {
+    background: color-mix(in srgb, #3b82f6 4%, transparent);
+  }
+}
+
+@include cal.event-styles;

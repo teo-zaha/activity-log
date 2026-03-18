@@ -1,0 +1,64 @@
+:host {
+  display: flex;
+  flex-direction: column;
+  height: 100dvh;
+  overflow: hidden;
+}
+
+mat-progress-bar.top-loader {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 9999;
+  height: 3px;
+  opacity: 0;
+  pointer-events: none;
+  --mdc-linear-progress-track-color: transparent;
+  --mdc-linear-progress-active-indicator-height: 3px;
+  --mdc-linear-progress-track-height: 3px;
+  transition: opacity 0.2s ease;
+
+  &.visible {
+    opacity: 1;
+  }
+}
+
+.error-banner {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: #fee2e2;
+  color: #b91c1c;
+  padding: 10px 24px;
+  font-size: 13px;
+  font-weight: 500;
+  border-bottom: 1px solid #fca5a5;
+
+  .material-icons {
+    font-size: 16px;
+  }
+}
+
+:host-context(html.dark) .error-banner {
+  background: #3b0f0f;
+  color: #fca5a5;
+  border-color: #7f1d1d;
+}
+
+main {
+  flex: 1;
+  display: flex;
+  flex-direction: row;
+  overflow: hidden;
+  min-height: 0;
+}
+
+.main-content {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  min-height: 0;
+  min-width: 0;
+}

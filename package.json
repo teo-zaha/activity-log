@@ -1,0 +1,43 @@
+{
+  "name": "activity-log",
+  "version": "0.1.0",
+  "description": "Unified activity tracker across local Git, GitLab and Jira",
+  "type": "module",
+  "engines": {
+    "node": ">=20",
+    "pnpm": ">=10"
+  },
+  "scripts": {
+    "collect": "tsx src/cli.ts",
+    "start": "tsx src/server.ts",
+    "dev": "concurrently \"cross-env PORT=3001 tsx watch src/server.ts\" \"pnpm --dir dashboard run dev\" --names api,ng --prefix-colors cyan,blue",
+    "build": "tsc",
+    "build:watch": "tsc --watch",
+    "build:dashboard": "cd dashboard && ng build",
+    "build:dashboard:prod": "cd dashboard && ng build --configuration production",
+    "install:dashboard": "cd dashboard && pnpm install",
+    "lint": "eslint src",
+    "lint:fix": "eslint src --fix",
+    "format": "prettier --write .",
+    "format:check": "prettier --check ."
+  },
+  "dependencies": {
+    "dotenv": "^17.3.1",
+    "express": "^4.21.0",
+    "minimist": "^1.2.8"
+  },
+  "devDependencies": {
+    "@types/express": "^4.17.21",
+    "@types/minimist": "^1.2.5",
+    "@types/node": "^25.5.0",
+    "@typescript-eslint/eslint-plugin": "^8.57.1",
+    "@typescript-eslint/parser": "^8.57.1",
+    "concurrently": "^9.0.0",
+    "cross-env": "^10.1.0",
+    "eslint": "^10.0.3",
+    "eslint-config-prettier": "^10.1.8",
+    "prettier": "^3.8.1",
+    "tsx": "^4.21.0",
+    "typescript": "^5.9.3"
+  }
+}

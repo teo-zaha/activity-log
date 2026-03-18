@@ -1,0 +1,31 @@
+@if (activity.selectedEntry()) {
+  <div class="backdrop" (click)="close()"></div>
+
+  <aside class="flyout" role="dialog">
+    <div class="flyout-header">
+      <span class="flyout-badge" [class]="'badge-' + activity.selectedEntry()!.source">
+        <span class="material-icons">{{ getSourceIcon(activity.selectedEntry()!.source, activity.selectedEntry()!.type) }}</span>{{ activity.selectedEntry()!.source }}
+      </span>
+      <button class="flyout-close" (click)="close()" aria-label="Close">
+        <span class="material-icons">close</span>
+      </button>
+    </div>
+
+    <div class="flyout-body">
+      <h2 class="flyout-title">{{ getTitle(activity.selectedEntry()!) }}</h2>
+      <p class="flyout-time">
+        <span class="material-icons">schedule</span>
+        {{ formatDateTime(activity.selectedEntry()!.timestamp) }}
+      </p>
+
+      <div class="flyout-fields">
+        @for (field of getFields(activity.selectedEntry()!); track field.label) {
+          <div class="field-row">
+            <span class="field-label">{{ field.label }}</span>
+            <span class="field-value">{{ field.value }}</span>
+          </div>
+        }
+      </div>
+    </div>
+  </aside>
+}

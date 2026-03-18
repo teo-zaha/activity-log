@@ -1,0 +1,130 @@
+@use '../calendar-shared' as cal;
+
+:host {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+}
+
+.day-view {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  overflow: hidden;
+  min-height: 0;
+}
+
+.cal-nav {
+  @include cal.nav-bar;
+}
+
+.nav-btn {
+  @include cal.nav-button;
+}
+
+.nav-controls {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  margin-left: auto;
+  background: var(--surface-alt);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 3px;
+}
+
+.zoom-controls {
+  margin-left: 6px;
+}
+
+.zoom-reset-btn {
+  padding: 0 8px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  min-width: unset;
+  color: var(--text-secondary);
+
+  &.at-default {
+    opacity: 0.35;
+    pointer-events: none;
+  }
+}
+
+.today-btn {
+  padding: 0 22px;
+  font-size: 14px;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  min-width: unset;
+}
+
+.cal-title {
+  font-size: 18px;
+  font-weight: 600;
+  color: var(--text-primary);
+  margin: 0;
+
+  &.is-today {
+    color: #3b82f6;
+  }
+}
+
+.event-count {
+  font-size: 13px;
+  color: var(--text-tertiary);
+  padding-left: 10px;
+  border-left: 1px solid var(--border-subtle);
+  margin-left: 10px;
+}
+
+.cal-scroll {
+  flex: 1;
+  overflow-y: auto;
+  overflow-x: hidden;
+}
+
+.cal-grid {
+  position: relative;
+  display: grid;
+  grid-template-columns: 52px 1fr;
+  padding-right: 16px;
+}
+
+.hour-slot {
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 64px;
+  display: grid;
+  grid-template-columns: 52px 1fr;
+  align-items: flex-start;
+  pointer-events: none;
+}
+
+.hour-label {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text-tertiary);
+  text-align: right;
+  padding-right: 10px;
+  padding-top: 4px;
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+}
+
+.hour-line {
+  border-top: 1px solid var(--border-subtle);
+  margin-top: 6px;
+}
+
+.events-col {
+  position: absolute;
+  left: 52px;
+  right: 16px;
+  top: 0;
+  bottom: 0;
+}
+
+@include cal.event-styles;

@@ -1,0 +1,61 @@
+<div class="timeline-wrap">
+
+  <div class="search-bar">
+    <span class="material-icons search-icon">search</span>
+    <input
+      class="search-input"
+      type="text"
+      placeholder="Search commits, MRs, tickets, meetings…"
+      [(ngModel)]="searchValue"
+      (ngModelChange)="onSearch($event)"
+    >
+    @if (searchValue) {
+      <button class="search-clear" (click)="searchValue = ''; onSearch('')" aria-label="Clear">
+        <span class="material-icons">close</span>
+      </button>
+    }
+  </div>
+
+  @if (activity.isLoading() && activity.groupedByDay().length === 0) {
+    <div class="empty-state">
+      <span class="material-icons empty-icon">hourglass_top</span>
+      <p class="empty-title">Collecting activity…</p>
+      <p class="empty-sub">This may take a few seconds</p>
+    </div>
+  } @else if (activity.groupedByDay().length === 0) {
+    <div class="empty-state">
+      <span class="material-icons empty-icon">inbox</span>
+      <p class="empty-title">No events found</p>
+      <p class="empty-sub">Try adjusting the filters or date range</p>
+    </div>
+  } @else {
+    <div class="timeline">
+      @for (group of activity.groupedByDay(); track group.date) {
+        <div class="day-group">
+          <div class="day-header">
+            <span class="day-label">{{ formatDate(group.date) }}</span>
+            <span class="day-count">{{ group.entries.length }}</span>
+          </div>
+          <div class="entries">
+            @for (entry of group.entries; track $index) {
+              <div class="entry" (click)="selectEntry(entry)">
+                <div class="entry-accent" [class]="'accent-' + entry.source"></div>
+                <span class="badge" [class]="'badge-' + entry.source">
+                  <span class="material-icons badge-icon">{{ getSourceIcon(entry.source, entry.type) }}</span>{{ getBadgeLabel(entry) }}
+                </span>
+                <div class="entry-body">
+                  <div class="entry-title">{{ getTitle(entry) }}</div>
+                  @if (getMeta(entry)) {
+                    <div class="entry-meta">{{ getMeta(entry) }}</div>
+                  }
+                </div>
+                <span class="entry-time">{{ formatTime(entry.timestamp) }}</span>
+              </div>
+            }
+          </div>
+        </div>
+      }
+    </div>
+  }
+
+</div>

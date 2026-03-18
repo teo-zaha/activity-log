@@ -1,0 +1,244 @@
+:host {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+.timeline-wrap {
+  padding: 16px 20px 60px;
+  max-width: 1000px;
+  margin: 0 auto;
+  width: 100%;
+}
+
+// ── Search ─────────────────────────────────────────────────────────────────
+
+.search-bar {
+  position: relative;
+  display: flex;
+  align-items: center;
+  margin-bottom: 20px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+
+  &:focus-within {
+    border-color: #3b82f6;
+    box-shadow: 0 0 0 3px color-mix(in srgb, #3b82f6 12%, transparent);
+  }
+}
+
+.search-icon {
+  position: absolute;
+  left: 12px;
+  font-size: 18px;
+  color: var(--text-tertiary);
+  pointer-events: none;
+}
+
+.search-input {
+  width: 100%;
+  padding: 10px 40px 10px 42px;
+  border: none;
+  background: transparent;
+  color: var(--text-primary);
+  font-size: 15px;
+  font-family: Inter, sans-serif;
+  outline: none;
+
+  &::placeholder {
+    color: var(--text-tertiary);
+  }
+}
+
+.search-clear {
+  position: absolute;
+  right: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border: none;
+  background: transparent;
+  color: var(--text-tertiary);
+  cursor: pointer;
+  border-radius: 6px;
+  transition: background 0.15s ease, color 0.15s ease;
+
+  &:hover {
+    background: var(--surface-hover);
+    color: var(--text-primary);
+  }
+
+  .material-icons { font-size: 16px; }
+}
+
+// ── Empty state ────────────────────────────────────────────────────────────
+
+.empty-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 80px 24px;
+  text-align: center;
+}
+
+.empty-icon {
+  font-size: 48px;
+  color: var(--border-strong);
+  margin-bottom: 16px;
+}
+
+.empty-title {
+  font-size: 17px;
+  font-weight: 500;
+  color: var(--text-secondary);
+  margin: 0 0 4px;
+}
+
+.empty-sub {
+  font-size: 14px;
+  color: var(--text-tertiary);
+  margin: 0;
+}
+
+// ── Day groups ─────────────────────────────────────────────────────────────
+
+.day-group {
+  margin-bottom: 32px;
+}
+
+.day-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.day-label {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-tertiary);
+  text-transform: uppercase;
+  letter-spacing: 0.8px;
+}
+
+.day-count {
+  font-size: 12px;
+  font-weight: 500;
+  background: var(--surface-alt);
+  color: var(--text-tertiary);
+  padding: 1px 7px;
+  border-radius: 10px;
+  border: 1px solid var(--border-subtle);
+}
+
+// ── Entries ────────────────────────────────────────────────────────────────
+
+.entries {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.entry {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 14px 9px 0;
+  background: var(--surface);
+  border: 1px solid var(--border-subtle);
+  border-radius: 8px;
+  overflow: hidden;
+  transition: border-color 0.15s ease, background-color 0.15s ease;
+
+  &:hover {
+    border-color: var(--border);
+    background: var(--surface-hover);
+  }
+}
+
+// Colored left accent bar
+.entry-accent {
+  flex-shrink: 0;
+  width: 3px;
+  align-self: stretch;
+  border-radius: 0 2px 2px 0;
+}
+
+.accent-git     { background: var(--badge-git-accent); }
+.accent-gitlab  { background: var(--badge-gitlab-accent); }
+.accent-jira    { background: var(--badge-jira-accent); }
+.accent-outlook { background: var(--badge-outlook-accent); }
+.accent-system  { background: var(--badge-system-accent); }
+
+// ── Badge ──────────────────────────────────────────────────────────────────
+
+.badge {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+  width: 80px;
+  font-size: 11px;
+  font-weight: 600;
+  padding: 2px 7px;
+  border-radius: 4px;
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+  line-height: 1.5;
+  white-space: nowrap;
+}
+
+.badge-icon {
+  font-size: 12px;
+  line-height: 1;
+  flex-shrink: 0;
+}
+
+.badge-git     { background: var(--badge-git-bg);     color: var(--badge-git-fg); }
+.badge-gitlab  { background: var(--badge-gitlab-bg);  color: var(--badge-gitlab-fg); }
+.badge-jira    { background: var(--badge-jira-bg);    color: var(--badge-jira-fg); }
+.badge-outlook { background: var(--badge-outlook-bg); color: var(--badge-outlook-fg); }
+.badge-system  { background: var(--badge-system-bg);  color: var(--badge-system-fg); }
+
+// ── Entry body ─────────────────────────────────────────────────────────────
+
+.entry-body {
+  flex: 1;
+  min-width: 0;
+}
+
+.entry-title {
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  line-height: 1.4;
+}
+
+.entry-meta {
+  font-size: 12px;
+  color: var(--text-tertiary);
+  margin-top: 1px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.entry-time {
+  flex-shrink: 0;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text-tertiary);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.2px;
+  padding-right: 4px;
+}
