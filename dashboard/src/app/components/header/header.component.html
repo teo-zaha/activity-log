@@ -38,8 +38,13 @@
       </button>
 
       <button class="btn-icon" (click)="exportMd()" [disabled]="!activity.meta()"
-        matTooltip="Export Markdown summary">
-        <span class="material-icons">download</span>
+        matTooltip="Export Markdown">
+        <span class="material-icons">description</span>
+      </button>
+
+      <button class="btn-icon" (click)="exportJson()" [disabled]="!activity.meta()"
+        matTooltip="Export JSON">
+        <span class="material-icons">data_object</span>
       </button>
 
     </div>

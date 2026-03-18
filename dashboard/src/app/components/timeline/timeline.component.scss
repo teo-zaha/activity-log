@@ -175,6 +175,7 @@
 .accent-jira    { background: var(--badge-jira-accent); }
 .accent-outlook { background: var(--badge-outlook-accent); }
 .accent-system  { background: var(--badge-system-accent); }
+.accent-gitab   { background: linear-gradient(to bottom, var(--badge-git-accent) 50%, var(--badge-gitlab-accent) 50%); }
 
 // ── Badge ──────────────────────────────────────────────────────────────────
 
@@ -206,6 +207,10 @@
 .badge-jira    { background: var(--badge-jira-bg);    color: var(--badge-jira-fg); }
 .badge-outlook { background: var(--badge-outlook-bg); color: var(--badge-outlook-fg); }
 .badge-system  { background: var(--badge-system-bg);  color: var(--badge-system-fg); }
+.badge-gitab   {
+  background: linear-gradient(105deg, var(--badge-git-bg) 57%, var(--badge-gitlab-bg) 43%);
+  color: var(--text-primary);
+}
 
 // ── Entry body ─────────────────────────────────────────────────────────────
 

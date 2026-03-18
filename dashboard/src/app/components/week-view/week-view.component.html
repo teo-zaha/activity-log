@@ -57,16 +57,29 @@
         @for (day of days; track day) {
           <div class="day-col" [class.is-today]="isToday(day)">
             @for (item of getLayoutForDay(day); track $index) {
-              <div
-                [class]="'cal-event cal-event-' + item.entry.source"
-                [style.top.px]="getTop(item.entry.timestamp)"
-                [style.height.px]="getHeight(item.entry)"
-                [ngStyle]="getEventStyle(item.col, item.cols)"
-                (click)="selectEntry(item.entry)"
-                [title]="getShortTitle(item.entry)"
-              >
-                <span class="material-icons cal-event-icon">{{ getSourceIcon(item.entry.source, item.entry.type) }}</span><span class="cal-event-title">{{ getShortTitle(item.entry) }}</span>
-              </div>
+              @if (item.kind === 'overflow') {
+                <div
+                  class="cal-overflow"
+                  [style.top.px]="item.top"
+                  [style.height.px]="item.height"
+                  [ngStyle]="getEventStyle(item.col, item.cols)"
+                  (click)="selectOverflow(item.entries)"
+                >
+                  <span class="material-icons cal-event-icon">more_horiz</span>
+                  <span class="cal-event-title">+{{ item.entries.length }}</span>
+                </div>
+              } @else {
+                <div
+                  [class]="'cal-event cal-event-' + (isMerged(item.entry) ? 'gitab' : item.entry.source)"
+                  [style.top.px]="getTop(item.entry.timestamp)"
+                  [style.height.px]="getHeight(item.entry)"
+                  [ngStyle]="getEventStyle(item.col, item.cols)"
+                  (click)="selectEntry(item.entry)"
+                  [title]="getShortTitle(item.entry)"
+                >
+                  <span class="material-icons cal-event-icon">{{ getSourceIcon(item.entry.source, item.entry.type) }}</span><span class="cal-event-title">{{ getShortTitle(item.entry) }}</span>
+                </div>
+              }
             }
           </div>
         }

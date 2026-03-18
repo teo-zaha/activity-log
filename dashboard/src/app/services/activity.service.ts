@@ -24,7 +24,8 @@ export class ActivityService {
   // View state
   readonly currentView = signal<ViewMode>('list')
   readonly selectedDay = signal<string>(this.todayStr())
-  readonly selectedEntry = signal<ActivityEntry | null>(null)
+  readonly selectedEntry  = signal<ActivityEntry | null>(null)
+  readonly selectedEntries = signal<ActivityEntry[] | null>(null)
   readonly hourHeight = signal(64)
 
   // ── Computed: filtered list ───────────────────────────────────────────────
@@ -40,7 +41,8 @@ export class ActivityService {
       const ts = e.timestamp?.slice(0, 10) ?? ''
       if (from && ts < from) return false
       if (to && ts > to) return false
-      if (!sources.has(e.source)) return false
+      const isMerged = e.source === 'git' && !!(e as GitEntry).gitlabEvent
+      if (isMerged ? (!sources.has('git') && !sources.has('gitlab')) : !sources.has(e.source)) return false
       if (query) {
         const haystack = [
           (e as GitEntry).message,
@@ -168,6 +170,13 @@ export class ActivityService {
     } finally {
       this.isLoading.set(false)
     }
+  }
+
+  exportJson(): string {
+    return JSON.stringify(
+      { meta: this.meta(), entries: this.filteredEntries() },
+      null, 2
+    )
   }
 
   exportMarkdown(): string {

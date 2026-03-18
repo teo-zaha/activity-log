@@ -32,6 +32,11 @@
   flex-shrink: 0;
 }
 
+.flyout-badges {
+  display: flex;
+  gap: 6px;
+}
+
 .flyout-badge {
   display: inline-flex;
   align-items: center;
@@ -101,6 +106,45 @@
   .material-icons { font-size: 15px; color: var(--text-tertiary); }
 }
 
+// ── Sections (merged git/lab + overflow) ─────────────────────────────────────
+
+.flyout-overflow-count {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.flyout-section {
+  padding-bottom: 20px;
+  border-bottom: 1px solid var(--border-subtle);
+
+  & + .flyout-section { padding-top: 20px; }
+  &:last-child { border-bottom: none; padding-bottom: 0; }
+}
+
+.flyout-section-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 6px;
+
+  .flyout-badge { flex-shrink: 0; }
+}
+
+.flyout-section-entry-title {
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--text-primary);
+  flex: 1;
+  min-width: 0;
+  word-break: break-word;
+}
+
+.flyout-section-title {
+  display: inline-flex;
+  margin-bottom: 6px;
+}
+
 // ── Fields ────────────────────────────────────────────────────────────────────
 
 .flyout-fields {
@@ -117,10 +161,6 @@
   border-radius: 8px;
   font-size: 14px;
   transition: background 0.1s ease;
-
-  &:hover {
-    background: var(--surface-alt);
-  }
 }
 
 .field-label {
@@ -132,7 +172,6 @@
 .field-value {
   color: var(--text-primary);
   word-break: break-all;
-  font-family: 'Roboto Mono', 'Courier New', monospace;
   font-size: 13px;
 }
 
