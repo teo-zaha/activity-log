@@ -1,0 +1,43 @@
+<aside class="filters-sidebar">
+  <div class="sidebar-section">
+    <span class="section-label">View</span>
+    <div class="view-toggle">
+      <button class="view-btn" [class.active]="activity.currentView() === 'list'" (click)="activity.currentView.set('list')"><mat-icon>view_list</mat-icon>List</button>
+      <button class="view-btn" [class.active]="activity.currentView() === 'day'" (click)="activity.currentView.set('day')"><mat-icon>calendar_today</mat-icon>Day</button>
+      <button class="view-btn" [class.active]="activity.currentView() === 'workweek'" (click)="activity.currentView.set('workweek')"><mat-icon>view_week</mat-icon>Work Week</button>
+      <button class="view-btn" [class.active]="activity.currentView() === 'week'" (click)="activity.currentView.set('week')"><mat-icon>calendar_view_week</mat-icon>Week</button>
+    </div>
+  </div>
+
+  <div class="sidebar-section">
+    <span class="section-label">Sources</span>
+    <div class="source-chips">
+      @for (src of sources; track src.id) {
+        <button
+          class="filter-chip"
+          [class.active]="isActive(src.id)"
+          [attr.data-src]="src.id"
+          (click)="activity.toggleSource(src.id)"
+        >
+          <mat-icon>{{ src.icon }}</mat-icon>
+          {{ src.label }}
+        </button>
+      }
+    </div>
+  </div>
+  <div class="sidebar-bottom">
+    <span class="section-label">Theme</span>
+    <div class="theme-swatches">
+      @for (t of themes; track t.id) {
+        <button
+          class="theme-swatch"
+          [class.active]="theme.theme() === t.id"
+          [attr.data-swatch]="t.id"
+          (click)="theme.setTheme(t.id)"
+          [matTooltip]="t.label"
+          matTooltipPosition="above"
+        ></button>
+      }
+    </div>
+  </div>
+</aside>

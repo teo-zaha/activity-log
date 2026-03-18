@@ -1,0 +1,184 @@
+:host {
+  display: flex;
+  align-self: stretch;
+}
+
+.filters-sidebar {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+  width: 220px;
+  flex-shrink: 0;
+  height: 100%;
+  padding: 16px 12px;
+  border-right: 1px solid var(--border-subtle);
+  background: var(--surface);
+  overflow-y: auto;
+  transition: background-color 0.25s ease, border-color 0.25s ease;
+}
+
+.sidebar-bottom {
+  margin-top: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding-top: 16px;
+  border-top: 1px solid var(--border-subtle);
+}
+
+.sidebar-section {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.section-label {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: var(--text-secondary);
+  padding: 0 4px;
+}
+
+.source-chips {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.view-toggle {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  background: var(--surface-alt);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 3px;
+}
+
+.view-btn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px;
+  height: 34px;
+  border-radius: 6px;
+  border: none;
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: 13px;
+  font-weight: 500;
+  font-family: Inter, sans-serif;
+  cursor: pointer;
+  white-space: nowrap;
+  width: 100%;
+  transition: background 0.12s ease, color 0.12s ease;
+
+  mat-icon {
+    font-size: 16px;
+    width: 16px;
+    height: 16px;
+    line-height: 16px;
+    flex-shrink: 0;
+  }
+
+  &:hover:not(.active) {
+    background: var(--surface-hover);
+    color: var(--text-primary);
+  }
+
+  &.active {
+    background: var(--surface);
+    color: var(--text-primary);
+    box-shadow: 0 1px 3px rgba(0,0,0,0.12);
+  }
+}
+
+.filter-chip {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 6px 10px;
+  height: 34px;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  background: var(--surface-alt);
+  color: var(--text-secondary);
+  font-size: 13px;
+  font-weight: 500;
+  font-family: Inter, sans-serif;
+  cursor: pointer;
+  white-space: nowrap;
+  width: 100%;
+  transition: background 0.15s ease, color 0.15s ease, border-color 0.15s ease;
+
+  mat-icon {
+    font-size: 16px;
+    width: 16px;
+    height: 16px;
+    line-height: 16px;
+    flex-shrink: 0;
+  }
+
+  &:hover:not(.active) {
+    background: var(--surface-hover);
+    border-color: var(--border-strong);
+    color: var(--text-primary);
+  }
+
+  &.active {
+    background: color-mix(in srgb, var(--chip-color) 12%, transparent);
+    border-color: color-mix(in srgb, var(--chip-color) 40%, transparent);
+    color: var(--chip-color);
+
+    mat-icon {
+      color: var(--chip-color);
+    }
+  }
+}
+
+// Per-source chip color vars
+.filter-chip[data-src='git']     { --chip-color: var(--chip-git); }
+.filter-chip[data-src='gitlab']  { --chip-color: var(--chip-gitlab); }
+.filter-chip[data-src='jira']    { --chip-color: var(--chip-jira); }
+.filter-chip[data-src='outlook'] { --chip-color: var(--chip-outlook); }
+.filter-chip[data-src='system']  { --chip-color: var(--chip-system); }
+
+// ── Theme swatches ────────────────────────────────────────────────────────────
+
+.theme-swatches {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 0;
+}
+
+.theme-swatch {
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  border: 2px solid transparent;
+  padding: 0;
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: transform 0.15s ease, border-color 0.15s ease;
+
+  &[data-swatch="light"]     { background: #ffffff; box-shadow: inset 0 0 0 1px #b8c0cb; }
+  &[data-swatch="green"]     { background: #f2faf4; box-shadow: inset 0 0 0 1px #a2c8a6; }
+  &[data-swatch="lilac"]     { background: #f8f4ff; box-shadow: inset 0 0 0 1px #bca8e8; }
+  &[data-swatch="solarized"] { background: #fdf6e3; box-shadow: inset 0 0 0 1px #c5bbac; }
+  &[data-swatch="dim"]       { background: #22272e; box-shadow: inset 0 0 0 1px #636e7b; }
+  &[data-swatch="dark"]      { background: #161b22; box-shadow: inset 0 0 0 1px #484f58; }
+  &[data-swatch="midnight"]  { background: #000000; box-shadow: inset 0 0 0 1px #3d3d3d; }
+
+  &.active {
+    border-color: #3b82f6;
+    transform: scale(1.25);
+  }
+
+  &:hover:not(.active) {
+    transform: scale(1.15);
+  }
+}

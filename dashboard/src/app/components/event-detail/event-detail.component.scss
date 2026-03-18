@@ -1,0 +1,149 @@
+.backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.35);
+  z-index: 200;
+  animation: fadeIn 0.2s ease;
+}
+
+.flyout {
+  position: fixed;
+  top: 0;
+  right: 0;
+  width: 380px;
+  height: 100dvh;
+  background: var(--surface);
+  border-left: 1px solid var(--border);
+  z-index: 201;
+  display: flex;
+  flex-direction: column;
+  animation: slideIn 0.22s cubic-bezier(0.16, 1, 0.3, 1);
+  overflow: hidden;
+}
+
+// ── Header ──────────────────────────────────────────────────────────────────
+
+.flyout-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 20px;
+  border-bottom: 1px solid var(--border-subtle);
+  flex-shrink: 0;
+}
+
+.flyout-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 12px;
+  font-weight: 600;
+  padding: 4px 10px;
+  border-radius: 6px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+
+  .material-icons { font-size: 15px; line-height: 1; }
+
+  &.badge-git     { background: var(--badge-git-bg);     color: var(--badge-git-fg); }
+  &.badge-gitlab  { background: var(--badge-gitlab-bg);  color: var(--badge-gitlab-fg); }
+  &.badge-jira    { background: var(--badge-jira-bg);    color: var(--badge-jira-fg); }
+  &.badge-outlook { background: var(--badge-outlook-bg); color: var(--badge-outlook-fg); }
+  &.badge-system  { background: var(--badge-system-bg);  color: var(--badge-system-fg); }
+}
+
+.flyout-close {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border: none;
+  background: transparent;
+  color: var(--text-tertiary);
+  cursor: pointer;
+  border-radius: 6px;
+  transition: background 0.15s ease, color 0.15s ease;
+
+  &:hover {
+    background: var(--surface-hover);
+    color: var(--text-primary);
+  }
+
+  .material-icons { font-size: 18px; }
+}
+
+// ── Body ─────────────────────────────────────────────────────────────────────
+
+.flyout-body {
+  flex: 1;
+  overflow-y: auto;
+  padding: 20px;
+}
+
+.flyout-title {
+  font-size: 19px;
+  font-weight: 600;
+  color: var(--text-primary);
+  margin: 0 0 10px;
+  line-height: 1.4;
+  word-break: break-word;
+}
+
+.flyout-time {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 14px;
+  color: var(--text-secondary);
+  margin: 0 0 24px;
+
+  .material-icons { font-size: 15px; color: var(--text-tertiary); }
+}
+
+// ── Fields ────────────────────────────────────────────────────────────────────
+
+.flyout-fields {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.field-row {
+  display: grid;
+  grid-template-columns: 116px 1fr;
+  gap: 8px;
+  padding: 9px 12px;
+  border-radius: 8px;
+  font-size: 14px;
+  transition: background 0.1s ease;
+
+  &:hover {
+    background: var(--surface-alt);
+  }
+}
+
+.field-label {
+  font-weight: 500;
+  color: var(--text-tertiary);
+  font-size: 13px;
+}
+
+.field-value {
+  color: var(--text-primary);
+  word-break: break-all;
+  font-family: 'Roboto Mono', 'Courier New', monospace;
+  font-size: 13px;
+}
+
+// ── Animations ────────────────────────────────────────────────────────────────
+
+@keyframes slideIn {
+  from { transform: translateX(100%); }
+  to   { transform: translateX(0); }
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}

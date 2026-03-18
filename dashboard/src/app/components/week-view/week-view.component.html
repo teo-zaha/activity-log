@@ -1,0 +1,79 @@
+<div class="week-view">
+
+  <!-- Navigation -->
+  <div class="cal-nav">
+    <h2 class="cal-title">{{ formatWeekRange(days) }}</h2>
+    <div class="nav-controls">
+      <button class="nav-btn" (click)="activity.navigateWeek(-1)" title="Previous week">
+        <span class="material-icons">chevron_left</span>
+      </button>
+      <button class="nav-btn today-btn" (click)="activity.goToToday()">Today</button>
+      <button class="nav-btn" (click)="activity.navigateWeek(1)" title="Next week">
+        <span class="material-icons">chevron_right</span>
+      </button>
+    </div>
+    <div class="nav-controls zoom-controls">
+      <button class="nav-btn" (click)="zoomOut()" title="Zoom out">
+        <span class="material-icons">remove</span>
+      </button>
+      <button class="nav-btn zoom-reset-btn" (click)="activity.hourHeight.set(64)" title="Reset zoom"
+        [class.at-default]="activity.hourHeight() === 64">1h</button>
+      <button class="nav-btn" (click)="zoomIn()" title="Zoom in">
+        <span class="material-icons">add</span>
+      </button>
+    </div>
+  </div>
+
+  <!-- Scrollable time grid (headers live inside to share the same scrollbar-gutter) -->
+  <div class="cal-scroll" #scrollEl>
+
+    <div class="week-col-headers">
+      <div class="time-gutter"></div>
+      @for (day of days; track day) {
+        <div
+          class="day-col-hdr"
+          [class.is-today]="isToday(day)"
+          [class.is-selected]="isSelectedDay(day)"
+          (click)="selectDay(day)"
+        >
+          <span class="day-weekday">{{ formatDayCol(day).weekday }}</span>
+          <span class="day-date">{{ formatDayCol(day).date }}</span>
+        </div>
+      }
+    </div>
+
+    <div class="week-grid" [style.height.px]="gridHeight()">
+
+      <!-- Hour lines -->
+      @for (hour of hours; track hour) {
+        <div class="hour-slot" [style.top.px]="hour * activity.hourHeight()" [style.height.px]="activity.hourHeight()">
+          <span class="hour-label">{{ formatHour(hour) }}</span>
+          <div class="hour-line"></div>
+        </div>
+      }
+
+      <!-- Day columns -->
+      <div class="week-body">
+        @for (day of days; track day) {
+          <div class="day-col" [class.is-today]="isToday(day)">
+            @for (item of getLayoutForDay(day); track $index) {
+              <div
+                [class]="'cal-event cal-event-' + item.entry.source"
+                [style.top.px]="getTop(item.entry.timestamp)"
+                [style.height.px]="getHeight(item.entry)"
+                [ngStyle]="getEventStyle(item.col, item.cols)"
+                (click)="selectEntry(item.entry)"
+                [title]="getShortTitle(item.entry)"
+              >
+                <span class="material-icons cal-event-icon">{{ getSourceIcon(item.entry.source, item.entry.type) }}</span><span class="cal-event-title">{{ getShortTitle(item.entry) }}</span>
+              </div>
+            }
+          </div>
+        }
+      </div>
+
+    </div>
+
+  </div>
+
+</div>

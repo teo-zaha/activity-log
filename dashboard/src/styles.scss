@@ -1,0 +1,459 @@
+@use '@angular/material' as mat;
+
+// ── M3 Themes ───────────────────────────────────────────────────────────────
+
+$light-theme: mat.define-theme((
+  color: (theme-type: light, primary: mat.$azure-palette),
+  typography: (brand-family: 'Inter', plain-family: 'Inter'),
+  density: (scale: -1),
+));
+
+$dark-theme: mat.define-theme((
+  color: (theme-type: dark, primary: mat.$azure-palette),
+  typography: (brand-family: 'Inter', plain-family: 'Inter'),
+  density: (scale: -1),
+));
+
+html {
+  color-scheme: light;
+  @include mat.all-component-themes($light-theme);
+}
+
+html.dark {
+  color-scheme: dark;
+  @include mat.all-component-colors($dark-theme);
+}
+
+// ── Design tokens ────────────────────────────────────────────────────────────
+
+:root {
+  // Surfaces — noticeable depth between layers
+  --bg:               #e8ecf1;
+  --surface:          #ffffff;
+  --surface-alt:      #f2f4f7;
+  --surface-hover:    #e8ecf1;
+
+  // Borders — clearly visible at every level
+  --border:           #b8c0cb;
+  --border-subtle:    #cdd3db;
+  --border-strong:    #8792a0;
+
+  // Text — all pass WCAG AA on white
+  --text-primary:     #0f1623;
+  --text-secondary:   #3d4756;   // ~8.5:1 on white
+  --text-tertiary:    #5c6878;   // ~5.2:1 on white
+
+  // Header
+  --header-bg:        #ffffff;
+  --header-border:    #b8c0cb;
+
+  // Source badge — light (saturated tints, all ≥ 7:1 fg contrast)
+  --badge-git-bg:        #bfdbfe;
+  --badge-git-fg:        #1e3a8a;
+  --badge-git-accent:    #1d4ed8;
+
+  --badge-gitlab-bg:     #fecaca;
+  --badge-gitlab-fg:     #7f1d1d;
+  --badge-gitlab-accent: #b91c1c;
+
+  --badge-jira-bg:       #c7d2fe;
+  --badge-jira-fg:       #312e81;
+  --badge-jira-accent:   #4338ca;
+
+  --badge-outlook-bg:    #bae6fd;
+  --badge-outlook-fg:    #0c4a6e;
+  --badge-outlook-accent: #0369a1;
+
+  --badge-system-bg:     #e2e8f0;
+  --badge-system-fg:     #1e293b;
+  --badge-system-accent: #475569;
+
+  // Source chip active colors
+  --chip-git:     #1d4ed8;
+  --chip-gitlab:  #b91c1c;
+  --chip-jira:    #4338ca;
+  --chip-outlook: #0369a1;
+  --chip-system:  #334155;
+}
+
+html[data-theme="dark"], html.dark {
+  // Surfaces
+  --bg:               #0d1117;
+  --surface:          #161b22;
+  --surface-alt:      #1c2230;
+  --surface-hover:    #21262d;
+
+  // Borders
+  --border:           #30363d;
+  --border-subtle:    #21262d;
+  --border-strong:    #484f58;
+
+  // Text
+  --text-primary:     #e6edf3;
+  --text-secondary:   #848d97;
+  --text-tertiary:    #6e7681;
+
+  // Header
+  --header-bg:        #161b22;
+  --header-border:    #30363d;
+
+  // Source badge — dark
+  --badge-git-bg:        #172554;
+  --badge-git-fg:        #93c5fd;
+  --badge-git-accent:    #60a5fa;
+
+  --badge-gitlab-bg:     #450a0a;
+  --badge-gitlab-fg:     #fca5a5;
+  --badge-gitlab-accent: #f87171;
+
+  --badge-jira-bg:       #1e1b4b;
+  --badge-jira-fg:       #c7d2fe;
+  --badge-jira-accent:   #818cf8;
+
+  --badge-outlook-bg:    #082f49;
+  --badge-outlook-fg:    #7dd3fc;
+  --badge-outlook-accent: #38bdf8;
+
+  --badge-system-bg:     #0f172a;
+  --badge-system-fg:     #cbd5e1;
+  --badge-system-accent: #94a3b8;
+
+  --chip-git:     #93c5fd;
+  --chip-gitlab:  #fca5a5;
+  --chip-jira:    #c7d2fe;
+  --chip-outlook: #7dd3fc;
+  --chip-system:  #cbd5e1;
+}
+
+// ── Green ─────────────────────────────────────────────────────────────────────
+html[data-theme="green"] {
+  --bg:               #e2ede4;
+  --surface:          #f2faf4;
+  --surface-alt:      #e2ede4;
+  --surface-hover:    #d4e6d6;
+
+  --border:           #a2c8a6;
+  --border-subtle:    #bcd8be;
+  --border-strong:    #5e9e64;
+
+  --text-primary:     #0e1f10;
+  --text-secondary:   #2a5430;
+  --text-tertiary:    #487050;
+
+  --header-bg:        #f2faf4;
+  --header-border:    #a2c8a6;
+
+  --badge-git-bg:        #c8e6cc;
+  --badge-git-fg:        #0d3b14;
+  --badge-git-accent:    #2a7a32;
+
+  --badge-gitlab-bg:     #fad4d0;
+  --badge-gitlab-fg:     #7a1a10;
+  --badge-gitlab-accent: #c03828;
+
+  --badge-jira-bg:       #d0d8f8;
+  --badge-jira-fg:       #1a1e6e;
+  --badge-jira-accent:   #3840b8;
+
+  --badge-outlook-bg:    #c8e8f8;
+  --badge-outlook-fg:    #083848;
+  --badge-outlook-accent: #1470a0;
+
+  --badge-system-bg:     #d8e8d8;
+  --badge-system-fg:     #1a2e1c;
+  --badge-system-accent: #3e6442;
+
+  --chip-git:     #1e6e28;
+  --chip-gitlab:  #b82818;
+  --chip-jira:    #2c34a8;
+  --chip-outlook: #0c5e8a;
+  --chip-system:  #2a4e2e;
+}
+
+// ── Lilac ─────────────────────────────────────────────────────────────────────
+html[data-theme="lilac"] {
+  --bg:               #ebe6f8;
+  --surface:          #f8f4ff;
+  --surface-alt:      #ebe6f8;
+  --surface-hover:    #ddd6f4;
+
+  --border:           #bca8e8;
+  --border-subtle:    #d0c4f0;
+  --border-strong:    #8060c8;
+
+  --text-primary:     #16082e;
+  --text-secondary:   #4a2e8a;
+  --text-tertiary:    #6e50a8;
+
+  --header-bg:        #f8f4ff;
+  --header-border:    #bca8e8;
+
+  --badge-git-bg:        #c8d4f8;
+  --badge-git-fg:        #0e1e70;
+  --badge-git-accent:    #2838c0;
+
+  --badge-gitlab-bg:     #f8ccd0;
+  --badge-gitlab-fg:     #780c18;
+  --badge-gitlab-accent: #c02030;
+
+  --badge-jira-bg:       #dcd0f8;
+  --badge-jira-fg:       #220e60;
+  --badge-jira-accent:   #5030b8;
+
+  --badge-outlook-bg:    #c8e4f8;
+  --badge-outlook-fg:    #083050;
+  --badge-outlook-accent: #1060a8;
+
+  --badge-system-bg:     #e0d8f8;
+  --badge-system-fg:     #1c1030;
+  --badge-system-accent: #5840a0;
+
+  --chip-git:     #1e30b0;
+  --chip-gitlab:  #b01828;
+  --chip-jira:    #4820a8;
+  --chip-outlook: #0a5090;
+  --chip-system:  #402e80;
+}
+
+// ── Dim ───────────────────────────────────────────────────────────────────────
+html[data-theme="dim"] {
+  --bg:               #1c2128;
+  --surface:          #22272e;
+  --surface-alt:      #2d333b;
+  --surface-hover:    #373e47;
+
+  --border:           #444c56;
+  --border-subtle:    #373e47;
+  --border-strong:    #636e7b;
+
+  --text-primary:     #cdd9e5;
+  --text-secondary:   #768390;
+  --text-tertiary:    #636e7b;
+
+  --header-bg:        #22272e;
+  --header-border:    #444c56;
+
+  --badge-git-bg:        #1a2d50;
+  --badge-git-fg:        #a8c8f0;
+  --badge-git-accent:    #6ea8e0;
+
+  --badge-gitlab-bg:     #4a1515;
+  --badge-gitlab-fg:     #f0b4b4;
+  --badge-gitlab-accent: #e07878;
+
+  --badge-jira-bg:       #252060;
+  --badge-jira-fg:       #c4cef8;
+  --badge-jira-accent:   #8b97f0;
+
+  --badge-outlook-bg:    #0e3a5a;
+  --badge-outlook-fg:    #7ecfea;
+  --badge-outlook-accent: #42b8d8;
+
+  --badge-system-bg:     #1e2533;
+  --badge-system-fg:     #c8d6e4;
+  --badge-system-accent: #8099b4;
+
+  --chip-git:     #a8c8f0;
+  --chip-gitlab:  #f0b4b4;
+  --chip-jira:    #c4cef8;
+  --chip-outlook: #7ecfea;
+  --chip-system:  #c8d6e4;
+}
+
+// ── Solarized ─────────────────────────────────────────────────────────────────
+html[data-theme="solarized"] {
+  --bg:               #eee8d5;
+  --surface:          #fdf6e3;
+  --surface-alt:      #eee8d5;
+  --surface-hover:    #e3dcca;
+
+  --border:           #c5bbac;
+  --border-subtle:    #d4cdb9;
+  --border-strong:    #93a1a1;
+
+  --text-primary:     #073642;
+  --text-secondary:   #586e75;
+  --text-tertiary:    #839496;
+
+  --header-bg:        #fdf6e3;
+  --header-border:    #c5bbac;
+
+  --badge-git-bg:        #d0e8f5;
+  --badge-git-fg:        #1a4a6e;
+  --badge-git-accent:    #2176a8;
+
+  --badge-gitlab-bg:     #f5d0d0;
+  --badge-gitlab-fg:     #7f1d1d;
+  --badge-gitlab-accent: #c0392b;
+
+  --badge-jira-bg:       #d8d4f5;
+  --badge-jira-fg:       #2e2a7f;
+  --badge-jira-accent:   #5142c8;
+
+  --badge-outlook-bg:    #c8e8f8;
+  --badge-outlook-fg:    #0a4060;
+  --badge-outlook-accent: #0f6e9e;
+
+  --badge-system-bg:     #dde5ea;
+  --badge-system-fg:     #1a2f38;
+  --badge-system-accent: #4a6570;
+
+  --chip-git:     #1a5f8a;
+  --chip-gitlab:  #b32020;
+  --chip-jira:    #3d30aa;
+  --chip-outlook: #0a5e88;
+  --chip-system:  #2c4a58;
+}
+
+// ── Midnight ──────────────────────────────────────────────────────────────────
+html[data-theme="midnight"] {
+  --bg:               #000000;
+  --surface:          #0c0c0c;
+  --surface-alt:      #141414;
+  --surface-hover:    #1e1e1e;
+
+  --border:           #2a2a2a;
+  --border-subtle:    #1e1e1e;
+  --border-strong:    #3d3d3d;
+
+  --text-primary:     #ededed;
+  --text-secondary:   #999999;
+  --text-tertiary:    #5e5e5e;
+
+  --header-bg:        #0c0c0c;
+  --header-border:    #2a2a2a;
+
+  --badge-git-bg:        #0d1a30;
+  --badge-git-fg:        #88bbf0;
+  --badge-git-accent:    #5090d8;
+
+  --badge-gitlab-bg:     #300808;
+  --badge-gitlab-fg:     #f09898;
+  --badge-gitlab-accent: #d86060;
+
+  --badge-jira-bg:       #130f38;
+  --badge-jira-fg:       #b0b8f5;
+  --badge-jira-accent:   #7880e8;
+
+  --badge-outlook-bg:    #041828;
+  --badge-outlook-fg:    #68c8e8;
+  --badge-outlook-accent: #30a8cc;
+
+  --badge-system-bg:     #0a0f18;
+  --badge-system-fg:     #b8c8d8;
+  --badge-system-accent: #6880a0;
+
+  --chip-git:     #88bbf0;
+  --chip-gitlab:  #f09898;
+  --chip-jira:    #b0b8f5;
+  --chip-outlook: #68c8e8;
+  --chip-system:  #b8c8d8;
+}
+
+// ── Base ─────────────────────────────────────────────────────────────────────
+
+*, *::before, *::after {
+  box-sizing: border-box;
+}
+
+html, body {
+  height: 100%;
+  overflow: hidden;
+  margin: 0;
+  font-family: Inter, 'Helvetica Neue', sans-serif;
+  background-color: var(--bg);
+  color: var(--text-primary);
+  transition: background-color 0.25s ease, color 0.25s ease;
+}
+
+// smooth theme transitions on common elements
+.entry, .app-toolbar, .filter-chip, .day-count, mat-card {
+  transition:
+    background-color 0.25s ease,
+    border-color 0.25s ease,
+    color 0.25s ease,
+    box-shadow 0.25s ease;
+}
+
+// ── Datepicker theme overrides ────────────────────────────────────────────────
+
+.mat-datepicker-content {
+  background-color: var(--surface) !important;
+  color: var(--text-primary) !important;
+  border: 1px solid var(--border) !important;
+  border-radius: 12px !important;
+  box-shadow: 0 8px 24px rgba(0,0,0,0.15) !important;
+  overflow: hidden !important;
+}
+
+.mat-calendar {
+  font-family: Inter, sans-serif !important;
+}
+
+// Header (month/year + nav arrows)
+.mat-calendar-header {
+  background: var(--surface-alt) !important;
+  padding-bottom: 0 !important;
+}
+
+.mat-calendar-content {
+  background: var(--surface) !important;
+}
+
+.mat-calendar-controls {
+  margin-top: 0 !important;
+  .mat-icon-button, .mat-mdc-icon-button {
+    color: var(--text-secondary) !important;
+
+    &:hover { color: var(--text-primary) !important; }
+  }
+}
+
+.mat-calendar-period-button,
+.mat-calendar-period-button .mdc-button__label {
+  color: var(--text-primary) !important;
+  font-weight: 600 !important;
+}
+
+// Weekday labels (Mo, Di, Mi…)
+.mat-calendar-table-header th {
+  color: var(--text-tertiary) !important;
+  font-weight: 600 !important;
+}
+
+.mat-calendar-table-header-divider::after {
+  background: var(--border-subtle) !important;
+}
+
+// Day cells
+.mat-calendar-body-cell-content {
+  color: var(--text-primary) !important;
+}
+
+.mat-calendar-body-cell:not(.mat-calendar-body-disabled):hover
+  .mat-calendar-body-cell-content:not(.mat-calendar-body-selected) {
+  background: var(--surface-hover) !important;
+  color: var(--text-primary) !important;
+}
+
+// Today
+.mat-calendar-body-today:not(.mat-calendar-body-selected) {
+  border-color: var(--border-strong) !important;
+  background: var(--surface-alt) !important;
+}
+
+// Selected day
+.mat-calendar-body-selected {
+  background-color: #3b82f6 !important;
+  color: #ffffff !important;
+}
+
+// Disabled days
+.mat-calendar-body-disabled .mat-calendar-body-cell-content {
+  color: var(--text-tertiary) !important;
+  opacity: 0.5 !important;
+}
+
+.mat-calendar-body-label {
+  color: var(--text-tertiary) !important;
+}
