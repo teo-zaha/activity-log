@@ -34,7 +34,7 @@ Two ways to use it:
 ## Setup
 
 ```bash
-git clone https://github.com/your-username/activity-log.git
+git clone https://git.inform-software.com/gb100/shared/playground/tzaharin/activity-log.git
 cd activity-log
 pnpm install
 
