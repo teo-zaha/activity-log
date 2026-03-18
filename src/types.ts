@@ -14,6 +14,7 @@ export interface GitEntry extends BaseEntry {
   message: string
   author: string
   branch: string
+  gitlabEvent?: GitLabEntry
 }
 
 export interface GitLabEntry extends BaseEntry {
@@ -21,6 +22,12 @@ export interface GitLabEntry extends BaseEntry {
   type: string
   title: string
   target_type: string
+  mr_iid?: number
+  branch?: string
+  commit_count?: number
+  note_body?: string
+  note_file?: string
+  note_resolved?: boolean
   raw: Record<string, unknown>
 }
 
