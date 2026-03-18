@@ -1,4 +1,4 @@
-import { Component, inject } from '@angular/core'
+import { Component, effect, inject } from '@angular/core'
 import { FormsModule } from '@angular/forms'
 import { MatIconModule } from '@angular/material/icon'
 import { ActivityService } from '../../services/activity.service'
@@ -14,6 +14,10 @@ import type { ActivityEntry, GitEntry, GitLabEntry, JiraEntry, OutlookEntry, Sys
 export class TimelineComponent {
   protected readonly activity = inject(ActivityService)
   protected searchValue = ''
+
+  constructor() {
+    effect(() => { this.searchValue = this.activity.searchQuery() })
+  }
 
   protected onSearch(value: string): void {
     this.activity.searchQuery.set(value)

@@ -125,6 +125,11 @@ export class ActivityService {
     if (log.meta.until) this.dateTo.set(log.meta.until.slice(0, 10))
   }
 
+  setView(view: ViewMode): void {
+    this.currentView.set(view)
+    this.searchQuery.set('')
+  }
+
   toggleSource(source: string): void {
     const current = new Set(this.activeSources())
     if (current.has(source)) current.delete(source)

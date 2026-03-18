@@ -115,7 +115,7 @@ export class WeekViewComponent implements AfterViewInit {
 
   protected selectDay(dateStr: string): void {
     this.activity.selectedDay.set(dateStr)
-    this.activity.currentView.set('day')
+    this.activity.setView('day')
   }
 
   protected selectEntry(e: ActivityEntry): void {
