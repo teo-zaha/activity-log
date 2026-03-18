@@ -14,6 +14,7 @@ export interface GitEntry extends BaseEntry {
   message: string
   author: string
   branch: string
+  gitlabEvent?: GitLabEntry
 }
 
 export interface GitLabEntry extends BaseEntry {
@@ -21,6 +22,12 @@ export interface GitLabEntry extends BaseEntry {
   type: string
   title: string
   target_type: string
+  mr_iid?: number
+  branch?: string
+  commit_count?: number
+  note_body?: string
+  note_file?: string
+  note_resolved?: boolean
 }
 
 export interface JiraEntry extends BaseEntry {
@@ -49,6 +56,10 @@ export interface SystemEntry extends BaseEntry {
 }
 
 export type ActivityEntry = GitEntry | GitLabEntry | JiraEntry | OutlookEntry | SystemEntry
+
+export function isMergedEntry(e: ActivityEntry): e is GitEntry & { gitlabEvent: GitLabEntry } {
+  return e.source === 'git' && !!(e as GitEntry).gitlabEvent
+}
 
 export interface ActivityLog {
   meta: {

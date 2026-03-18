@@ -60,6 +60,34 @@
     &-jira    { background: var(--badge-jira-bg);    color: var(--badge-jira-fg);    border-color: var(--badge-jira-accent); }
     &-outlook { background: var(--badge-outlook-bg); color: var(--badge-outlook-fg); border-color: var(--badge-outlook-accent); }
     &-system  { background: #cbd5e1; color: #1e293b; border-color: #475569; }
+    &-gitab   {
+      background: linear-gradient(135deg, var(--badge-git-bg) 50%, var(--badge-gitlab-bg) 50%);
+      color: var(--text-primary);
+      border-color: var(--badge-git-accent);
+    }
+  }
+
+  .cal-overflow {
+    position: absolute;
+    border-radius: 5px;
+    padding: 3px 7px;
+    font-size: 12px;
+    font-weight: 700;
+    cursor: pointer;
+    overflow: hidden;
+    border: 1px dashed var(--border-strong);
+    background: var(--surface-alt);
+    color: var(--text-secondary);
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    z-index: 1;
+    transition: background 0.1s ease, color 0.1s ease;
+
+    &:hover {
+      background: var(--surface-hover);
+      color: var(--text-primary);
+    }
   }
 
   .cal-event-icon {

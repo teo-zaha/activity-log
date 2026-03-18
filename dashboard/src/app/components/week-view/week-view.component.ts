@@ -2,7 +2,8 @@ import { Component, inject, AfterViewInit, ElementRef, ViewChild } from '@angula
 import { NgStyle } from '@angular/common'
 import { ActivityService } from '../../services/activity.service'
 import type { ActivityEntry, OutlookEntry } from '../../models/activity'
-import { layoutEvents, type LayoutItem } from '../calendar-layout'
+import { isMergedEntry } from '../../models/activity'
+import { layoutEventsWithOverflow, type CalendarItem } from '../calendar-layout'
 
 const HOUR_START = 0
 const HOUR_END   = 23
@@ -17,6 +18,7 @@ const DEFAULT_SCROLL_HOUR = 6.5 // 06:30
 })
 export class WeekViewComponent implements AfterViewInit {
   protected readonly activity = inject(ActivityService)
+  protected isMerged = isMergedEntry
 
   @ViewChild('scrollEl') private scrollEl!: ElementRef<HTMLElement>
 
@@ -69,11 +71,14 @@ export class WeekViewComponent implements AfterViewInit {
     return this.activity.weekEntriesByDay().get(dateStr) ?? []
   }
 
-  protected getLayoutForDay(dateStr: string): LayoutItem<ActivityEntry>[] {
-    return layoutEvents(
+  protected getLayoutForDay(dateStr: string): CalendarItem<ActivityEntry>[] {
+    const maxVisible = this.activity.currentView() === 'workweek' ? 4 : 3
+    return layoutEventsWithOverflow(
       this.getEntriesForDay(dateStr),
-      e => this.getTop(e.timestamp),
-      e => this.getHeight(e),
+      (e: ActivityEntry) => this.getTop(e.timestamp),
+      (e: ActivityEntry) => this.getHeight(e),
+      22,
+      maxVisible,
     )
   }
 
@@ -119,7 +124,13 @@ export class WeekViewComponent implements AfterViewInit {
   }
 
   protected selectEntry(e: ActivityEntry): void {
+    this.activity.selectedEntries.set(null)
     this.activity.selectedEntry.set(e)
+  }
+
+  protected selectOverflow(entries: ActivityEntry[]): void {
+    this.activity.selectedEntry.set(null)
+    this.activity.selectedEntries.set(entries)
   }
 
   protected getSourceIcon(source: string, type?: string): string {

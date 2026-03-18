@@ -3,6 +3,7 @@ import { FormsModule } from '@angular/forms'
 import { MatIconModule } from '@angular/material/icon'
 import { ActivityService } from '../../services/activity.service'
 import type { ActivityEntry, GitEntry, GitLabEntry, JiraEntry, OutlookEntry, SystemEntry } from '../../models/activity'
+import { isMergedEntry } from '../../models/activity'
 
 @Component({
   selector: 'app-timeline',
@@ -62,15 +63,15 @@ export class TimelineComponent {
     }
   }
 
-  protected getBadgeLabel(e: ActivityEntry): string {
-    return e.source
-  }
+  protected isMerged = isMergedEntry
 
   protected getMeta(e: ActivityEntry): string {
     switch (e.source) {
       case 'git': {
         const g = e as GitEntry
-        return [g.repo, g.branch ? `${g.branch}` : '', g.hash?.slice(0, 7)].filter(Boolean).join(' · ')
+        const parts = [g.repo, g.branch, g.hash?.slice(0, 7)]
+        if (g.gitlabEvent) parts.push(g.gitlabEvent.title)
+        return parts.filter(Boolean).join(' · ')
       }
       case 'gitlab': {
         const g = e as GitLabEntry

@@ -2,7 +2,8 @@ import { Component, inject, AfterViewInit, ElementRef, ViewChild } from '@angula
 import { NgStyle } from '@angular/common'
 import { ActivityService } from '../../services/activity.service'
 import type { ActivityEntry, OutlookEntry } from '../../models/activity'
-import { layoutEvents, type LayoutItem } from '../calendar-layout'
+import { isMergedEntry } from '../../models/activity'
+import { layoutEventsWithOverflow, type CalendarItem } from '../calendar-layout'
 
 export const HOUR_START = 0
 export const HOUR_END   = 23
@@ -18,6 +19,7 @@ const DEFAULT_SCROLL_HOUR = 6.5 // 06:30
 })
 export class DayViewComponent implements AfterViewInit {
   protected readonly activity = inject(ActivityService)
+  protected isMerged = isMergedEntry
 
   @ViewChild('scrollEl') private scrollEl!: ElementRef<HTMLElement>
 
@@ -67,11 +69,13 @@ export class DayViewComponent implements AfterViewInit {
     }
   }
 
-  protected dayLayout(): LayoutItem<ActivityEntry>[] {
-    return layoutEvents(
+  protected dayLayout(): CalendarItem<ActivityEntry>[] {
+    return layoutEventsWithOverflow(
       this.activity.dayEntries(),
       e => this.getTop(e.timestamp),
       e => this.getHeight(e),
+      22,
+      5,
     )
   }
 
@@ -89,7 +93,13 @@ export class DayViewComponent implements AfterViewInit {
   protected zoomIn():  void { this.activity.hourHeight.update(h => Math.min(192, h + 16)) }
 
   protected selectEntry(e: ActivityEntry): void {
+    this.activity.selectedEntries.set(null)
     this.activity.selectedEntry.set(e)
+  }
+
+  protected selectOverflow(entries: ActivityEntry[]): void {
+    this.activity.selectedEntry.set(null)
+    this.activity.selectedEntries.set(entries)
   }
 
   protected getSourceIcon(source: string, type?: string): string {

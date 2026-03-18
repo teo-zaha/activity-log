@@ -54,11 +54,18 @@ export class HeaderComponent {
   }
 
   protected exportMd(): void {
-    const md = this.activity.exportMarkdown()
-    const blob = new Blob([md], { type: 'text/markdown' })
+    this.download(this.activity.exportMarkdown(), 'text/markdown', '.md')
+  }
+
+  protected exportJson(): void {
+    this.download(this.activity.exportJson(), 'application/json', '.json')
+  }
+
+  private download(content: string, mimeType: string, ext: string): void {
+    const blob = new Blob([content], { type: mimeType })
     const a = document.createElement('a')
     a.href = URL.createObjectURL(blob)
-    a.download = `activity-${this.activity.dateFrom()}-${this.activity.dateTo()}.md`
+    a.download = `activity-${this.activity.dateFrom()}-${this.activity.dateTo()}${ext}`
     a.click()
     URL.revokeObjectURL(a.href)
   }
