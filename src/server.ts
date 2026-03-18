@@ -8,7 +8,7 @@ import { collectGitLab } from './collect/gitlab.js'
 import { collectJira } from './collect/jira.js'
 import { collectOutlook } from './collect/outlook.js'
 import { collectSystem } from './collect/system.js'
-import { today, daysAgo } from './utils.js'
+import { today, daysAgo, mergeGitWithGitlab } from './utils.js'
 import type { ActivityLog } from './types.js'
 
 const app = express()
@@ -32,7 +32,8 @@ async function runCollect(since: string, until: string): Promise<ActivityLog> {
     collectOutlook(opts).catch(e => { console.error('  [outlook]', (e as Error).message); return [] }),
     collectSystem(opts).catch(e => { console.error('  [system]', (e as Error).message); return [] }),
   ])
-  const entries = [...gitEntries, ...gitlabEntries, ...jiraEntries, ...outlookEntries, ...systemEntries]
+  const { mergedGit, remainingGitlab } = mergeGitWithGitlab(gitEntries, gitlabEntries)
+  const entries = [...mergedGit, ...remainingGitlab, ...jiraEntries, ...outlookEntries, ...systemEntries]
     .sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime())
   console.log(`  ✅ ${entries.length} total entries\n`)
   return { meta: { generated: new Date().toISOString(), since, until }, entries }

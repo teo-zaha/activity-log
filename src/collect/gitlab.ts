@@ -22,23 +22,44 @@ export async function collectGitLab(opts: CollectOptions): Promise<GitLabEntry[]
     console.warn('  [gitlab] skipped — GITLAB_URL, GITLAB_TOKEN or GITLAB_USER not set')
     return []
   }
+  const afterDate = new Date(opts.since)
+  afterDate.setDate(afterDate.getDate() - 1)
+  const afterParam = afterDate.toISOString().slice(0, 10)
+
+  const beforeDateObj = new Date(opts.until)
+  beforeDateObj.setDate(beforeDateObj.getDate() + 1)
+  const beforeParam = beforeDateObj.toISOString().slice(0, 10)
+
   const entries: GitLabEntry[] = []
   let page = 1
   while (true) {
-    const url = `${GITLAB_URL}/api/v4/users/${GITLAB_USER}/events?after=${opts.since}&before=${opts.until}&per_page=100&page=${page}`
+    const url = `${GITLAB_URL}/api/v4/users/${GITLAB_USER}/events?after=${afterParam}&before=${beforeParam}&per_page=100&page=${page}`
     const res = await fetch(url, { headers: { 'PRIVATE-TOKEN': GITLAB_TOKEN } })
     if (!res.ok) throw new Error(`GitLab API ${res.status}: ${await res.text()}`)
     const events = (await res.json()) as Record<string, unknown>[]
     if (!events.length) break
     for (const ev of events) {
-      entries.push({
+      const pushData = ev.push_data as Record<string, unknown> | undefined
+      const note = ev.note as Record<string, unknown> | undefined
+      const notePosition = note?.position as Record<string, unknown> | undefined
+      const targetType = (ev.target_type as string) ?? 'unknown'
+      const isMR = targetType === 'MergeRequest'
+
+      const entry: GitLabEntry = {
         source: 'gitlab',
         type: (ev.action_name as string) ?? 'unknown',
         timestamp: ev.created_at as string,
         title: (ev.target_title as string) ?? '',
-        target_type: (ev.target_type as string) ?? 'unknown',
+        target_type: targetType,
         raw: ev,
-      })
+      }
+      if (isMR && ev.target_iid != null) entry.mr_iid = ev.target_iid as number
+      if (pushData?.ref != null) entry.branch = pushData.ref as string
+      if (pushData?.commit_count != null) entry.commit_count = pushData.commit_count as number
+      if (note?.body != null) entry.note_body = note.body as string
+      if (notePosition?.new_path != null) entry.note_file = notePosition.new_path as string
+      if (note?.resolvable) entry.note_resolved = (note.resolved as boolean) ?? false
+      entries.push(entry)
     }
     if (events.length < 100) break
     page++

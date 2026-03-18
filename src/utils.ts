@@ -1,3 +1,71 @@
+import type { ActivityLog, ActivityEntry, GitEntry, GitLabEntry, JiraEntry, OutlookEntry, SystemEntry } from './types.js'
+
+export function mergeGitWithGitlab(gitEntries: ActivityEntry[], gitlabEntries: ActivityEntry[]): {
+  mergedGit: ActivityEntry[]
+  remainingGitlab: ActivityEntry[]
+} {
+  const gitlabByCommit = new Map<string, GitLabEntry>()
+  for (const e of gitlabEntries as GitLabEntry[]) {
+    if (e.type !== 'pushed to') continue
+    const commitTo = (e.raw.push_data as Record<string, unknown> | undefined)?.commit_to as string | undefined
+    if (commitTo) gitlabByCommit.set(commitTo, e)
+  }
+  const mergedGit = (gitEntries as GitEntry[]).map(e => {
+    const gitlabEvent = gitlabByCommit.get(e.hash)
+    return gitlabEvent ? { ...e, gitlabEvent } : e
+  })
+  const remainingGitlab = (gitlabEntries as GitLabEntry[]).filter(e => {
+    if (e.type !== 'pushed to') return true
+    const commitTo = (e.raw.push_data as Record<string, unknown> | undefined)?.commit_to as string | undefined
+    return !commitTo || !gitlabByCommit.has(commitTo)
+  })
+  return { mergedGit, remainingGitlab }
+}
+
+export function toMarkdown(log: ActivityLog): string {
+  const { since, until } = log.meta
+  let md = `# Activity Summary — ${since} to ${until}\n\nTotal: ${log.entries.length} events\n\n`
+
+  const byDay = new Map<string, typeof log.entries>()
+  for (const e of log.entries) {
+    const day = e.timestamp?.slice(0, 10) ?? 'unknown'
+    if (!byDay.has(day)) byDay.set(day, [])
+    byDay.get(day)!.push(e)
+  }
+  const days = Array.from(byDay.keys()).sort((a, b) => b.localeCompare(a))
+
+  for (const day of days) {
+    const label = new Date(day + 'T12:00:00Z').toLocaleDateString('en-GB', {
+      weekday: 'long', year: 'numeric', month: 'long', day: 'numeric',
+    })
+    md += `## ${label}\n\n`
+    for (const e of byDay.get(day)!) {
+      const t = new Date(e.timestamp).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })
+      if (e.source === 'git') {
+        const g = e as GitEntry
+        md += `- **[git]** \`${g.repo}\` ${g.message} (${t})\n`
+      } else if (e.source === 'gitlab') {
+        const g = e as GitLabEntry
+        md += `- **[gitlab]** ${g.type}: ${g.title || ''} (${t})\n`
+      } else if (e.source === 'jira') {
+        const j = e as JiraEntry
+        md += `- **[jira]** ${j.key}: ${j.title} [${j.status}] (${t})\n`
+      } else if (e.source === 'outlook') {
+        const o = e as OutlookEntry
+        const dur = o.duration_minutes >= 60
+          ? `${Math.floor(o.duration_minutes / 60)}h${o.duration_minutes % 60 ? ` ${o.duration_minutes % 60}m` : ''}`
+          : `${o.duration_minutes}m`
+        md += `- **[outlook]** ${o.title}${o.location ? ` @ ${o.location}` : ''} (${t}, ${dur})\n`
+      } else if (e.source === 'system') {
+        const s = e as SystemEntry
+        md += `- **[system]** ${s.label} (${t})\n`
+      }
+    }
+    md += '\n'
+  }
+  return md
+}
+
 export function today(): string {
   return new Date().toISOString().slice(0, 10)
 }
