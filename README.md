@@ -6,6 +6,14 @@ Two ways to use it:
 - **UI mode** — start a local web server, open the dashboard in your browser, explore interactively
 - **CLI mode** — run a single command, get a JSON file, no server needed
 
+## Screenshots
+
+![Day view](pics/day.png)
+
+![Work week view](pics/workweek.png)
+
+![List view](pics/list.png)
+
 ## Data sources
 
 | Source | What it collects |
