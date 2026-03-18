@@ -1,4 +1,4 @@
-# activity-log
+# activity-log - your MONI companion when your outlook calendar just aint doing it
 
 A unified activity tracker that aggregates everything you did into a single timeline — commits, GitLab events, Jira issues, calendar meetings, and system events.
 
