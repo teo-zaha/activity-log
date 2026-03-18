@@ -33,7 +33,7 @@ export class ActivityService {
     const entries = this.allEntries()
     const from = this.dateFrom()
     const to = this.dateTo()
-    const query = this.searchQuery().toLowerCase()
+    const query = this.currentView() === 'list' ? this.searchQuery().toLowerCase() : ''
     const sources = this.activeSources()
 
     return entries.filter(e => {
