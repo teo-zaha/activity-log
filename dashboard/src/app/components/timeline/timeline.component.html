@@ -46,13 +46,13 @@
                   </span>
                 } @else {
                   <span class="badge" [class]="'badge-' + entry.source">
-                    <span class="material-icons badge-icon">{{ getSourceIcon(entry.source, entry.type) }}</span>{{ entry.source }}
+                    <span class="material-icons badge-icon">{{ getEntryIcon(entry) }}</span>{{ entry.source }}
                   </span>
                 }
                 <div class="entry-body">
-                  <div class="entry-title">{{ getTitle(entry) }}</div>
-                  @if (getMeta(entry)) {
-                    <div class="entry-meta">{{ getMeta(entry) }}</div>
+                  <div class="entry-title">{{ getEntryTitle(entry) }}</div>
+                  @if (getEntryMeta(entry)) {
+                    <div class="entry-meta">{{ getEntryMeta(entry) }}</div>
                   }
                 </div>
                 <span class="entry-time">{{ formatTime(entry.timestamp) }}</span>

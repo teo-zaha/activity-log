@@ -98,9 +98,9 @@
                   [style.height.px]="getHeight(item.entry)"
                   [ngStyle]="getEventStyle(item.col, item.cols)"
                   (click)="selectEntry(item.entry)"
-                  [title]="getShortTitle(item.entry)"
+                  [title]="getEntryTitle(item.entry)"
                 >
-                  <span class="material-icons cal-event-icon">{{ getSourceIcon(item.entry.source, item.entry.type) }}</span><span class="cal-event-title">{{ getShortTitle(item.entry) }}</span>
+                  <span class="material-icons cal-event-icon">{{ getEntryIcon(item.entry) }}</span><span class="cal-event-title">{{ getEntryTitle(item.entry) }}</span>
                 </div>
               }
             }
