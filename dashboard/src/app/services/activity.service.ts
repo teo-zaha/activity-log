@@ -1,10 +1,11 @@
-import { Injectable, computed, signal, inject } from '@angular/core'
 import { HttpClient } from '@angular/common/http'
+import { Injectable, computed, inject, signal } from '@angular/core'
 import { firstValueFrom } from 'rxjs'
-import type {
-  ActivityEntry, ActivityLog, DayGroup,
-  GitEntry, GitLabEntry, JiraEntry, OutlookEntry, SystemEntry,
-} from '../models/activity'
+import type { ActivityEntry, ActivityLog } from '../generated/activity'
+import type { DayGroup } from '../models/day-group'
+import type { ExportedActivityLog } from '../models/exported-activity-log'
+import { getEntryType } from '../utils/activity-entry'
+import { formatDuration, getEntrySearchTerms } from '../utils/activity-presentation'
 
 export type ViewMode = 'list' | 'day' | 'workweek' | 'week'
 
@@ -24,7 +25,7 @@ export class ActivityService {
   // View state
   readonly currentView = signal<ViewMode>('list')
   readonly selectedDay = signal<string>(this.todayStr())
-  readonly selectedEntry  = signal<ActivityEntry | null>(null)
+  readonly selectedEntry = signal<ActivityEntry | null>(null)
   readonly selectedEntries = signal<ActivityEntry[] | null>(null)
   readonly hourHeight = signal(64)
 
@@ -41,21 +42,14 @@ export class ActivityService {
       const ts = e.timestamp?.slice(0, 10) ?? ''
       if (from && ts < from) return false
       if (to && ts > to) return false
-      const isMerged = e.source === 'git' && !!(e as GitEntry).gitlabEvent
-      if (isMerged ? (!sources.has('git') && !sources.has('gitlab')) : !sources.has(e.source)) return false
+      const isMerged = e.source === 'git' && !!e.gitlabEvent
+      if (isMerged ? !sources.has('git') && !sources.has('gitlab') : !sources.has(e.source))
+        return false
       if (query) {
-        const haystack = [
-          (e as GitEntry).message,
-          (e as GitLabEntry).title,
-          (e as JiraEntry).key,
-          (e as JiraEntry).title,
-          e.type,
-          (e as GitEntry).branch,
-          (e as GitEntry).repo,
-          (e as OutlookEntry).location,
-          (e as OutlookEntry).organizer,
-          (e as SystemEntry).label,
-        ].filter(Boolean).join(' ').toLowerCase()
+        const haystack = [...getEntrySearchTerms(e), getEntryType(e)]
+          .filter(Boolean)
+          .join(' ')
+          .toLowerCase()
         if (!haystack.includes(query)) return false
       }
       return true
@@ -156,7 +150,10 @@ export class ActivityService {
         const res = await firstValueFrom(
           this.http.get<ActivityLog | { collecting: boolean }>('/api/activity')
         )
-        if ('collecting' in res) { await new Promise(r => setTimeout(r, 1000)); continue }
+        if ('collecting' in res) {
+          await new Promise(r => setTimeout(r, 1000))
+          continue
+        }
         this.loadLog(res)
         return
       }
@@ -172,7 +169,9 @@ export class ActivityService {
     this.isLoading.set(true)
     this.error.set(null)
     try {
-      const log = await firstValueFrom(this.http.post<ActivityLog>('/api/collect', { since, until }))
+      const log = await firstValueFrom(
+        this.http.post<ActivityLog>('/api/collect', { since, until })
+      )
       this.loadLog(log)
     } catch (e) {
       this.error.set(`Collection failed: ${String(e)}`)
@@ -182,10 +181,11 @@ export class ActivityService {
   }
 
   exportJson(): string {
-    return JSON.stringify(
-      { meta: this.meta(), entries: this.filteredEntries() },
-      null, 2
-    )
+    const payload: ExportedActivityLog = {
+      meta: this.meta(),
+      entries: this.filteredEntries(),
+    }
+    return JSON.stringify(payload, null, 2)
   }
 
   exportMarkdown(): string {
@@ -194,19 +194,24 @@ export class ActivityService {
     let md = `# Activity Summary — ${from} to ${to}\n\nTotal: ${this.filteredEntries().length} events\n\n`
     for (const { date, entries } of this.groupedByDay()) {
       const label = new Date(date + 'T12:00:00Z').toLocaleDateString('en-GB', {
-        weekday: 'long', year: 'numeric', month: 'long', day: 'numeric',
+        weekday: 'long',
+        year: 'numeric',
+        month: 'long',
+        day: 'numeric',
       })
       md += `## ${label}\n\n`
       for (const e of entries) {
-        const t = new Date(e.timestamp).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })
-        if (e.source === 'git') { const g = e as GitEntry; md += `- **[git]** \`${g.repo}\` ${g.message} (${t})\n` }
-        else if (e.source === 'gitlab') { const g = e as GitLabEntry; md += `- **[gitlab]** ${g.type}: ${g.title || ''} (${t})\n` }
-        else if (e.source === 'jira') { const j = e as JiraEntry; md += `- **[jira]** ${j.key}: ${j.title} [${j.status}] (${t})\n` }
-        else if (e.source === 'outlook') {
-          const o = e as OutlookEntry
-          const dur = o.duration_minutes >= 60 ? `${Math.floor(o.duration_minutes / 60)}h${o.duration_minutes % 60 ? ` ${o.duration_minutes % 60}m` : ''}` : `${o.duration_minutes}m`
-          md += `- **[outlook]** ${o.title}${o.location ? ` @ ${o.location}` : ''} (${t}, ${dur})\n`
-        } else if (e.source === 'system') { const s = e as SystemEntry; md += `- **[system]** ${s.label} (${t})\n` }
+        const t = new Date(e.timestamp).toLocaleTimeString('en-GB', {
+          hour: '2-digit',
+          minute: '2-digit',
+        })
+        if (e.source === 'git') md += `- **[git]** \`${e.repo}\` ${e.message} (${t})\n`
+        else if (e.source === 'gitlab') md += `- **[gitlab]** ${e.type}: ${e.title || ''} (${t})\n`
+        else if (e.source === 'jira')
+          md += `- **[jira]** ${e.key}: ${e.title} [${e.status}] (${t})\n`
+        else if (e.source === 'outlook')
+          md += `- **[outlook]** ${e.title}${e.location ? ` @ ${e.location}` : ''} (${t}, ${formatDuration(e.duration_minutes)})\n`
+        else if (e.source === 'system') md += `- **[system]** ${e.label} (${t})\n`
       }
       md += '\n'
     }

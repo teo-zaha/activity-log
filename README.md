@@ -2,9 +2,13 @@
 
 A unified activity tracker that aggregates everything you did into a single timeline — commits, GitLab events, Jira issues, calendar meetings, and system events.
 
-Two ways to use it:
-- **UI mode** — start a local web server, open the dashboard in your browser, explore interactively
-- **CLI mode** — run a single command, get a file, no server needed
+The backend is now a Rust workspace:
+
+- `core` contains shared DTOs, collectors, cache, merge logic, markdown export, and TS generation.
+- `api` exposes the Rocket API.
+- `cli` provides standalone collection and explicit TypeScript generation for Angular.
+
+The Angular app stays in `dashboard/` and now consumes generated DTOs from `dashboard/src/app/generated/`.
 
 ## Screenshots
 
@@ -16,18 +20,19 @@ Two ways to use it:
 
 ## Data sources
 
-| Source | What it collects |
-|---|---|
-| **Git** | Commits from all local repositories |
-| **GitLab** | MRs, pushes, comments, reviews |
-| **Jira** | Issues you worked on or reported |
-| **Outlook** | Calendar events (via local Outlook desktop app) |
-| **System** | Boot, shutdown, sleep, and wake events (Windows Event Log) |
+| Source      | What it collects                                           |
+| ----------- | ---------------------------------------------------------- |
+| **Git**     | Commits from all local repositories                        |
+| **GitLab**  | MRs, pushes, comments, reviews                             |
+| **Jira**    | Issues you worked on or reported                           |
+| **Outlook** | Calendar events (via local Outlook desktop app)            |
+| **System**  | Boot, shutdown, sleep, and wake events (Windows Event Log) |
 
 When a local git commit matches a GitLab push event (same commit SHA), they are merged into a single **git/lab** entry instead of appearing twice.
 
 ## Requirements
 
+- Rust toolchain (`cargo`, `rustc`)
 - [Node.js](https://nodejs.org) >= 20
 - [pnpm](https://pnpm.io) >= 10
 - Git installed locally
@@ -49,19 +54,22 @@ cp .env.example .env   # fill in your credentials
 ### First-time only: build the dashboard
 
 ```bash
-pnpm install:dashboard
-pnpm build:dashboard
+pnpm dashboard:install
+pnpm dashboard:build
 ```
 
-### Start the server
+### Start the API server
 
 ```bash
-pnpm start
+pnpm api:start
 ```
 
-Open [http://localhost:3000](http://localhost:3000). The last 30 days are collected automatically on startup. Use the date pickers in the header to change the range and re-collect on the fly.
+The API listens on [http://localhost:3000](http://localhost:3000) by default. The last 30 days are collected automatically on startup. Use the date pickers in the header to change the range and re-collect on the fly.
+
+Run the Angular dev server separately with `pnpm dashboard:dev`, or use the combined dev mode below.
 
 The header has two export buttons:
+
 - **Markdown** (`description` icon) — downloads a `.md` summary of the current filtered view
 - **JSON** (`data_object` icon) — downloads the raw entries as `.json`
 
@@ -80,14 +88,13 @@ pnpm dev
 No dashboard build needed.
 
 ```bash
-pnpm collect                          # last 30 days → logs/activity_log.json
-pnpm collect --range today
-pnpm collect --range yesterday
-pnpm collect --range week
-pnpm collect --range lastweek
-pnpm collect --range month
-pnpm collect --range lastmonth
-pnpm collect --since 2026-03-01 --until 2026-03-18
+pnpm cli:collect --range today
+pnpm cli:collect --range yesterday
+pnpm cli:collect --range week
+pnpm cli:collect --range lastweek
+pnpm cli:collect --range month
+pnpm cli:collect --range lastmonth
+pnpm cli:collect --since 2026-03-01 --until 2026-03-18
 ```
 
 ### Output format
@@ -95,15 +102,15 @@ pnpm collect --since 2026-03-01 --until 2026-03-18
 Default output is JSON. Use `--format markdown` to get a Markdown summary instead:
 
 ```bash
-pnpm collect --format json            # → logs/activity_log.json  (default)
-pnpm collect --format markdown        # → logs/activity_log.md
+pnpm cli:collect --format json            # → logs/activity_log.json  (default)
+pnpm cli:collect --format markdown        # → logs/activity_log.md
 ```
 
 Override the output path with `--output`:
 
 ```bash
-pnpm collect --range week --output reports/week.json
-pnpm collect --range week --format markdown --output reports/week.md
+pnpm cli:collect --range week --output reports/week.json
+pnpm cli:collect --range week --format markdown --output reports/week.md
 ```
 
 ### Other options
@@ -112,23 +119,41 @@ pnpm collect --range week --format markdown --output reports/week.md
 --git-dirs /path/to/repo1,/path/to/repo2   # scan specific repos instead of auto-discovering
 ```
 
+### Generate Angular DTO types
+
+```bash
+pnpm types:generate
+```
+
+This writes Rust-backed DTO types into `dashboard/src/app/generated/`.
+
+## Verification
+
+Run this before treating changes as done:
+
+```bash
+pnpm verify
+```
+
+`verify` is the repo-wide gate. It runs TypeScript generation, formatter checks, Rust checks, clippy, Rust tests, Angular type-checking, and the dashboard build.
+
 ---
 
 ## Environment variables
 
 Copy `.env.example` to `.env` and fill in the sources you want to enable. Any source without credentials is silently skipped.
 
-| Variable | Description |
-|---|---|
-| `GITLAB_URL` | Your GitLab instance URL |
-| `GITLAB_TOKEN` | GitLab personal access token |
-| `GITLAB_USER` | Your GitLab username |
-| `JIRA_URL` | Your Jira instance URL |
-| `JIRA_EMAIL` | Your Jira account email |
-| `JIRA_TOKEN` | Jira API token (or PAT for Jira Data Center) |
-| `JIRA_INSECURE` | Set to `true` to skip TLS verification (self-signed certs) |
-| `GIT_DIRS` | Comma-separated paths to Git repos (auto-discovers from home dir if not set) |
-| `PORT` | Server port (default: `3000`, UI mode only) |
+| Variable        | Description                                                                  |
+| --------------- | ---------------------------------------------------------------------------- |
+| `GITLAB_URL`    | Your GitLab instance URL                                                     |
+| `GITLAB_TOKEN`  | GitLab personal access token                                                 |
+| `GITLAB_USER`   | Your GitLab username                                                         |
+| `JIRA_URL`      | Your Jira instance URL                                                       |
+| `JIRA_EMAIL`    | Your Jira account email                                                      |
+| `JIRA_TOKEN`    | Jira API token (or PAT for Jira Data Center)                                 |
+| `JIRA_INSECURE` | Set to `true` to skip TLS verification (self-signed certs)                   |
+| `GIT_DIRS`      | Comma-separated paths to Git repos (auto-discovers from home dir if not set) |
+| `PORT`          | Server port (default: `3000`, UI mode only)                                  |
 
 Outlook and System collectors require no credentials — they read from the local Outlook app and Windows Event Log respectively.
 
@@ -136,26 +161,26 @@ Outlook and System collectors require no credentials — they read from the loca
 
 ## Project structure
 
-```
+```text
 activity-log/
-├── src/
-│   ├── server.ts              Express server (UI mode)
-│   ├── cli.ts                 Standalone CLI (CLI mode)
-│   ├── types.ts               Shared TypeScript types
-│   ├── utils.ts               Date utilities, markdown formatter, git/gitlab merge
-│   ├── cache.ts               File-based TTL cache for API responses
-│   └── collect/
-│       ├── git.ts             Local Git collector
-│       ├── gitlab.ts          GitLab API collector
-│       ├── jira.ts            Jira API collector
-│       ├── outlook.ts         Outlook COM collector (Windows)
-│       └── system.ts          Windows Event Log collector
-├── dashboard/                 Angular app (UI mode only)
+├── core/
+│   └── src/
+│       ├── collect/           Git, GitLab, Jira, Outlook, System collectors
+│       ├── cache/             File-based TTL cache for API responses
+│       ├── model/             Shared models grouped by domain/source
+│       ├── ts.rs              Angular DTO generator
+│       └── utils/             Date utilities, markdown formatter, git/gitlab merge
+├── api/                       Rocket API crate
+├── cli/                       Rust CLI crate
+├── dashboard/
 │   └── src/app/
 │       ├── components/        header, filters, timeline, calendar views
+│       ├── generated/         Rust-generated DTOs
 │       ├── services/          ActivityService, ThemeService
-│       └── models/            TypeScript interfaces
+│       ├── models/            Angular-only view models
+│       └── utils/             Angular-only helper logic
 ├── logs/                      Generated output (gitignored)
+├── Cargo.toml
 ├── .env.example
 ├── package.json
 └── README.md

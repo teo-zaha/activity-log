@@ -44,9 +44,13 @@
           devShells.default = pkgs.mkShell {
             nativeBuildInputs = with pkgs; [
               bun
+              cargo
+              clippy
               nodejs
               pnpm
               python3
+              rustc
+              rustfmt
             ];
 
             packages = with pkgs; [

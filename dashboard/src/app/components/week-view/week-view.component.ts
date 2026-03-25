@@ -1,8 +1,9 @@
 import { Component, inject, AfterViewInit, ElementRef, ViewChild, computed } from '@angular/core'
 import { NgStyle } from '@angular/common'
 import { ActivityService } from '../../services/activity.service'
-import type { ActivityEntry, OutlookEntry } from '../../models/activity'
-import { isMergedEntry } from '../../models/activity'
+import type { ActivityEntry, OutlookEntry } from '../../generated/activity'
+import { isMergedEntry } from '../../utils/activity-entry'
+import { getEntryIcon, getEntryTitle } from '../../utils/activity-presentation'
 import { layoutEventsWithOverflow, type CalendarItem } from '../calendar-layout'
 
 const HOUR_START = 0
@@ -28,6 +29,8 @@ interface MultiDayBar {
 export class WeekViewComponent implements AfterViewInit {
   protected readonly activity = inject(ActivityService)
   protected isMerged = isMergedEntry
+  protected getEntryIcon = getEntryIcon
+  protected getEntryTitle = getEntryTitle
 
   @ViewChild('scrollEl') private scrollEl!: ElementRef<HTMLElement>
 
@@ -182,19 +185,9 @@ export class WeekViewComponent implements AfterViewInit {
 
   protected getHeight(e: ActivityEntry): number {
     if (e.source === 'outlook') {
-      return Math.max(20, ((e as OutlookEntry).duration_minutes / 60) * this.activity.hourHeight())
+      return Math.max(20, (e.duration_minutes / 60) * this.activity.hourHeight())
     }
     return 20
-  }
-
-  protected getShortTitle(e: ActivityEntry): string {
-    switch (e.source) {
-      case 'git':     return (e as any).message ?? ''
-      case 'gitlab':  return (e as any).title || (e as any).type
-      case 'jira':  { const j = e as any; return j.key ? `${j.key}: ${j.title ?? ''}` : (j.title ?? '') }
-      case 'outlook': return (e as any).title ?? ''
-      case 'system':  return (e as any).label ?? e.type
-    }
   }
 
   protected zoomOut(): void { this.activity.hourHeight.update(h => Math.max(32, h - 16)) }
@@ -213,21 +206,6 @@ export class WeekViewComponent implements AfterViewInit {
   protected selectOverflow(entries: ActivityEntry[]): void {
     this.activity.selectedEntry.set(null)
     this.activity.selectedEntries.set(entries)
-  }
-
-  protected getSourceIcon(source: string, type?: string): string {
-    if (source === 'system') {
-      const t: Record<string, string> = {
-        boot: 'power_settings_new', shutdown: 'power_off',
-        unexpected_shutdown: 'warning', sleep: 'bedtime',
-        wake: 'wb_sunny', lock: 'lock', unlock: 'lock_open',
-      }
-      return t[type ?? ''] ?? 'power_settings_new'
-    }
-    const icons: Record<string, string> = {
-      git: 'commit', gitlab: 'code', jira: 'task_alt', outlook: 'event',
-    }
-    return icons[source] ?? 'circle'
   }
 
   protected formatHour(h: number): string {

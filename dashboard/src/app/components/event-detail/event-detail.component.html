@@ -13,7 +13,7 @@
           </div>
         } @else {
           <span class="flyout-badge" [class]="'badge-' + entry.source">
-            <span class="material-icons">{{ getSourceIcon(entry.source, entry.type) }}</span>{{ entry.source }}
+            <span class="material-icons">{{ getEntryIcon(entry) }}</span>{{ entry.source }}
           </span>
         }
         <button class="flyout-close" (click)="close()" aria-label="Close">
@@ -22,7 +22,7 @@
       </div>
 
       <div class="flyout-body">
-        <h2 class="flyout-title">{{ getTitle(entry) }}</h2>
+        <h2 class="flyout-title">{{ getEntryTitle(entry) }}</h2>
         <p class="flyout-time">
           <span class="material-icons">schedule</span>
           {{ formatDateTime(entry.timestamp) }}
