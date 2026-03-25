@@ -69,15 +69,18 @@
 
 // ── Day column headers ─────────────────────────────────────────────────────
 
-.week-col-headers {
+.cal-sticky-header {
   position: sticky;
   top: 0;
   z-index: 10;
+  background: var(--surface);
+}
+
+.week-col-headers {
   display: flex;
   align-items: stretch;
   flex-shrink: 0;
   border-bottom: 1px solid var(--border-subtle);
-  background: var(--surface);
 }
 
 .time-gutter {
@@ -144,6 +147,59 @@
   color: var(--text-primary);
 }
 
+// ── All-day banner row ──────────────────────────────────────────────────────
+
+.cal-allday-row {
+  display: flex;
+  flex-shrink: 0;
+  border-bottom: 1px solid var(--border-subtle);
+  overflow: hidden;
+}
+
+.time-gutter-allday {
+  width: 52px;
+  flex-shrink: 0;
+  border-right: 1px solid var(--border-subtle);
+}
+
+.allday-bars {
+  flex: 1;
+  position: relative;
+}
+
+.cal-allday-bar {
+  position: absolute;
+  border-radius: 4px;
+  padding: 2px 6px;
+  font-size: 12px;
+  font-weight: 500;
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  cursor: pointer;
+  background: var(--badge-outlook-bg);
+  color: var(--badge-outlook-fg);
+  border-left: 3px solid var(--badge-outlook-accent);
+  transition: filter 0.1s ease;
+  z-index: 1;
+
+  &:hover { filter: brightness(0.93); }
+
+  .cal-event-icon {
+    font-size: 11px;
+    flex-shrink: 0;
+    opacity: 0.85;
+  }
+
+  .cal-event-title {
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    min-width: 0;
+  }
+}
+
 // ── Scrollable grid ────────────────────────────────────────────────────────
 
 .cal-scroll {
@@ -204,6 +260,14 @@
 
   &.is-today {
     background: color-mix(in srgb, #3b82f6 4%, transparent);
+  }
+
+  &.has-allday {
+    background: color-mix(in srgb, var(--badge-outlook-bg) 25%, transparent);
+  }
+
+  &.is-today.has-allday {
+    background: color-mix(in srgb, #3b82f6 4%, var(--badge-outlook-bg) 22%, transparent);
   }
 }
 
