@@ -139,6 +139,15 @@ export class ActivityService {
     this.activeSources.set(current)
   }
 
+  isolateSource(source: string): void {
+    const current = this.activeSources()
+    if (current.size === 1 && current.has(source)) {
+      this.activeSources.set(new Set(['git', 'gitlab', 'jira', 'outlook', 'system']))
+    } else {
+      this.activeSources.set(new Set([source]))
+    }
+  }
+
   async initLoad(): Promise<void> {
     this.isLoading.set(true)
     this.error.set(null)
