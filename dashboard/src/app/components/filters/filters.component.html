@@ -18,6 +18,7 @@
           [class.active]="isActive(src.id)"
           [attr.data-src]="src.id"
           (click)="activity.toggleSource(src.id)"
+          (dblclick)="activity.isolateSource(src.id)"
         >
           <mat-icon>{{ src.icon }}</mat-icon>
           {{ src.label }}
