@@ -85,6 +85,66 @@
   overflow-x: hidden;
 }
 
+// ── All-day banner row ──────────────────────────────────────────────────────
+
+.cal-sticky-header {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  background: var(--surface);
+}
+
+.cal-allday-row {
+  display: flex;
+  flex-shrink: 0;
+  border-bottom: 1px solid var(--border-subtle);
+  overflow: hidden;
+}
+
+.time-gutter-allday {
+  width: 52px;
+  flex-shrink: 0;
+  border-right: 1px solid var(--border-subtle);
+}
+
+.allday-bars {
+  flex: 1;
+  position: relative;
+}
+
+.cal-allday-bar {
+  position: absolute;
+  border-radius: 4px;
+  padding: 2px 6px;
+  font-size: 12px;
+  font-weight: 500;
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  cursor: pointer;
+  background: var(--badge-outlook-bg);
+  color: var(--badge-outlook-fg);
+  border-left: 3px solid var(--badge-outlook-accent);
+  transition: filter 0.1s ease;
+  z-index: 1;
+
+  &:hover { filter: brightness(0.93); }
+
+  .cal-event-icon {
+    font-size: 11px;
+    flex-shrink: 0;
+    opacity: 0.85;
+  }
+
+  .cal-event-title {
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    min-width: 0;
+  }
+}
+
 .cal-grid {
   position: relative;
   display: grid;
