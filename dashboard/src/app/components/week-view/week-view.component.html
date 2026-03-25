@@ -27,17 +27,40 @@
   <!-- Scrollable time grid (headers live inside to share the same scrollbar-gutter) -->
   <div class="cal-scroll" #scrollEl>
 
-    <div class="week-col-headers">
-      <div class="time-gutter"></div>
-      @for (day of days; track day) {
-        <div
-          class="day-col-hdr"
-          [class.is-today]="isToday(day)"
-          [class.is-selected]="isSelectedDay(day)"
-          (click)="selectDay(day)"
-        >
-          <span class="day-weekday">{{ formatDayCol(day).weekday }}</span>
-          <span class="day-date">{{ formatDayCol(day).date }}</span>
+    <!-- Sticky header: day labels + all-day banner row -->
+    <div class="cal-sticky-header">
+      <div class="week-col-headers">
+        <div class="time-gutter"></div>
+        @for (day of days; track day) {
+          <div
+            class="day-col-hdr"
+            [class.is-today]="isToday(day)"
+            [class.is-selected]="isSelectedDay(day)"
+            (click)="selectDay(day)"
+          >
+            <span class="day-weekday">{{ formatDayCol(day).weekday }}</span>
+            <span class="day-date">{{ formatDayCol(day).date }}</span>
+          </div>
+        }
+      </div>
+
+      <!-- All-day banner row for multi-day events -->
+      @if (multiDayLayout().length) {
+        <div class="cal-allday-row" [style.height.px]="allDayRowHeight()">
+          <div class="time-gutter-allday"></div>
+          <div class="allday-bars">
+            @for (bar of multiDayLayout(); track $index) {
+              <div
+                class="cal-allday-bar"
+                [ngStyle]="getAllDayBarStyle(bar)"
+                (click)="selectEntry(bar.entry)"
+                [title]="bar.entry.title"
+              >
+                <span class="material-icons cal-event-icon">event</span>
+                <span class="cal-event-title">{{ bar.entry.title }}</span>
+              </div>
+            }
+          </div>
         </div>
       }
     </div>
@@ -55,7 +78,7 @@
       <!-- Day columns -->
       <div class="week-body">
         @for (day of days; track day) {
-          <div class="day-col" [class.is-today]="isToday(day)">
+          <div class="day-col" [class.is-today]="isToday(day)" [class.has-allday]="dayHasMultiDayEvent(day)">
             @for (item of getLayoutForDay(day); track $index) {
               @if (item.kind === 'overflow') {
                 <div
