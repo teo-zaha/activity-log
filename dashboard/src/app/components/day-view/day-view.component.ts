@@ -1,4 +1,4 @@
-import { Component, inject, AfterViewInit, ElementRef, ViewChild } from '@angular/core'
+import { Component, inject, AfterViewInit, ElementRef, ViewChild, computed } from '@angular/core'
 import { NgStyle } from '@angular/common'
 import { ActivityService } from '../../services/activity.service'
 import type { ActivityEntry, OutlookEntry } from '../../models/activity'
@@ -9,6 +9,8 @@ export const HOUR_START = 0
 export const HOUR_END   = 23
 
 const DEFAULT_SCROLL_HOUR = 6.5 // 06:30
+const ALLDAY_BAR_HEIGHT = 26
+const ALLDAY_BAR_GAP    = 2
 
 @Component({
   selector: 'app-day-view',
@@ -69,9 +71,42 @@ export class DayViewComponent implements AfterViewInit {
     }
   }
 
+  private isMultiDayEvent(e: ActivityEntry): e is OutlookEntry {
+    if (e.source !== 'outlook') return false
+    const endMs = new Date(e.timestamp).getTime() + (e as OutlookEntry).duration_minutes * 60000
+    return new Date(endMs).toISOString().slice(0, 10) > e.timestamp.slice(0, 10)
+  }
+
+  readonly multiDayEntries = computed(() => {
+    const day = this.activity.selectedDay()
+    return this.activity.filteredEntries().filter(e => {
+      if (!this.isMultiDayEvent(e)) return false
+      const startDay = e.timestamp.slice(0, 10)
+      const endMs = new Date(e.timestamp).getTime() + (e as OutlookEntry).duration_minutes * 60000
+      const endDay = new Date(endMs).toISOString().slice(0, 10)
+      return startDay <= day && endDay > day
+    }) as OutlookEntry[]
+  })
+
+  protected allDayRowHeight(): number {
+    const count = this.multiDayEntries().length
+    return count === 0 ? 0 : count * (ALLDAY_BAR_HEIGHT + ALLDAY_BAR_GAP) + ALLDAY_BAR_GAP * 2
+  }
+
+  protected getDayAllDayBarStyle(index: number): Record<string, string> {
+    const GAP = 3
+    return {
+      left: `${GAP}px`,
+      right: `${GAP}px`,
+      width: `calc(100% - ${GAP * 2}px)`,
+      top: `${index * (ALLDAY_BAR_HEIGHT + ALLDAY_BAR_GAP) + ALLDAY_BAR_GAP}px`,
+      height: `${ALLDAY_BAR_HEIGHT}px`,
+    }
+  }
+
   protected dayLayout(): CalendarItem<ActivityEntry>[] {
     return layoutEventsWithOverflow(
-      this.activity.dayEntries(),
+      this.activity.dayEntries().filter(e => !this.isMultiDayEvent(e)),
       e => this.getTop(e.timestamp),
       e => this.getHeight(e),
       22,

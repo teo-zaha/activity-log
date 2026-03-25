@@ -28,6 +28,29 @@
 
   <!-- Grid -->
   <div class="cal-scroll" #scrollEl>
+
+    <!-- All-day banner row for multi-day events -->
+    @if (multiDayEntries().length) {
+      <div class="cal-sticky-header">
+        <div class="cal-allday-row" [style.height.px]="allDayRowHeight()">
+          <div class="time-gutter-allday"></div>
+          <div class="allday-bars">
+            @for (entry of multiDayEntries(); track $index) {
+              <div
+                class="cal-allday-bar"
+                [ngStyle]="getDayAllDayBarStyle($index)"
+                (click)="selectEntry(entry)"
+                [title]="entry.title"
+              >
+                <span class="material-icons cal-event-icon">event</span>
+                <span class="cal-event-title">{{ entry.title }}</span>
+              </div>
+            }
+          </div>
+        </div>
+      </div>
+    }
+
     <div class="cal-grid" [style.height.px]="gridHeight()">
 
       <!-- Hour labels + lines -->
