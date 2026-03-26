@@ -23,7 +23,9 @@
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: 10px;
-  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+  transition:
+    border-color 0.15s ease,
+    box-shadow 0.15s ease;
 
   &:focus-within {
     border-color: #3b82f6;
@@ -67,14 +69,18 @@
   color: var(--text-tertiary);
   cursor: pointer;
   border-radius: 6px;
-  transition: background 0.15s ease, color 0.15s ease;
+  transition:
+    background 0.15s ease,
+    color 0.15s ease;
 
   &:hover {
     background: var(--surface-hover);
     color: var(--text-primary);
   }
 
-  .material-icons { font-size: 16px; }
+  .material-icons {
+    font-size: 16px;
+  }
 }
 
 // ── Empty state ────────────────────────────────────────────────────────────
@@ -147,6 +153,7 @@
 
 .entry {
   display: flex;
+  cursor: pointer;
   align-items: center;
   gap: 10px;
   padding: 9px 14px 9px 0;
@@ -154,7 +161,9 @@
   border: 1px solid var(--border-subtle);
   border-radius: 8px;
   overflow: hidden;
-  transition: border-color 0.15s ease, background-color 0.15s ease;
+  transition:
+    border-color 0.15s ease,
+    background-color 0.15s ease;
 
   &:hover {
     border-color: var(--border);
@@ -170,12 +179,28 @@
   border-radius: 0 2px 2px 0;
 }
 
-.accent-git     { background: var(--badge-git-accent); }
-.accent-gitlab  { background: var(--badge-gitlab-accent); }
-.accent-jira    { background: var(--badge-jira-accent); }
-.accent-outlook { background: var(--badge-outlook-accent); }
-.accent-system  { background: var(--badge-system-accent); }
-.accent-gitab   { background: linear-gradient(to bottom, var(--badge-git-accent) 50%, var(--badge-gitlab-accent) 50%); }
+.accent-git {
+  background: var(--badge-git-accent);
+}
+.accent-gitlab {
+  background: var(--badge-gitlab-accent);
+}
+.accent-jira {
+  background: var(--badge-jira-accent);
+}
+.accent-outlook {
+  background: var(--badge-outlook-accent);
+}
+.accent-system {
+  background: var(--badge-system-accent);
+}
+.accent-gitab {
+  background: linear-gradient(
+    to bottom,
+    var(--badge-git-accent) 50%,
+    var(--badge-gitlab-accent) 50%
+  );
+}
 
 // ── Badge ──────────────────────────────────────────────────────────────────
 
@@ -202,12 +227,27 @@
   flex-shrink: 0;
 }
 
-.badge-git     { background: var(--badge-git-bg);     color: var(--badge-git-fg); }
-.badge-gitlab  { background: var(--badge-gitlab-bg);  color: var(--badge-gitlab-fg); }
-.badge-jira    { background: var(--badge-jira-bg);    color: var(--badge-jira-fg); }
-.badge-outlook { background: var(--badge-outlook-bg); color: var(--badge-outlook-fg); }
-.badge-system  { background: var(--badge-system-bg);  color: var(--badge-system-fg); }
-.badge-gitab   {
+.badge-git {
+  background: var(--badge-git-bg);
+  color: var(--badge-git-fg);
+}
+.badge-gitlab {
+  background: var(--badge-gitlab-bg);
+  color: var(--badge-gitlab-fg);
+}
+.badge-jira {
+  background: var(--badge-jira-bg);
+  color: var(--badge-jira-fg);
+}
+.badge-outlook {
+  background: var(--badge-outlook-bg);
+  color: var(--badge-outlook-fg);
+}
+.badge-system {
+  background: var(--badge-system-bg);
+  color: var(--badge-system-fg);
+}
+.badge-gitab {
   background: linear-gradient(105deg, var(--badge-git-bg) 57%, var(--badge-gitlab-bg) 43%);
   color: var(--text-primary);
 }

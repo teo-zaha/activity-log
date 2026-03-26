@@ -117,7 +117,9 @@
       align-items: center;
       justify-content: center;
     }
-    .day-weekday { color: #3b82f6; }
+    .day-weekday {
+      color: #3b82f6;
+    }
   }
 
   &.is-selected:not(.is-today) {

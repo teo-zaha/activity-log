@@ -33,8 +33,7 @@ export class HeaderComponent {
   protected readonly theme = inject(ThemeService)
 
   protected readonly dateFromObj = computed(() => this.parseDateStr(this.activity.dateFrom()))
-  protected readonly dateToObj   = computed(() => this.parseDateStr(this.activity.dateTo()))
-
+  protected readonly dateToObj = computed(() => this.parseDateStr(this.activity.dateTo()))
 
   protected apply(): void {
     void this.activity.collect(this.activity.dateFrom(), this.activity.dateTo())

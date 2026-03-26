@@ -5,7 +5,7 @@ import type { EntryUiAdapter } from '../../providers/types'
 import { layoutEventsWithOverflow, type CalendarItem } from '../calendar-layout'
 
 const HOUR_START = 0
-const HOUR_END   = 23
+const HOUR_END = 23
 const DEFAULT_SCROLL_HOUR = 6.5 // 06:30
 const ALLDAY_BAR_HEIGHT = 26
 const ALLDAY_BAR_GAP    = 2
@@ -46,9 +46,10 @@ export class WeekViewComponent implements AfterViewInit {
     if (!days.length) return ''
     const s = new Date(days[0] + 'T12:00:00')
     const e = new Date(days[days.length - 1] + 'T12:00:00')
-    const month = s.getMonth() === e.getMonth()
-      ? s.toLocaleDateString('en-GB', { month: 'long', year: 'numeric' })
-      : `${s.toLocaleDateString('en-GB', { month: 'short' })} – ${e.toLocaleDateString('en-GB', { month: 'short', year: 'numeric' })}`
+    const month =
+      s.getMonth() === e.getMonth()
+        ? s.toLocaleDateString('en-GB', { month: 'long', year: 'numeric' })
+        : `${s.toLocaleDateString('en-GB', { month: 'short' })} – ${e.toLocaleDateString('en-GB', { month: 'short', year: 'numeric' })}`
     return month
   }
 
@@ -158,7 +159,7 @@ export class WeekViewComponent implements AfterViewInit {
       (entry: EntryUiAdapter) => this.getTop(entry.timestamp),
       (entry: EntryUiAdapter) => this.getHeight(entry),
       22,
-      maxVisible,
+      maxVisible
     )
   }
 
@@ -186,8 +187,12 @@ export class WeekViewComponent implements AfterViewInit {
     return 20
   }
 
-  protected zoomOut(): void { this.activity.hourHeight.update(h => Math.max(32, h - 16)) }
-  protected zoomIn():  void { this.activity.hourHeight.update(h => Math.min(192, h + 16)) }
+  protected zoomOut(): void {
+    this.activity.hourHeight.update(h => Math.max(32, h - 16))
+  }
+  protected zoomIn(): void {
+    this.activity.hourHeight.update(h => Math.min(192, h + 16))
+  }
 
   protected selectDay(dateStr: string): void {
     this.activity.selectedDay.set(dateStr)

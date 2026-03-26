@@ -2,13 +2,13 @@
   <div class="backdrop" (click)="close()"></div>
 
   <aside class="flyout" role="dialog">
-
     @if (activity.selectedEntry(); as entry) {
       <div class="flyout-header">
         <div class="flyout-badges">
           @for (badge of entry.badges; track badge.source) {
             <span class="flyout-badge" [class]="badge.badgeClass">
-              <span class="material-icons">{{ badge.icon }}</span>{{ badge.label }}
+              <span class="material-icons">{{ badge.icon }}</span
+              >{{ badge.label }}
             </span>
           }
         </div>
@@ -67,7 +67,8 @@
           <div class="flyout-section">
             <div class="flyout-section-header">
               <span class="flyout-badge" [class]="entry.badge.badgeClass">
-                <span class="material-icons">{{ entry.badge.icon }}</span>{{ entry.badge.label }}
+                <span class="material-icons">{{ entry.badge.icon }}</span
+                >{{ entry.badge.label }}
               </span>
               <span class="flyout-section-entry-title">{{ entry.title }}</span>
             </div>
@@ -102,6 +103,5 @@
         }
       </div>
     }
-
   </aside>
 }

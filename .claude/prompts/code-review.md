@@ -47,14 +47,14 @@ Review the changes on the current branch against `main`. Evaluate each area belo
 
 End with a concise summary table:
 
-| Area | Verdict | Notes |
-|------|---------|-------|
-| Correctness | | |
-| Architecture | | |
-| Type Safety | | |
-| Tests | | |
-| Wire Compat | | |
-| Style | | |
-| Security | | |
+| Area         | Verdict | Notes |
+| ------------ | ------- | ----- |
+| Correctness  |         |       |
+| Architecture |         |       |
+| Type Safety  |         |       |
+| Tests        |         |       |
+| Wire Compat  |         |       |
+| Style        |         |       |
+| Security     |         |       |
 
 Then list any blocking issues and suggested follow-ups.
