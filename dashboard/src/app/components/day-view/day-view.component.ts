@@ -5,7 +5,7 @@ import type { EntryUiAdapter } from '../../providers/types'
 import { layoutEventsWithOverflow, type CalendarItem } from '../calendar-layout'
 
 export const HOUR_START = 0
-export const HOUR_END   = 23
+export const HOUR_END = 23
 
 const DEFAULT_SCROLL_HOUR = 6.5 // 06:30
 const ALLDAY_BAR_HEIGHT = 26
@@ -38,7 +38,10 @@ export class DayViewComponent implements AfterViewInit {
 
   protected formatDayHeader(dateStr: string): string {
     return new Date(dateStr + 'T12:00:00').toLocaleDateString('en-GB', {
-      weekday: 'long', day: 'numeric', month: 'long', year: 'numeric',
+      weekday: 'long',
+      day: 'numeric',
+      month: 'long',
+      year: 'numeric',
     })
   }
 
@@ -99,7 +102,7 @@ export class DayViewComponent implements AfterViewInit {
       entry => this.getTop(entry.timestamp),
       entry => this.getHeight(entry),
       22,
-      5,
+      5
     )
   }
 
@@ -113,8 +116,12 @@ export class DayViewComponent implements AfterViewInit {
     }
   }
 
-  protected zoomOut(): void { this.activity.hourHeight.update(h => Math.max(32, h - 16)) }
-  protected zoomIn():  void { this.activity.hourHeight.update(h => Math.min(192, h + 16)) }
+  protected zoomOut(): void {
+    this.activity.hourHeight.update(h => Math.max(32, h - 16))
+  }
+  protected zoomIn(): void {
+    this.activity.hourHeight.update(h => Math.min(192, h + 16))
+  }
 
   protected selectEntry(entry: EntryUiAdapter): void {
     this.activity.selectedEntries.set(null)

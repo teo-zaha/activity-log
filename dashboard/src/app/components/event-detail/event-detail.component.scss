@@ -48,13 +48,31 @@
   text-transform: uppercase;
   letter-spacing: 0.5px;
 
-  .material-icons { font-size: 15px; line-height: 1; }
+  .material-icons {
+    font-size: 15px;
+    line-height: 1;
+  }
 
-  &.badge-git     { background: var(--badge-git-bg);     color: var(--badge-git-fg); }
-  &.badge-gitlab  { background: var(--badge-gitlab-bg);  color: var(--badge-gitlab-fg); }
-  &.badge-jira    { background: var(--badge-jira-bg);    color: var(--badge-jira-fg); }
-  &.badge-outlook { background: var(--badge-outlook-bg); color: var(--badge-outlook-fg); }
-  &.badge-system  { background: var(--badge-system-bg);  color: var(--badge-system-fg); }
+  &.badge-git {
+    background: var(--badge-git-bg);
+    color: var(--badge-git-fg);
+  }
+  &.badge-gitlab {
+    background: var(--badge-gitlab-bg);
+    color: var(--badge-gitlab-fg);
+  }
+  &.badge-jira {
+    background: var(--badge-jira-bg);
+    color: var(--badge-jira-fg);
+  }
+  &.badge-outlook {
+    background: var(--badge-outlook-bg);
+    color: var(--badge-outlook-fg);
+  }
+  &.badge-system {
+    background: var(--badge-system-bg);
+    color: var(--badge-system-fg);
+  }
 }
 
 .flyout-close {
@@ -68,14 +86,18 @@
   color: var(--text-tertiary);
   cursor: pointer;
   border-radius: 6px;
-  transition: background 0.15s ease, color 0.15s ease;
+  transition:
+    background 0.15s ease,
+    color 0.15s ease;
 
   &:hover {
     background: var(--surface-hover);
     color: var(--text-primary);
   }
 
-  .material-icons { font-size: 18px; }
+  .material-icons {
+    font-size: 18px;
+  }
 }
 
 // ── Body ─────────────────────────────────────────────────────────────────────
@@ -103,7 +125,10 @@
   color: var(--text-secondary);
   margin: 0 0 24px;
 
-  .material-icons { font-size: 15px; color: var(--text-tertiary); }
+  .material-icons {
+    font-size: 15px;
+    color: var(--text-tertiary);
+  }
 }
 
 // ── Sections (merged git/lab + overflow) ─────────────────────────────────────
@@ -118,8 +143,13 @@
   padding-bottom: 20px;
   border-bottom: 1px solid var(--border-subtle);
 
-  & + .flyout-section { padding-top: 20px; }
-  &:last-child { border-bottom: none; padding-bottom: 0; }
+  & + .flyout-section {
+    padding-top: 20px;
+  }
+  &:last-child {
+    border-bottom: none;
+    padding-bottom: 0;
+  }
 }
 
 .flyout-section-header {
@@ -128,7 +158,9 @@
   gap: 10px;
   margin-bottom: 6px;
 
-  .flyout-badge { flex-shrink: 0; }
+  .flyout-badge {
+    flex-shrink: 0;
+  }
 }
 
 .flyout-section-entry-title {
@@ -178,11 +210,19 @@
 // ── Animations ────────────────────────────────────────────────────────────────
 
 @keyframes slideIn {
-  from { transform: translateX(100%); }
-  to   { transform: translateX(0); }
+  from {
+    transform: translateX(100%);
+  }
+  to {
+    transform: translateX(0);
+  }
 }
 
 @keyframes fadeIn {
-  from { opacity: 0; }
-  to   { opacity: 1; }
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
 }

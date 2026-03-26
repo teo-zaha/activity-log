@@ -24,7 +24,7 @@ export function layoutEvents<T>(
   entries: T[],
   getTop: (e: T) => number,
   getHeight: (e: T) => number,
-  minHeight = 22,
+  minHeight = 22
 ): LayoutItem<T>[] {
   if (!entries.length) return []
 
@@ -87,7 +87,7 @@ export function layoutEventsWithOverflow<T>(
   getTop: (e: T) => number,
   getHeight: (e: T) => number,
   minHeight = 22,
-  maxVisible = 4,
+  maxVisible = 4
 ): CalendarItem<T>[] {
   if (!entries.length) return []
 
@@ -141,7 +141,7 @@ export function layoutEventsWithOverflow<T>(
         }
       } else {
         const sorted = [...cluster].sort((a, b) => all[a].col - all[b].col)
-        const visibleIdxs  = sorted.filter(j => all[j].col < caps - 1)
+        const visibleIdxs = sorted.filter(j => all[j].col < caps - 1)
         const overflowIdxs = sorted.filter(j => all[j].col >= caps - 1)
 
         for (const j of visibleIdxs) {
@@ -149,8 +149,8 @@ export function layoutEventsWithOverflow<T>(
         }
 
         const overflowEntries = overflowIdxs.map(j => all[j].entry)
-        const tops   = overflowIdxs.map(j => all[j].top)
-        const ends   = overflowIdxs.map(j => all[j].end)
+        const tops = overflowIdxs.map(j => all[j].top)
+        const ends = overflowIdxs.map(j => all[j].end)
         result.push({
           kind: 'overflow',
           entries: overflowEntries,

@@ -1,5 +1,4 @@
 <div class="day-view">
-
   <!-- Navigation -->
   <div class="cal-nav">
     <h2 class="cal-title" [class.is-today]="isToday(activity.selectedDay())">
@@ -18,8 +17,14 @@
       <button class="nav-btn" (click)="zoomOut()" title="Zoom out">
         <span class="material-icons">remove</span>
       </button>
-      <button class="nav-btn zoom-reset-btn" (click)="activity.hourHeight.set(64)" title="Reset zoom"
-        [class.at-default]="activity.hourHeight() === 64">1h</button>
+      <button
+        class="nav-btn zoom-reset-btn"
+        (click)="activity.hourHeight.set(64)"
+        title="Reset zoom"
+        [class.at-default]="activity.hourHeight() === 64"
+      >
+        1h
+      </button>
       <button class="nav-btn" (click)="zoomIn()" title="Zoom in">
         <span class="material-icons">add</span>
       </button>
@@ -52,10 +57,13 @@
     }
 
     <div class="cal-grid" [style.height.px]="gridHeight()">
-
       <!-- Hour labels + lines -->
       @for (hour of hours; track hour) {
-        <div class="hour-slot" [style.top.px]="hour * activity.hourHeight()" [style.height.px]="activity.hourHeight()">
+        <div
+          class="hour-slot"
+          [style.top.px]="hour * activity.hourHeight()"
+          [style.height.px]="activity.hourHeight()"
+        >
           <span class="hour-label">{{ formatHour(hour) }}</span>
           <div class="hour-line"></div>
         </div>
@@ -84,13 +92,12 @@
               (click)="selectEntry(item.entry)"
               [title]="item.entry.title"
             >
-              <span class="material-icons cal-event-icon">{{ item.entry.entryIcon }}</span><span class="cal-event-title">{{ item.entry.title }}</span>
+              <span class="material-icons cal-event-icon">{{ item.entry.entryIcon }}</span
+              ><span class="cal-event-title">{{ item.entry.title }}</span>
             </div>
           }
         }
       </div>
-
     </div>
   </div>
-
 </div>

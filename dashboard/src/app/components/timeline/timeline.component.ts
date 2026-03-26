@@ -16,7 +16,9 @@ export class TimelineComponent {
   protected searchValue = ''
 
   constructor() {
-    effect(() => { this.searchValue = this.activity.searchQuery() })
+    effect(() => {
+      this.searchValue = this.activity.searchQuery()
+    })
   }
 
   protected onSearch(value: string): void {
@@ -30,7 +32,10 @@ export class TimelineComponent {
 
   protected formatDate(dateStr: string): string {
     return new Date(dateStr + 'T12:00:00Z').toLocaleDateString('en-GB', {
-      weekday: 'long', year: 'numeric', month: 'long', day: 'numeric',
+      weekday: 'long',
+      year: 'numeric',
+      month: 'long',
+      day: 'numeric',
     })
   }
 
