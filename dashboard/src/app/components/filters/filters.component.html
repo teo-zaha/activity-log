@@ -2,17 +2,53 @@
   <div class="sidebar-section">
     <span class="section-label">View</span>
     <div class="view-toggle">
-      <button class="view-btn" [class.active]="activity.currentView() === 'list'" (click)="activity.setView('list')"><mat-icon>view_list</mat-icon>List</button>
-      <button class="view-btn" [class.active]="activity.currentView() === 'day'" (click)="activity.setView('day')"><mat-icon>calendar_today</mat-icon>Day</button>
-      <button class="view-btn" [class.active]="activity.currentView() === 'workweek'" (click)="activity.setView('workweek')"><mat-icon>view_week</mat-icon>Work Week</button>
-      <button class="view-btn" [class.active]="activity.currentView() === 'week'" (click)="activity.setView('week')"><mat-icon>calendar_view_week</mat-icon>Week</button>
+      <button
+        class="view-btn"
+        [class.active]="activity.currentView() === 'list'"
+        (click)="activity.setView('list')"
+      >
+        <mat-icon>view_list</mat-icon>List
+      </button>
+      <button
+        class="view-btn"
+        [class.active]="activity.currentView() === 'day'"
+        (click)="activity.setView('day')"
+      >
+        <mat-icon>calendar_today</mat-icon>Day
+      </button>
+      <button
+        class="view-btn"
+        [class.active]="activity.currentView() === 'workweek'"
+        (click)="activity.setView('workweek')"
+      >
+        <mat-icon>view_week</mat-icon>Work Week
+      </button>
+      <button
+        class="view-btn"
+        [class.active]="activity.currentView() === 'week'"
+        (click)="activity.setView('week')"
+      >
+        <mat-icon>calendar_view_week</mat-icon>Week
+      </button>
     </div>
   </div>
 
   <div class="sidebar-section">
-    <span class="section-label">Sources</span>
+    <div class="section-header">
+      <span class="section-label">Sources</span>
+      <button
+        class="toggle-unavailable-btn"
+        (click)="activity.toggleHideUnavailable()"
+        [matTooltip]="
+          activity.hideUnavailable() ? 'Show unavailable sources' : 'Hide unavailable sources'
+        "
+        matTooltipPosition="above"
+      >
+        <mat-icon>{{ activity.hideUnavailable() ? 'visibility_off' : 'visibility' }}</mat-icon>
+      </button>
+    </div>
     <div class="source-chips">
-      @for (provider of activity.providers(); track provider.info.id) {
+      @for (provider of activity.visibleProviders(); track provider.info.id) {
         <span
           class="filter-chip-wrap"
           [matTooltip]="provider.tooltip"
