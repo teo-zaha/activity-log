@@ -14,6 +14,7 @@ import type { DayGroup } from '../models/day-group'
 import type { ExportedActivityLog } from '../models/exported-activity-log'
 import { createEntryAdapter, getProviderAdapter } from '../providers/provider-adapter'
 import type { EntryUiAdapter } from '../providers/types'
+import { persistedBooleanSignal } from '../utils/persisted-signal'
 import type { ProviderViewModel, ViewMode } from './types'
 
 @Injectable({ providedIn: 'root' })
@@ -23,6 +24,7 @@ export class ActivityService {
   readonly allEntries = signal<ActivityEntry[]>([])
   readonly allEntryAdapters = computed(() => this.allEntries().map(createEntryAdapter))
   readonly providerInfo = signal<ProviderInfo[]>([])
+  readonly hideUnavailable = persistedBooleanSignal('hideUnavailable')
   readonly providers = computed<ProviderViewModel[]>(() =>
     this.providerInfo().map(info => {
       const adapter = getProviderAdapter(info.id)
@@ -36,6 +38,10 @@ export class ActivityService {
       }
     })
   )
+  readonly visibleProviders = computed(() => {
+    const all = this.providers()
+    return this.hideUnavailable() ? all.filter(p => p.info.usable) : all
+  })
   readonly summary = signal<CollectedActivitySummary | null>(null)
   readonly sourceCounts = computed<Map<Source, number>>(() => {
     const s = this.summary()
@@ -158,6 +164,10 @@ export class ActivityService {
   setView(view: ViewMode): void {
     this.currentView.set(view)
     this.searchQuery.set('')
+  }
+
+  toggleHideUnavailable(): void {
+    this.hideUnavailable.update(v => !v)
   }
 
   toggleSource(source: Source): void {
