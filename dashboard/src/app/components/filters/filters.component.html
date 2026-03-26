@@ -12,17 +12,25 @@
   <div class="sidebar-section">
     <span class="section-label">Sources</span>
     <div class="source-chips">
-      @for (src of sources; track src.id) {
-        <button
-          class="filter-chip"
-          [class.active]="isActive(src.id)"
-          [attr.data-src]="src.id"
-          (click)="activity.toggleSource(src.id)"
+      @for (provider of activity.providers(); track provider.info.id) {
+        <span
+          class="filter-chip-wrap"
+          [matTooltip]="provider.tooltip"
+          matTooltipPosition="above"
           (dblclick)="activity.isolateSource(src.id)"
         >
-          <mat-icon>{{ src.icon }}</mat-icon>
-          {{ src.label }}
-        </button>
+          <button
+            class="filter-chip"
+            [class.active]="isActive(provider.info.id)"
+            [class.degraded]="provider.info.status === 'degraded'"
+            [attr.data-src]="provider.chipKey"
+            [disabled]="!provider.info.usable"
+            (click)="activity.toggleSource(provider.info.id)"
+          >
+            <mat-icon>{{ provider.icon }}</mat-icon>
+            {{ provider.label }}
+          </button>
+        </span>
       }
     </div>
   </div>

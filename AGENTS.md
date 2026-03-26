@@ -8,7 +8,7 @@ This file defines the working rules and architecture expectations for agents edi
 
 - `core/`: shared Rust library with models, collectors, cache, merge logic, markdown export, and TypeScript generation
 - `api/`: Rocket HTTP API
-- `cli/`: Rust CLI for collection and TypeScript generation
+- `cli/`: Rust CLI package containing the user-facing collection binary and the TypeScript generator binary
 - `dashboard/`: Angular application that consumes generated backend DTOs
 
 The backend contract is owned by Rust. The frontend consumes generated DTOs and should not redefine backend models by hand.
@@ -36,11 +36,11 @@ Routes:
 
 ### CLI
 
-- `cli/src/main.rs`: argument parsing, collection execution, TypeScript generation
+- `cli/src/main.rs`: argument parsing and collection execution
 
 Important behavior:
 
-- `generate-ts` is the explicit sync point for Angular contract files
+- `cargo run -p cli --bin generate-ts --` is the explicit sync point for Angular contract files
 - `api` and `cli` must use `core` for all shared logic
 
 ### Angular

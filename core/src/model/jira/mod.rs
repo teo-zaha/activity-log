@@ -1,6 +1,6 @@
+pub(crate) mod jira_changelog;
 pub mod jira_entry;
 pub mod jira_entry_type;
-pub(crate) mod jira_changelog;
 pub(crate) mod jira_history;
 pub(crate) mod jira_history_item;
 pub(crate) mod jira_issue;

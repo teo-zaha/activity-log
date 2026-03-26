@@ -8,12 +8,15 @@ pub mod system;
 
 pub use activity::{
     activity_entry::ActivityEntry, activity_log::ActivityLog, activity_log_meta::ActivityLogMeta,
-    collected_activity::CollectedActivity, merge_result::MergeResult,
+    collected_activity::CollectedActivity, collected_activity_summary::CollectedActivitySummary,
+    merge_result::MergeResult,
 };
 pub use common::{
     collect_options::CollectOptions, collect_request::CollectRequest,
     collecting_response::CollectingResponse, error_response::ErrorResponse,
-    output_format::OutputFormat, range_preset::RangePreset, source::Source,
+    output_format::OutputFormat, provider_info::ProviderInfo, provider_status::ProviderStatus,
+    providers_response::ProvidersResponse, range_preset::RangePreset, source::Source,
+    supported_os::SupportedOs,
 };
 pub use git::git_entry::GitEntry;
 pub use gitlab::{gitlab_entry::GitLabEntry, gitlab_entry_type::GitLabType};

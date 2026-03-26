@@ -1,6 +1,4 @@
-use super::{
-    map_jira_issues,
-};
+use super::map_jira_issues;
 use crate::model::{
     JiraEntryType,
     jira::{

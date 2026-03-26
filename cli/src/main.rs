@@ -4,14 +4,17 @@ use std::{
 };
 
 use activity_log_core::{
-    collect_activity_detailed,
-    model::{CollectOptions, OutputFormat, RangePreset},
-    ts::activity_typescript,
+    collect_activity_detailed_with_provider_runtimes,
+    model::{CollectOptions, CollectedActivity, OutputFormat, ProviderInfo, RangePreset, Source},
+    provider::inspect_provider_runtimes,
     utils::{days_ago, ensure_valid_date, to_markdown, today},
 };
 use anyhow::{Result, anyhow};
-use clap::{Parser, Subcommand};
+use clap::Parser;
 use dotenvy::dotenv;
+use strum::IntoEnumIterator;
+
+mod generate_ts;
 
 #[derive(Debug, Parser)]
 #[command(author, version, about)]
@@ -28,16 +31,6 @@ struct Cli {
     git_dirs: Option<Vec<PathBuf>>,
     #[arg(long, default_value = "json")]
     format: String,
-    #[command(subcommand)]
-    command: Option<Commands>,
-}
-
-#[derive(Debug, Subcommand)]
-enum Commands {
-    GenerateTs {
-        #[arg(long, default_value = "dashboard/src/app/generated/activity.ts")]
-        out: PathBuf,
-    },
 }
 
 #[tokio::main]
@@ -52,11 +45,7 @@ async fn main() {
 
 async fn run() -> Result<()> {
     let cli = Cli::parse();
-
-    match cli.command {
-        Some(Commands::GenerateTs { out }) => generate_ts(&out),
-        None => collect(cli).await,
-    }
+    collect(cli).await
 }
 
 async fn collect(cli: Cli) -> Result<()> {
@@ -68,26 +57,18 @@ async fn collect(cli: Cli) -> Result<()> {
         options.since, options.until
     );
 
-    let collected = collect_activity_detailed(options.clone()).await?;
-    println!(
-        "  ✓ git     — {} commits ({} merged with gitlab)",
-        collected.git_entries.len(),
-        collected.merged_count
-    );
-    println!(
-        "  ✓ gitlab  — {} events ({} push events merged into git)",
-        collected.gitlab_entries.len(),
-        collected.merged_count
-    );
-    println!("  ✓ jira    — {} issues", collected.jira_entries.len());
-    println!(
-        "  ✓ outlook — {} calendar events",
-        collected.outlook_entries.len()
-    );
-    println!(
-        "  ✓ system  — {} power events",
-        collected.system_entries.len()
-    );
+    let provider_runtimes = inspect_provider_runtimes().await;
+    let provider_info = provider_runtimes
+        .iter()
+        .map(|runtime| runtime.info().clone())
+        .collect::<Vec<_>>();
+    let collected =
+        collect_activity_detailed_with_provider_runtimes(options.clone(), &provider_runtimes)
+            .await?;
+
+    for line in provider_summary_lines(&provider_info, &collected) {
+        println!("{line}");
+    }
 
     let content = match format {
         OutputFormat::Json => serde_json::to_string_pretty(&collected.log)?,
@@ -111,31 +92,10 @@ async fn collect(cli: Cli) -> Result<()> {
     Ok(())
 }
 
-fn generate_ts(out: &Path) -> Result<()> {
-    if let Some(parent) = out.parent() {
-        fs::create_dir_all(parent)?;
-    }
-
-    // Keep the frontend contract generation explicit so backend builds do not mutate repo files.
-    fs::write(out, activity_typescript())?;
-
-    let index_path = out
-        .parent()
-        .unwrap_or_else(|| Path::new("."))
-        .join("index.ts");
-    fs::write(index_path, "export * from './activity'\n")?;
-    println!("Generated TypeScript DTOs at {}", out.display());
-    Ok(())
-}
-
 fn parse_format(value: &str) -> Result<OutputFormat> {
-    match value.to_ascii_lowercase().as_str() {
-        "json" => Ok(OutputFormat::Json),
-        "markdown" => Ok(OutputFormat::Markdown),
-        other => Err(anyhow!(
-            "Invalid --format \"{other}\". Use json or markdown."
-        )),
-    }
+    value
+        .parse::<OutputFormat>()
+        .map_err(|_| anyhow!("Invalid --format \"{value}\". Use json or markdown."))
 }
 
 fn build_collect_options(cli: &Cli, format: &OutputFormat) -> Result<CollectOptions> {
@@ -147,7 +107,7 @@ fn build_collect_options(cli: &Cli, format: &OutputFormat) -> Result<CollectOpti
     let (since, until) = if let Some(range) = &cli.range {
         let preset = range
             .parse::<RangePreset>()
-            .map_err(|message| anyhow!(message))?;
+            .map_err(|_| anyhow!("Unknown range: \"{range}\". Use {}", valid_range_presets()))?;
         activity_log_core::utils::resolve_range(preset)
     } else {
         let since = cli.since.clone().unwrap_or_else(|| days_ago(30));
@@ -171,6 +131,43 @@ fn build_collect_options(cli: &Cli, format: &OutputFormat) -> Result<CollectOpti
         ),
         git_dirs: cli.git_dirs.clone(),
     })
+}
+
+fn valid_range_presets() -> String {
+    RangePreset::iter()
+        .map(|preset| preset.to_string())
+        .collect::<Vec<_>>()
+        .join("|")
+}
+
+fn provider_summary_lines(
+    provider_info: &[ProviderInfo],
+    collected: &CollectedActivity,
+) -> Vec<String> {
+    provider_info
+        .iter()
+        .map(|info| {
+            if !info.usable {
+                let reason = info.reason.as_deref().unwrap_or("unavailable");
+                return format!("  - {} — skipped ({reason})", info.id);
+            }
+
+            let count = collected.summary.entry_count_for_source(&info.id);
+            let detail = match info.id {
+                Source::Git => format!(
+                    " ({count} entries, {} merged with gitlab)",
+                    collected.summary.merged_count
+                ),
+                Source::Gitlab => format!(
+                    " ({count} entries, {} push events merged into git)",
+                    collected.summary.merged_count
+                ),
+                _ => format!(" ({count} entries)"),
+            };
+
+            format!("  ✓ {}{detail}", info.id)
+        })
+        .collect()
 }
 
 #[cfg(test)]

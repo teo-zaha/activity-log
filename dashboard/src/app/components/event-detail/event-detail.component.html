@@ -3,36 +3,32 @@
 
   <aside class="flyout" role="dialog">
 
-    <!-- ── Single entry ── -->
     @if (activity.selectedEntry(); as entry) {
       <div class="flyout-header">
-        @if (isMerged(entry)) {
-          <div class="flyout-badges">
-            <span class="flyout-badge badge-git"><span class="material-icons">commit</span>git</span>
-            <span class="flyout-badge badge-gitlab"><span class="material-icons">code</span>gitlab</span>
-          </div>
-        } @else {
-          <span class="flyout-badge" [class]="'badge-' + entry.source">
-            <span class="material-icons">{{ getEntryIcon(entry) }}</span>{{ entry.source }}
-          </span>
-        }
+        <div class="flyout-badges">
+          @for (badge of entry.badges; track badge.source) {
+            <span class="flyout-badge" [class]="badge.badgeClass">
+              <span class="material-icons">{{ badge.icon }}</span>{{ badge.label }}
+            </span>
+          }
+        </div>
         <button class="flyout-close" (click)="close()" aria-label="Close">
           <span class="material-icons">close</span>
         </button>
       </div>
 
       <div class="flyout-body">
-        <h2 class="flyout-title">{{ getEntryTitle(entry) }}</h2>
+        <h2 class="flyout-title">{{ entry.title }}</h2>
         <p class="flyout-time">
           <span class="material-icons">schedule</span>
           {{ formatDateTime(entry.timestamp) }}
         </p>
 
-        @if (isMerged(entry)) {
-          @for (section of getMergedSections(asMerged(entry)); track section.title) {
+        @if (entry.detailSections.length) {
+          @for (section of entry.detailSections; track section.source) {
             <div class="flyout-section">
-              <span class="flyout-section-title flyout-badge" [class]="'badge-' + section.title">
-                <span class="material-icons">{{ section.title === 'git' ? 'commit' : 'code' }}</span>
+              <span class="flyout-section-title flyout-badge" [class]="section.badgeClass">
+                <span class="material-icons">{{ section.icon }}</span>
                 {{ section.title }}
               </span>
               <div class="flyout-fields">
@@ -47,7 +43,7 @@
           }
         } @else {
           <div class="flyout-fields">
-            @for (field of getFields(entry); track field.label) {
+            @for (field of entry.detailFields; track field.label) {
               <div class="field-row">
                 <span class="field-label">{{ field.label }}</span>
                 <span class="field-value">{{ field.value }}</span>
@@ -58,7 +54,6 @@
       </div>
     }
 
-    <!-- ── Overflow (multiple entries) ── -->
     @if (activity.selectedEntries(); as entries) {
       <div class="flyout-header">
         <span class="flyout-overflow-count">Additional events ({{ entries.length }})</span>
@@ -68,22 +63,41 @@
       </div>
 
       <div class="flyout-body">
-        @for (section of getOverflowSections(entries); track $index) {
+        @for (entry of entries; track $index) {
           <div class="flyout-section">
             <div class="flyout-section-header">
-              <span class="flyout-badge" [class]="section.badgeClass">
-                <span class="material-icons">{{ section.icon }}</span>{{ section.title }}
+              <span class="flyout-badge" [class]="entry.badge.badgeClass">
+                <span class="material-icons">{{ entry.badge.icon }}</span>{{ entry.badge.label }}
               </span>
-              <span class="flyout-section-entry-title">{{ section.entryTitle }}</span>
+              <span class="flyout-section-entry-title">{{ entry.title }}</span>
             </div>
-            <div class="flyout-fields">
-              @for (field of section.fields; track field.label) {
-                <div class="field-row">
-                  <span class="field-label">{{ field.label }}</span>
-                  <span class="field-value">{{ field.value }}</span>
+            @if (entry.detailSections.length) {
+              @for (section of entry.detailSections; track section.source) {
+                <div class="flyout-section">
+                  <span class="flyout-section-title flyout-badge" [class]="section.badgeClass">
+                    <span class="material-icons">{{ section.icon }}</span>
+                    {{ section.title }}
+                  </span>
+                  <div class="flyout-fields">
+                    @for (field of section.fields; track field.label) {
+                      <div class="field-row">
+                        <span class="field-label">{{ field.label }}</span>
+                        <span class="field-value">{{ field.value }}</span>
+                      </div>
+                    }
+                  </div>
                 </div>
               }
-            </div>
+            } @else {
+              <div class="flyout-fields">
+                @for (field of entry.detailFields; track field.label) {
+                  <div class="field-row">
+                    <span class="field-label">{{ field.label }}</span>
+                    <span class="field-value">{{ field.value }}</span>
+                  </div>
+                }
+              </div>
+            }
           </div>
         }
       </div>

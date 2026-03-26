@@ -1,7 +1,10 @@
 use serde_json::json;
 
 use super::{MergeResult, format_duration, merge_git_with_gitlab, resolve_range, to_markdown};
-use crate::model::{ActivityEntry, ActivityLog, ActivityLogMeta, GitEntry, GitLabEntry, RangePreset};
+use crate::model::{
+    ActivityEntry, ActivityLog, ActivityLogMeta, CollectedActivitySummary, GitEntry, GitLabEntry,
+    RangePreset,
+};
 
 #[test]
 fn merges_git_and_gitlab_push_events() {
@@ -45,6 +48,7 @@ fn markdown_contains_expected_sections() {
             since: "2026-03-01".to_string(),
             until: "2026-03-10".to_string(),
         },
+        summary: CollectedActivitySummary::default(),
         entries: vec![ActivityEntry::Git(GitEntry::new(
             "repo".to_string(),
             "abc123".to_string(),

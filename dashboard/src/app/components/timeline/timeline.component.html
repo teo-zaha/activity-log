@@ -39,20 +39,14 @@
           <div class="entries">
             @for (entry of group.entries; track $index) {
               <div class="entry" (click)="selectEntry(entry)">
-                <div class="entry-accent" [class]="isMerged(entry) ? 'accent-gitab' : 'accent-' + entry.source"></div>
-                @if (isMerged(entry)) {
-                  <span class="badge badge-gitab">
-                    <span class="material-icons badge-icon">commit</span>git/lab
-                  </span>
-                } @else {
-                  <span class="badge" [class]="'badge-' + entry.source">
-                    <span class="material-icons badge-icon">{{ getEntryIcon(entry) }}</span>{{ entry.source }}
-                  </span>
-                }
+                <div class="entry-accent" [class]="'accent-' + entry.styleKey"></div>
+                <span class="badge" [class]="entry.badge.badgeClass">
+                  <span class="material-icons badge-icon">{{ entry.badge.icon }}</span>{{ entry.badge.label }}
+                </span>
                 <div class="entry-body">
-                  <div class="entry-title">{{ getEntryTitle(entry) }}</div>
-                  @if (getEntryMeta(entry)) {
-                    <div class="entry-meta">{{ getEntryMeta(entry) }}</div>
+                  <div class="entry-title">{{ entry.title }}</div>
+                  @if (entry.meta) {
+                    <div class="entry-meta">{{ entry.meta }}</div>
                   }
                 </div>
                 <span class="entry-time">{{ formatTime(entry.timestamp) }}</span>

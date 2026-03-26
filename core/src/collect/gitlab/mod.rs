@@ -5,12 +5,18 @@ use serde_json::{Map, Value};
 
 use crate::{
     cache::{get_cached, set_cached},
-    collect::load_required_envs,
     model::{CollectOptions, GitLabEntry, GitLabType},
+    provider::{
+        gitlab::{GITLAB_TOKEN, GITLAB_URL, GITLAB_USER},
+        provider_context::ProviderContext,
+    },
     utils::ensure_valid_date,
 };
 
-pub async fn collect_gitlab(options: &CollectOptions) -> Result<Vec<GitLabEntry>> {
+pub async fn collect_gitlab(
+    options: &CollectOptions,
+    context: &ProviderContext,
+) -> Result<Vec<GitLabEntry>> {
     ensure_valid_date(&options.since, "since")?;
     ensure_valid_date(&options.until, "until")?;
 
@@ -20,12 +26,8 @@ pub async fn collect_gitlab(options: &CollectOptions) -> Result<Vec<GitLabEntry>
         return Ok(cached);
     }
 
-    let Some(env_values) = load_required_envs("gitlab", &["GITLAB_URL", "GITLAB_TOKEN", "GITLAB_USER"]) else {
-        return Ok(Vec::new());
-    };
-    let gitlab_url = &env_values[0];
-    let gitlab_token = &env_values[1];
-    let gitlab_user = &env_values[2];
+    let (client, gitlab_url, gitlab_token) = gitlab_client_context(context)?;
+    let gitlab_user = context.require(GITLAB_USER)?;
 
     let after = NaiveDate::parse_from_str(&options.since, "%Y-%m-%d")?
         .checked_sub_days(Days::new(1))
@@ -34,7 +36,6 @@ pub async fn collect_gitlab(options: &CollectOptions) -> Result<Vec<GitLabEntry>
         .checked_add_days(Days::new(1))
         .unwrap();
 
-    let client = Client::builder().build()?;
     let mut entries = Vec::new();
     let mut page = 1;
 
@@ -49,7 +50,7 @@ pub async fn collect_gitlab(options: &CollectOptions) -> Result<Vec<GitLabEntry>
 
         let response = client
             .get(&url)
-            .header("PRIVATE-TOKEN", gitlab_token)
+            .header("PRIVATE-TOKEN", gitlab_token.as_str())
             .send()
             .await?;
 
@@ -80,11 +81,20 @@ pub async fn collect_gitlab(options: &CollectOptions) -> Result<Vec<GitLabEntry>
     Ok(entries)
 }
 
+pub(crate) fn gitlab_client_context(context: &ProviderContext) -> Result<(Client, String, String)> {
+    let gitlab_url = context.require(GITLAB_URL)?.to_string();
+    let gitlab_token = context.require(GITLAB_TOKEN)?.to_string();
+    let client = Client::builder().build()?;
+    Ok((client, gitlab_url, gitlab_token))
+}
+
 pub fn map_gitlab_event(event: &Value) -> Option<GitLabEntry> {
     let object = event.as_object()?.clone();
     let push_data = object.get("push_data").and_then(Value::as_object);
     let note = object.get("note").and_then(Value::as_object);
-    let note_position = note.and_then(|note| note.get("position")).and_then(Value::as_object);
+    let note_position = note
+        .and_then(|note| note.get("position"))
+        .and_then(Value::as_object);
     let target_type = object
         .get("target_type")
         .and_then(Value::as_str)
@@ -110,7 +120,10 @@ pub fn map_gitlab_event(event: &Value) -> Option<GitLabEntry> {
             .unwrap_or_default()
             .to_string(),
         target_type,
-        mr_iid: object.get("target_iid").and_then(Value::as_i64).map(|value| value as i32),
+        mr_iid: object
+            .get("target_iid")
+            .and_then(Value::as_i64)
+            .map(|value| value as i32),
         branch: push_data
             .and_then(|value| value.get("ref"))
             .and_then(Value::as_str)

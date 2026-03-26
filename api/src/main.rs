@@ -2,7 +2,7 @@ use activity_log_api::build_rocket;
 use dotenvy::dotenv;
 
 #[rocket::main]
-async fn main() -> Result<(), rocket::Error> {
+async fn main() -> anyhow::Result<()> {
     dotenv().ok();
 
     let port = std::env::var("PORT")
@@ -13,6 +13,7 @@ async fn main() -> Result<(), rocket::Error> {
     println!("\nRust API listening at http://localhost:{port}\n");
 
     build_rocket()
+        .await?
         .configure(rocket::Config {
             port,
             ..rocket::Config::default()

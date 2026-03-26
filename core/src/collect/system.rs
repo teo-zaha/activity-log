@@ -4,15 +4,20 @@ use anyhow::{Result, anyhow};
 use serde_json::Value;
 
 use crate::{
-    collect::log_skip,
-    model::{CollectOptions, SystemEntry, SystemEntryType, system::raw_system_event::RawSystemEvent},
+    model::{
+        CollectOptions, SystemEntry, SystemEntryType, system::raw_system_event::RawSystemEvent,
+    },
     utils::ensure_valid_date,
 };
 
 const SYSTEM_EVENTS: &[(i32, SystemEntryType, &str)] = &[
     (6005, SystemEntryType::Boot, "System started"),
     (6006, SystemEntryType::Shutdown, "System shutdown"),
-    (6008, SystemEntryType::UnexpectedShutdown, "Unexpected shutdown"),
+    (
+        6008,
+        SystemEntryType::UnexpectedShutdown,
+        "Unexpected shutdown",
+    ),
     (42, SystemEntryType::Sleep, "System entering sleep"),
     (107, SystemEntryType::Wake, "System resumed from sleep"),
 ];
@@ -23,24 +28,25 @@ const SECURITY_EVENTS: &[(i32, SystemEntryType, &str)] = &[
 ];
 
 pub fn collect_system(options: &CollectOptions) -> Result<Vec<SystemEntry>> {
-    if cfg!(not(target_os = "windows")) {
-        log_skip("system", "Windows Event Log is only available on Windows");
-        return Ok(Vec::new());
-    }
-
     ensure_valid_date(&options.since, "since")?;
     ensure_valid_date(&options.until, "until")?;
 
     let system_raw = query_log(
         "System",
-        &SYSTEM_EVENTS.iter().map(|(id, _, _)| *id).collect::<Vec<_>>(),
+        &SYSTEM_EVENTS
+            .iter()
+            .map(|(id, _, _)| *id)
+            .collect::<Vec<_>>(),
         &options.since,
         &options.until,
     )?;
 
     let security_raw = match query_log(
         "Security",
-        &SECURITY_EVENTS.iter().map(|(id, _, _)| *id).collect::<Vec<_>>(),
+        &SECURITY_EVENTS
+            .iter()
+            .map(|(id, _, _)| *id)
+            .collect::<Vec<_>>(),
         &options.since,
         &options.until,
     ) {
@@ -56,7 +62,10 @@ pub fn collect_system(options: &CollectOptions) -> Result<Vec<SystemEntry>> {
             "  [system] lock/unlock events unavailable.\n  To enable precise events, run PowerShell as admin:\n    auditpol /set /subcategory:'Other Logon/Logoff Events' /success:enable"
         );
     } else {
-        eprintln!("  [system] lock/unlock via security ({} events)", security_raw.len());
+        eprintln!(
+            "  [system] lock/unlock via security ({} events)",
+            security_raw.len()
+        );
     }
 
     let mut entries = Vec::new();
@@ -116,7 +125,10 @@ if ($events) {{ $events | ConvertTo-Json -Compress }} else {{ '[]' }}
     }
 }
 
-fn map_events(raw: &[RawSystemEvent], mapping: &[(i32, SystemEntryType, &str)]) -> Vec<SystemEntry> {
+fn map_events(
+    raw: &[RawSystemEvent],
+    mapping: &[(i32, SystemEntryType, &str)],
+) -> Vec<SystemEntry> {
     raw.iter()
         .map(|event| {
             let (_, entry_type, label) = mapping
