@@ -1,19 +1,10 @@
+<app-search-bar
+  placeholder="Search commits, MRs, tickets, meetings…"
+  [(value)]="searchValue"
+  (valueChange)="onSearch($event)"
+/>
+
 <div class="timeline-wrap">
-  <div class="search-bar">
-    <span class="material-icons search-icon">search</span>
-    <input
-      class="search-input"
-      type="text"
-      placeholder="Search commits, MRs, tickets, meetings…"
-      [(ngModel)]="searchValue"
-      (ngModelChange)="onSearch($event)"
-    />
-    @if (searchValue) {
-      <button class="search-clear" (click)="searchValue = ''; onSearch('')" aria-label="Clear">
-        <span class="material-icons">close</span>
-      </button>
-    }
-  </div>
 
   @if (activity.isLoading() && activity.groupedByDay().length === 0) {
     <div class="empty-state">
