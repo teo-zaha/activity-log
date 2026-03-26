@@ -37,19 +37,21 @@
     "verify": "pnpm run types:generate && pnpm run format:check && pnpm run rust:check && pnpm run rust:clippy && pnpm run rust:test && pnpm run dashboard:typecheck && pnpm run dashboard:build"
   },
   "dependencies": {
+    "@fontsource/inter": "^5.2.8",
     "dotenv": "^17.3.1",
     "express": "^5.2.1",
+    "material-icons": "^1.13.14",
     "minimist": "^1.2.8"
   },
   "devDependencies": {
     "@types/express": "^5.0.6",
     "@types/minimist": "^1.2.5",
     "@types/node": "^25.5.0",
-    "@typescript-eslint/eslint-plugin": "^8.57.1",
-    "@typescript-eslint/parser": "^8.57.1",
+    "@typescript-eslint/eslint-plugin": "^8.57.2",
+    "@typescript-eslint/parser": "^8.57.2",
     "concurrently": "^9.0.0",
     "cross-env": "^10.1.0",
-    "eslint": "^10.0.3",
+    "eslint": "^10.1.0",
     "eslint-config-prettier": "^10.1.8",
     "prettier": "^3.8.1",
     "tsx": "^4.21.0",
