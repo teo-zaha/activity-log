@@ -1,84 +1,79 @@
 use anyhow::{Result, anyhow};
-use chrono::{Days, NaiveDate};
+use chrono::Days;
 use reqwest::Client;
 use serde_json::{Map, Value};
 
 use crate::{
-    cache::{get_cached, set_cached},
+    cache::with_range_cache,
     model::{CollectOptions, GitLabEntry, GitLabType},
     provider::{
         gitlab::{GITLAB_TOKEN, GITLAB_URL, GITLAB_USER},
         provider_context::ProviderContext,
     },
-    utils::ensure_valid_date,
 };
 
 pub async fn collect_gitlab(
     options: &CollectOptions,
     context: &ProviderContext,
 ) -> Result<Vec<GitLabEntry>> {
-    ensure_valid_date(&options.since, "since")?;
-    ensure_valid_date(&options.until, "until")?;
+    with_range_cache(
+        "gitlab",
+        options,
+        |cached: &Vec<GitLabEntry>| {
+            eprintln!("  [gitlab] cache hit ({} events)", cached.len());
+        },
+        || async {
+            let (client, gitlab_url, gitlab_token) = gitlab_client_context(context)?;
+            let gitlab_user = context.require(GITLAB_USER)?;
 
-    let cache_key = format!("gitlab-{}-{}", options.since, options.until);
-    if let Some(cached) = get_cached::<Vec<GitLabEntry>>(&cache_key)? {
-        eprintln!("  [gitlab] cache hit ({} events)", cached.len());
-        return Ok(cached);
-    }
+            let after = options.since.checked_sub_days(Days::new(1)).unwrap();
+            let before = options.until.checked_add_days(Days::new(1)).unwrap();
 
-    let (client, gitlab_url, gitlab_token) = gitlab_client_context(context)?;
-    let gitlab_user = context.require(GITLAB_USER)?;
+            let mut entries = Vec::new();
+            let mut page = 1;
 
-    let after = NaiveDate::parse_from_str(&options.since, "%Y-%m-%d")?
-        .checked_sub_days(Days::new(1))
-        .unwrap();
-    let before = NaiveDate::parse_from_str(&options.until, "%Y-%m-%d")?
-        .checked_add_days(Days::new(1))
-        .unwrap();
+            loop {
+                let url = format!(
+                    "{}/api/v4/users/{}/events?after={}&before={}&per_page=100&page={page}",
+                    gitlab_url.trim_end_matches('/'),
+                    gitlab_user,
+                    after.format("%Y-%m-%d"),
+                    before.format("%Y-%m-%d"),
+                );
 
-    let mut entries = Vec::new();
-    let mut page = 1;
+                let response = client
+                    .get(&url)
+                    .header("PRIVATE-TOKEN", gitlab_token.as_str())
+                    .send()
+                    .await?;
 
-    loop {
-        let url = format!(
-            "{}/api/v4/users/{}/events?after={}&before={}&per_page=100&page={page}",
-            gitlab_url.trim_end_matches('/'),
-            gitlab_user,
-            after.format("%Y-%m-%d"),
-            before.format("%Y-%m-%d"),
-        );
+                if !response.status().is_success() {
+                    let status = response.status();
+                    let body = response.text().await.unwrap_or_default();
+                    return Err(anyhow!("GitLab API {status}: {body}"));
+                }
 
-        let response = client
-            .get(&url)
-            .header("PRIVATE-TOKEN", gitlab_token.as_str())
-            .send()
-            .await?;
+                let events = response.json::<Vec<Value>>().await?;
+                if events.is_empty() {
+                    break;
+                }
 
-        if !response.status().is_success() {
-            let status = response.status();
-            let body = response.text().await.unwrap_or_default();
-            return Err(anyhow!("GitLab API {status}: {body}"));
-        }
+                for event in &events {
+                    if let Some(entry) = map_gitlab_event(event) {
+                        entries.push(entry);
+                    }
+                }
 
-        let events = response.json::<Vec<Value>>().await?;
-        if events.is_empty() {
-            break;
-        }
-
-        for event in &events {
-            if let Some(entry) = map_gitlab_event(event) {
-                entries.push(entry);
+                if events.len() < 100 {
+                    break;
+                }
+                page += 1;
             }
-        }
 
-        if events.len() < 100 {
-            break;
-        }
-        page += 1;
-    }
-
-    set_cached(&cache_key, &entries)?;
-    Ok(entries)
+            Ok(entries)
+        },
+    )
+    .await
 }
 
 pub(crate) fn gitlab_client_context(context: &ProviderContext) -> Result<(Client, String, String)> {
@@ -143,7 +138,7 @@ pub fn map_gitlab_event(event: &Value) -> Option<GitLabEntry> {
         note_resolved: note
             .and_then(|value| value.get("resolved"))
             .and_then(Value::as_bool),
-        raw: Value::Object(Map::<String, Value>::from_iter(object.into_iter())),
+        raw: Value::Object(Map::<String, Value>::from_iter(object)),
     })
 }
 

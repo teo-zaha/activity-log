@@ -1,11 +1,14 @@
 use std::{
     env, fs,
+    future::Future,
     path::{Path, PathBuf},
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
 
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize, de::DeserializeOwned};
+
+use crate::model::CollectOptions;
 
 const CACHE_DIR: &str = ".cache";
 
@@ -63,6 +66,29 @@ where
     Ok(())
 }
 
+pub async fn with_range_cache<T, F, Fut, H>(
+    source: &str,
+    options: &CollectOptions,
+    on_hit: H,
+    load: F,
+) -> Result<T>
+where
+    T: Serialize + DeserializeOwned,
+    F: FnOnce() -> Fut,
+    Fut: Future<Output = Result<T>>,
+    H: FnOnce(&T),
+{
+    let cache_key = range_cache_key(source, options);
+    if let Some(cached) = get_cached::<T>(&cache_key)? {
+        on_hit(&cached);
+        return Ok(cached);
+    }
+
+    let data = load().await?;
+    set_cached(&cache_key, &data)?;
+    Ok(data)
+}
+
 fn cache_file_path(key: &str) -> PathBuf {
     let safe = key
         .chars()
@@ -72,6 +98,14 @@ fn cache_file_path(key: &str) -> PathBuf {
         })
         .collect::<String>();
     Path::new(CACHE_DIR).join(format!("{safe}.json"))
+}
+
+fn range_cache_key(source: &str, options: &CollectOptions) -> String {
+    format!(
+        "{source}-{}-{}",
+        options.since.format("%Y-%m-%d"),
+        options.until.format("%Y-%m-%d")
+    )
 }
 
 fn ttl() -> Duration {

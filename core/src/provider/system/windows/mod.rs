@@ -7,14 +7,9 @@ pub enum SystemSupport {
 }
 
 pub fn check_system_support() -> SystemSupport {
-    let system_ok = check_log_access("System");
-    if let Err(err) = system_ok {
-        return SystemSupport::Unavailable(err);
-    }
-
-    match check_log_access("Security") {
+    match check_log_access("System") {
         Ok(()) => SystemSupport::Available,
-        Err(_) => SystemSupport::Degraded("Security log access unavailable".to_string()),
+        Err(err) => SystemSupport::Unavailable(err),
     }
 }
 

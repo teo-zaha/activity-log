@@ -38,17 +38,17 @@ fn registry_includes_all_builtin_providers() {
 }
 
 #[test]
-fn windows_only_providers_declare_supported_os() {
+fn outlook_and_system_declare_windows_and_macos_support() {
     let adapters = provider_registry();
-    let windows_only = adapters
+    let desktop_native = adapters
         .into_iter()
         .filter(|adapter| matches!(adapter.id(), Source::Outlook | Source::System))
         .collect::<Vec<_>>();
 
     assert!(
-        windows_only
+        desktop_native
             .iter()
-            .all(|adapter| adapter.supported_os() == &[SupportedOs::Windows])
+            .all(|adapter| adapter.supported_os() == [SupportedOs::Windows, SupportedOs::Macos])
     );
 }
 
@@ -83,7 +83,11 @@ impl ProviderAdapter for TestProvider {
         self.requirements
     }
 
-    fn startup_check(&self, _context: ProviderContext) -> BoxFuture<'_, ProviderCheckResult> {
+    fn startup_check(
+        &self,
+        _current_os: SupportedOs,
+        _context: ProviderContext,
+    ) -> BoxFuture<'_, ProviderCheckResult> {
         self.calls.fetch_add(1, Ordering::SeqCst);
         let result = self.startup_result.clone();
         Box::pin(async move { result })
@@ -91,6 +95,7 @@ impl ProviderAdapter for TestProvider {
 
     fn collect(
         &self,
+        _current_os: SupportedOs,
         _options: CollectOptions,
         _context: ProviderContext,
     ) -> BoxFuture<'_, anyhow::Result<ProviderCollection>> {

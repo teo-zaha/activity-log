@@ -14,9 +14,14 @@ pub trait ProviderAdapter: Send + Sync {
     fn config_requirements(&self) -> &'static [ProviderConfigKey] {
         &[]
     }
-    fn startup_check(&self, context: ProviderContext) -> BoxFuture<'_, ProviderCheckResult>;
+    fn startup_check(
+        &self,
+        current_os: SupportedOs,
+        context: ProviderContext,
+    ) -> BoxFuture<'_, ProviderCheckResult>;
     fn collect(
         &self,
+        current_os: SupportedOs,
         options: CollectOptions,
         context: ProviderContext,
     ) -> BoxFuture<'_, anyhow::Result<ProviderCollection>>;

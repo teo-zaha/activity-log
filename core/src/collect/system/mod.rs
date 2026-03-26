@@ -1,0 +1,105 @@
+use anyhow::{Result, anyhow};
+use chrono::{DateTime, TimeZone, Utc};
+use serde_json::Value;
+
+use crate::model::{
+    CollectOptions, SupportedOs, SystemEntry, SystemEntryType,
+    system::raw_system_event::RawSystemEvent,
+};
+
+mod macos;
+#[cfg(test)]
+mod tests;
+mod windows;
+
+pub(crate) const WINDOWS_SYSTEM_EVENTS: &[(i32, SystemEntryType, &str)] = &[
+    (6005, SystemEntryType::Boot, "System started"),
+    (6006, SystemEntryType::Shutdown, "System shutdown"),
+    (
+        6008,
+        SystemEntryType::UnexpectedShutdown,
+        "Unexpected shutdown",
+    ),
+];
+
+pub fn collect_system(
+    options: &CollectOptions,
+    current_os: SupportedOs,
+) -> Result<Vec<SystemEntry>> {
+    match current_os {
+        SupportedOs::Windows => windows::collect_system(options),
+        SupportedOs::Macos => macos::collect_system(options),
+        SupportedOs::Linux => Err(anyhow!("System collection is not supported on this OS")),
+    }
+}
+
+pub(crate) fn parse_raw_system_events(stdout: &str) -> Result<Vec<RawSystemEvent>> {
+    let stdout = stdout.trim();
+    if stdout.is_empty() || stdout == "[]" {
+        return Ok(Vec::new());
+    }
+
+    let parsed = serde_json::from_str::<Value>(stdout)?;
+    if let Some(array) = parsed.as_array() {
+        array
+            .iter()
+            .cloned()
+            .map(serde_json::from_value)
+            .collect::<Result<Vec<RawSystemEvent>, _>>()
+            .map_err(Into::into)
+    } else {
+        Ok(vec![serde_json::from_value::<RawSystemEvent>(parsed)?])
+    }
+}
+
+pub(crate) fn map_windows_events(
+    raw: &[RawSystemEvent],
+    mapping: &[(i32, SystemEntryType, &str)],
+) -> Vec<SystemEntry> {
+    raw.iter()
+        .map(|event| {
+            let (_, entry_type, label) = mapping
+                .iter()
+                .find(|(id, _, _)| *id == event.id)
+                .cloned()
+                .unwrap_or((event.id, SystemEntryType::Boot, "Unknown event"));
+
+            SystemEntry {
+                source: "system".to_string(),
+                entry_type,
+                timestamp: event.ts.clone(),
+                label: if label == "Unknown event" {
+                    format!("Event {}", event.id)
+                } else {
+                    label.to_string()
+                },
+            }
+        })
+        .collect()
+}
+
+pub(crate) fn utc_bounds(
+    since: chrono::NaiveDate,
+    until: chrono::NaiveDate,
+) -> Result<(DateTime<Utc>, DateTime<Utc>)> {
+    let start = chrono::Local
+        .from_local_datetime(
+            &since
+                .and_hms_opt(0, 0, 0)
+                .ok_or_else(|| anyhow!("invalid since date"))?,
+        )
+        .single()
+        .ok_or_else(|| anyhow!("invalid since date"))?
+        .with_timezone(&Utc);
+    let end = chrono::Local
+        .from_local_datetime(
+            &until
+                .and_hms_opt(23, 59, 59)
+                .ok_or_else(|| anyhow!("invalid until date"))?,
+        )
+        .single()
+        .ok_or_else(|| anyhow!("invalid until date"))?
+        .with_timezone(&Utc);
+
+    Ok((start, end))
+}

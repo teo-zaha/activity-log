@@ -57,7 +57,10 @@ impl ProviderRuntime {
     }
 
     pub async fn collect(&self, options: CollectOptions) -> anyhow::Result<ProviderCollection> {
-        self.adapter.collect(options, self.context.clone()).await
+        let current_os = current_os();
+        self.adapter
+            .collect(current_os, options, self.context.clone())
+            .await
     }
 }
 
@@ -98,7 +101,9 @@ async fn build_provider_info(
     } else if let Some(key) = context.first_invalid_key(adapter.config_requirements()) {
         ProviderCheckResult::unavailable(format!("{} must be a {}", key.name, key.value_type))
     } else {
-        adapter.startup_check(context.clone()).await
+        adapter
+            .startup_check(current_os.clone(), context.clone())
+            .await
     };
 
     let status = result.status;

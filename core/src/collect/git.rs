@@ -9,12 +9,11 @@ use anyhow::Result;
 use crate::{
     model::{CollectOptions, GitEntry},
     provider::{git::GIT_DIRS, provider_context::ProviderContext},
-    utils::ensure_valid_date,
 };
 
 pub fn collect_git(options: &CollectOptions, context: &ProviderContext) -> Result<Vec<GitEntry>> {
-    ensure_valid_date(&options.since, "since")?;
-    ensure_valid_date(&options.until, "until")?;
+    let since = options.since.format("%Y-%m-%d").to_string();
+    let until = options.until.format("%Y-%m-%d").to_string();
 
     let dirs = options
         .git_dirs
@@ -54,8 +53,8 @@ pub fn collect_git(options: &CollectOptions, context: &ProviderContext) -> Resul
         let log_output = Command::new("git")
             .arg("log")
             .arg("--all")
-            .arg(format!("--after={}", options.since))
-            .arg(format!("--before={}T23:59:59", options.until))
+            .arg(format!("--after={since}"))
+            .arg(format!("--before={until}T23:59:59"))
             .arg(format!("--author={author_email}"))
             .arg("--format=%H|%aI|%ae|%s|%D")
             .current_dir(&repo_path)

@@ -39,7 +39,11 @@ impl ProviderAdapter for JiraProvider {
         CONFIG_KEYS
     }
 
-    fn startup_check(&self, context: ProviderContext) -> BoxFuture<'_, ProviderCheckResult> {
+    fn startup_check(
+        &self,
+        _current_os: SupportedOs,
+        context: ProviderContext,
+    ) -> BoxFuture<'_, ProviderCheckResult> {
         Box::pin(async move {
             let (client, jira_url) = match jira_client_context(&context) {
                 Ok(values) => values,
@@ -73,6 +77,7 @@ impl ProviderAdapter for JiraProvider {
 
     fn collect(
         &self,
+        _current_os: SupportedOs,
         options: CollectOptions,
         context: ProviderContext,
     ) -> BoxFuture<'_, anyhow::Result<ProviderCollection>> {

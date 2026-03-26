@@ -8,7 +8,7 @@ use crate::model::{
 
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
 #[serde(untagged)]
-#[ts(export)]
+#[ts(export, untagged)]
 pub enum ActivityEntry {
     Git(GitEntry),
     GitLab(GitLabEntry),

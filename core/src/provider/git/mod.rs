@@ -31,7 +31,11 @@ impl ProviderAdapter for GitProvider {
         CONFIG_KEYS
     }
 
-    fn startup_check(&self, context: ProviderContext) -> BoxFuture<'_, ProviderCheckResult> {
+    fn startup_check(
+        &self,
+        _current_os: SupportedOs,
+        context: ProviderContext,
+    ) -> BoxFuture<'_, ProviderCheckResult> {
         Box::pin(async move {
             if !git_is_available() {
                 return ProviderCheckResult::unavailable("Git not installed");
@@ -48,6 +52,7 @@ impl ProviderAdapter for GitProvider {
 
     fn collect(
         &self,
+        _current_os: SupportedOs,
         options: CollectOptions,
         context: ProviderContext,
     ) -> BoxFuture<'_, anyhow::Result<ProviderCollection>> {

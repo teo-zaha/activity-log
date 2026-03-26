@@ -16,8 +16,7 @@ reqwest = { version = "0.12", default-features = false, features = ["json", "rus
 rocket = { version = "0.5", features = ["json"] }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
-serde_with = "3.12"
 strum = { version = "0.27", features = ["derive"] }
 tokio = { version = "1.48", features = ["macros", "rt-multi-thread", "sync"] }
-ts-rs = { version = "10.1", features = ["serde-compat", "chrono-impl"] }
+ts-rs = { version = "10.1", default-features = false, features = ["chrono-impl"] }
 urlencoding = "2.1"

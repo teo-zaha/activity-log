@@ -31,7 +31,11 @@ impl ProviderAdapter for GitLabProvider {
         CONFIG_KEYS
     }
 
-    fn startup_check(&self, context: ProviderContext) -> BoxFuture<'_, ProviderCheckResult> {
+    fn startup_check(
+        &self,
+        _current_os: SupportedOs,
+        context: ProviderContext,
+    ) -> BoxFuture<'_, ProviderCheckResult> {
         Box::pin(async move {
             let (client, gitlab_url, gitlab_token) = match gitlab_client_context(&context) {
                 Ok(values) => values,
@@ -62,6 +66,7 @@ impl ProviderAdapter for GitLabProvider {
 
     fn collect(
         &self,
+        _current_os: SupportedOs,
         options: CollectOptions,
         context: ProviderContext,
     ) -> BoxFuture<'_, anyhow::Result<ProviderCollection>> {

@@ -46,7 +46,6 @@ pub async fn collect_activity_detailed_with_provider_runtimes(
         provider_runtimes
             .iter()
             .filter(|runtime| runtime.usable())
-            .cloned()
             .map(|runtime| {
                 let options = options.clone();
                 async move {

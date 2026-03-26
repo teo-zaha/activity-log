@@ -9,9 +9,8 @@ use crate::{
     },
 };
 
-pub fn ensure_valid_date(value: &str, name: &str) -> Result<()> {
+pub fn parse_date(value: &str, name: &str) -> Result<NaiveDate> {
     NaiveDate::parse_from_str(value, "%Y-%m-%d")
-        .map(|_| ())
         .map_err(|_| anyhow!("Invalid date for {name}: {value:?} (expected YYYY-MM-DD)"))
 }
 
