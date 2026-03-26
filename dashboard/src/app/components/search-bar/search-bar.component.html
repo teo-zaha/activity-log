@@ -1,0 +1,17 @@
+<div class="search-dock">
+  <div class="search-field">
+    <span class="material-icons search-icon">search</span>
+    <input
+      class="search-input"
+      type="text"
+      [placeholder]="placeholder()"
+      [ngModel]="value()"
+      (ngModelChange)="value.set($event)"
+    />
+    @if (value()) {
+      <button class="search-clear" (click)="clear()" aria-label="Clear">
+        <span class="material-icons">close</span>
+      </button>
+    }
+  </div>
+</div>
