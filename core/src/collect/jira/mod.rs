@@ -3,56 +3,26 @@ use reqwest::{Client, header};
 
 use crate::{
     cache::{get_cached, set_cached},
-    collect::load_required_envs,
     model::{
         CollectOptions, JiraEntry, JiraEntryType,
-        jira::{
-            jira_issue::JiraIssue, jira_search_response::JiraSearchResponse,
-        },
+        jira::{jira_issue::JiraIssue, jira_search_response::JiraSearchResponse},
+    },
+    provider::{
+        jira::{JIRA_AUTH_TYPE, JIRA_EMAIL, JIRA_INSECURE, JIRA_TOKEN, JIRA_URL},
+        provider_context::ProviderContext,
     },
 };
 
-pub async fn collect_jira(options: &CollectOptions) -> Result<Vec<JiraEntry>> {
-    let Some(env_values) = load_required_envs("jira", &["JIRA_URL", "JIRA_EMAIL", "JIRA_TOKEN"]) else {
-        return Ok(Vec::new());
-    };
-    let jira_url = &env_values[0];
-    let jira_email = &env_values[1];
-    let jira_token = &env_values[2];
-
+pub async fn collect_jira(
+    options: &CollectOptions,
+    context: &ProviderContext,
+) -> Result<Vec<JiraEntry>> {
     let cache_key = format!("jira-{}-{}", options.since, options.until);
     if let Some(cached) = get_cached::<Vec<JiraEntry>>(&cache_key)? {
         return Ok(cached);
     }
 
-    let insecure = std::env::var("JIRA_INSECURE")
-        .map(|value| value.eq_ignore_ascii_case("true"))
-        .unwrap_or(false);
-    let auth_type = std::env::var("JIRA_AUTH_TYPE")
-        .unwrap_or_else(|_| "bearer".to_string())
-        .to_lowercase();
-
-    let mut headers = header::HeaderMap::new();
-    headers.insert(
-        header::CONTENT_TYPE,
-        header::HeaderValue::from_static("application/json"),
-    );
-
-    let auth_header = if auth_type == "basic" {
-        let credentials = format!("{jira_email}:{jira_token}");
-        format!("Basic {}", base64_encode(credentials.as_bytes()))
-    } else {
-        format!("Bearer {jira_token}")
-    };
-    headers.insert(
-        header::AUTHORIZATION,
-        header::HeaderValue::from_str(&auth_header)?,
-    );
-
-    let client = Client::builder()
-        .default_headers(headers)
-        .danger_accept_invalid_certs(insecure)
-        .build()?;
+    let (client, jira_url) = jira_client_context(context)?;
 
     let mut entries = Vec::new();
     let mut start_at = 0;
@@ -81,7 +51,11 @@ pub async fn collect_jira(options: &CollectOptions) -> Result<Vec<JiraEntry>> {
             break;
         }
 
-        entries.extend(map_jira_issues(&data.issues, &options.since, &options.until));
+        entries.extend(map_jira_issues(
+            &data.issues,
+            &options.since,
+            &options.until,
+        ));
         if data.issues.len() < max_results {
             break;
         }
@@ -90,6 +64,41 @@ pub async fn collect_jira(options: &CollectOptions) -> Result<Vec<JiraEntry>> {
 
     set_cached(&cache_key, &entries)?;
     Ok(entries)
+}
+
+pub(crate) fn jira_client_context(context: &ProviderContext) -> Result<(Client, String)> {
+    let jira_url = context.require(JIRA_URL)?.to_string();
+    let jira_email = context.require(JIRA_EMAIL)?;
+    let jira_token = context.require(JIRA_TOKEN)?;
+    let insecure = context.bool(JIRA_INSECURE);
+    let auth_type = context
+        .get(JIRA_AUTH_TYPE)
+        .unwrap_or("bearer")
+        .to_lowercase();
+
+    let mut headers = header::HeaderMap::new();
+    headers.insert(
+        header::CONTENT_TYPE,
+        header::HeaderValue::from_static("application/json"),
+    );
+
+    let auth_header = if auth_type == "basic" {
+        let credentials = format!("{jira_email}:{jira_token}");
+        format!("Basic {}", base64_encode(credentials.as_bytes()))
+    } else {
+        format!("Bearer {jira_token}")
+    };
+    headers.insert(
+        header::AUTHORIZATION,
+        header::HeaderValue::from_str(&auth_header)
+            .map_err(|_| anyhow!("Jira authentication setup failed"))?,
+    );
+
+    let client = Client::builder()
+        .default_headers(headers)
+        .danger_accept_invalid_certs(insecure)
+        .build()?;
+    Ok((client, jira_url))
 }
 
 fn map_jira_issues(issues: &[JiraIssue], since: &str, until: &str) -> Vec<JiraEntry> {

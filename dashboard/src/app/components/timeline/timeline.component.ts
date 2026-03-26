@@ -2,9 +2,7 @@ import { Component, effect, inject } from '@angular/core'
 import { FormsModule } from '@angular/forms'
 import { MatIconModule } from '@angular/material/icon'
 import { ActivityService } from '../../services/activity.service'
-import type { ActivityEntry } from '../../generated/activity'
-import { isMergedEntry } from '../../utils/activity-entry'
-import { getEntryIcon, getEntryMeta, getEntryTitle } from '../../utils/activity-presentation'
+import type { EntryUiAdapter } from '../../providers/types'
 
 @Component({
   selector: 'app-timeline',
@@ -16,9 +14,6 @@ import { getEntryIcon, getEntryMeta, getEntryTitle } from '../../utils/activity-
 export class TimelineComponent {
   protected readonly activity = inject(ActivityService)
   protected searchValue = ''
-  protected getEntryIcon = getEntryIcon
-  protected getEntryMeta = getEntryMeta
-  protected getEntryTitle = getEntryTitle
 
   constructor() {
     effect(() => { this.searchValue = this.activity.searchQuery() })
@@ -28,8 +23,9 @@ export class TimelineComponent {
     this.activity.searchQuery.set(value)
   }
 
-  protected selectEntry(e: ActivityEntry): void {
-    this.activity.selectedEntry.set(e)
+  protected selectEntry(entry: EntryUiAdapter): void {
+    this.activity.selectedEntries.set(null)
+    this.activity.selectedEntry.set(entry)
   }
 
   protected formatDate(dateStr: string): string {
@@ -41,6 +37,4 @@ export class TimelineComponent {
   protected formatTime(ts: string): string {
     return new Date(ts).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })
   }
-
-  protected isMerged = isMergedEntry
 }

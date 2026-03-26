@@ -8,8 +8,12 @@ use std::{
 };
 
 use activity_log_core::{
-    collect_activity,
-    model::{ActivityLog, CollectOptions, CollectRequest, CollectingResponse, ErrorResponse},
+    collect_activity_with_provider_runtimes,
+    model::{
+        ActivityLog, CollectOptions, CollectRequest, CollectingResponse, ErrorResponse,
+        ProviderInfo, ProvidersResponse,
+    },
+    provider::{ProviderRuntime, current_os, inspect_provider_runtimes},
     utils::{days_ago, ensure_valid_date, resolve_range, today},
 };
 use rocket::{
@@ -18,20 +22,22 @@ use rocket::{
 };
 use tokio::sync::RwLock;
 
-type CollectorFuture = Pin<Box<dyn Future<Output = anyhow::Result<ActivityLog>> + Send>>;
+type CollectorFuture = Pin<Box<dyn Future<Output = anyhow::Result<ActivityLog>> + Send + 'static>>;
 type Collector = Arc<dyn Fn(CollectOptions) -> CollectorFuture + Send + Sync>;
 
 pub struct AppState {
     cached_log: RwLock<Option<ActivityLog>>,
+    provider_info: Vec<ProviderInfo>,
     is_collecting: AtomicBool,
     // Injecting the collector keeps the HTTP layer testable without touching live integrations.
     collector: Collector,
 }
 
 impl AppState {
-    pub fn new(collector: Collector) -> Self {
+    pub fn new(collector: Collector, provider_info: Vec<ProviderInfo>) -> Self {
         Self {
             cached_log: RwLock::new(None),
+            provider_info,
             is_collecting: AtomicBool::new(false),
             collector,
         }
@@ -43,6 +49,10 @@ impl AppState {
 
     async fn store(&self, log: ActivityLog) {
         *self.cached_log.write().await = Some(log);
+    }
+
+    fn provider_info(&self) -> Vec<ProviderInfo> {
+        self.provider_info.clone()
     }
 
     fn is_collecting(&self) -> bool {
@@ -73,6 +83,14 @@ async fn get_activity(state: &State<AppState>) -> status::Custom<Json<serde_json
             .unwrap(),
         ),
     )
+}
+
+#[get("/api/providers")]
+async fn get_providers(state: &State<AppState>) -> Json<ProvidersResponse> {
+    Json(ProvidersResponse {
+        current_os: current_os(),
+        providers: state.provider_info(),
+    })
 }
 
 #[post("/api/collect", format = "json", data = "<request>")]
@@ -135,7 +153,9 @@ fn resolve_collect_options(request: &CollectRequest) -> Result<CollectOptions, &
             Err("Provide either since/until or preset, not both")
         }
         (Some(since), Some(until), None) => {
-            if ensure_valid_date(since, "since").is_err() || ensure_valid_date(until, "until").is_err() {
+            if ensure_valid_date(since, "since").is_err()
+                || ensure_valid_date(until, "until").is_err()
+            {
                 return Err("since and until must be valid dates in YYYY-MM-DD format");
             }
 
@@ -159,18 +179,40 @@ fn resolve_collect_options(request: &CollectRequest) -> Result<CollectOptions, &
     }
 }
 
-fn default_collector() -> Collector {
-    Arc::new(|options| Box::pin(async move { collect_activity(options).await }))
+fn default_collector(provider_runtimes: Vec<ProviderRuntime>) -> Collector {
+    let provider_runtimes = Arc::new(provider_runtimes);
+    Arc::new(move |options| {
+        let provider_runtimes = Arc::clone(&provider_runtimes);
+        Box::pin(async move {
+            collect_activity_with_provider_runtimes(options, provider_runtimes.as_ref()).await
+        })
+    })
 }
 
-pub fn build_rocket() -> Rocket<Build> {
-    build_rocket_with(default_collector(), true)
+pub async fn build_rocket() -> anyhow::Result<Rocket<Build>> {
+    let provider_runtimes = inspect_provider_runtimes().await;
+    let provider_info = provider_runtimes
+        .iter()
+        .map(ProviderRuntime::info_owned)
+        .collect();
+    Ok(build_rocket_with(
+        default_collector(provider_runtimes),
+        provider_info,
+        true,
+    ))
 }
 
-pub fn build_rocket_with(collector: Collector, start_initial_collection: bool) -> Rocket<Build> {
+pub fn build_rocket_with(
+    collector: Collector,
+    provider_info: Vec<ProviderInfo>,
+    start_initial_collection: bool,
+) -> Rocket<Build> {
     let rocket = rocket::build()
-        .manage(AppState::new(collector))
-        .mount("/", rocket::routes![get_activity, post_collect]);
+        .manage(AppState::new(collector, provider_info))
+        .mount(
+            "/",
+            rocket::routes![get_activity, get_providers, post_collect],
+        );
 
     if start_initial_collection {
         rocket.attach(AdHoc::on_liftoff("initial-collection", |rocket| {

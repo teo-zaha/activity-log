@@ -1,32 +1,20 @@
 use serde::{Deserialize, Serialize};
+use strum::{AsRefStr, Display, EnumIter, EnumString};
 use ts_rs::TS;
 
-#[derive(Debug, Clone, Serialize, Deserialize, TS, PartialEq, Eq)]
+#[derive(
+    Debug, Clone, Serialize, Deserialize, TS, PartialEq, Eq, Display, AsRefStr, EnumString, EnumIter,
+)]
 #[serde(rename_all = "camelCase")]
 #[ts(export, rename_all = "camelCase")]
+#[strum(serialize_all = "camelCase", ascii_case_insensitive)]
 pub enum RangePreset {
     Today,
     Yesterday,
     Week,
+    #[strum(serialize = "lastweek")]
     LastWeek,
     Month,
+    #[strum(serialize = "lastmonth")]
     LastMonth,
-}
-
-impl std::str::FromStr for RangePreset {
-    type Err = String;
-
-    fn from_str(value: &str) -> Result<Self, Self::Err> {
-        match value.to_ascii_lowercase().as_str() {
-            "today" => Ok(Self::Today),
-            "yesterday" => Ok(Self::Yesterday),
-            "week" => Ok(Self::Week),
-            "lastweek" => Ok(Self::LastWeek),
-            "month" => Ok(Self::Month),
-            "lastmonth" => Ok(Self::LastMonth),
-            _ => Err(format!(
-                "Unknown range: \"{value}\". Use today|yesterday|week|lastweek|month|lastmonth"
-            )),
-        }
-    }
 }

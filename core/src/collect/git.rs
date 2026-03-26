@@ -1,6 +1,5 @@
 use std::{
-    env,
-    fs,
+    env, fs,
     path::{Path, PathBuf},
     process::Command,
 };
@@ -9,17 +8,18 @@ use anyhow::Result;
 
 use crate::{
     model::{CollectOptions, GitEntry},
+    provider::{git::GIT_DIRS, provider_context::ProviderContext},
     utils::ensure_valid_date,
 };
 
-pub fn collect_git(options: &CollectOptions) -> Result<Vec<GitEntry>> {
+pub fn collect_git(options: &CollectOptions, context: &ProviderContext) -> Result<Vec<GitEntry>> {
     ensure_valid_date(&options.since, "since")?;
     ensure_valid_date(&options.until, "until")?;
 
     let dirs = options
         .git_dirs
         .clone()
-        .or_else(resolve_git_dirs_from_env)
+        .or_else(|| resolve_git_dirs_from_context(context))
         .unwrap_or_else(discover_home_repos);
 
     let mut entries = Vec::new();
@@ -44,7 +44,9 @@ pub fn collect_git(options: &CollectOptions) -> Result<Vec<GitEntry>> {
             Ok(output) if output.status.success() => output,
             _ => continue,
         };
-        let author_email = String::from_utf8_lossy(&email_output.stdout).trim().to_string();
+        let author_email = String::from_utf8_lossy(&email_output.stdout)
+            .trim()
+            .to_string();
         if author_email.is_empty() {
             continue;
         }
@@ -94,8 +96,16 @@ pub fn collect_git(options: &CollectOptions) -> Result<Vec<GitEntry>> {
     Ok(entries)
 }
 
-fn resolve_git_dirs_from_env() -> Option<Vec<PathBuf>> {
-    env::var("GIT_DIRS").ok().and_then(|value| {
+pub(crate) fn git_is_available() -> bool {
+    Command::new("git")
+        .arg("--version")
+        .output()
+        .map(|output| output.status.success())
+        .unwrap_or(false)
+}
+
+pub(crate) fn resolve_git_dirs_from_context(context: &ProviderContext) -> Option<Vec<PathBuf>> {
+    context.get(GIT_DIRS).and_then(|value| {
         let dirs = value
             .split(',')
             .map(str::trim)
@@ -106,7 +116,7 @@ fn resolve_git_dirs_from_env() -> Option<Vec<PathBuf>> {
     })
 }
 
-fn discover_home_repos() -> Vec<PathBuf> {
+pub(crate) fn discover_home_repos() -> Vec<PathBuf> {
     env::var_os("HOME")
         .map(PathBuf::from)
         .map(|home| discover_repos(&home, 0, 4))

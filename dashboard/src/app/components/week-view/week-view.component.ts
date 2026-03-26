@@ -1,9 +1,7 @@
 import { Component, inject, AfterViewInit, ElementRef, ViewChild, computed } from '@angular/core'
 import { NgStyle } from '@angular/common'
 import { ActivityService } from '../../services/activity.service'
-import type { ActivityEntry, OutlookEntry } from '../../generated/activity'
-import { isMergedEntry } from '../../utils/activity-entry'
-import { getEntryIcon, getEntryTitle } from '../../utils/activity-presentation'
+import type { EntryUiAdapter } from '../../providers/types'
 import { layoutEventsWithOverflow, type CalendarItem } from '../calendar-layout'
 
 const HOUR_START = 0
@@ -28,9 +26,6 @@ interface MultiDayBar {
 })
 export class WeekViewComponent implements AfterViewInit {
   protected readonly activity = inject(ActivityService)
-  protected isMerged = isMergedEntry
-  protected getEntryIcon = getEntryIcon
-  protected getEntryTitle = getEntryTitle
 
   @ViewChild('scrollEl') private scrollEl!: ElementRef<HTMLElement>
 
@@ -150,18 +145,18 @@ export class WeekViewComponent implements AfterViewInit {
 
   // ── Per-day layout ────────────────────────────────────────────────────────
 
-  protected getEntriesForDay(dateStr: string): ActivityEntry[] {
+  protected getEntriesForDay(dateStr: string): EntryUiAdapter[] {
     return this.activity.weekEntriesByDay().get(dateStr) ?? []
   }
 
-  protected getLayoutForDay(dateStr: string): CalendarItem<ActivityEntry>[] {
+  protected getLayoutForDay(dateStr: string): CalendarItem<EntryUiAdapter>[] {
     const maxVisible = this.activity.currentView() === 'workweek' ? 4 : 3
     // Exclude multi-day events — they render in the all-day banner row instead
     const entries = this.getEntriesForDay(dateStr).filter(e => !this.isMultiDayEvent(e))
     return layoutEventsWithOverflow(
       entries,
-      (e: ActivityEntry) => this.getTop(e.timestamp),
-      (e: ActivityEntry) => this.getHeight(e),
+      (entry: EntryUiAdapter) => this.getTop(entry.timestamp),
+      (entry: EntryUiAdapter) => this.getHeight(entry),
       22,
       maxVisible,
     )
@@ -183,9 +178,10 @@ export class WeekViewComponent implements AfterViewInit {
     return Math.max(0, (d.getHours() - HOUR_START) * h + (d.getMinutes() / 60) * h)
   }
 
-  protected getHeight(e: ActivityEntry): number {
-    if (e.source === 'outlook') {
-      return Math.max(20, (e.duration_minutes / 60) * this.activity.hourHeight())
+  protected getHeight(entry: EntryUiAdapter): number {
+    const durationMinutes = entry.calendarDurationMinutes
+    if (durationMinutes != null) {
+      return Math.max(20, (durationMinutes / 60) * this.activity.hourHeight())
     }
     return 20
   }
@@ -198,12 +194,12 @@ export class WeekViewComponent implements AfterViewInit {
     this.activity.setView('day')
   }
 
-  protected selectEntry(e: ActivityEntry): void {
+  protected selectEntry(entry: EntryUiAdapter): void {
     this.activity.selectedEntries.set(null)
-    this.activity.selectedEntry.set(e)
+    this.activity.selectedEntry.set(entry)
   }
 
-  protected selectOverflow(entries: ActivityEntry[]): void {
+  protected selectOverflow(entries: EntryUiAdapter[]): void {
     this.activity.selectedEntry.set(null)
     this.activity.selectedEntries.set(entries)
   }

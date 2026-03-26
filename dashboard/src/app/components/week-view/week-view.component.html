@@ -93,14 +93,14 @@
                 </div>
               } @else {
                 <div
-                  [class]="'cal-event cal-event-' + (isMerged(item.entry) ? 'gitab' : item.entry.source)"
+                  [class]="'cal-event cal-event-' + item.entry.styleKey"
                   [style.top.px]="getTop(item.entry.timestamp)"
                   [style.height.px]="getHeight(item.entry)"
                   [ngStyle]="getEventStyle(item.col, item.cols)"
                   (click)="selectEntry(item.entry)"
-                  [title]="getEntryTitle(item.entry)"
+                  [title]="item.entry.title"
                 >
-                  <span class="material-icons cal-event-icon">{{ getEntryIcon(item.entry) }}</span><span class="cal-event-title">{{ getEntryTitle(item.entry) }}</span>
+                  <span class="material-icons cal-event-icon">{{ item.entry.entryIcon }}</span><span class="cal-event-title">{{ item.entry.title }}</span>
                 </div>
               }
             }

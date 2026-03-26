@@ -47,6 +47,10 @@
   gap: 4px;
 }
 
+.filter-chip-wrap {
+  display: block;
+}
+
 .view-toggle {
   display: flex;
   flex-direction: column;
@@ -128,6 +132,17 @@
     color: var(--text-primary);
   }
 
+  &:disabled {
+    opacity: 0.55;
+    cursor: not-allowed;
+    background: var(--surface-alt);
+    color: var(--text-secondary);
+  }
+
+  &:disabled mat-icon {
+    color: inherit;
+  }
+
   &.active {
     background: color-mix(in srgb, var(--chip-color) 12%, transparent);
     border-color: color-mix(in srgb, var(--chip-color) 40%, transparent);
@@ -136,6 +151,10 @@
     mat-icon {
       color: var(--chip-color);
     }
+  }
+
+  &.degraded:not(:disabled):not(.active) {
+    border-style: dashed;
   }
 }
 

@@ -6,7 +6,7 @@ The backend is now a Rust workspace:
 
 - `core` contains shared DTOs, collectors, cache, merge logic, markdown export, and TS generation.
 - `api` exposes the Rocket API.
-- `cli` provides standalone collection and explicit TypeScript generation for Angular.
+- `cli` provides the standalone collection CLI and a separate TypeScript generator binary for Angular.
 
 The Angular app stays in `dashboard/` and now consumes generated DTOs from `dashboard/src/app/generated/`.
 

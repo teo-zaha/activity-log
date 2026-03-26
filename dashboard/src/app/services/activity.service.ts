@@ -1,53 +1,71 @@
 import { HttpClient } from '@angular/common/http'
 import { Injectable, computed, inject, signal } from '@angular/core'
 import { firstValueFrom } from 'rxjs'
-import type { ActivityEntry, ActivityLog } from '../generated/activity'
+import type {
+  ActivityEntry,
+  ActivityLog,
+  ProviderInfo,
+  ProvidersResponse,
+  Source,
+} from '../generated/activity'
 import type { DayGroup } from '../models/day-group'
 import type { ExportedActivityLog } from '../models/exported-activity-log'
-import { getEntryType } from '../utils/activity-entry'
-import { formatDuration, getEntrySearchTerms } from '../utils/activity-presentation'
-
-export type ViewMode = 'list' | 'day' | 'workweek' | 'week'
+import { createEntryAdapter, getProviderAdapter } from '../providers/provider-adapter'
+import type { EntryUiAdapter } from '../providers/types'
+import type { ProviderViewModel, ViewMode } from './types'
 
 @Injectable({ providedIn: 'root' })
 export class ActivityService {
   private readonly http = inject(HttpClient)
 
   readonly allEntries = signal<ActivityEntry[]>([])
+  readonly allEntryAdapters = computed(() => this.allEntries().map(createEntryAdapter))
+  readonly providerInfo = signal<ProviderInfo[]>([])
+  readonly providers = computed<ProviderViewModel[]>(() =>
+    this.providerInfo().map(info => {
+      const adapter = getProviderAdapter(info.id)
+      return {
+        info,
+        label: adapter.label,
+        icon: adapter.providerIcon,
+        chipKey: info.id,
+        tooltip: adapter.getStatusTooltip(info),
+      }
+    })
+  )
   readonly meta = signal<ActivityLog['meta'] | null>(null)
   readonly dateFrom = signal('')
   readonly dateTo = signal('')
   readonly searchQuery = signal('')
-  readonly activeSources = signal(new Set<string>(['git', 'gitlab', 'jira', 'outlook', 'system']))
+  readonly activeSources = signal(new Set<Source>())
   readonly isLoading = signal(false)
   readonly error = signal<string | null>(null)
 
   // View state
   readonly currentView = signal<ViewMode>('list')
   readonly selectedDay = signal<string>(this.todayStr())
-  readonly selectedEntry = signal<ActivityEntry | null>(null)
-  readonly selectedEntries = signal<ActivityEntry[] | null>(null)
+  readonly selectedEntry = signal<EntryUiAdapter | null>(null)
+  readonly selectedEntries = signal<EntryUiAdapter[] | null>(null)
   readonly hourHeight = signal(64)
 
   // ── Computed: filtered list ───────────────────────────────────────────────
 
   readonly filteredEntries = computed(() => {
-    const entries = this.allEntries()
+    const entries = this.allEntryAdapters()
     const from = this.dateFrom()
     const to = this.dateTo()
     const query = this.currentView() === 'list' ? this.searchQuery().toLowerCase() : ''
     const sources = this.activeSources()
 
-    return entries.filter(e => {
-      const ts = e.timestamp?.slice(0, 10) ?? ''
+    return entries.filter(entry => {
+      const ts = entry.timestamp.slice(0, 10)
       if (from && ts < from) return false
       if (to && ts > to) return false
-      const isMerged = e.source === 'git' && !!e.gitlabEvent
-      if (isMerged ? !sources.has('git') && !sources.has('gitlab') : !sources.has(e.source))
+      if (!entry.sources.some(source => sources.has(source))) {
         return false
+      }
       if (query) {
-        const haystack = [...getEntrySearchTerms(e), getEntryType(e)]
-          .filter(Boolean)
+        const haystack = entry.searchTerms
           .join(' ')
           .toLowerCase()
         if (!haystack.includes(query)) return false
@@ -56,12 +74,12 @@ export class ActivityService {
     })
   })
 
-  readonly groupedByDay = computed<DayGroup[]>(() => {
-    const byDay = new Map<string, ActivityEntry[]>()
-    for (const e of this.filteredEntries()) {
-      const day = e.timestamp?.slice(0, 10) ?? 'unknown'
+  readonly groupedByDay = computed<DayGroup<EntryUiAdapter>[]>(() => {
+    const byDay = new Map<string, EntryUiAdapter[]>()
+    for (const entry of this.filteredEntries()) {
+      const day = entry.timestamp.slice(0, 10)
       if (!byDay.has(day)) byDay.set(day, [])
-      byDay.get(day)!.push(e)
+      byDay.get(day)!.push(entry)
     }
     return Array.from(byDay.entries())
       .sort(([a], [b]) => b.localeCompare(a))
@@ -82,16 +100,16 @@ export class ActivityService {
   readonly workWeekDays = computed<string[]>(() => this.weekDays().slice(0, 5))
 
   readonly dayEntries = computed(() =>
-    this.filteredEntries().filter(e => e.timestamp.slice(0, 10) === this.selectedDay())
+    this.filteredEntries().filter(entry => entry.timestamp.slice(0, 10) === this.selectedDay())
   )
 
-  readonly weekEntriesByDay = computed<Map<string, ActivityEntry[]>>(() => {
+  readonly weekEntriesByDay = computed<Map<string, EntryUiAdapter[]>>(() => {
     const days = new Set(this.weekDays())
-    const map = new Map<string, ActivityEntry[]>()
+    const map = new Map<string, EntryUiAdapter[]>()
     for (const day of days) map.set(day, [])
-    for (const e of this.filteredEntries()) {
-      const day = e.timestamp.slice(0, 10)
-      if (map.has(day)) map.get(day)!.push(e)
+    for (const entry of this.filteredEntries()) {
+      const day = entry.timestamp.slice(0, 10)
+      if (map.has(day)) map.get(day)!.push(entry)
     }
     return map
   })
@@ -116,6 +134,8 @@ export class ActivityService {
 
   loadLog(log: ActivityLog): void {
     this.allEntries.set(log.entries)
+    this.selectedEntry.set(null)
+    this.selectedEntries.set(null)
     this.meta.set(log.meta)
     if (log.meta.since) this.dateFrom.set(log.meta.since.slice(0, 10))
     if (log.meta.until) this.dateTo.set(log.meta.until.slice(0, 10))
@@ -126,7 +146,8 @@ export class ActivityService {
     this.searchQuery.set('')
   }
 
-  toggleSource(source: string): void {
+  toggleSource(source: Source): void {
+    if (!this.providerInfoFor(source)?.usable) return
     const current = new Set(this.activeSources())
     if (current.has(source)) current.delete(source)
     else current.add(source)
@@ -146,6 +167,7 @@ export class ActivityService {
     this.isLoading.set(true)
     this.error.set(null)
     try {
+      await this.loadProviders()
       for (let i = 0; i < 60; i++) {
         const res = await firstValueFrom(
           this.http.get<ActivityLog | { collecting: boolean }>('/api/activity')
@@ -183,7 +205,7 @@ export class ActivityService {
   exportJson(): string {
     const payload: ExportedActivityLog = {
       meta: this.meta(),
-      entries: this.filteredEntries(),
+      entries: this.filteredEntries().map(entry => entry.entry),
     }
     return JSON.stringify(payload, null, 2)
   }
@@ -200,18 +222,13 @@ export class ActivityService {
         day: 'numeric',
       })
       md += `## ${label}\n\n`
-      for (const e of entries) {
-        const t = new Date(e.timestamp).toLocaleTimeString('en-GB', {
+      for (const entry of entries) {
+        const t = new Date(entry.timestamp).toLocaleTimeString('en-GB', {
           hour: '2-digit',
           minute: '2-digit',
         })
-        if (e.source === 'git') md += `- **[git]** \`${e.repo}\` ${e.message} (${t})\n`
-        else if (e.source === 'gitlab') md += `- **[gitlab]** ${e.type}: ${e.title || ''} (${t})\n`
-        else if (e.source === 'jira')
-          md += `- **[jira]** ${e.key}: ${e.title} [${e.status}] (${t})\n`
-        else if (e.source === 'outlook')
-          md += `- **[outlook]** ${e.title}${e.location ? ` @ ${e.location}` : ''} (${t}, ${formatDuration(e.duration_minutes)})\n`
-        else if (e.source === 'system') md += `- **[system]** ${e.label} (${t})\n`
+        const meta = entry.markdownMeta(t)
+        md += `- **[${entry.source}]** ${entry.markdownSummary()} (${meta})\n`
       }
       md += '\n'
     }
@@ -222,6 +239,18 @@ export class ActivityService {
 
   private todayStr(): string {
     return new Date().toISOString().slice(0, 10)
+  }
+
+  private async loadProviders(): Promise<void> {
+    const response = await firstValueFrom(this.http.get<ProvidersResponse>('/api/providers'))
+    this.providerInfo.set(response.providers)
+    this.activeSources.set(
+      new Set(response.providers.filter(provider => provider.usable).map(provider => provider.id))
+    )
+  }
+
+  private providerInfoFor(source: Source): ProviderInfo | undefined {
+    return this.providerInfo().find(provider => provider.id === source)
   }
 
   private mondayOf(dateStr: string): string {

@@ -1,9 +1,7 @@
 import { Component, inject, AfterViewInit, ElementRef, ViewChild, computed } from '@angular/core'
 import { NgStyle } from '@angular/common'
 import { ActivityService } from '../../services/activity.service'
-import type { ActivityEntry, OutlookEntry } from '../../generated/activity'
-import { isMergedEntry } from '../../utils/activity-entry'
-import { getEntryIcon, getEntryTitle } from '../../utils/activity-presentation'
+import type { EntryUiAdapter } from '../../providers/types'
 import { layoutEventsWithOverflow, type CalendarItem } from '../calendar-layout'
 
 export const HOUR_START = 0
@@ -22,9 +20,6 @@ const ALLDAY_BAR_GAP    = 2
 })
 export class DayViewComponent implements AfterViewInit {
   protected readonly activity = inject(ActivityService)
-  protected isMerged = isMergedEntry
-  protected getEntryIcon = getEntryIcon
-  protected getEntryTitle = getEntryTitle
 
   @ViewChild('scrollEl') private scrollEl!: ElementRef<HTMLElement>
 
@@ -57,9 +52,10 @@ export class DayViewComponent implements AfterViewInit {
     return Math.max(0, (d.getHours() - HOUR_START) * h + (d.getMinutes() / 60) * h)
   }
 
-  protected getHeight(e: ActivityEntry): number {
-    if (e.source === 'outlook') {
-      return Math.max(22, (e.duration_minutes / 60) * this.activity.hourHeight())
+  protected getHeight(entry: EntryUiAdapter): number {
+    const durationMinutes = entry.calendarDurationMinutes
+    if (durationMinutes != null) {
+      return Math.max(22, (durationMinutes / 60) * this.activity.hourHeight())
     }
     return 22
   }
@@ -97,11 +93,11 @@ export class DayViewComponent implements AfterViewInit {
     }
   }
 
-  protected dayLayout(): CalendarItem<ActivityEntry>[] {
+  protected dayLayout(): CalendarItem<EntryUiAdapter>[] {
     return layoutEventsWithOverflow(
       this.activity.dayEntries().filter(e => !this.isMultiDayEvent(e)),
-      e => this.getTop(e.timestamp),
-      e => this.getHeight(e),
+      entry => this.getTop(entry.timestamp),
+      entry => this.getHeight(entry),
       22,
       5,
     )
@@ -120,12 +116,12 @@ export class DayViewComponent implements AfterViewInit {
   protected zoomOut(): void { this.activity.hourHeight.update(h => Math.max(32, h - 16)) }
   protected zoomIn():  void { this.activity.hourHeight.update(h => Math.min(192, h + 16)) }
 
-  protected selectEntry(e: ActivityEntry): void {
+  protected selectEntry(entry: EntryUiAdapter): void {
     this.activity.selectedEntries.set(null)
-    this.activity.selectedEntry.set(e)
+    this.activity.selectedEntry.set(entry)
   }
 
-  protected selectOverflow(entries: ActivityEntry[]): void {
+  protected selectOverflow(entries: EntryUiAdapter[]): void {
     this.activity.selectedEntry.set(null)
     this.activity.selectedEntries.set(entries)
   }

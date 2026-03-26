@@ -4,17 +4,11 @@ use anyhow::{Result, anyhow};
 use serde_json::Value;
 
 use crate::{
-    collect::log_skip,
     model::{CollectOptions, OutlookEntry, outlook::raw_outlook_event::RawOutlookEvent},
     utils::ensure_valid_date,
 };
 
 pub fn collect_outlook(options: &CollectOptions) -> Result<Vec<OutlookEntry>> {
-    if cfg!(not(target_os = "windows")) {
-        log_skip("outlook", "Outlook COM automation is only available on Windows");
-        return Ok(Vec::new());
-    }
-
     ensure_valid_date(&options.since, "since")?;
     ensure_valid_date(&options.until, "until")?;
 

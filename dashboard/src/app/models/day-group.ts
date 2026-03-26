@@ -1,6 +1,4 @@
-import type { ActivityEntry } from '../generated/activity'
-
-export interface DayGroup {
+export interface DayGroup<T> {
   date: string
-  entries: ActivityEntry[]
+  entries: T[]
 }
