@@ -2,7 +2,7 @@ use anyhow::{Result, anyhow};
 use reqwest::{Client, header};
 
 use crate::{
-    cache::{get_cached, set_cached},
+    cache::with_range_cache,
     model::{
         CollectOptions, JiraEntry, JiraEntryType,
         jira::{jira_issue::JiraIssue, jira_search_response::JiraSearchResponse},
@@ -17,53 +17,53 @@ pub async fn collect_jira(
     options: &CollectOptions,
     context: &ProviderContext,
 ) -> Result<Vec<JiraEntry>> {
-    let cache_key = format!("jira-{}-{}", options.since, options.until);
-    if let Some(cached) = get_cached::<Vec<JiraEntry>>(&cache_key)? {
-        return Ok(cached);
-    }
+    let since = options.since.format("%Y-%m-%d").to_string();
+    let until = options.until.format("%Y-%m-%d").to_string();
 
-    let (client, jira_url) = jira_client_context(context)?;
+    with_range_cache("jira", options, |_| {}, || async {
+        let (client, jira_url) = jira_client_context(context)?;
 
-    let mut entries = Vec::new();
-    let mut start_at = 0;
-    let max_results = 50;
+        let mut entries = Vec::new();
+        let mut start_at = 0;
+        let max_results = 50;
 
-    loop {
-        let jql_query = format!(
-            "updatedDate >= \"{}\" AND updatedDate <= \"{}\" AND (assignee = currentUser() OR reporter = currentUser())",
-            options.since, options.until
-        );
-        let jql = urlencoding::encode(&jql_query);
-        let url = format!(
-            "{}/rest/api/2/search?jql={jql}&startAt={start_at}&maxResults={max_results}&fields=summary,status,issuetype,created,updated&expand=changelog",
-            jira_url.trim_end_matches('/')
-        );
-        let response = client.get(url).send().await?;
+        loop {
+            let jql_query = format!(
+                "updatedDate >= \"{}\" AND updatedDate <= \"{}\" AND (assignee = currentUser() OR reporter = currentUser())",
+                since, until
+            );
+            let jql = urlencoding::encode(&jql_query);
+            let url = format!(
+                "{}/rest/api/2/search?jql={jql}&startAt={start_at}&maxResults={max_results}&fields=summary,status,issuetype,created,updated&expand=changelog",
+                jira_url.trim_end_matches('/')
+            );
+            let response = client.get(url).send().await?;
 
-        if !response.status().is_success() {
-            let status = response.status();
-            let body = response.text().await.unwrap_or_default();
-            return Err(anyhow!("[jira] API error {status}: {body}"));
+            if !response.status().is_success() {
+                let status = response.status();
+                let body = response.text().await.unwrap_or_default();
+                return Err(anyhow!("[jira] API error {status}: {body}"));
+            }
+
+            let data = response.json::<JiraSearchResponse>().await?;
+            if data.issues.is_empty() {
+                break;
+            }
+
+            entries.extend(map_jira_issues(
+                &data.issues,
+                &since,
+                &until,
+            ));
+            if data.issues.len() < max_results {
+                break;
+            }
+            start_at += max_results;
         }
 
-        let data = response.json::<JiraSearchResponse>().await?;
-        if data.issues.is_empty() {
-            break;
-        }
-
-        entries.extend(map_jira_issues(
-            &data.issues,
-            &options.since,
-            &options.until,
-        ));
-        if data.issues.len() < max_results {
-            break;
-        }
-        start_at += max_results;
-    }
-
-    set_cached(&cache_key, &entries)?;
-    Ok(entries)
+        Ok(entries)
+    })
+    .await
 }
 
 pub(crate) fn jira_client_context(context: &ProviderContext) -> Result<(Client, String)> {

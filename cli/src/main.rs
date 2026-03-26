@@ -7,14 +7,12 @@ use activity_log_core::{
     collect_activity_detailed_with_provider_runtimes,
     model::{CollectOptions, CollectedActivity, OutputFormat, ProviderInfo, RangePreset, Source},
     provider::inspect_provider_runtimes,
-    utils::{days_ago, ensure_valid_date, to_markdown, today},
+    utils::{days_ago, parse_date, to_markdown, today},
 };
 use anyhow::{Result, anyhow};
 use clap::Parser;
 use dotenvy::dotenv;
 use strum::IntoEnumIterator;
-
-mod generate_ts;
 
 #[derive(Debug, Parser)]
 #[command(author, version, about)]
@@ -108,17 +106,12 @@ fn build_collect_options(cli: &Cli, format: &OutputFormat) -> Result<CollectOpti
         let preset = range
             .parse::<RangePreset>()
             .map_err(|_| anyhow!("Unknown range: \"{range}\". Use {}", valid_range_presets()))?;
-        activity_log_core::utils::resolve_range(preset)
+        let (since, until) = activity_log_core::utils::resolve_range(preset);
+        (parse_date(&since, "since")?, parse_date(&until, "until")?)
     } else {
         let since = cli.since.clone().unwrap_or_else(|| days_ago(30));
         let until = cli.until.clone().unwrap_or_else(today);
-        if cli.since.is_some() {
-            ensure_valid_date(&since, "since")?;
-        }
-        if cli.until.is_some() {
-            ensure_valid_date(&until, "until")?;
-        }
-        (since, until)
+        (parse_date(&since, "since")?, parse_date(&until, "until")?)
     };
 
     Ok(CollectOptions {

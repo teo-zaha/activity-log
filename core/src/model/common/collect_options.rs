@@ -1,9 +1,11 @@
 use std::path::PathBuf;
 
+use chrono::NaiveDate;
+
 #[derive(Debug, Clone)]
 pub struct CollectOptions {
-    pub since: String,
-    pub until: String,
+    pub since: NaiveDate,
+    pub until: NaiveDate,
     pub output: Option<String>,
     pub git_dirs: Option<Vec<PathBuf>>,
 }

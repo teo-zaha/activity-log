@@ -72,8 +72,8 @@ pub fn collect_activity_from_results(
         log: ActivityLog {
             meta: ActivityLogMeta {
                 generated: now_iso(),
-                since: options.since,
-                until: options.until,
+                since: options.since.format("%Y-%m-%d").to_string(),
+                until: options.until.format("%Y-%m-%d").to_string(),
             },
             summary,
             entries,

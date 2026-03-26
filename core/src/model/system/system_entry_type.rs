@@ -6,7 +6,7 @@ use ts_rs::TS;
     Debug, Clone, Serialize, Deserialize, TS, PartialEq, Eq, Display, AsRefStr, EnumString,
 )]
 #[serde(rename_all = "snake_case")]
-#[ts(export)]
+#[ts(export, rename_all = "snake_case")]
 #[strum(serialize_all = "snake_case", ascii_case_insensitive)]
 pub enum SystemEntryType {
     Boot,

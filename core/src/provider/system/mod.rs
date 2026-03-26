@@ -9,6 +9,7 @@ use crate::{
     },
 };
 
+pub mod macos;
 pub mod windows;
 
 pub struct SystemProvider;
@@ -19,12 +20,23 @@ impl ProviderAdapter for SystemProvider {
     }
 
     fn supported_os(&self) -> &'static [SupportedOs] {
-        &[SupportedOs::Windows]
+        &[SupportedOs::Windows, SupportedOs::Macos]
     }
 
-    fn startup_check(&self, _context: ProviderContext) -> BoxFuture<'_, ProviderCheckResult> {
+    fn startup_check(
+        &self,
+        current_os: SupportedOs,
+        _context: ProviderContext,
+    ) -> BoxFuture<'_, ProviderCheckResult> {
         Box::pin(async move {
-            let result = tokio::task::spawn_blocking(windows::check_system_support).await;
+            let result = tokio::task::spawn_blocking(move || match current_os {
+                SupportedOs::Windows => windows::check_system_support(),
+                SupportedOs::Macos => macos::check_system_support(),
+                SupportedOs::Linux => {
+                    windows::SystemSupport::Unavailable("OS not supported".to_string())
+                }
+            })
+            .await;
             match result {
                 Ok(windows::SystemSupport::Available) => ProviderCheckResult::available(),
                 Ok(windows::SystemSupport::Degraded(reason)) => {
@@ -40,15 +52,13 @@ impl ProviderAdapter for SystemProvider {
 
     fn collect(
         &self,
+        current_os: SupportedOs,
         options: CollectOptions,
         _context: ProviderContext,
     ) -> BoxFuture<'_, anyhow::Result<ProviderCollection>> {
         Box::pin(async move {
-            let result = tokio::task::spawn_blocking(move || collect_system(&options)).await;
-            let entries = match result {
-                Ok(entries) => entries?,
-                Err(err) => return Err(err.into()),
-            };
+            let entries =
+                tokio::task::spawn_blocking(move || collect_system(&options, current_os)).await??;
             Ok(ProviderCollection::System(entries))
         })
     }

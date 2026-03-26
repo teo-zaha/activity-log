@@ -6,7 +6,7 @@ use ts_rs::TS;
     Debug, Clone, Serialize, Deserialize, TS, PartialEq, Eq, Display, AsRefStr, EnumString,
 )]
 #[serde(rename_all = "lowercase")]
-#[ts(export)]
+#[ts(export, rename_all = "lowercase")]
 #[strum(serialize_all = "lowercase")]
 pub enum Source {
     Git,

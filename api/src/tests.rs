@@ -136,8 +136,8 @@ async fn post_collect_accepts_preset() {
     assert_eq!(response.status(), Status::Ok);
 
     let options = captured.lock().unwrap().clone().unwrap();
-    assert_eq!(options.since.len(), 10);
-    assert_eq!(options.until.len(), 10);
+    assert_eq!(options.since.to_string().len(), 10);
+    assert_eq!(options.until.to_string().len(), 10);
 }
 
 #[rocket::async_test]

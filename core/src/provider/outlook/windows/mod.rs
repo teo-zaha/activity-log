@@ -1,6 +1,6 @@
 use std::process::Command;
 
-pub fn check_outlook_installed() -> anyhow::Result<()> {
+pub fn check_outlook_ready() -> anyhow::Result<()> {
     let output = Command::new("powershell.exe")
         .arg("-NoProfile")
         .arg("-NonInteractive")
@@ -8,7 +8,19 @@ pub fn check_outlook_installed() -> anyhow::Result<()> {
         .arg(
             r#"
 try {
-  New-Object -ComObject Outlook.Application -ErrorAction Stop | Out-Null
+  $ol = New-Object -ComObject Outlook.Application -ErrorAction Stop
+  $ns = $ol.GetNamespace("MAPI")
+
+  $currentUser = $ns.CurrentUser
+  if ($null -eq $currentUser -or [string]::IsNullOrWhiteSpace($currentUser.Name)) {
+    throw "Outlook is not signed in"
+  }
+
+  $calendar = $ns.GetDefaultFolder(9)
+  if ($null -eq $calendar) {
+    throw "Outlook calendar unavailable"
+  }
+
   exit 0
 } catch {
   Write-Error $_

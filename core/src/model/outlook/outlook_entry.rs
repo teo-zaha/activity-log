@@ -1,8 +1,6 @@
 use serde::{Deserialize, Serialize};
-use serde_with::skip_serializing_none;
 use ts_rs::TS;
 
-#[skip_serializing_none]
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
 #[ts(export, rename_all = "camelCase")]
@@ -11,8 +9,10 @@ pub struct OutlookEntry {
     pub source: String,
     pub timestamp: String,
     pub title: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
     #[ts(optional)]
     pub location: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     #[ts(optional)]
     pub organizer: Option<String>,
     pub is_organizer: bool,

@@ -5,9 +5,11 @@ use activity_log_core::model::{
 use clap::Parser;
 use tempfile::tempdir;
 
-use crate::{
-    Cli, build_collect_options, generate_ts::generate_ts, parse_format, provider_summary_lines,
-};
+#[path = "generate_ts_support.rs"]
+mod generate_ts_support;
+
+use crate::{Cli, build_collect_options, parse_format, provider_summary_lines};
+use generate_ts_support::generate_ts;
 
 #[test]
 fn parses_cli_defaults() {

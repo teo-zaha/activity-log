@@ -1,10 +1,8 @@
 use serde::{Deserialize, Serialize};
-use serde_with::skip_serializing_none;
 use ts_rs::TS;
 
 use crate::model::gitlab::gitlab_entry::GitLabEntry;
 
-#[skip_serializing_none]
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
 #[ts(export)]
 pub struct GitEntry {
@@ -16,6 +14,7 @@ pub struct GitEntry {
     pub message: String,
     pub author: String,
     pub branch: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
     #[serde(rename = "gitlabEvent")]
     #[ts(rename = "gitlabEvent", optional)]
     pub gitlab_event: Option<GitLabEntry>,

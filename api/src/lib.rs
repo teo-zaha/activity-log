@@ -14,7 +14,7 @@ use activity_log_core::{
         ProviderInfo, ProvidersResponse,
     },
     provider::{ProviderRuntime, current_os, inspect_provider_runtimes},
-    utils::{days_ago, ensure_valid_date, resolve_range, today},
+    utils::{days_ago, parse_date, resolve_range, today},
 };
 use rocket::{
     Build, Rocket, State, fairing::AdHoc, get, http::Status, post, response::status,
@@ -153,21 +153,24 @@ fn resolve_collect_options(request: &CollectRequest) -> Result<CollectOptions, &
             Err("Provide either since/until or preset, not both")
         }
         (Some(since), Some(until), None) => {
-            if ensure_valid_date(since, "since").is_err()
-                || ensure_valid_date(until, "until").is_err()
-            {
-                return Err("since and until must be valid dates in YYYY-MM-DD format");
-            }
+            let since = parse_date(since, "since")
+                .map_err(|_| "since and until must be valid dates in YYYY-MM-DD format")?;
+            let until = parse_date(until, "until")
+                .map_err(|_| "since and until must be valid dates in YYYY-MM-DD format")?;
 
             Ok(CollectOptions {
-                since: since.clone(),
-                until: until.clone(),
+                since,
+                until,
                 output: None,
                 git_dirs: None,
             })
         }
         (None, None, Some(preset)) => {
             let (since, until) = resolve_range(preset.clone());
+            let since = parse_date(&since, "since")
+                .map_err(|_| "since and until must be valid dates in YYYY-MM-DD format")?;
+            let until = parse_date(&until, "until")
+                .map_err(|_| "since and until must be valid dates in YYYY-MM-DD format")?;
             Ok(CollectOptions {
                 since,
                 until,
@@ -227,8 +230,8 @@ pub fn build_rocket_with(
                 }
 
                 let options = CollectOptions {
-                    since: days_ago(30),
-                    until: today(),
+                    since: parse_date(&days_ago(30), "since").expect("valid default since"),
+                    until: parse_date(&today(), "until").expect("valid default until"),
                     output: None,
                     git_dirs: None,
                 };

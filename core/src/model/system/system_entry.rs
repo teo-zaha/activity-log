@@ -9,6 +9,7 @@ pub struct SystemEntry {
     #[ts(type = "\"system\"")]
     pub source: String,
     #[serde(rename = "type")]
+    #[ts(rename = "type")]
     pub entry_type: SystemEntryType,
     pub timestamp: String,
     pub label: String,
