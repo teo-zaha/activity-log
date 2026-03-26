@@ -1,9 +1,10 @@
-import { HttpClient } from '@angular/common/http'
+import { HttpClient, HttpErrorResponse } from '@angular/common/http'
 import { Injectable, computed, inject, signal } from '@angular/core'
 import { firstValueFrom } from 'rxjs'
 import type {
   ActivityEntry,
   ActivityLog,
+  ErrorResponse,
   ProviderInfo,
   ProvidersResponse,
   Source,
@@ -65,9 +66,7 @@ export class ActivityService {
         return false
       }
       if (query) {
-        const haystack = entry.searchTerms
-          .join(' ')
-          .toLowerCase()
+        const haystack = entry.searchTerms.join(' ').toLowerCase()
         if (!haystack.includes(query)) return false
       }
       return true
@@ -181,7 +180,7 @@ export class ActivityService {
       }
       this.error.set('Timed out waiting for initial collection.')
     } catch (e) {
-      this.error.set(`Failed to load: ${String(e)}`)
+      this.error.set(`Failed to load: ${this.extractErrorMessage(e)}`)
     } finally {
       this.isLoading.set(false)
     }
@@ -196,7 +195,7 @@ export class ActivityService {
       )
       this.loadLog(log)
     } catch (e) {
-      this.error.set(`Collection failed: ${String(e)}`)
+      this.error.set(`Collection failed: ${this.extractErrorMessage(e)}`)
     } finally {
       this.isLoading.set(false)
     }
@@ -251,6 +250,24 @@ export class ActivityService {
 
   private providerInfoFor(source: Source): ProviderInfo | undefined {
     return this.providerInfo().find(provider => provider.id === source)
+  }
+
+  private extractErrorMessage(e: unknown): string {
+    if (e instanceof HttpErrorResponse) {
+      const body: unknown = e.error
+      if (
+        typeof body === 'object' &&
+        body !== null &&
+        'error' in body &&
+        typeof (body as ErrorResponse).error === 'string'
+      ) {
+        return (body as ErrorResponse).error
+      }
+      if (typeof body === 'string') return body
+      return e.statusText || e.message
+    }
+    if (e instanceof Error) return e.message
+    return 'Unknown error'
   }
 
   private mondayOf(dateStr: string): string {
