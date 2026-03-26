@@ -4,6 +4,7 @@ import { firstValueFrom } from 'rxjs'
 import type {
   ActivityEntry,
   ActivityLog,
+  CollectedActivitySummary,
   ErrorResponse,
   ProviderInfo,
   ProvidersResponse,
@@ -31,9 +32,22 @@ export class ActivityService {
         icon: adapter.providerIcon,
         chipKey: info.id,
         tooltip: adapter.getStatusTooltip(info),
+        count: this.sourceCounts().get(info.id) ?? 0,
       }
     })
   )
+  readonly summary = signal<CollectedActivitySummary | null>(null)
+  readonly sourceCounts = computed<Map<Source, number>>(() => {
+    const s = this.summary()
+    if (!s) return new Map()
+    return new Map<Source, number>([
+      ['git', s.git_count],
+      ['gitlab', s.gitlab_count],
+      ['jira', s.jira_count],
+      ['outlook', s.outlook_count],
+      ['system', s.system_count],
+    ])
+  })
   readonly meta = signal<ActivityLog['meta'] | null>(null)
   readonly dateFrom = signal('')
   readonly dateTo = signal('')
@@ -135,6 +149,7 @@ export class ActivityService {
     this.allEntries.set(log.entries)
     this.selectedEntry.set(null)
     this.selectedEntries.set(null)
+    this.summary.set(log.summary)
     this.meta.set(log.meta)
     if (log.meta.since) this.dateFrom.set(log.meta.since.slice(0, 10))
     if (log.meta.until) this.dateTo.set(log.meta.until.slice(0, 10))
