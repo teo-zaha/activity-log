@@ -8,4 +8,5 @@ export interface ProviderViewModel {
   icon: string
   chipKey: Source
   tooltip: string | null
+  count: number
 }

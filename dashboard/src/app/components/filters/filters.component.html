@@ -29,6 +29,9 @@
           >
             <mat-icon>{{ provider.icon }}</mat-icon>
             {{ provider.label }}
+            @if (provider.count > 0) {
+              <span class="chip-count">{{ provider.count }}</span>
+            }
           </button>
         </span>
       }

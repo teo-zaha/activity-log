@@ -158,6 +158,18 @@
   }
 }
 
+.chip-count {
+  margin-left: auto;
+  font-size: 11px;
+  font-weight: 600;
+  min-width: 20px;
+  text-align: center;
+  padding: 0 5px;
+  border-radius: 10px;
+  background: color-mix(in srgb, currentColor 12%, transparent);
+  line-height: 18px;
+}
+
 // Per-source chip color vars
 .filter-chip[data-src='git']     { --chip-color: var(--chip-git); }
 .filter-chip[data-src='gitlab']  { --chip-color: var(--chip-gitlab); }
