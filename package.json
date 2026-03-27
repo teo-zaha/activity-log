@@ -26,6 +26,8 @@
     "dashboard:typecheck": "pnpm --dir dashboard exec tsc -p tsconfig.json --noEmit",
     "dashboard:build": "pnpm run types:generate && pnpm --dir dashboard run build",
     "dashboard:build:prod": "pnpm run types:generate && pnpm --dir dashboard exec ng build --configuration production",
+    "desktop:dev": "pnpm run types:generate && pnpm --dir desktop exec tauri dev",
+    "desktop:build": "pnpm run types:generate && pnpm --dir desktop exec tauri build",
     "dev": "concurrently \"pnpm run api:dev\" \"pnpm run dashboard:dev\" --names api,ng --prefix-colors cyan,blue",
     "rust:fmt": "cargo fmt --all",
     "rust:fmt:check": "cargo fmt --all --check",

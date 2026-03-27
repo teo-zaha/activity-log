@@ -1,0 +1,20 @@
+[package]
+name = "activity-log-desktop"
+edition.workspace = true
+version.workspace = true
+default-run = "activity-log-desktop"
+
+[lib]
+name = "activity_log_desktop"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2.5.6", features = [] }
+
+[dependencies]
+activity-log-core = { package = "core", path = "../core" }
+anyhow.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+tauri = { version = "2.10.3", features = [] }
+tokio.workspace = true

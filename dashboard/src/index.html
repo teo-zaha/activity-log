@@ -5,6 +5,32 @@
     <title>Activity Log</title>
     <base href="/" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="color-scheme" content="light dark" />
+    <script>
+      ;(() => {
+        try {
+          // Load theme on start to prevent flash
+          const theme = localStorage.getItem('theme') ?? 'light'
+          const themes = ['light', 'green', 'lilac', 'solarized', 'dim', 'dark', 'midnight']
+          const darkThemes = new Set(['dark', 'dim', 'midnight'])
+          const root = document.documentElement
+          const resolvedTheme = themes.includes(theme) ? theme : 'light'
+          const isTauri =
+            typeof window !== 'undefined' && Object.hasOwn(window, '__TAURI_INTERNALS__')
+
+          root.dataset.theme = resolvedTheme
+          root.classList.toggle('dark', darkThemes.has(resolvedTheme))
+          root.classList.toggle('tauri', isTauri)
+          root.style.colorScheme = darkThemes.has(resolvedTheme) ? 'dark' : 'light'
+        } catch {
+          const root = document.documentElement
+          root.dataset.theme = 'light'
+          root.classList.remove('dark')
+          root.classList.remove('tauri')
+          root.style.colorScheme = 'light'
+        }
+      })()
+    </script>
     <link rel="icon" type="image/svg+xml" href="favicon.svg" />
   </head>
   <body class="mat-typography">

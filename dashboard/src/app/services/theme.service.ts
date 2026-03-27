@@ -39,8 +39,20 @@ export class ThemeService {
 
   private applyTheme(t: Theme): void {
     const el = document.documentElement
+    const isDark = DARK_THEMES.includes(t)
+    const colorScheme = isDark ? 'dark' : 'light'
+
+    if (
+      el.dataset['theme'] === t &&
+      el.classList.contains('dark') === isDark &&
+      el.style.colorScheme === colorScheme
+    ) {
+      return
+    }
+
     el.dataset['theme'] = t
     // Keep html.dark in sync so existing :host-context(html.dark) selectors keep working
-    el.classList.toggle('dark', DARK_THEMES.includes(t))
+    el.classList.toggle('dark', isDark)
+    el.style.colorScheme = colorScheme
   }
 }

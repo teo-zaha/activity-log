@@ -1,101 +1,44 @@
-use std::{
-    future::Future,
-    pin::Pin,
-    sync::{
-        Arc,
-        atomic::{AtomicBool, Ordering},
-    },
-};
-
 use activity_log_core::{
-    collect_activity_with_provider_runtimes,
-    model::{
-        ActivityLog, CollectOptions, CollectRequest, CollectingResponse, ErrorResponse,
-        ProviderInfo, ProvidersResponse,
-    },
-    provider::{ProviderRuntime, current_os, inspect_provider_runtimes},
-    utils::{days_ago, parse_date, resolve_range, today},
+    model::{CollectRequest, CollectingResponse, ErrorResponse},
+    runtime::{ActivitySnapshot, CollectionResult, CollectionRuntime, resolve_collect_options},
 };
 use rocket::{
     Build, Rocket, State, fairing::AdHoc, get, http::Status, post, response::status,
     serde::json::Json,
 };
-use tokio::sync::RwLock;
-
-type CollectorFuture = Pin<Box<dyn Future<Output = anyhow::Result<ActivityLog>> + Send + 'static>>;
-type Collector = Arc<dyn Fn(CollectOptions) -> CollectorFuture + Send + Sync>;
-
-pub struct AppState {
-    cached_log: RwLock<Option<ActivityLog>>,
-    provider_info: Vec<ProviderInfo>,
-    is_collecting: AtomicBool,
-    // Injecting the collector keeps the HTTP layer testable without touching live integrations.
-    collector: Collector,
-}
-
-impl AppState {
-    pub fn new(collector: Collector, provider_info: Vec<ProviderInfo>) -> Self {
-        Self {
-            cached_log: RwLock::new(None),
-            provider_info,
-            is_collecting: AtomicBool::new(false),
-            collector,
-        }
-    }
-
-    async fn cached_log(&self) -> Option<ActivityLog> {
-        self.cached_log.read().await.clone()
-    }
-
-    async fn store(&self, log: ActivityLog) {
-        *self.cached_log.write().await = Some(log);
-    }
-
-    fn provider_info(&self) -> Vec<ProviderInfo> {
-        self.provider_info.clone()
-    }
-
-    fn is_collecting(&self) -> bool {
-        self.is_collecting.load(Ordering::SeqCst)
-    }
-}
 
 #[get("/api/activity")]
-async fn get_activity(state: &State<AppState>) -> status::Custom<Json<serde_json::Value>> {
-    // The frontend polls this endpoint on startup and expects 202 until the first collection ends.
-    if state.is_collecting() {
-        return status::Custom(
+async fn get_activity(
+    runtime: &State<CollectionRuntime>,
+) -> status::Custom<Json<serde_json::Value>> {
+    match runtime.activity_snapshot().await {
+        ActivitySnapshot::Collecting => status::Custom(
             Status::Accepted,
             Json(serde_json::to_value(CollectingResponse { collecting: true }).unwrap()),
-        );
-    }
-
-    if let Some(log) = state.cached_log().await {
-        return status::Custom(Status::Ok, Json(serde_json::to_value(log).unwrap()));
-    }
-
-    status::Custom(
-        Status::ServiceUnavailable,
-        Json(
-            serde_json::to_value(ErrorResponse {
-                error: "No data yet".to_string(),
-            })
-            .unwrap(),
         ),
-    )
+        ActivitySnapshot::Ready(log) => {
+            status::Custom(Status::Ok, Json(serde_json::to_value(log).unwrap()))
+        }
+        ActivitySnapshot::Empty => status::Custom(
+            Status::ServiceUnavailable,
+            Json(
+                serde_json::to_value(ErrorResponse {
+                    error: "No data yet".to_string(),
+                })
+                .unwrap(),
+            ),
+        ),
+    }
 }
 
 #[get("/api/providers")]
-async fn get_providers(state: &State<AppState>) -> Json<ProvidersResponse> {
-    Json(ProvidersResponse {
-        current_os: current_os(),
-        providers: state.provider_info(),
-    })
+async fn get_providers(runtime: &State<CollectionRuntime>) -> Json<serde_json::Value> {
+    Json(serde_json::to_value(runtime.providers_response()).unwrap())
 }
 
 #[post("/api/collect", format = "json", data = "<request>")]
 async fn post_collect(
-    state: &State<AppState>,
+    runtime: &State<CollectionRuntime>,
     request: Json<CollectRequest>,
 ) -> status::Custom<Json<serde_json::Value>> {
     let options = match resolve_collect_options(&request) {
@@ -103,26 +46,14 @@ async fn post_collect(
         Err(message) => return bad_request(message),
     };
 
-    if state
-        .is_collecting
-        .compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst)
-        .is_err()
-    {
-        // Reuse the same 202 contract instead of queueing overlapping full collections.
-        return status::Custom(
-            Status::Accepted,
-            Json(serde_json::to_value(CollectingResponse { collecting: true }).unwrap()),
-        );
-    }
-
-    let result = (state.collector)(options).await;
-    state.is_collecting.store(false, Ordering::SeqCst);
-
-    match result {
-        Ok(log) => {
-            state.store(log.clone()).await;
+    match runtime.collect_with_options(options).await {
+        Ok(CollectionResult::Ready(log)) => {
             status::Custom(Status::Ok, Json(serde_json::to_value(log).unwrap()))
         }
+        Ok(CollectionResult::Collecting) => status::Custom(
+            Status::Accepted,
+            Json(serde_json::to_value(CollectingResponse { collecting: true }).unwrap()),
+        ),
         Err(err) => status::Custom(
             Status::InternalServerError,
             Json(
@@ -147,101 +78,30 @@ fn bad_request(message: &str) -> status::Custom<Json<serde_json::Value>> {
     )
 }
 
-fn resolve_collect_options(request: &CollectRequest) -> Result<CollectOptions, &'static str> {
-    match (&request.since, &request.until, &request.preset) {
-        (Some(_), Some(_), Some(_)) | (Some(_), None, Some(_)) | (None, Some(_), Some(_)) => {
-            Err("Provide either since/until or preset, not both")
-        }
-        (Some(since), Some(until), None) => {
-            let since = parse_date(since, "since")
-                .map_err(|_| "since and until must be valid dates in YYYY-MM-DD format")?;
-            let until = parse_date(until, "until")
-                .map_err(|_| "since and until must be valid dates in YYYY-MM-DD format")?;
-
-            Ok(CollectOptions {
-                since,
-                until,
-                output: None,
-                git_dirs: None,
-            })
-        }
-        (None, None, Some(preset)) => {
-            let (since, until) = resolve_range(preset.clone());
-            let since = parse_date(&since, "since")
-                .map_err(|_| "since and until must be valid dates in YYYY-MM-DD format")?;
-            let until = parse_date(&until, "until")
-                .map_err(|_| "since and until must be valid dates in YYYY-MM-DD format")?;
-            Ok(CollectOptions {
-                since,
-                until,
-                output: None,
-                git_dirs: None,
-            })
-        }
-        _ => Err("Provide either since/until or preset"),
-    }
-}
-
-fn default_collector(provider_runtimes: Vec<ProviderRuntime>) -> Collector {
-    let provider_runtimes = Arc::new(provider_runtimes);
-    Arc::new(move |options| {
-        let provider_runtimes = Arc::clone(&provider_runtimes);
-        Box::pin(async move {
-            collect_activity_with_provider_runtimes(options, provider_runtimes.as_ref()).await
-        })
-    })
-}
-
 pub async fn build_rocket() -> anyhow::Result<Rocket<Build>> {
-    let provider_runtimes = inspect_provider_runtimes().await;
-    let provider_info = provider_runtimes
-        .iter()
-        .map(ProviderRuntime::info_owned)
-        .collect();
-    Ok(build_rocket_with(
-        default_collector(provider_runtimes),
-        provider_info,
-        true,
-    ))
+    let runtime = CollectionRuntime::build_default().await?;
+    Ok(build_rocket_with(runtime, true))
 }
 
 pub fn build_rocket_with(
-    collector: Collector,
-    provider_info: Vec<ProviderInfo>,
+    runtime: CollectionRuntime,
     start_initial_collection: bool,
 ) -> Rocket<Build> {
-    let rocket = rocket::build()
-        .manage(AppState::new(collector, provider_info))
-        .mount(
-            "/",
-            rocket::routes![get_activity, get_providers, post_collect],
-        );
+    let rocket = rocket::build().manage(runtime).mount(
+        "/",
+        rocket::routes![get_activity, get_providers, post_collect],
+    );
 
     if start_initial_collection {
         rocket.attach(AdHoc::on_liftoff("initial-collection", |rocket| {
             Box::pin(async move {
-                let state = rocket.state::<AppState>().expect("app state");
-                if state
-                    .is_collecting
-                    .compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst)
-                    .is_err()
+                if let Some(task) = rocket
+                    .state::<CollectionRuntime>()
+                    .expect("collection runtime")
+                    .initial_collection_task()
                 {
-                    return;
+                    tokio::spawn(task);
                 }
-
-                let options = CollectOptions {
-                    since: parse_date(&days_ago(30), "since").expect("valid default since"),
-                    until: parse_date(&today(), "until").expect("valid default until"),
-                    output: None,
-                    git_dirs: None,
-                };
-
-                match (state.collector)(options).await {
-                    Ok(log) => state.store(log).await,
-                    Err(err) => eprintln!("Initial collection failed: {err}"),
-                }
-
-                state.is_collecting.store(false, Ordering::SeqCst);
             })
         }))
     } else {

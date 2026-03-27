@@ -7,6 +7,7 @@ The backend is now a Rust workspace:
 - `core` contains shared DTOs, collectors, cache, merge logic, markdown export, and TS generation.
 - `api` exposes the Rocket API.
 - `cli` provides the standalone collection CLI and a separate TypeScript generator binary for Angular.
+- `desktop/` packages the Angular UI as a Tauri desktop app that talks to Rust commands directly.
 
 The Angular app stays in `dashboard/` and now consumes generated DTOs from `dashboard/src/app/generated/`.
 
@@ -83,7 +84,33 @@ pnpm dev
 
 ---
 
-## Option B — CLI
+## Option B — Desktop app (Tauri)
+
+The desktop app uses the same Angular UI, but swaps the transport layer from HTTP to direct Rust commands when it is running inside Tauri.
+
+### Development
+
+```bash
+pnpm desktop:dev
+```
+
+### Debug build / packaging
+
+```bash
+pnpm desktop:build
+```
+
+### Regenerate app icons from the Angular favicon
+
+```bash
+pnpm --dir dashboard exec tauri icon src/favicon.svg -o ../desktop/icons
+```
+
+This writes the platform icon set into `desktop/icons/`.
+
+---
+
+## Option C — CLI
 
 No dashboard build needed.
 
@@ -168,17 +195,19 @@ activity-log/
 │       ├── collect/           Git, GitLab, Jira, Outlook, System collectors
 │       ├── cache/             File-based TTL cache for API responses
 │       ├── model/             Shared models grouped by domain/source
+│       ├── runtime/           Shared collection runtime used by Rocket and Tauri
 │       ├── ts.rs              Angular DTO generator
 │       └── utils/             Date utilities, markdown formatter, git/gitlab merge
 ├── api/                       Rocket API crate
 ├── cli/                       Rust CLI crate
+├── desktop/                   Tauri desktop crate, config, capabilities, and icons
 ├── dashboard/
-│   └── src/app/
-│       ├── components/        header, filters, timeline, calendar views
-│       ├── generated/         Rust-generated DTOs
-│       ├── services/          ActivityService, ThemeService
-│       ├── models/            Angular-only view models
-│       └── utils/             Angular-only helper logic
+│   ├── src/app/
+│   │   ├── components/        header, filters, timeline, calendar views
+│   │   ├── generated/         Rust-generated DTOs
+│   │   ├── services/          ActivityService plus HTTP/Tauri backend transports
+│   │   ├── models/            Angular-only view models
+│   │   └── utils/             Angular-only helper logic
 ├── logs/                      Generated output (gitignored)
 ├── Cargo.toml
 ├── .env.example

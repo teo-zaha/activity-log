@@ -1,13 +1,12 @@
-import { HttpClient, HttpErrorResponse } from '@angular/common/http'
+import { HttpErrorResponse } from '@angular/common/http'
 import { Injectable, computed, inject, signal } from '@angular/core'
-import { firstValueFrom } from 'rxjs'
 import type {
   ActivityEntry,
   ActivityLog,
   CollectedActivitySummary,
+  CollectingResponse,
   ErrorResponse,
   ProviderInfo,
-  ProvidersResponse,
   Source,
 } from '../generated/activity'
 import type { DayGroup } from '../models/day-group'
@@ -15,11 +14,12 @@ import type { ExportedActivityLog } from '../models/exported-activity-log'
 import { createEntryAdapter, getProviderAdapter } from '../providers/provider-adapter'
 import type { EntryUiAdapter } from '../providers/types'
 import { persistedBooleanSignal } from '../utils/persisted-signal'
+import { ActivityBackendClient, type ActivityResponse } from './backend/backend-client'
 import type { ProviderViewModel, ViewMode } from './types'
 
 @Injectable({ providedIn: 'root' })
 export class ActivityService {
-  private readonly http = inject(HttpClient)
+  private readonly backend = inject(ActivityBackendClient)
 
   readonly allEntries = signal<ActivityEntry[]>([])
   readonly allEntryAdapters = computed(() => this.allEntries().map(createEntryAdapter))
@@ -192,15 +192,9 @@ export class ActivityService {
     this.error.set(null)
     try {
       await this.loadProviders()
-      for (let i = 0; i < 60; i++) {
-        const res = await firstValueFrom(
-          this.http.get<ActivityLog | { collecting: boolean }>('/api/activity')
-        )
-        if ('collecting' in res) {
-          await new Promise(r => setTimeout(r, 1000))
-          continue
-        }
-        this.loadLog(res)
+      const log = await this.waitForActivity()
+      if (log) {
+        this.loadLog(log)
         return
       }
       this.error.set('Timed out waiting for initial collection.')
@@ -215,10 +209,18 @@ export class ActivityService {
     this.isLoading.set(true)
     this.error.set(null)
     try {
-      const log = await firstValueFrom(
-        this.http.post<ActivityLog>('/api/collect', { since, until })
-      )
-      this.loadLog(log)
+      const response = await this.backend.collect({ since, until })
+      if (this.isCollectingResponse(response)) {
+        const log = await this.waitForActivity()
+        if (!log) {
+          this.error.set('Timed out waiting for collection.')
+          return
+        }
+        this.loadLog(log)
+        return
+      }
+
+      this.loadLog(response)
     } catch (e) {
       this.error.set(`Collection failed: ${this.extractErrorMessage(e)}`)
     } finally {
@@ -266,15 +268,32 @@ export class ActivityService {
   }
 
   private async loadProviders(): Promise<void> {
-    const response = await firstValueFrom(this.http.get<ProvidersResponse>('/api/providers'))
+    const response = await this.backend.getProviders()
     this.providerInfo.set(response.providers)
     this.activeSources.set(
       new Set(response.providers.filter(provider => provider.usable).map(provider => provider.id))
     )
   }
 
+  private async waitForActivity(): Promise<ActivityLog | null> {
+    for (let i = 0; i < 60; i++) {
+      const response = await this.backend.getActivity()
+      if (this.isCollectingResponse(response)) {
+        await new Promise(resolve => setTimeout(resolve, 1000))
+        continue
+      }
+      return response
+    }
+
+    return null
+  }
+
   private providerInfoFor(source: Source): ProviderInfo | undefined {
     return this.providerInfo().find(provider => provider.id === source)
+  }
+
+  private isCollectingResponse(response: ActivityResponse): response is CollectingResponse {
+    return 'collecting' in response
   }
 
   private extractErrorMessage(e: unknown): string {

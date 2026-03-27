@@ -1,0 +1,10 @@
+{
+  "name": "activity-log-desktop-shell",
+  "private": true,
+  "scripts": {
+    "tauri": "tauri"
+  },
+  "devDependencies": {
+    "@tauri-apps/cli": "catalog:"
+  }
+}
