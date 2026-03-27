@@ -7,9 +7,10 @@ use activity_log_core::model::{
     ActivityLog, ActivityLogMeta, CollectOptions, CollectedActivitySummary, ProviderInfo,
     ProviderStatus, Source, SupportedOs,
 };
+use activity_log_core::runtime::{CollectionRuntime, Collector, CollectorFuture};
 use rocket::{http::Status, local::asynchronous::Client};
 
-use crate::{AppState, Collector, CollectorFuture, build_rocket_with};
+use crate::build_rocket_with;
 
 fn fixture_log() -> ActivityLog {
     ActivityLog {
@@ -52,8 +53,8 @@ fn collector_ok() -> Collector {
 
 #[rocket::async_test]
 async fn returns_503_without_cache() {
-    let collector = collector_ok();
-    let client = Client::tracked(build_rocket_with(collector, fixture_providers(), false))
+    let runtime = CollectionRuntime::new(collector_ok(), fixture_providers());
+    let client = Client::tracked(build_rocket_with(runtime, false))
         .await
         .unwrap();
 
@@ -69,21 +70,30 @@ async fn returns_202_while_collecting() {
             Ok(fixture_log())
         })
     });
-    let rocket = build_rocket_with(collector, fixture_providers(), false);
-    let state = rocket.state::<AppState>().unwrap();
-    state
-        .is_collecting
-        .store(true, std::sync::atomic::Ordering::SeqCst);
+    let runtime = CollectionRuntime::new(collector, fixture_providers());
+    let task = runtime
+        .initial_collection_task()
+        .expect("initial collection task");
+    tokio::spawn(task);
 
-    let client = Client::tracked(rocket).await.unwrap();
+    for _ in 0..5 {
+        if runtime.is_collecting() {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(5)).await;
+    }
+
+    let client = Client::tracked(build_rocket_with(runtime, false))
+        .await
+        .unwrap();
     let response = client.get("/api/activity").dispatch().await;
     assert_eq!(response.status(), Status::Accepted);
 }
 
 #[rocket::async_test]
 async fn post_collect_returns_log() {
-    let collector = collector_ok();
-    let client = Client::tracked(build_rocket_with(collector, fixture_providers(), false))
+    let runtime = CollectionRuntime::new(collector_ok(), fixture_providers());
+    let client = Client::tracked(build_rocket_with(runtime, false))
         .await
         .unwrap();
 
@@ -98,8 +108,8 @@ async fn post_collect_returns_log() {
 
 #[rocket::async_test]
 async fn post_collect_validates_dates() {
-    let collector = collector_ok();
-    let client = Client::tracked(build_rocket_with(collector, fixture_providers(), false))
+    let runtime = CollectionRuntime::new(collector_ok(), fixture_providers());
+    let client = Client::tracked(build_rocket_with(runtime, false))
         .await
         .unwrap();
 
@@ -123,7 +133,8 @@ async fn post_collect_accepts_preset() {
             Ok(fixture_log())
         })
     });
-    let client = Client::tracked(build_rocket_with(collector, fixture_providers(), false))
+    let runtime = CollectionRuntime::new(collector, fixture_providers());
+    let client = Client::tracked(build_rocket_with(runtime, false))
         .await
         .unwrap();
 
@@ -142,8 +153,8 @@ async fn post_collect_accepts_preset() {
 
 #[rocket::async_test]
 async fn post_collect_rejects_mixed_request_modes() {
-    let collector = collector_ok();
-    let client = Client::tracked(build_rocket_with(collector, fixture_providers(), false))
+    let runtime = CollectionRuntime::new(collector_ok(), fixture_providers());
+    let client = Client::tracked(build_rocket_with(runtime, false))
         .await
         .unwrap();
 
@@ -158,8 +169,8 @@ async fn post_collect_rejects_mixed_request_modes() {
 
 #[rocket::async_test]
 async fn returns_provider_statuses() {
-    let collector = collector_ok();
-    let client = Client::tracked(build_rocket_with(collector, fixture_providers(), false))
+    let runtime = CollectionRuntime::new(collector_ok(), fixture_providers());
+    let client = Client::tracked(build_rocket_with(runtime, false))
         .await
         .unwrap();
 

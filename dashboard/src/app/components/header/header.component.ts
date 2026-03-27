@@ -9,6 +9,7 @@ import { MatTooltipModule } from '@angular/material/tooltip'
 import { MatDatepickerModule } from '@angular/material/datepicker'
 import { MatNativeDateModule } from '@angular/material/core'
 import { ActivityService } from '../../services/activity.service'
+import { RuntimeEnvironmentService } from '../../services/backend/runtime-environment.service'
 import { ThemeService } from '../../services/theme.service'
 
 @Component({
@@ -30,6 +31,7 @@ import { ThemeService } from '../../services/theme.service'
 })
 export class HeaderComponent {
   protected readonly activity = inject(ActivityService)
+  protected readonly runtime = inject(RuntimeEnvironmentService)
   protected readonly theme = inject(ThemeService)
 
   protected readonly dateFromObj = computed(() => this.parseDateStr(this.activity.dateFrom()))
@@ -58,6 +60,28 @@ export class HeaderComponent {
 
   protected exportJson(): void {
     this.download(this.activity.exportJson(), 'application/json', '.json')
+  }
+
+  protected async startWindowDrag(event: MouseEvent): Promise<void> {
+    if (!this.runtime.isTauri() || event.button !== 0) {
+      return
+    }
+
+    event.preventDefault()
+
+    const { getCurrentWindow } = await import('@tauri-apps/api/window')
+    await getCurrentWindow().startDragging()
+  }
+
+  protected async toggleWindowMaximize(event: MouseEvent): Promise<void> {
+    if (!this.runtime.isTauri() || event.button !== 0) {
+      return
+    }
+
+    event.preventDefault()
+
+    const { getCurrentWindow } = await import('@tauri-apps/api/window')
+    await getCurrentWindow().toggleMaximize()
   }
 
   private download(content: string, mimeType: string, ext: string): void {

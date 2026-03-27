@@ -10,6 +10,7 @@ This file defines the working rules and architecture expectations for agents edi
 - `api/`: Rocket HTTP API
 - `cli/`: Rust CLI package containing the user-facing collection binary and the TypeScript generator binary
 - `dashboard/`: Angular application that consumes generated backend DTOs
+- `desktop/`: Tauri desktop shell that wraps the Angular app and talks to Rust commands
 
 The backend contract is owned by Rust. The frontend consumes generated DTOs and should not redefine backend models by hand.
 
@@ -81,6 +82,7 @@ Use the namespaced root scripts so intent is obvious:
 - `pnpm api:*`
 - `pnpm cli:*`
 - `pnpm core:*`
+- `pnpm desktop:*`
 - `pnpm dashboard:*`
 - `pnpm types:generate`
 - `pnpm verify`
@@ -103,3 +105,4 @@ If `pnpm verify` cannot be run in the current environment, say so explicitly in 
 - Do not create thin migration or compatibility files when the code can be migrated directly
 - Update docs when architecture, scripts, or workflow change
 - Prefer deleting obsolete files over keeping dead compatibility layers
+- Treat `desktop/gen/` as generated Tauri schema output: do not hand-edit it and keep it ignored

@@ -1,4 +1,9 @@
 <header class="app-header">
+  <div
+    class="window-drag-strip"
+    (mousedown)="startWindowDrag($event)"
+    (dblclick)="toggleWindowMaximize($event)"
+  ></div>
   <div class="header-inner">
     <div class="brand">
       <span class="brand-icon material-icons">timeline</span>
