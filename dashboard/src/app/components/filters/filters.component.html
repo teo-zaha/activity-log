@@ -34,21 +34,9 @@
   </div>
 
   <div class="sidebar-section">
-    <div class="section-header">
-      <span class="section-label">Sources</span>
-      <button
-        class="toggle-unavailable-btn"
-        (click)="activity.toggleHideUnavailable()"
-        [matTooltip]="
-          activity.hideUnavailable() ? 'Show unavailable sources' : 'Hide unavailable sources'
-        "
-        matTooltipPosition="above"
-      >
-        <mat-icon>{{ activity.hideUnavailable() ? 'visibility_off' : 'visibility' }}</mat-icon>
-      </button>
-    </div>
+    <span class="section-label">Sources</span>
     <div class="source-chips">
-      @for (provider of activity.visibleProviders(); track provider.info.id) {
+      @for (provider of activity.providers(); track provider.info.id) {
         <span
           class="filter-chip-wrap"
           [matTooltip]="provider.tooltip"
@@ -60,7 +48,6 @@
             [class.active]="isActive(provider.info.id)"
             [class.degraded]="provider.info.status === 'degraded'"
             [attr.data-src]="provider.chipKey"
-            [disabled]="!provider.info.usable"
             (click)="activity.toggleSource(provider.info.id)"
           >
             <mat-icon>{{ provider.icon }}</mat-icon>
