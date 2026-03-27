@@ -11,8 +11,17 @@
         try {
           // Load theme on start to prevent flash
           const theme = localStorage.getItem('theme') ?? 'light'
-          const themes = ['light', 'green', 'lilac', 'solarized', 'dim', 'dark', 'midnight']
-          const darkThemes = new Set(['dark', 'dim', 'midnight'])
+          const themes = [
+            'light',
+            'green',
+            'lilac',
+            'solarized',
+            'dim',
+            'mocha',
+            'dark',
+            'midnight',
+          ]
+          const darkThemes = new Set(['dark', 'dim', 'midnight', 'mocha'])
           const root = document.documentElement
           const resolvedTheme = themes.includes(theme) ? theme : 'light'
           const isTauri =

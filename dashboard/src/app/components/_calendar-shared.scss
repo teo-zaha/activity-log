@@ -82,9 +82,9 @@
       border-color: var(--badge-outlook-accent);
     }
     &-system {
-      background: #cbd5e1;
-      color: #1e293b;
-      border-color: #475569;
+      background: var(--badge-system-bg);
+      color: var(--badge-system-fg);
+      border-color: var(--badge-system-accent);
     }
     &-gitab {
       background: linear-gradient(135deg, var(--badge-git-bg) 50%, var(--badge-gitlab-bg) 50%);

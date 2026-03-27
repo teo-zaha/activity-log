@@ -108,8 +108,8 @@
 
   &.is-today {
     .day-date {
-      background: #3b82f6;
-      color: #fff;
+      background: var(--accent);
+      color: var(--accent-fg);
       border-radius: 50%;
       width: 26px;
       height: 26px;
@@ -118,7 +118,7 @@
       justify-content: center;
     }
     .day-weekday {
-      color: #3b82f6;
+      color: var(--accent);
     }
   }
 
@@ -261,7 +261,7 @@
   min-width: 0;
 
   &.is-today {
-    background: color-mix(in srgb, #3b82f6 4%, transparent);
+    background: color-mix(in srgb, var(--accent) 4%, transparent);
   }
 
   &.has-allday {
@@ -269,7 +269,7 @@
   }
 
   &.is-today.has-allday {
-    background: color-mix(in srgb, #3b82f6 4%, var(--badge-outlook-bg) 22%, transparent);
+    background: color-mix(in srgb, var(--accent) 4%, var(--badge-outlook-bg) 22%, transparent);
   }
 }
 
