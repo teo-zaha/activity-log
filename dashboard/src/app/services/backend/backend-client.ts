@@ -5,6 +5,7 @@ import type {
   CollectingResponse,
   ProvidersResponse,
 } from '../../generated/activity'
+import type { ExportRequest } from './export-request'
 import { HttpBackendClient } from './http-backend-client.service'
 import { RuntimeEnvironmentService } from './runtime-environment.service'
 import { TauriBackendClient } from './tauri-backend-client.service'
@@ -15,6 +16,7 @@ export abstract class ActivityBackendClient {
   abstract getActivity(): Promise<ActivityResponse>
   abstract getProviders(): Promise<ProvidersResponse>
   abstract collect(request: CollectRequest): Promise<ActivityResponse>
+  abstract export(request: ExportRequest): Promise<void>
 }
 
 export function provideActivityBackendClient() {
