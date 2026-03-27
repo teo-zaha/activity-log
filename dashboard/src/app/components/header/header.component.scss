@@ -69,7 +69,7 @@
   width: 24px;
   height: 24px;
   font-size: 24px;
-  color: #3b82f6;
+  color: var(--accent);
 }
 
 .brand-title {
@@ -114,7 +114,7 @@
   transition: border-color 0.15s ease;
 
   &:focus-within {
-    border-color: #3b82f6;
+    border-color: var(--accent);
   }
 
   // Hide the default Material form-field wrapper inside toggle
@@ -175,8 +175,8 @@
   min-width: 128px;
   border-radius: 8px;
   border: none;
-  background: #3b82f6;
-  color: #fff;
+  background: var(--btn-primary);
+  color: var(--btn-primary-fg);
   font-size: 14px;
   font-weight: 500;
   font-family: Inter, sans-serif;
@@ -191,7 +191,7 @@
   }
 
   &:hover:not(:disabled) {
-    background: #2563eb;
+    background: var(--btn-primary-hover);
   }
 
   &:disabled {

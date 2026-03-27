@@ -104,6 +104,21 @@ html.dark {
   --text-secondary: #3d4756; // ~8.5:1 on white
   --text-tertiary: #5c6878; // ~5.2:1 on white
 
+  // Accent
+  --accent: #3b82f6;
+  --accent-hover: #2563eb;
+  --accent-fg: #ffffff;
+
+  // Primary button (defaults to accent)
+  --btn-primary: var(--accent);
+  --btn-primary-hover: var(--accent-hover);
+  --btn-primary-fg: var(--accent-fg);
+
+  // Error
+  --error-bg: #fee2e2;
+  --error-fg: #b91c1c;
+  --error-border: #fca5a5;
+
   // Header
   --header-bg: #ffffff;
   --header-border: #b8c0cb;
@@ -155,6 +170,16 @@ html.dark {
   --text-secondary: #848d97;
   --text-tertiary: #6e7681;
 
+  // Accent
+  --accent: #58a6ff;
+  --accent-hover: #79b8ff;
+  --accent-fg: #ffffff;
+
+  // Error
+  --error-bg: #3b0f0f;
+  --error-fg: #fca5a5;
+  --error-border: #7f1d1d;
+
   // Header
   --header-bg: #161b22;
   --header-border: #30363d;
@@ -202,6 +227,14 @@ html[data-theme='green'] {
   --text-secondary: #2a5430;
   --text-tertiary: #487050;
 
+  --accent: #2e7d32;
+  --accent-hover: #1b5e20;
+  --accent-fg: #ffffff;
+
+  --error-bg: #fee2e2;
+  --error-fg: #b91c1c;
+  --error-border: #fca5a5;
+
   --header-bg: #f2faf4;
   --header-border: #a2c8a6;
 
@@ -246,6 +279,14 @@ html[data-theme='lilac'] {
   --text-primary: #16082e;
   --text-secondary: #4a2e8a;
   --text-tertiary: #6e50a8;
+
+  --accent: #7c4dff;
+  --accent-hover: #651fff;
+  --accent-fg: #ffffff;
+
+  --error-bg: #fee2e2;
+  --error-fg: #b91c1c;
+  --error-border: #fca5a5;
 
   --header-bg: #f8f4ff;
   --header-border: #bca8e8;
@@ -292,6 +333,14 @@ html[data-theme='dim'] {
   --text-secondary: #768390;
   --text-tertiary: #636e7b;
 
+  --accent: #539bf5;
+  --accent-hover: #6cb6ff;
+  --accent-fg: #ffffff;
+
+  --error-bg: #3b0f0f;
+  --error-fg: #fca5a5;
+  --error-border: #7f1d1d;
+
   --header-bg: #22272e;
   --header-border: #444c56;
 
@@ -336,6 +385,14 @@ html[data-theme='solarized'] {
   --text-primary: #073642;
   --text-secondary: #586e75;
   --text-tertiary: #839496;
+
+  --accent: #268bd2;
+  --accent-hover: #1a6fb0;
+  --accent-fg: #ffffff;
+
+  --error-bg: #f5d0d0;
+  --error-fg: #862222;
+  --error-border: #d4a0a0;
 
   --header-bg: #fdf6e3;
   --header-border: #c5bbac;
@@ -382,6 +439,14 @@ html[data-theme='midnight'] {
   --text-secondary: #999999;
   --text-tertiary: #5e5e5e;
 
+  --accent: #6e8eff;
+  --accent-hover: #8ca4ff;
+  --accent-fg: #ffffff;
+
+  --error-bg: #300808;
+  --error-fg: #f09898;
+  --error-border: #5a1a1a;
+
   --header-bg: #0c0c0c;
   --header-border: #2a2a2a;
 
@@ -410,6 +475,70 @@ html[data-theme='midnight'] {
   --chip-jira: #b0b8f5;
   --chip-outlook: #68c8e8;
   --chip-system: #b8c8d8;
+}
+
+// ── Catppuccin Mocha ─────────────────────────────────────────────────────────
+// Palette colors in use:
+//   Lavender #b4befe  → accent        Yellow  #f9e2af → btn-primary
+//   Mauve    #cba6f7  → git           Red     #f38ba8 → error
+//   Peach    #fab387  → gitlab        Flamingo #f2cdcd → system
+//   Teal     #94e2d5  → jira          Blue    #89b4fa → outlook
+// Available for future use:
+//   Green #a6e3a1 · Pink #f5c2e7 · Sky #89dceb · Rosewater #f5e0dc · Maroon #eba0ac · Sapphire #74c7ec
+html[data-theme='mocha'] {
+  --bg: #1e1e2e;
+  --surface: #181825;
+  --surface-alt: #11111b;
+  --surface-hover: #313244;
+
+  --border: #45475a;
+  --border-subtle: #313244;
+  --border-strong: #585b70;
+
+  --text-primary: #cdd6f4;
+  --text-secondary: #bac2de;
+  --text-tertiary: #6c7086;
+
+  --accent: #b4befe;
+  --accent-hover: #c8d0fe;
+  --accent-fg: #1e1e2e;
+
+  --btn-primary: #f9e2af;
+  --btn-primary-hover: #fcecc8;
+  --btn-primary-fg: #1e1e2e;
+
+  --error-bg: #302028;
+  --error-fg: #f38ba8;
+  --error-border: #45293a;
+
+  --header-bg: #181825;
+  --header-border: #45475a;
+
+  --badge-git-bg: #2a1f48;
+  --badge-git-fg: #cba6f7;
+  --badge-git-accent: #cba6f7;
+
+  --badge-gitlab-bg: #302520;
+  --badge-gitlab-fg: #fab387;
+  --badge-gitlab-accent: #fab387;
+
+  --badge-jira-bg: #17302e;
+  --badge-jira-fg: #94e2d5;
+  --badge-jira-accent: #94e2d5;
+
+  --badge-outlook-bg: #1a2640;
+  --badge-outlook-fg: #89b4fa;
+  --badge-outlook-accent: #89b4fa;
+
+  --badge-system-bg: #2a2028;
+  --badge-system-fg: #f2cdcd;
+  --badge-system-accent: #f2cdcd;
+
+  --chip-git: #cba6f7;
+  --chip-gitlab: #fab387;
+  --chip-jira: #94e2d5;
+  --chip-outlook: #89b4fa;
+  --chip-system: #f2cdcd;
 }
 
 // ── Base ─────────────────────────────────────────────────────────────────────
@@ -519,8 +648,8 @@ mat-card {
 
 // Selected day
 .mat-calendar-body-selected {
-  background-color: #3b82f6 !important;
-  color: #ffffff !important;
+  background-color: var(--accent) !important;
+  color: var(--accent-fg) !important;
 }
 
 // Disabled days

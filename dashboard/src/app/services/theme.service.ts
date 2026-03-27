@@ -1,7 +1,15 @@
 import { Injectable, computed, effect } from '@angular/core'
 import { persistedSignal } from '../utils/persisted-signal'
 
-export type Theme = 'light' | 'green' | 'lilac' | 'solarized' | 'dim' | 'dark' | 'midnight'
+export type Theme =
+  | 'light'
+  | 'green'
+  | 'lilac'
+  | 'solarized'
+  | 'dim'
+  | 'dark'
+  | 'midnight'
+  | 'mocha'
 
 export const THEMES: { id: Theme; label: string }[] = [
   { id: 'light', label: 'Light' },
@@ -9,11 +17,12 @@ export const THEMES: { id: Theme; label: string }[] = [
   { id: 'lilac', label: 'Lilac' },
   { id: 'solarized', label: 'Solarized' },
   { id: 'dim', label: 'Dim' },
+  { id: 'mocha', label: 'Mocha' },
   { id: 'dark', label: 'Dark' },
   { id: 'midnight', label: 'Midnight' },
 ]
 
-const DARK_THEMES: Theme[] = ['dark', 'dim', 'midnight']
+const DARK_THEMES: Theme[] = ['dark', 'dim', 'midnight', 'mocha']
 
 @Injectable({ providedIn: 'root' })
 export class ThemeService {
