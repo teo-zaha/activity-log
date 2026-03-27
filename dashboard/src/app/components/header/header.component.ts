@@ -9,8 +9,8 @@ import { MatTooltipModule } from '@angular/material/tooltip'
 import { MatDatepickerModule } from '@angular/material/datepicker'
 import { MatNativeDateModule } from '@angular/material/core'
 import { ActivityService } from '../../services/activity.service'
-import { RuntimeEnvironmentService } from '../../services/backend/runtime-environment.service'
 import { ThemeService } from '../../services/theme.service'
+import { RuntimeEnvironmentService } from '../../services/backend/runtime-environment.service'
 
 @Component({
   selector: 'app-header',
@@ -31,8 +31,8 @@ import { ThemeService } from '../../services/theme.service'
 })
 export class HeaderComponent {
   protected readonly activity = inject(ActivityService)
-  protected readonly runtime = inject(RuntimeEnvironmentService)
   protected readonly theme = inject(ThemeService)
+  protected readonly runtime = inject(RuntimeEnvironmentService)
 
   protected readonly dateFromObj = computed(() => this.parseDateStr(this.activity.dateFrom()))
   protected readonly dateToObj = computed(() => this.parseDateStr(this.activity.dateTo()))
@@ -55,11 +55,11 @@ export class HeaderComponent {
   }
 
   protected exportMd(): void {
-    this.download(this.activity.exportMarkdown(), 'text/markdown', '.md')
+    void this.activity.exportMarkdown()
   }
 
   protected exportJson(): void {
-    this.download(this.activity.exportJson(), 'application/json', '.json')
+    void this.activity.exportJson()
   }
 
   protected async startWindowDrag(event: MouseEvent): Promise<void> {
@@ -82,14 +82,5 @@ export class HeaderComponent {
 
     const { getCurrentWindow } = await import('@tauri-apps/api/window')
     await getCurrentWindow().toggleMaximize()
-  }
-
-  private download(content: string, mimeType: string, ext: string): void {
-    const blob = new Blob([content], { type: mimeType })
-    const a = document.createElement('a')
-    a.href = URL.createObjectURL(blob)
-    a.download = `activity-${this.activity.dateFrom()}-${this.activity.dateTo()}${ext}`
-    a.click()
-    URL.revokeObjectURL(a.href)
   }
 }

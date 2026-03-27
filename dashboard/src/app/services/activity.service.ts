@@ -220,37 +220,55 @@ export class ActivityService {
     }
   }
 
-  exportJson(): string {
-    const payload: ExportedActivityLog = {
-      meta: this.meta(),
-      entries: this.filteredEntries().map(entry => entry.entry),
+  async exportJson(): Promise<void> {
+    this.error.set(null)
+    try {
+      const payload: ExportedActivityLog = {
+        meta: this.meta(),
+        entries: this.filteredEntries().map(entry => entry.entry),
+      }
+      await this.backend.export({
+        content: JSON.stringify(payload, null, 2),
+        fileName: `${this.exportFileNameBase()}.json`,
+        format: 'json',
+      })
+    } catch (e) {
+      this.error.set(`Export failed: ${this.extractErrorMessage(e)}`)
     }
-    return JSON.stringify(payload, null, 2)
   }
 
-  exportMarkdown(): string {
-    const from = this.dateFrom() || 'all'
-    const to = this.dateTo() || 'all'
-    let md = `# Activity Summary — ${from} to ${to}\n\nTotal: ${this.filteredEntries().length} events\n\n`
-    for (const { date, entries } of this.groupedByDay()) {
-      const label = new Date(date + 'T12:00:00Z').toLocaleDateString('en-GB', {
-        weekday: 'long',
-        year: 'numeric',
-        month: 'long',
-        day: 'numeric',
-      })
-      md += `## ${label}\n\n`
-      for (const entry of entries) {
-        const t = new Date(entry.timestamp).toLocaleTimeString('en-GB', {
-          hour: '2-digit',
-          minute: '2-digit',
+  async exportMarkdown(): Promise<void> {
+    this.error.set(null)
+    try {
+      const from = this.dateFrom() || 'all'
+      const to = this.dateTo() || 'all'
+      let md = `# Activity Summary — ${from} to ${to}\n\nTotal: ${this.filteredEntries().length} events\n\n`
+      for (const { date, entries } of this.groupedByDay()) {
+        const label = new Date(date + 'T12:00:00Z').toLocaleDateString('en-GB', {
+          weekday: 'long',
+          year: 'numeric',
+          month: 'long',
+          day: 'numeric',
         })
-        const meta = entry.markdownMeta(t)
-        md += `- **[${entry.source}]** ${entry.markdownSummary()} (${meta})\n`
+        md += `## ${label}\n\n`
+        for (const entry of entries) {
+          const t = new Date(entry.timestamp).toLocaleTimeString('en-GB', {
+            hour: '2-digit',
+            minute: '2-digit',
+          })
+          const meta = entry.markdownMeta(t)
+          md += `- **[${entry.source}]** ${entry.markdownSummary()} (${meta})\n`
+        }
+        md += '\n'
       }
-      md += '\n'
+      await this.backend.export({
+        content: md,
+        fileName: `${this.exportFileNameBase()}.md`,
+        format: 'markdown',
+      })
+    } catch (e) {
+      this.error.set(`Export failed: ${this.extractErrorMessage(e)}`)
     }
-    return md
   }
 
   // ── Helpers ───────────────────────────────────────────────────────────────
@@ -311,5 +329,9 @@ export class ActivityService {
     const day = d.getDay()
     d.setDate(d.getDate() - (day === 0 ? 6 : day - 1))
     return d.toISOString().slice(0, 10)
+  }
+
+  private exportFileNameBase(): string {
+    return `activity-${this.dateFrom() || 'all'}-${this.dateTo() || 'all'}`
   }
 }
