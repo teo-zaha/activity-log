@@ -51,12 +51,15 @@ impl ProviderConfig {
         requirements.iter().find(|key| {
             self.values
                 .get(key.name)
-                .is_some_and(|value| !value_matches_type(value, key.value_type))
+                .is_some_and(|value| !provider_config_value_matches_type(value, key.value_type))
         })
     }
 }
 
-fn value_matches_type(value: &str, value_type: ProviderConfigValueType) -> bool {
+pub fn provider_config_value_matches_type(
+    value: &str,
+    value_type: ProviderConfigValueType,
+) -> bool {
     match value_type {
         ProviderConfigValueType::String | ProviderConfigValueType::Password => true,
         ProviderConfigValueType::Bool => parse_bool(value).is_some(),
@@ -68,8 +71,8 @@ fn value_matches_type(value: &str, value_type: ProviderConfigValueType) -> bool 
 
 fn parse_bool(value: &str) -> Option<bool> {
     match value.trim().to_ascii_lowercase().as_str() {
-        "true" | "1" | "yes" | "on" => Some(true),
-        "false" | "0" | "no" | "off" => Some(false),
+        "true" => Some(true),
+        "false" => Some(false),
         _ => None,
     }
 }

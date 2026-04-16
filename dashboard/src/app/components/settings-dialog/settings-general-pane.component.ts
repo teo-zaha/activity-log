@@ -8,5 +8,4 @@ import { SettingsThemeCardComponent } from './settings-theme-card.component'
   templateUrl: './settings-general-pane.component.html',
   styleUrl: './settings-general-pane.component.scss',
 })
-export class SettingsGeneralPaneComponent {
-}
+export class SettingsGeneralPaneComponent {}

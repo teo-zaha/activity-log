@@ -13,7 +13,10 @@ use tokio::sync::RwLock;
 use crate::{
     collect_activity_with_provider_runtimes,
     model::{ActivityLog, CollectOptions, CollectRequest, ProviderInfo, ProvidersResponse},
-    provider::{ProviderRuntime, current_os, inspect_provider_runtimes},
+    provider::{
+        ProviderRuntime, current_os, inspect_provider_runtimes_with,
+        provider_config::{ConfigSource, EnvConfigSource},
+    },
     utils::{days_ago, parse_date, resolve_range, today},
 };
 
@@ -61,7 +64,11 @@ impl CollectionRuntime {
     }
 
     pub async fn build_default() -> AnyhowResult<Self> {
-        let provider_runtimes = inspect_provider_runtimes().await;
+        Self::build_with_config_source(&EnvConfigSource).await
+    }
+
+    pub async fn build_with_config_source(config_source: &dyn ConfigSource) -> AnyhowResult<Self> {
+        let provider_runtimes = inspect_provider_runtimes_with(config_source).await;
         let provider_info = provider_runtimes
             .iter()
             .map(ProviderRuntime::info_owned)

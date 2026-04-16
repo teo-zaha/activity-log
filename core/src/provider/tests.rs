@@ -203,3 +203,32 @@ async fn invalid_typed_config_skips_startup_check() {
         Some("TEST_URL must be a url")
     );
 }
+
+#[tokio::test]
+async fn strict_bool_config_rejects_non_true_false_values() {
+    static REQUIRED_KEYS: &[ProviderConfigKey] = &[ProviderConfigKey::required_bool("TEST_BOOL")];
+
+    let calls = Arc::new(AtomicUsize::new(0));
+    let mut config = TestConfigSource::default();
+    config
+        .values
+        .insert("TEST_BOOL".to_string(), "1".to_string());
+
+    let runtime = ProviderRuntime::inspect(
+        Arc::new(TestProvider {
+            supported_os: &[SupportedOs::Windows, SupportedOs::Macos, SupportedOs::Linux],
+            requirements: REQUIRED_KEYS,
+            startup_result: ProviderCheckResult::available(),
+            calls: Arc::clone(&calls),
+        }),
+        &config,
+    )
+    .await;
+
+    assert_eq!(calls.load(Ordering::SeqCst), 0);
+    assert!(!runtime.info().usable);
+    assert_eq!(
+        runtime.info().reason.as_deref(),
+        Some("TEST_BOOL must be a bool")
+    );
+}
