@@ -6,6 +6,9 @@ import type {
   CollectedActivitySummary,
   CollectingResponse,
   ErrorResponse,
+  ProviderConfigSaveRequestDto,
+  ProviderConfigSaveResponseDto,
+  ProviderConfigSnapshotDto,
   ProviderInfo,
   Source,
 } from '../generated/activity'
@@ -271,6 +274,18 @@ export class ActivityService {
     }
   }
 
+  loadProviderConfig(): Promise<ProviderConfigSnapshotDto> {
+    return this.backend.getProviderConfig()
+  }
+
+  async saveProviderConfig(
+    request: ProviderConfigSaveRequestDto
+  ): Promise<ProviderConfigSaveResponseDto> {
+    const response = await this.backend.saveProviderConfig(request)
+    this.applyProviders(response.providersResponse.providers, true)
+    return response
+  }
+
   // ── Helpers ───────────────────────────────────────────────────────────────
 
   private todayStr(): string {
@@ -279,10 +294,7 @@ export class ActivityService {
 
   private async loadProviders(): Promise<void> {
     const response = await this.backend.getProviders()
-    this.providerInfo.set(response.providers)
-    this.activeSources.set(
-      new Set(response.providers.filter(provider => provider.usable).map(provider => provider.id))
-    )
+    this.applyProviders(response.providers, true)
   }
 
   private async waitForActivity(): Promise<ActivityLog | null> {
@@ -300,6 +312,23 @@ export class ActivityService {
 
   private providerInfoFor(source: Source): ProviderInfo | undefined {
     return this.providerInfo().find(provider => provider.id === source)
+  }
+
+  private applyProviders(providers: ProviderInfo[], activateAllUsable: boolean): void {
+    this.providerInfo.set(providers)
+
+    if (activateAllUsable) {
+      this.activeSources.set(
+        new Set(providers.filter(provider => provider.usable).map(provider => provider.id))
+      )
+      return
+    }
+
+    const usable = new Set(
+      providers.filter(provider => provider.usable).map(provider => provider.id)
+    )
+    const next = new Set(Array.from(this.activeSources()).filter(source => usable.has(source)))
+    this.activeSources.set(next)
   }
 
   private isCollectingResponse(response: ActivityResponse): response is CollectingResponse {

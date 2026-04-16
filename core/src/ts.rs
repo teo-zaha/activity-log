@@ -3,8 +3,10 @@ use ts_rs::TS;
 use crate::model::{
     ActivityEntry, ActivityLog, ActivityLogMeta, CollectRequest, CollectedActivitySummary,
     CollectingResponse, ErrorResponse, GitEntry, GitLabEntry, GitLabType, JiraEntry, JiraEntryType,
-    OutlookEntry, ProviderInfo, ProviderStatus, ProvidersResponse, RangePreset, Source,
-    SupportedOs, SystemEntry, SystemEntryType,
+    OutlookEntry, ProviderConfigFieldStateDto, ProviderConfigProviderStateDto,
+    ProviderConfigSaveRequestDto, ProviderConfigSaveResponseDto, ProviderConfigSaveValueDto,
+    ProviderConfigSnapshotDto, ProviderConfigValueTypeDto, ProviderInfo, ProviderStatus,
+    ProvidersResponse, RangePreset, Source, SupportedOs, SystemEntry, SystemEntryType,
 };
 
 pub fn activity_typescript() -> String {
@@ -14,6 +16,13 @@ pub fn activity_typescript() -> String {
         export_decl::<ProviderStatus>(),
         export_decl::<ProviderInfo>(),
         export_decl::<ProvidersResponse>(),
+        export_decl::<ProviderConfigValueTypeDto>(),
+        export_decl::<ProviderConfigFieldStateDto>(),
+        export_decl::<ProviderConfigProviderStateDto>(),
+        export_decl::<ProviderConfigSnapshotDto>(),
+        export_decl::<ProviderConfigSaveValueDto>(),
+        export_decl::<ProviderConfigSaveRequestDto>(),
+        export_decl::<ProviderConfigSaveResponseDto>(),
         export_decl::<RangePreset>(),
         export_decl::<GitLabType>(),
         export_decl::<JiraEntryType>(),

@@ -29,51 +29,98 @@
 
   <mat-divider></mat-divider>
 
-  <div class="placeholder-grid">
-    <mat-card class="placeholder-card u-surface-card">
-      <div class="placeholder-head">
-        <div>
-          <span class="card-label u-kicker">Event options</span>
-          <h3>Event filtering</h3>
-        </div>
-        <span class="coming-soon u-soft-accent-pill">Coming soon</span>
+  <mat-card class="config-card u-surface-card">
+    <div class="config-head">
+      <div>
+        <span class="card-label u-kicker">Configuration</span>
       </div>
+    </div>
+    @if (isDesktop && configError()) {
+      <p class="config-error">{{ configError() }}</p>
+    }
 
-      <p class="placeholder-copy">
-        Future versions will let you decide which event categories from this source should be
-        surfaced.
+    @if (!isDesktop) {
+      <p class="config-copy">
+        Authentication and provider-specific connection settings are editable only in the desktop
+        app.
       </p>
+    } @else if (loadingConfig()) {
+      <p class="config-copy">Loading provider settings...</p>
+    } @else if (configFields().length === 0) {
+      <p class="config-copy">This provider does not expose configurable keys.</p>
+    } @else {
+      <div class="config-fields" role="group" aria-label="Provider configuration fields">
+        @for (field of configFields(); track field.key) {
+          <div class="config-field">
+            <div class="config-field-head">
+              <div>
+                <label [attr.for]="field.key">{{ field.label }}</label>
+              </div>
+              <div class="config-badges">
+                @if (field.required) {
+                  <span class="required-pill">Required</span>
+                }
+                @if (field.secret) {
+                  <span class="secret-state" [class.secret-state-empty]="!isSecretFieldSet(field)">
+                    {{ isSecretFieldSet(field) ? 'Set' : 'Not set' }}
+                  </span>
+                }
+              </div>
+            </div>
 
-      <mat-radio-group class="disabled-radio-group" aria-label="Future event options">
-        <mat-radio-button [disabled]="true">Default event set</mat-radio-button>
-        <mat-radio-button [disabled]="true">High-signal events only</mat-radio-button>
-        <mat-radio-button [disabled]="true">Custom source rules</mat-radio-button>
-      </mat-radio-group>
-    </mat-card>
+            @if (field.valueType === 'bool') {
+              <mat-form-field appearance="outline" class="config-control">
+                <mat-select
+                  [id]="field.key"
+                  [ngModel]="fieldValue(field)"
+                  (ngModelChange)="setFieldValue(field, $event)"
+                >
+                  <mat-option value="">Unset</mat-option>
+                  <mat-option value="true">True</mat-option>
+                  <mat-option value="false">False</mat-option>
+                </mat-select>
+              </mat-form-field>
+            } @else {
+              <mat-form-field appearance="outline" class="config-control">
+                <input
+                  matInput
+                  [id]="field.key"
+                  [type]="inputTypeFor(field)"
+                  [placeholder]="field.valueType === 'password' ? 'Enter new secret' : ''"
+                  [ngModel]="fieldValue(field)"
+                  (ngModelChange)="setFieldValue(field, $event)"
+                  autocomplete="off"
+                />
+              </mat-form-field>
+            }
 
-    <mat-card class="placeholder-card u-surface-card">
-      <div class="placeholder-head">
-        <div>
-          <span class="card-label u-kicker">Auth config</span>
-          <h3>Connection setup</h3>
-        </div>
-        <span class="coming-soon u-soft-accent-pill">Coming soon</span>
+            @if (fieldError(field.key); as error) {
+              <p class="field-error">{{ error }}</p>
+            }
+
+            @if (field.secret && canClearField(field)) {
+              <div class="config-field-actions">
+                <button mat-button type="button" (click)="clearField(field)">Clear</button>
+              </div>
+            }
+          </div>
+        }
       </div>
 
-      <p class="placeholder-copy">
-        Authentication and provider-specific connection settings are not editable in the dashboard
-        yet.
-      </p>
-
-      <div class="auth-placeholder">
-        <span class="auth-icon">
-          <mat-icon>lock_person</mat-icon>
-        </span>
-        <div>
-          <strong>Manage credentials outside the UI</strong>
-          <p>Provider setup still follows the existing backend/runtime configuration workflow.</p>
-        </div>
+      <div class="config-actions">
+        @if (configMessage()) {
+          <p class="config-message">{{ configMessage() }}</p>
+        }
+        <button
+          mat-flat-button
+          type="button"
+          class="save-config-btn"
+          [disabled]="!canSave()"
+          (click)="saveConfig()"
+        >
+          {{ savingConfig() ? 'Saving...' : 'Save settings' }}
+        </button>
       </div>
-    </mat-card>
-  </div>
+    }
+  </mat-card>
 </div>

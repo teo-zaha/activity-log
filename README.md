@@ -189,6 +189,16 @@ Copy `.env.example` to `.env` and fill in the sources you want to enable. Any so
 
 Outlook and System collectors require no credentials — they read from the local Outlook app and Windows Event Log respectively.
 
+### Desktop dynamic provider settings
+
+In the desktop app, provider configuration fields are generated from Rust provider
+`config_requirements()` metadata and rendered dynamically in the Settings dialog.
+
+- Scope: desktop (Tauri) only in this pass.
+- Storage: persisted in Tauri Store (`settings.json`).
+- Secret fields: values are write-only in UI/API; the frontend only receives `isSet`.
+- Runtime behavior: save operations rebuild provider runtime config and refresh startup status.
+
 ---
 
 ## Project structure

@@ -30,6 +30,12 @@ fn generates_ts_files() {
     generate_ts(&out).unwrap();
     assert!(out.exists());
     assert!(tmp.path().join("generated/index.ts").exists());
+
+    let generated = std::fs::read_to_string(out).unwrap();
+    assert!(generated.contains("export type ProviderConfigValueTypeDto"));
+    assert!(generated.contains("export type ProviderConfigSnapshotDto"));
+    assert!(generated.contains("export type ProviderConfigSaveRequestDto"));
+    assert!(generated.contains("export type ProviderConfigSaveResponseDto"));
 }
 
 #[test]

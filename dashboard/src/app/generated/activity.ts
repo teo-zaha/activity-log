@@ -10,6 +10,20 @@ export type ProviderInfo = { id: Source, status: ProviderStatus, usable: boolean
 
 export type ProvidersResponse = { currentOs: SupportedOs, providers: Array<ProviderInfo>, };
 
+export type ProviderConfigValueTypeDto = "string" | "bool" | "int" | "password" | "email" | "url";
+
+export type ProviderConfigFieldStateDto = { key: string, label: string, required: boolean, valueType: ProviderConfigValueTypeDto, secret: boolean, isSet: boolean, value?: string, };
+
+export type ProviderConfigProviderStateDto = { source: Source, fields: Array<ProviderConfigFieldStateDto>, };
+
+export type ProviderConfigSnapshotDto = { providers: Array<ProviderConfigProviderStateDto>, };
+
+export type ProviderConfigSaveValueDto = { key: string, value: string | null, };
+
+export type ProviderConfigSaveRequestDto = { source: Source, values: Array<ProviderConfigSaveValueDto>, };
+
+export type ProviderConfigSaveResponseDto = { snapshot: ProviderConfigSnapshotDto, providersResponse: ProvidersResponse, };
+
 export type RangePreset = "today" | "yesterday" | "week" | "lastWeek" | "month" | "lastMonth";
 
 export type GitLabType = "pushedTo" | "created" | "opened" | "closed" | "reopened" | "updated" | "merged" | "accepted" | "commentedOn" | "approved" | "joined" | "destroyed" | "expired" | "unknown";
