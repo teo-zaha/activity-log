@@ -74,6 +74,8 @@ Important behavior:
 - Prefer discriminated union narrowing over `as` casts whenever possible
 - Avoid `any`, avoid weakening types for convenience, and keep helper APIs typed as specifically as possible
 - Preserve existing Angular patterns unless the task explicitly calls for a redesign
+- For responsive SCSS in `dashboard/`, use named breakpoints from `dashboard/src/app/components/_dashboard-shared.scss` (for example `@include ui.down('phone')`) instead of raw `@media (max-width: ...)` where a named breakpoint exists
+- For shared dashboard content width caps, use `var(--content-max-width)` instead of hardcoded pixel values (for example `1120px`)
 
 ## Script Rules
 
