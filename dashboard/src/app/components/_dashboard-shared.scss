@@ -1,0 +1,403 @@
+@use 'sass:map';
+
+$breakpoints: (
+  'desktop-compact': 1100px,
+  'tablet': 900px,
+  'phone': 640px,
+);
+
+@function breakpoint($name) {
+  $value: map.get($breakpoints, $name);
+
+  @if $value == null {
+    @error 'Unknown breakpoint "#{$name}". Available breakpoints: #{map.keys($breakpoints)}';
+  }
+
+  @return $value;
+}
+
+@mixin down($name) {
+  @media (max-width: breakpoint($name)) {
+    @content;
+  }
+}
+
+$theme-previews: (
+  'light': (
+    bg: #ffffff,
+    top: #dbeafe,
+    main: #f3f4f6,
+    accent: #3b82f6,
+  ),
+  'green': (
+    bg: #f2faf4,
+    top: #c8e6cc,
+    main: #d4e6d6,
+    accent: #2e7d32,
+  ),
+  'lilac': (
+    bg: #f8f4ff,
+    top: #e9ddff,
+    main: #efe7ff,
+    accent: #8b5cf6,
+  ),
+  'solarized': (
+    bg: #fdf6e3,
+    top: #eee8d5,
+    main: #f5efdf,
+    accent: #b58900,
+  ),
+  'dim': (
+    bg: #22272e,
+    top: #48515d,
+    main: #2d333b,
+    accent: #58a6ff,
+  ),
+  'dark': (
+    bg: #161b22,
+    top: #30363d,
+    main: #21262d,
+    accent: #58a6ff,
+  ),
+  'midnight': (
+    bg: #000000,
+    top: #1f2937,
+    main: #111827,
+    accent: #38bdf8,
+  ),
+  'mocha': (
+    bg: #1e1e2e,
+    top: #45475a,
+    main: #313244,
+    accent: #89b4fa,
+  ),
+);
+
+@mixin panel-shell(
+  $radius: 28px,
+  $background: var(--panel-bg),
+  $border: 1px solid var(--panel-border),
+  $shadow: var(--panel-shadow)
+) {
+  border-radius: $radius;
+  background: $background;
+  border: $border;
+  box-shadow: $shadow;
+}
+
+@mixin surface-card($padding: 22px, $radius: 24px) {
+  min-width: 0;
+  padding: $padding;
+  border-radius: $radius;
+  border: 1px solid color-mix(in srgb, var(--border) 75%, transparent);
+  background: color-mix(in srgb, var(--surface-alt) 58%, var(--surface) 42%);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06);
+}
+
+@mixin kicker-label {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-tertiary);
+}
+
+@mixin segmented-surface($radius: 16px, $padding: 5px) {
+  background: color-mix(in srgb, var(--surface-alt) 72%, var(--surface) 28%);
+  border: 1px solid color-mix(in srgb, var(--border) 74%, transparent);
+  border-radius: $radius;
+  padding: $padding;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.05);
+}
+
+@mixin chrome-icon-button(
+  $size: 38px,
+  $radius: 14px,
+  $border: 1px solid var(--border),
+  $background: color-mix(in srgb, var(--surface) 88%, transparent)
+) {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: $size;
+  height: $size;
+  border-radius: $radius;
+  border: $border;
+  background: $background;
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition:
+    background 0.15s ease,
+    color 0.15s ease,
+    border-color 0.15s ease,
+    transform 0.15s ease,
+    box-shadow 0.15s ease;
+
+  &:hover:not(:disabled) {
+    background: var(--surface-hover);
+    color: var(--text-primary);
+    border-color: var(--border-strong);
+    transform: translateY(-1px);
+    box-shadow: var(--control-shadow);
+  }
+
+  &:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+  }
+}
+
+@mixin soft-accent-pill {
+  display: inline-flex;
+  align-items: center;
+  height: 30px;
+  padding: 0 12px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--accent) 14%, var(--surface) 86%);
+  color: var(--accent);
+  font-size: 12px;
+  font-weight: 700;
+  flex-shrink: 0;
+  white-space: nowrap;
+}
+
+@mixin status-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 999px;
+  flex-shrink: 0;
+  background: var(--border-strong);
+  box-shadow: 0 0 0 4px color-mix(in srgb, currentColor 12%, transparent);
+
+  &[data-status='available'] {
+    color: #16a34a;
+    background: #22c55e;
+  }
+
+  &[data-status='degraded'] {
+    color: #d97706;
+    background: #f59e0b;
+  }
+
+  &[data-status='unavailable'] {
+    color: #dc2626;
+    background: #ef4444;
+  }
+}
+
+@mixin status-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 32px;
+  padding: 0 12px;
+  max-width: 100%;
+  border-radius: 999px;
+  border: 1px solid color-mix(in srgb, currentColor 22%, transparent);
+  font-size: 12px;
+  font-weight: 700;
+  white-space: nowrap;
+  align-self: flex-start;
+  overflow: hidden;
+
+  &[data-status='available'] {
+    color: #15803d;
+    background: color-mix(in srgb, #22c55e 12%, var(--surface) 88%);
+  }
+
+  &[data-status='degraded'] {
+    color: #b45309;
+    background: color-mix(in srgb, #f59e0b 12%, var(--surface) 88%);
+  }
+
+  &[data-status='unavailable'] {
+    color: #b91c1c;
+    background: color-mix(in srgb, #ef4444 12%, var(--surface) 88%);
+  }
+}
+
+@mixin interactive-option(
+  $hover-transform: none,
+  $active-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 18%, transparent)
+) {
+  transition:
+    background-color 0.18s ease,
+    border-color 0.18s ease,
+    color 0.18s ease,
+    box-shadow 0.18s ease,
+    transform 0.18s ease;
+
+  &:hover:not(:disabled):not(.active) {
+    background: color-mix(in srgb, var(--surface-hover) 80%, transparent);
+    border-color: color-mix(in srgb, var(--border) 75%, transparent);
+    color: var(--text-primary);
+    transform: $hover-transform;
+  }
+
+  &.active {
+    background: color-mix(in srgb, var(--surface) 72%, var(--accent) 28%);
+    border-color: color-mix(in srgb, var(--accent) 42%, var(--border) 58%);
+    color: var(--text-primary);
+    box-shadow: $active-shadow;
+  }
+}
+
+@mixin provider-badge-base($width: auto, $padding: 4px 8px, $font-size: 11px) {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+  width: $width;
+  font-size: $font-size;
+  font-weight: 600;
+  padding: $padding;
+  border-radius: 999px;
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+  line-height: 1.5;
+  white-space: nowrap;
+}
+
+@mixin provider-badge-variants($selector) {
+  #{$selector}.badge-git {
+    background: var(--badge-git-bg);
+    color: var(--badge-git-fg);
+  }
+
+  #{$selector}.badge-gitlab {
+    background: var(--badge-gitlab-bg);
+    color: var(--badge-gitlab-fg);
+  }
+
+  #{$selector}.badge-jira {
+    background: var(--badge-jira-bg);
+    color: var(--badge-jira-fg);
+  }
+
+  #{$selector}.badge-outlook {
+    background: var(--badge-outlook-bg);
+    color: var(--badge-outlook-fg);
+  }
+
+  #{$selector}.badge-system {
+    background: var(--badge-system-bg);
+    color: var(--badge-system-fg);
+  }
+
+  #{$selector}.badge-gitab {
+    background: linear-gradient(105deg, var(--badge-git-bg) 57%, var(--badge-gitlab-bg) 43%);
+    color: var(--text-primary);
+  }
+}
+
+@mixin provider-event-variants($selector) {
+  #{$selector}-git {
+    background: var(--badge-git-bg);
+    color: var(--badge-git-fg);
+    border-color: var(--badge-git-accent);
+  }
+
+  #{$selector}-gitlab {
+    background: var(--badge-gitlab-bg);
+    color: var(--badge-gitlab-fg);
+    border-color: var(--badge-gitlab-accent);
+  }
+
+  #{$selector}-jira {
+    background: var(--badge-jira-bg);
+    color: var(--badge-jira-fg);
+    border-color: var(--badge-jira-accent);
+  }
+
+  #{$selector}-outlook {
+    background: var(--badge-outlook-bg);
+    color: var(--badge-outlook-fg);
+    border-color: var(--badge-outlook-accent);
+  }
+
+  #{$selector}-system {
+    background: var(--badge-system-bg);
+    color: var(--badge-system-fg);
+    border-color: var(--badge-system-accent);
+  }
+
+  #{$selector}-gitab {
+    background: linear-gradient(135deg, var(--badge-git-bg) 50%, var(--badge-gitlab-bg) 50%);
+    color: var(--text-primary);
+    border-color: var(--badge-git-accent);
+  }
+}
+
+@mixin provider-accent-variants($selector) {
+  #{$selector}-git {
+    background: var(--badge-git-accent);
+  }
+
+  #{$selector}-gitlab {
+    background: var(--badge-gitlab-accent);
+  }
+
+  #{$selector}-jira {
+    background: var(--badge-jira-accent);
+  }
+
+  #{$selector}-outlook {
+    background: var(--badge-outlook-accent);
+  }
+
+  #{$selector}-system {
+    background: var(--badge-system-accent);
+  }
+
+  #{$selector}-gitab {
+    background: linear-gradient(
+      to bottom,
+      var(--badge-git-accent) 50%,
+      var(--badge-gitlab-accent) 50%
+    );
+  }
+}
+
+@mixin provider-source-vars($selector) {
+  #{$selector}[data-src='git'] {
+    --badge-bg: var(--badge-git-bg);
+    --badge-fg: var(--badge-git-fg);
+    --badge-accent: var(--badge-git-accent);
+  }
+
+  #{$selector}[data-src='gitlab'] {
+    --badge-bg: var(--badge-gitlab-bg);
+    --badge-fg: var(--badge-gitlab-fg);
+    --badge-accent: var(--badge-gitlab-accent);
+  }
+
+  #{$selector}[data-src='jira'] {
+    --badge-bg: var(--badge-jira-bg);
+    --badge-fg: var(--badge-jira-fg);
+    --badge-accent: var(--badge-jira-accent);
+  }
+
+  #{$selector}[data-src='outlook'] {
+    --badge-bg: var(--badge-outlook-bg);
+    --badge-fg: var(--badge-outlook-fg);
+    --badge-accent: var(--badge-outlook-accent);
+  }
+
+  #{$selector}[data-src='system'] {
+    --badge-bg: var(--badge-system-bg);
+    --badge-fg: var(--badge-system-fg);
+    --badge-accent: var(--badge-system-accent);
+  }
+}
+
+@mixin theme-preview-variants($selector: '.theme-preview') {
+  @each $theme, $colors in $theme-previews {
+    #{$selector}[data-theme-option='#{$theme}'] {
+      --theme-preview-bg: #{map.get($colors, bg)};
+      --theme-preview-top: #{map.get($colors, top)};
+      --theme-preview-main: #{map.get($colors, main)};
+      --theme-preview-accent: #{map.get($colors, accent)};
+    }
+  }
+}

@@ -1,5 +1,5 @@
-<aside class="filters-sidebar">
-  <div class="sidebar-section">
+<aside class="sidebar">
+  <div class="sidebar-section sidebar-section-view">
     <span class="section-label">View</span>
     <div class="view-toggle">
       <button
@@ -33,7 +33,7 @@
     </div>
   </div>
 
-  <div class="sidebar-section">
+  <div class="sidebar-section sidebar-section-sources">
     <span class="section-label">Sources</span>
     <div class="source-chips">
       @for (provider of activity.providers(); track provider.info.id) {
@@ -50,7 +50,11 @@
             [attr.data-src]="provider.chipKey"
             (click)="activity.toggleSource(provider.info.id)"
           >
-            <mat-icon>{{ provider.icon }}</mat-icon>
+            <app-provider-icon
+              class="filter-chip-icon"
+              [source]="provider.info.id"
+              [fallbackIcon]="provider.icon"
+            ></app-provider-icon>
             {{ provider.label }}
             @if (provider.count > 0) {
               <span class="chip-count">{{ provider.count }}</span>
@@ -61,18 +65,9 @@
     </div>
   </div>
   <div class="sidebar-bottom">
-    <span class="section-label">Theme</span>
-    <div class="theme-swatches">
-      @for (t of themes; track t.id) {
-        <button
-          class="theme-swatch"
-          [class.active]="theme.theme() === t.id"
-          [attr.data-swatch]="t.id"
-          (click)="theme.setTheme(t.id)"
-          [matTooltip]="t.label"
-          matTooltipPosition="above"
-        ></button>
-      }
-    </div>
+    <button class="settings-button" type="button" (click)="openSettings()">
+      <mat-icon>settings</mat-icon>
+      <span>Settings</span>
+    </button>
   </div>
 </aside>

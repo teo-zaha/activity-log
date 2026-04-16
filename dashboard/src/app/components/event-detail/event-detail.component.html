@@ -7,8 +7,12 @@
         <div class="flyout-badges">
           @for (badge of entry.badges; track badge.source) {
             <span class="flyout-badge" [class]="badge.badgeClass">
-              <span class="material-icons">{{ badge.icon }}</span
-              >{{ badge.label }}
+              <app-provider-icon
+                class="flyout-badge-icon"
+                [source]="badge.source"
+                [fallbackIcon]="badge.icon"
+              ></app-provider-icon>
+              {{ badge.label }}
             </span>
           }
         </div>
@@ -28,7 +32,11 @@
           @for (section of entry.detailSections; track section.source) {
             <div class="flyout-section">
               <span class="flyout-section-title flyout-badge" [class]="section.badgeClass">
-                <span class="material-icons">{{ section.icon }}</span>
+                <app-provider-icon
+                  class="flyout-badge-icon"
+                  [source]="section.source"
+                  [fallbackIcon]="section.icon"
+                ></app-provider-icon>
                 {{ section.title }}
               </span>
               <div class="flyout-fields">
@@ -67,8 +75,12 @@
           <div class="flyout-section">
             <div class="flyout-section-header">
               <span class="flyout-badge" [class]="entry.badge.badgeClass">
-                <span class="material-icons">{{ entry.badge.icon }}</span
-                >{{ entry.badge.label }}
+                <app-provider-icon
+                  class="flyout-badge-icon"
+                  [source]="entry.badge.source"
+                  [fallbackIcon]="entry.badge.icon"
+                ></app-provider-icon>
+                {{ entry.badge.label }}
               </span>
               <span class="flyout-section-entry-title">{{ entry.title }}</span>
             </div>
@@ -76,7 +88,11 @@
               @for (section of entry.detailSections; track section.source) {
                 <div class="flyout-section">
                   <span class="flyout-section-title flyout-badge" [class]="section.badgeClass">
-                    <span class="material-icons">{{ section.icon }}</span>
+                    <app-provider-icon
+                      class="flyout-badge-icon"
+                      [source]="section.source"
+                      [fallbackIcon]="section.icon"
+                    ></app-provider-icon>
                     {{ section.title }}
                   </span>
                   <div class="flyout-fields">

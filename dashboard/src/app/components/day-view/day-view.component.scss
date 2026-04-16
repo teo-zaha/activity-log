@@ -13,6 +13,7 @@
   flex: 1;
   overflow: hidden;
   min-height: 0;
+  padding: 0 0 20px;
 }
 
 .cal-nav {
@@ -24,47 +25,23 @@
 }
 
 .nav-controls {
-  display: flex;
-  align-items: center;
-  gap: 2px;
-  margin-left: auto;
-  background: var(--surface-alt);
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  padding: 3px;
+  @include cal.nav-controls;
 }
 
 .zoom-controls {
-  margin-left: 6px;
+  @include cal.zoom-controls;
 }
 
 .zoom-reset-btn {
-  padding: 0 8px;
-  font-size: 11px;
-  font-weight: 700;
-  letter-spacing: 0.03em;
-  min-width: unset;
-  color: var(--text-secondary);
-
-  &.at-default {
-    opacity: 0.35;
-    pointer-events: none;
-  }
+  @include cal.zoom-reset-button;
 }
 
 .today-btn {
-  padding: 0 22px;
-  font-size: 14px;
-  font-weight: 600;
-  letter-spacing: 0.01em;
-  min-width: unset;
+  @include cal.today-button;
 }
 
 .cal-title {
-  font-size: 18px;
-  font-weight: 600;
-  color: var(--text-primary);
-  margin: 0;
+  @include cal.calendar-title;
 
   &.is-today {
     color: var(--accent);
@@ -80,9 +57,7 @@
 }
 
 .cal-scroll {
-  flex: 1;
-  overflow-y: auto;
-  overflow-x: hidden;
+  @include cal.scroll-container;
 }
 
 // ── All-day banner row ──────────────────────────────────────────────────────
@@ -149,7 +124,7 @@
   position: relative;
   display: grid;
   grid-template-columns: 52px 1fr;
-  padding-right: 16px;
+  padding: 18px 18px 18px 0;
 }
 
 .hour-slot {
@@ -164,27 +139,25 @@
 }
 
 .hour-label {
-  font-size: 12px;
-  font-weight: 500;
-  color: var(--text-tertiary);
-  text-align: right;
-  padding-right: 10px;
-  padding-top: 4px;
-  font-variant-numeric: tabular-nums;
-  line-height: 1;
+  @include cal.hour-label;
 }
 
 .hour-line {
-  border-top: 1px solid var(--border-subtle);
-  margin-top: 6px;
+  @include cal.hour-line;
 }
 
 .events-col {
   position: absolute;
   left: 52px;
-  right: 16px;
-  top: 0;
-  bottom: 0;
+  right: 18px;
+  top: 18px;
+  bottom: 18px;
 }
 
 @include cal.event-styles;
+
+@include cal.down('tablet') {
+  .cal-scroll {
+    margin: 0 16px 0;
+  }
+}

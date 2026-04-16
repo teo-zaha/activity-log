@@ -1,0 +1,40 @@
+<mat-card class="general-card">
+  <div class="general-card-head">
+    <div>
+      <span class="card-label u-kicker">Theme</span>
+      <h3>Dashboard appearance</h3>
+    </div>
+  </div>
+
+  <p class="general-copy">
+    Choose a theme that fits your working style. The current selection is saved automatically for
+    the next session.
+  </p>
+
+  <div class="theme-grid" aria-label="Theme selection">
+    @for (themeOption of themes; track themeOption.id) {
+      <button
+        class="theme-card"
+        type="button"
+        [class.active]="isThemeActive(themeOption.id)"
+        [attr.data-theme-option]="themeOption.id"
+        (click)="selectTheme(themeOption.id)"
+      >
+        <span class="theme-preview" [attr.data-theme-option]="themeOption.id">
+          <span class="theme-preview-top"></span>
+          <span class="theme-preview-main"></span>
+          <span class="theme-preview-accent"></span>
+        </span>
+
+        <span class="theme-copy">
+          <span class="theme-name">{{ themeOption.label }}</span>
+          <span class="theme-state">{{
+            isThemeActive(themeOption.id) ? 'Active theme' : 'Switch theme'
+          }}</span>
+        </span>
+
+        <mat-icon>{{ isThemeActive(themeOption.id) ? 'check_circle' : 'palette' }}</mat-icon>
+      </button>
+    }
+  </div>
+</mat-card>

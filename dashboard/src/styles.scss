@@ -1,4 +1,5 @@
 @use '@angular/material' as mat;
+@use './app/components/dashboard-utilities';
 
 @import '@fontsource/inter/300.css';
 @import '@fontsource/inter/400.css';
@@ -150,6 +151,18 @@ html.dark {
   --chip-jira: #4338ca;
   --chip-outlook: #0369a1;
   --chip-system: #334155;
+
+  // Shared shell and panel tokens
+  --app-shell-bg: var(--bg);
+  --panel-bg: var(--surface);
+  --panel-bg-muted: color-mix(in srgb, var(--surface-alt) 58%, var(--surface) 42%);
+  --panel-border: color-mix(in srgb, var(--border) 78%, transparent);
+  --panel-shadow: 0 20px 48px rgba(15, 23, 42, 0.08), 0 4px 14px rgba(15, 23, 42, 0.05);
+  --panel-shadow-strong: 0 28px 72px rgba(15, 23, 42, 0.14), 0 8px 24px rgba(15, 23, 42, 0.08);
+  --control-shadow: 0 10px 24px rgba(15, 23, 42, 0.08);
+  --accent-soft: color-mix(in srgb, var(--accent) 14%, transparent);
+  --accent-strong: color-mix(in srgb, var(--accent) 26%, transparent);
+  --content-max-width: 1120px;
 }
 
 html[data-theme='dark'],
@@ -210,6 +223,10 @@ html.dark {
   --chip-jira: #c7d2fe;
   --chip-outlook: #7dd3fc;
   --chip-system: #cbd5e1;
+
+  --panel-shadow: 0 24px 56px rgba(0, 0, 0, 0.28), 0 6px 18px rgba(0, 0, 0, 0.16);
+  --panel-shadow-strong: 0 36px 84px rgba(0, 0, 0, 0.4), 0 12px 28px rgba(0, 0, 0, 0.24);
+  --control-shadow: 0 14px 28px rgba(0, 0, 0, 0.22);
 }
 
 // ── Green ─────────────────────────────────────────────────────────────────────
@@ -660,4 +677,31 @@ mat-card {
 
 .mat-calendar-body-label {
   color: var(--text-tertiary) !important;
+}
+
+.settings-dialog-panel .mat-mdc-dialog-container {
+  --mdc-dialog-container-color: transparent;
+}
+
+.settings-dialog-panel .mat-mdc-dialog-surface {
+  background: transparent;
+  box-shadow: none;
+  border-radius: 0;
+}
+
+.error-alert-snackbar {
+  --mdc-snackbar-container-color: color-mix(in srgb, var(--error-bg) 90%, var(--surface) 10%);
+  --mdc-snackbar-supporting-text-color: var(--error-fg);
+  --mat-snack-bar-button-color: var(--error-fg);
+
+  .mat-mdc-snackbar-surface {
+    border: 1px solid var(--error-border);
+    border-radius: 16px !important;
+    box-shadow: var(--panel-shadow-strong);
+    min-width: min(560px, calc(100vw - 32px));
+  }
+
+  .mat-mdc-snack-bar-label {
+    font-weight: 600;
+  }
 }

@@ -1,0 +1,51 @@
+<aside class="settings-nav">
+  <div class="settings-brand">
+    <span class="settings-kicker u-kicker">Settings</span>
+    <p>Adjust appearance, inspect provider health, and preview future controls.</p>
+  </div>
+
+  <button
+    class="nav-item nav-item-general"
+    type="button"
+    [class.active]="selection() === 'general'"
+    (click)="selectGeneral()"
+  >
+    <span class="nav-item-main">
+      <mat-icon>tune</mat-icon>
+      <span>General</span>
+    </span>
+    <mat-icon>chevron_right</mat-icon>
+  </button>
+
+  <div class="nav-group">
+    <span class="nav-group-label u-kicker">Sources</span>
+
+    @for (provider of providers(); track provider.info.id) {
+      <button
+        class="nav-item source-item"
+        type="button"
+        [class.active]="isSourceSelected(provider.info.id)"
+        [attr.data-status]="provider.info.status"
+        (click)="selectSource(provider.info.id)"
+        [matTooltip]="provider.tooltip ?? ''"
+        [matTooltipDisabled]="!provider.tooltip"
+        matTooltipPosition="right"
+      >
+        <span class="nav-item-main">
+          <span class="source-icon">
+            <app-provider-icon
+              class="source-icon-glyph"
+              [source]="provider.info.id"
+              [fallbackIcon]="provider.icon"
+            ></app-provider-icon>
+          </span>
+          <span class="source-copy">
+            <span class="source-name">{{ provider.label }}</span>
+            <span class="source-status">{{ providerStatusLabel(provider.info.status) }}</span>
+          </span>
+        </span>
+        <app-status-dot [status]="provider.info.status"></app-status-dot>
+      </button>
+    }
+  </div>
+</aside>

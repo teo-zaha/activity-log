@@ -13,6 +13,7 @@
   flex: 1;
   overflow: hidden;
   min-height: 0;
+  padding: 0 0 20px;
 }
 
 .cal-nav {
@@ -24,47 +25,23 @@
 }
 
 .nav-controls {
-  display: flex;
-  align-items: center;
-  gap: 2px;
-  margin-left: auto;
-  background: var(--surface-alt);
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  padding: 3px;
+  @include cal.nav-controls;
 }
 
 .zoom-controls {
-  margin-left: 6px;
+  @include cal.zoom-controls;
 }
 
 .zoom-reset-btn {
-  padding: 0 8px;
-  font-size: 11px;
-  font-weight: 700;
-  letter-spacing: 0.03em;
-  min-width: unset;
-  color: var(--text-secondary);
-
-  &.at-default {
-    opacity: 0.35;
-    pointer-events: none;
-  }
+  @include cal.zoom-reset-button;
 }
 
 .today-btn {
-  padding: 0 22px;
-  font-size: 14px;
-  font-weight: 600;
-  letter-spacing: 0.01em;
-  min-width: unset;
+  @include cal.today-button;
 }
 
 .cal-title {
-  font-size: 18px;
-  font-weight: 600;
-  color: var(--text-primary);
-  margin: 0;
+  @include cal.calendar-title;
 }
 
 // ── Day column headers ─────────────────────────────────────────────────────
@@ -80,7 +57,9 @@
   display: flex;
   align-items: stretch;
   flex-shrink: 0;
-  border-bottom: 1px solid var(--border-subtle);
+  border-bottom: 1px solid color-mix(in srgb, var(--border) 65%, transparent);
+  background: color-mix(in srgb, var(--surface) 88%, transparent);
+  backdrop-filter: blur(8px);
 }
 
 .time-gutter {
@@ -95,7 +74,7 @@
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  padding: 6px 4px;
+  padding: 10px 4px;
   gap: 2px;
   cursor: pointer;
   border-left: 1px solid var(--border-subtle);
@@ -103,7 +82,7 @@
   min-width: 0;
 
   &:hover {
-    background: var(--surface-hover);
+    background: color-mix(in srgb, var(--surface-hover) 72%, transparent);
   }
 
   &.is-today {
@@ -137,7 +116,7 @@
 
 .day-weekday {
   font-size: 12px;
-  font-weight: 500;
+  font-weight: 700;
   color: var(--text-tertiary);
   text-transform: uppercase;
   letter-spacing: 0.5px;
@@ -145,7 +124,7 @@
 
 .day-date {
   font-size: 15px;
-  font-weight: 600;
+  font-weight: 700;
   color: var(--text-primary);
 }
 
@@ -205,9 +184,7 @@
 // ── Scrollable grid ────────────────────────────────────────────────────────
 
 .cal-scroll {
-  flex: 1;
-  overflow-y: auto;
-  overflow-x: hidden;
+  @include cal.scroll-container;
 }
 
 .week-grid {
@@ -225,22 +202,14 @@
 }
 
 .hour-label {
+  @include cal.hour-label;
   width: 52px;
   flex-shrink: 0;
-  font-size: 12px;
-  font-weight: 500;
-  color: var(--text-tertiary);
-  text-align: right;
-  padding-right: 10px;
-  padding-top: 4px;
-  font-variant-numeric: tabular-nums;
-  line-height: 1;
 }
 
 .hour-line {
+  @include cal.hour-line;
   flex: 1;
-  border-top: 1px solid var(--border-subtle);
-  margin-top: 6px;
 }
 
 // ── Day columns ────────────────────────────────────────────────────────────
@@ -261,7 +230,7 @@
   min-width: 0;
 
   &.is-today {
-    background: color-mix(in srgb, var(--accent) 4%, transparent);
+    background: color-mix(in srgb, var(--accent) 6%, transparent);
   }
 
   &.has-allday {
@@ -269,8 +238,14 @@
   }
 
   &.is-today.has-allday {
-    background: color-mix(in srgb, var(--accent) 4%, var(--badge-outlook-bg) 22%, transparent);
+    background: color-mix(in srgb, var(--accent) 6%, var(--badge-outlook-bg) 22%, transparent);
   }
 }
 
 @include cal.event-styles;
+
+@include cal.down('tablet') {
+  .cal-scroll {
+    margin: 0 16px 0;
+  }
+}

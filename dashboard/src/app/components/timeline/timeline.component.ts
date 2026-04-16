@@ -1,13 +1,14 @@
 import { Component, effect, inject } from '@angular/core'
 import { MatIconModule } from '@angular/material/icon'
 import { ActivityService } from '../../services/activity.service'
+import { ProviderIconComponent } from '../provider-icon/provider-icon.component'
 import { SearchBarComponent } from '../search-bar/search-bar.component'
 import type { EntryUiAdapter } from '../../providers/types'
 
 @Component({
   selector: 'app-timeline',
   standalone: true,
-  imports: [MatIconModule, SearchBarComponent],
+  imports: [MatIconModule, ProviderIconComponent, SearchBarComponent],
   templateUrl: './timeline.component.html',
   styleUrl: './timeline.component.scss',
 })
