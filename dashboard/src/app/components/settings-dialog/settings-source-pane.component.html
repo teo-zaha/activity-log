@@ -3,11 +3,13 @@
     <mat-card class="info-card u-surface-card">
       <div class="card-head">
         <div class="card-head-copy">
-          <span class="card-label u-kicker">Last startup check</span>
+          <span class="card-label u-kicker">Startup check</span>
         </div>
-        <app-status-pill [status]="provider().info.status"></app-status-pill>
+        <app-status-pill
+          class="startup-status-pill"
+          [status]="provider().info.status"
+        ></app-status-pill>
       </div>
-      <strong>{{ checkedAtLabel(provider().info.checkedAt) }}</strong>
       @if (provider().info.reason) {
         <p>{{ provider().info.reason }}</p>
       } @else {
@@ -22,7 +24,6 @@
           <mat-chip>{{ supportedOsLabel(os) }}</mat-chip>
         }
       </mat-chip-set>
-      <p>The provider runtime can inspect and collect on the platforms shown here.</p>
     </mat-card>
   </div>
 

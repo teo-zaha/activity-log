@@ -35,11 +35,4 @@ export class SettingsSourcePaneComponent {
         return 'Windows'
     }
   }
-
-  protected checkedAtLabel(value: string): string {
-    return new Date(value).toLocaleString('en-GB', {
-      dateStyle: 'medium',
-      timeStyle: 'short',
-    })
-  }
 }
