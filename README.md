@@ -154,6 +154,11 @@ pnpm types:generate
 
 This writes Rust-backed DTO types into `dashboard/src/app/generated/`.
 
+## Dashboard styling rules
+
+- Use named breakpoints from `dashboard/src/app/components/_dashboard-shared.scss` (for example `@include ui.down('phone')`) instead of raw `@media (max-width: ...)` when a named breakpoint exists.
+- Use `var(--content-max-width)` for shared content width caps instead of hardcoded `1120px`.
+
 ## Verification
 
 Run this before treating changes as done:
