@@ -1,0 +1,13 @@
+@use './dashboard-shared' as ui;
+
+.u-kicker {
+  @include ui.kicker-label;
+}
+
+.u-surface-card {
+  @include ui.surface-card;
+}
+
+.u-soft-accent-pill {
+  @include ui.soft-accent-pill;
+}

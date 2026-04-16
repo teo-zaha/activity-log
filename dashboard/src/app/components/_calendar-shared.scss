@@ -1,125 +1,168 @@
+@use './dashboard-shared' as ui;
+
 // Shared mixins and styles for day-view and week-view
+
+@mixin down($name) {
+  @include ui.down($name) {
+    @content;
+  }
+}
 
 @mixin nav-bar {
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 10px 20px;
-  border-bottom: 1px solid var(--border-subtle);
+  padding: 18px 20px 14px;
+  margin: 0 20px;
+  border-bottom: 1px solid color-mix(in srgb, var(--border) 65%, transparent);
   flex-shrink: 0;
-  background: var(--surface);
+  background: transparent;
 }
 
 @mixin nav-button {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
+  @include ui.chrome-icon-button(
+    $size: 36px,
+    $radius: 12px,
+    $border: 1px solid color-mix(in srgb, var(--border) 74%, transparent),
+    $background: color-mix(in srgb, var(--surface) 86%, transparent)
+  );
+
   min-width: 34px;
-  height: 34px;
-  border: none;
-  background: transparent;
-  color: var(--text-secondary);
-  border-radius: 6px;
-  cursor: pointer;
   font-family: Inter, sans-serif;
   font-size: 14px;
-  transition:
-    background 0.15s ease,
-    color 0.15s ease;
 
   .material-icons {
     font-size: 20px;
   }
+}
 
-  &:hover {
-    background: var(--surface-hover);
-    color: var(--text-primary);
+@mixin nav-controls {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-left: auto;
+  @include ui.segmented-surface;
+}
+
+@mixin zoom-controls {
+  margin-left: 8px;
+}
+
+@mixin zoom-reset-button {
+  padding: 0 8px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  min-width: unset;
+  color: var(--text-secondary);
+
+  &.at-default {
+    opacity: 0.35;
+    pointer-events: none;
   }
+}
+
+@mixin today-button {
+  padding: 0 18px;
+  font-size: 14px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  min-width: unset;
+}
+
+@mixin calendar-title {
+  font-size: 24px;
+  font-weight: 700;
+  color: var(--text-primary);
+  margin: 0;
+  letter-spacing: -0.04em;
+}
+
+@mixin scroll-container {
+  flex: 1;
+  overflow-y: auto;
+  overflow-x: hidden;
+  margin: 0 20px 0;
+  background: transparent;
+}
+
+@mixin hour-label {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--text-tertiary);
+  text-align: right;
+  padding-right: 10px;
+  padding-top: 4px;
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+}
+
+@mixin hour-line {
+  border-top: 1px solid color-mix(in srgb, var(--border) 65%, transparent);
+  margin-top: 6px;
 }
 
 @mixin event-styles {
   .cal-event {
     position: absolute;
-    border-radius: 5px;
-    padding: 3px 7px;
+    border-radius: 14px;
+    padding: 8px 10px;
     font-size: 13px;
-    font-weight: 500;
+    font-weight: 600;
     cursor: pointer;
     overflow: hidden;
-    border-left: 3px solid;
+    border-left: 4px solid;
+    border-top: 1px solid color-mix(in srgb, currentColor 12%, transparent);
+    border-right: 1px solid color-mix(in srgb, currentColor 12%, transparent);
+    border-bottom: 1px solid color-mix(in srgb, currentColor 12%, transparent);
     display: flex;
     align-items: center;
-    gap: 4px;
+    gap: 6px;
     transition:
       filter 0.1s ease,
-      box-shadow 0.1s ease;
+      box-shadow 0.1s ease,
+      transform 0.1s ease;
     z-index: 1;
 
     &:hover {
-      filter: brightness(0.93);
-      box-shadow: 0 2px 6px rgba(0, 0, 0, 0.15);
+      filter: brightness(0.98);
+      box-shadow: var(--control-shadow);
+      transform: translateY(-1px);
       z-index: 2;
-    }
-
-    &-git {
-      background: var(--badge-git-bg);
-      color: var(--badge-git-fg);
-      border-color: var(--badge-git-accent);
-    }
-    &-gitlab {
-      background: var(--badge-gitlab-bg);
-      color: var(--badge-gitlab-fg);
-      border-color: var(--badge-gitlab-accent);
-    }
-    &-jira {
-      background: var(--badge-jira-bg);
-      color: var(--badge-jira-fg);
-      border-color: var(--badge-jira-accent);
-    }
-    &-outlook {
-      background: var(--badge-outlook-bg);
-      color: var(--badge-outlook-fg);
-      border-color: var(--badge-outlook-accent);
-    }
-    &-system {
-      background: var(--badge-system-bg);
-      color: var(--badge-system-fg);
-      border-color: var(--badge-system-accent);
-    }
-    &-gitab {
-      background: linear-gradient(135deg, var(--badge-git-bg) 50%, var(--badge-gitlab-bg) 50%);
-      color: var(--text-primary);
-      border-color: var(--badge-git-accent);
     }
   }
 
+  @include ui.provider-event-variants('.cal-event');
+
   .cal-overflow {
     position: absolute;
-    border-radius: 5px;
-    padding: 3px 7px;
+    border-radius: 14px;
+    padding: 8px 10px;
     font-size: 12px;
     font-weight: 700;
     cursor: pointer;
     overflow: hidden;
-    border: 1px dashed var(--border-strong);
-    background: var(--surface-alt);
+    border: 1px dashed color-mix(in srgb, var(--border-strong) 82%, transparent);
+    background: color-mix(in srgb, var(--surface-alt) 78%, var(--surface) 22%);
     color: var(--text-secondary);
     display: flex;
     align-items: center;
-    gap: 4px;
+    gap: 6px;
     z-index: 1;
     transition:
       background 0.1s ease,
-      color 0.1s ease;
+      color 0.1s ease,
+      transform 0.1s ease;
 
     &:hover {
       background: var(--surface-hover);
       color: var(--text-primary);
+      transform: translateY(-1px);
     }
   }
 
   .cal-event-icon {
-    font-size: 11px;
+    font-size: 12px;
     line-height: 1;
     flex-shrink: 0;
     opacity: 0.85;

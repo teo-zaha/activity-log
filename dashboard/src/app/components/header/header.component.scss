@@ -1,10 +1,13 @@
+@use '../dashboard-shared' as ui;
+
 .app-header {
   position: sticky;
   top: 0;
   z-index: 100;
-  overflow: clip;
-  background: var(--header-bg);
-  border-bottom: 1px solid var(--header-border);
+  overflow: visible;
+  padding: 0 18px;
+  background: transparent;
+  border-bottom: none;
   transition:
     background-color 0.25s ease,
     border-color 0.25s ease;
@@ -33,8 +36,12 @@
   align-items: center;
   gap: 16px;
   flex-wrap: wrap;
-  padding: 15px;
-  transition: padding 0.22s ease;
+  padding: 16px 18px;
+  @include ui.panel-shell;
+  transition:
+    padding 0.22s ease,
+    background-color 0.22s ease,
+    border-color 0.22s ease;
 }
 
 :host-context(html.tauri) .window-drag-strip {
@@ -51,16 +58,12 @@
   pointer-events: none;
 }
 
-:host-context(html.tauri) .header-inner {
-  padding-top: 0;
-}
-
 // ── Brand ──────────────────────────────────────────────────────────────────
 
 .brand {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 12px;
   flex-shrink: 0;
   min-width: fit-content;
 }
@@ -69,18 +72,20 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  flex: 0 0 24px;
-  width: 24px;
-  height: 24px;
+  flex: 0 0 30px;
+  width: 30px;
+  height: 30px;
   font-size: 24px;
   color: var(--accent);
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--accent) 12%, var(--surface) 88%);
 }
 
 .brand-title {
   font-size: 18px;
-  font-weight: 600;
+  font-weight: 700;
   color: var(--text-primary);
-  letter-spacing: -0.3px;
+  letter-spacing: -0.04em;
   white-space: nowrap;
 }
 
@@ -103,22 +108,33 @@
   flex-wrap: wrap;
   flex: 1;
   justify-content: flex-end;
+  min-width: 0;
 }
 
 .ctrl-input-wrap {
   display: inline-flex;
   align-items: center;
   width: 200px;
+  flex: 0 0 200px;
+  min-width: 168px;
   height: 38px;
   border: 1px solid var(--border);
-  border-radius: 8px;
-  background: var(--surface);
+  border-radius: 14px;
+  background: color-mix(in srgb, var(--surface) 88%, transparent);
   padding: 0 4px 0 10px;
   box-sizing: border-box;
-  transition: border-color 0.15s ease;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06);
+  transition:
+    border-color 0.15s ease,
+    box-shadow 0.15s ease,
+    transform 0.15s ease;
 
   &:focus-within {
     border-color: var(--accent);
+    box-shadow:
+      inset 0 1px 0 rgba(255, 255, 255, 0.08),
+      0 0 0 4px color-mix(in srgb, var(--accent) 12%, transparent);
+    transform: translateY(-1px);
   }
 
   // Hide the default Material form-field wrapper inside toggle
@@ -177,9 +193,13 @@
   padding: 0 16px;
   height: 38px;
   min-width: 128px;
-  border-radius: 8px;
+  border-radius: 14px;
   border: none;
-  background: var(--btn-primary);
+  background: linear-gradient(
+    135deg,
+    var(--btn-primary),
+    color-mix(in srgb, var(--btn-primary) 74%, white 26%)
+  );
   color: var(--btn-primary-fg);
   font-size: 14px;
   font-weight: 500;
@@ -188,7 +208,11 @@
   white-space: nowrap;
   transition:
     background 0.15s ease,
-    opacity 0.15s ease;
+    opacity 0.15s ease,
+    transform 0.15s ease,
+    box-shadow 0.15s ease;
+  box-shadow: 0 16px 28px color-mix(in srgb, var(--btn-primary) 28%, transparent);
+  flex: 0 0 auto;
 
   .material-icons {
     font-size: 18px;
@@ -196,6 +220,7 @@
 
   &:hover:not(:disabled) {
     background: var(--btn-primary-hover);
+    transform: translateY(-1px);
   }
 
   &:disabled {
@@ -209,35 +234,78 @@
 }
 
 .btn-icon {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 38px;
-  height: 38px;
-  border-radius: 8px;
-  border: 1px solid var(--border);
-  background: var(--surface);
-  color: var(--text-secondary);
-  cursor: pointer;
-  transition:
-    background 0.15s ease,
-    color 0.15s ease,
-    border-color 0.15s ease;
+  @include ui.chrome-icon-button;
+
   flex-shrink: 0;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.05);
+  flex: 0 0 38px;
 
   .material-icons {
     font-size: 20px;
   }
+}
 
-  &:hover:not(:disabled) {
-    background: var(--surface-hover);
-    color: var(--text-primary);
-    border-color: var(--border-strong);
+@include ui.down('desktop-compact') {
+  .header-inner {
+    gap: 14px;
   }
 
-  &:disabled {
-    opacity: 0.4;
-    cursor: not-allowed;
+  .controls {
+    width: 100%;
+    justify-content: flex-end;
+  }
+}
+
+@include ui.down('tablet') {
+  .app-header {
+    padding: 0 12px;
+  }
+
+  .header-inner {
+    flex-wrap: wrap;
+    padding: 14px;
+    border-radius: 22px;
+  }
+
+  .controls {
+    width: 100%;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+    gap: 10px;
+  }
+
+  .ctrl-input-wrap {
+    flex: 1 1 180px;
+    width: auto;
+    min-width: 150px;
+  }
+
+  .btn-apply {
+    flex: 1 1 180px;
+    min-width: 140px;
+    padding: 0 14px;
+  }
+
+  .brand-title {
+    display: none;
+  }
+}
+
+@include ui.down('phone') {
+  .brand {
+    padding: 8px;
+  }
+
+  .ctrl-input-wrap {
+    flex: 1 1 100%;
+    width: 100%;
+    min-width: 0;
+  }
+
+  .btn-apply {
+    flex: 1 1 100%;
+    min-width: 0;
+    padding: 0 12px;
   }
 }
 

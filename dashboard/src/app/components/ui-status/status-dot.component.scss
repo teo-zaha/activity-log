@@ -1,0 +1,35 @@
+:host {
+  --status-dot-size: var(--status-dot-size-override, 10px);
+
+  display: inline-flex;
+  width: var(--status-dot-size);
+  height: var(--status-dot-size);
+  border-radius: 999px;
+  flex-shrink: 0;
+  background: var(--border-strong);
+  color: var(--border-strong);
+  box-shadow: 0 0 0 4px color-mix(in srgb, currentColor 12%, transparent);
+}
+
+:host(.size-sm) {
+  --status-dot-size: var(--status-dot-size-override, 8px);
+}
+
+:host(.no-glow) {
+  box-shadow: none;
+}
+
+:host([data-status='available']) {
+  color: #16a34a;
+  background: #22c55e;
+}
+
+:host([data-status='degraded']) {
+  color: #d97706;
+  background: #f59e0b;
+}
+
+:host([data-status='unavailable']) {
+  color: #dc2626;
+  background: #ef4444;
+}

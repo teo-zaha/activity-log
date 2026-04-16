@@ -1,0 +1,4 @@
+@if (showDot()) {
+  <app-status-dot [status]="status()" [size]="isSmall() ? 'sm' : 'md'"></app-status-dot>
+}
+<span class="label">{{ displayLabel() }}</span>

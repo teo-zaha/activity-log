@@ -1,0 +1,78 @@
+<div class="source-detail">
+  <div class="detail-grid">
+    <mat-card class="info-card u-surface-card">
+      <div class="card-head">
+        <div class="card-head-copy">
+          <span class="card-label u-kicker">Last startup check</span>
+        </div>
+        <app-status-pill [status]="provider().info.status"></app-status-pill>
+      </div>
+      <strong>{{ checkedAtLabel(provider().info.checkedAt) }}</strong>
+      @if (provider().info.reason) {
+        <p>{{ provider().info.reason }}</p>
+      } @else {
+        <p>No issues were reported during the latest provider inspection.</p>
+      }
+    </mat-card>
+
+    <mat-card class="info-card u-surface-card">
+      <span class="card-label u-kicker">Supported OS</span>
+      <mat-chip-set aria-label="Supported operating systems">
+        @for (os of provider().info.supportedOs; track os) {
+          <mat-chip>{{ supportedOsLabel(os) }}</mat-chip>
+        }
+      </mat-chip-set>
+      <p>The provider runtime can inspect and collect on the platforms shown here.</p>
+    </mat-card>
+  </div>
+
+  <mat-divider></mat-divider>
+
+  <div class="placeholder-grid">
+    <mat-card class="placeholder-card u-surface-card">
+      <div class="placeholder-head">
+        <div>
+          <span class="card-label u-kicker">Event options</span>
+          <h3>Event filtering</h3>
+        </div>
+        <span class="coming-soon u-soft-accent-pill">Coming soon</span>
+      </div>
+
+      <p class="placeholder-copy">
+        Future versions will let you decide which event categories from this source should be
+        surfaced.
+      </p>
+
+      <mat-radio-group class="disabled-radio-group" aria-label="Future event options">
+        <mat-radio-button [disabled]="true">Default event set</mat-radio-button>
+        <mat-radio-button [disabled]="true">High-signal events only</mat-radio-button>
+        <mat-radio-button [disabled]="true">Custom source rules</mat-radio-button>
+      </mat-radio-group>
+    </mat-card>
+
+    <mat-card class="placeholder-card u-surface-card">
+      <div class="placeholder-head">
+        <div>
+          <span class="card-label u-kicker">Auth config</span>
+          <h3>Connection setup</h3>
+        </div>
+        <span class="coming-soon u-soft-accent-pill">Coming soon</span>
+      </div>
+
+      <p class="placeholder-copy">
+        Authentication and provider-specific connection settings are not editable in the dashboard
+        yet.
+      </p>
+
+      <div class="auth-placeholder">
+        <span class="auth-icon">
+          <mat-icon>lock_person</mat-icon>
+        </span>
+        <div>
+          <strong>Manage credentials outside the UI</strong>
+          <p>Provider setup still follows the existing backend/runtime configuration workflow.</p>
+        </div>
+      </div>
+    </mat-card>
+  </div>
+</div>

@@ -2,15 +2,8 @@
 
 <app-header />
 
-@if (activity.error()) {
-  <div class="error-banner">
-    <span class="material-icons">error_outline</span>
-    {{ activity.error() }}
-  </div>
-}
-
 <main>
-  <app-filters />
+  <app-sidebar />
 
   <div class="main-content">
     @switch (activity.currentView()) {

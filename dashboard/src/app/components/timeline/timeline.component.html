@@ -30,8 +30,12 @@
               <div class="entry" (click)="selectEntry(entry)">
                 <div class="entry-accent" [class]="'accent-' + entry.styleKey"></div>
                 <span class="badge" [class]="entry.badge.badgeClass">
-                  <span class="material-icons badge-icon">{{ entry.badge.icon }}</span
-                  >{{ entry.badge.label }}
+                  <app-provider-icon
+                    class="badge-icon"
+                    [source]="entry.badge.source"
+                    [fallbackIcon]="entry.badge.icon"
+                  ></app-provider-icon>
+                  {{ entry.badge.label }}
                 </span>
                 <div class="entry-body">
                   <div class="entry-title">{{ entry.title }}</div>

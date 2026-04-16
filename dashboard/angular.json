@@ -30,7 +30,14 @@
             "browser": "src/main.ts",
             "polyfills": ["zone.js"],
             "tsConfig": "tsconfig.json",
-            "assets": ["src/favicon.svg"],
+            "assets": [
+              "src/favicon.svg",
+              {
+                "glob": "**/*",
+                "input": "src/assets",
+                "output": "assets"
+              }
+            ],
             "styles": ["src/styles.scss"],
             "scripts": []
           },

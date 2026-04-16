@@ -1,10 +1,11 @@
 import { Component, inject } from '@angular/core'
 import { ActivityService } from '../../services/activity.service'
+import { ProviderIconComponent } from '../provider-icon/provider-icon.component'
 
 @Component({
   selector: 'app-event-detail',
   standalone: true,
-  imports: [],
+  imports: [ProviderIconComponent],
   templateUrl: './event-detail.component.html',
   styleUrl: './event-detail.component.scss',
 })

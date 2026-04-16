@@ -1,0 +1,61 @@
+<div class="settings-shell">
+  <app-settings-dialog-nav
+    [selection]="selection()"
+    [providers]="providerRows()"
+    (generalSelected)="selectGeneral()"
+    (sourceSelected)="selectSource($event)"
+  />
+
+  <section class="settings-content">
+    <header class="content-header">
+      <div class="content-heading">
+        @if (selectedProvider(); as provider) {
+          <span class="content-kicker u-kicker">Sources</span>
+          <div class="provider-heading">
+            <span class="provider-heading-icon" [attr.data-status]="provider.info.status">
+              <app-provider-icon
+                class="provider-heading-glyph"
+                [source]="provider.info.id"
+                [fallbackIcon]="provider.icon"
+              ></app-provider-icon>
+            </span>
+            <h2>{{ provider.label }}</h2>
+          </div>
+        } @else {
+          <span class="content-kicker u-kicker">General</span>
+          <h2>Appearance</h2>
+          <p>
+            Pick a theme for the dashboard. Changes apply immediately and stay active after reload.
+          </p>
+        }
+      </div>
+
+      <div class="header-actions">
+        <button
+          mat-icon-button
+          type="button"
+          class="close-btn"
+          (click)="close()"
+          aria-label="Close settings"
+        >
+          <mat-icon>close</mat-icon>
+        </button>
+      </div>
+    </header>
+
+    <app-settings-dialog-mobile-tabs
+      [selection]="selection()"
+      [providers]="providerRows()"
+      (generalSelected)="selectGeneral()"
+      (sourceSelected)="selectSource($event)"
+    />
+
+    <div class="settings-scroll">
+      @if (selectedProvider(); as provider) {
+        <app-settings-source-pane [provider]="provider" />
+      } @else {
+        <app-settings-general-pane />
+      }
+    </div>
+  </section>
+</div>

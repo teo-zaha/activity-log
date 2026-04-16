@@ -1,50 +1,79 @@
+@use '../dashboard-shared' as ui;
+
 :host {
   display: block;
   position: sticky;
   top: 0;
   z-index: 10;
+  overflow-x: clip;
+
+  &::before {
+    content: '';
+    position: absolute;
+    inset: 0 0 auto;
+    height: calc(100% + 24px);
+    background: color-mix(in srgb, var(--bg, #fff) 72%, transparent);
+    backdrop-filter: blur(22px);
+    -webkit-backdrop-filter: blur(22px);
+    mask-image: linear-gradient(
+      to bottom,
+      rgba(0, 0, 0, 0.96) 0%,
+      rgba(0, 0, 0, 0.72) 28%,
+      rgba(0, 0, 0, 0.3) 58%,
+      transparent 100%
+    );
+    -webkit-mask-image: linear-gradient(
+      to bottom,
+      rgba(0, 0, 0, 0.96) 0%,
+      rgba(0, 0, 0, 0.72) 28%,
+      rgba(0, 0, 0, 0.3) 58%,
+      transparent 100%
+    );
+    pointer-events: none;
+  }
 }
 
 .search-dock {
-  max-width: 1000px;
+  position: relative;
+  z-index: 1;
+  max-width: var(--content-max-width);
   width: 100%;
+  box-sizing: border-box;
   margin: 0 auto;
-  padding: 16px 20px 12px;
-  background: color-mix(in srgb, var(--bg, #fff) 75%, transparent);
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
-  mask-image: linear-gradient(black 70%, transparent);
-  -webkit-mask-image: linear-gradient(black 70%, transparent);
+  padding: 24px 24px 14px;
 }
 
 .search-field {
   position: relative;
+  z-index: 1;
   display: flex;
   align-items: center;
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: 10px;
+  @include ui.panel-shell($radius: 18px, $background: var(--surface));
   transition:
     border-color 0.15s ease,
-    box-shadow 0.15s ease;
+    box-shadow 0.15s ease,
+    transform 0.15s ease;
 
   &:focus-within {
     border-color: var(--accent);
-    box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 12%, transparent);
+    box-shadow:
+      var(--panel-shadow),
+      0 0 0 4px color-mix(in srgb, var(--accent) 12%, transparent);
+    transform: translateY(-1px);
   }
 }
 
 .search-icon {
   position: absolute;
-  left: 12px;
-  font-size: 18px;
+  left: 16px;
+  font-size: 20px;
   color: var(--text-tertiary);
   pointer-events: none;
 }
 
 .search-input {
   width: 100%;
-  padding: 10px 40px 10px 42px;
+  padding: 14px 44px 14px 50px;
   border: none;
   background: transparent;
   color: var(--text-primary);
@@ -59,7 +88,7 @@
 
 .search-clear {
   position: absolute;
-  right: 8px;
+  right: 10px;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -69,7 +98,7 @@
   background: transparent;
   color: var(--text-tertiary);
   cursor: pointer;
-  border-radius: 6px;
+  border-radius: 10px;
   transition:
     background 0.15s ease,
     color 0.15s ease;
@@ -81,5 +110,11 @@
 
   .material-icons {
     font-size: 16px;
+  }
+}
+
+@include ui.down('tablet') {
+  .search-dock {
+    padding: 16px 16px 10px;
   }
 }

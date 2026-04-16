@@ -1,19 +1,20 @@
+@use '../dashboard-shared' as ui;
+
 .backdrop {
   position: fixed;
   inset: 0;
-  background: rgba(0, 0, 0, 0.35);
+  background: rgba(15, 23, 42, 0.42);
   z-index: 200;
   animation: fadeIn 0.2s ease;
 }
 
 .flyout {
   position: fixed;
-  top: 0;
-  right: 0;
-  width: 380px;
-  height: 100dvh;
-  background: var(--surface);
-  border-left: 1px solid var(--border);
+  top: 16px;
+  right: 16px;
+  width: min(420px, calc(100vw - 32px));
+  height: calc(100dvh - 32px);
+  @include ui.panel-shell($shadow: var(--panel-shadow-strong));
   z-index: 201;
   display: flex;
   flex-direction: column;
@@ -27,8 +28,8 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 16px 20px;
-  border-bottom: 1px solid var(--border-subtle);
+  padding: 18px 22px;
+  border-bottom: 1px solid color-mix(in srgb, var(--border) 65%, transparent);
   flex-shrink: 0;
 }
 
@@ -38,62 +39,26 @@
 }
 
 .flyout-badge {
-  display: inline-flex;
-  align-items: center;
+  @include ui.provider-badge-base($padding: 5px 10px, $font-size: 12px);
+
   gap: 5px;
-  font-size: 12px;
-  font-weight: 600;
-  padding: 4px 10px;
-  border-radius: 6px;
-  text-transform: uppercase;
   letter-spacing: 0.5px;
+}
 
-  .material-icons {
-    font-size: 15px;
-    line-height: 1;
-  }
+@include ui.provider-badge-variants('.flyout-badge');
 
-  &.badge-git {
-    background: var(--badge-git-bg);
-    color: var(--badge-git-fg);
-  }
-  &.badge-gitlab {
-    background: var(--badge-gitlab-bg);
-    color: var(--badge-gitlab-fg);
-  }
-  &.badge-jira {
-    background: var(--badge-jira-bg);
-    color: var(--badge-jira-fg);
-  }
-  &.badge-outlook {
-    background: var(--badge-outlook-bg);
-    color: var(--badge-outlook-fg);
-  }
-  &.badge-system {
-    background: var(--badge-system-bg);
-    color: var(--badge-system-fg);
-  }
+.flyout-badge-icon {
+  font-size: 15px;
+  line-height: 1;
 }
 
 .flyout-close {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 32px;
-  height: 32px;
-  border: none;
-  background: transparent;
-  color: var(--text-tertiary);
-  cursor: pointer;
-  border-radius: 6px;
-  transition:
-    background 0.15s ease,
-    color 0.15s ease;
-
-  &:hover {
-    background: var(--surface-hover);
-    color: var(--text-primary);
-  }
+  @include ui.chrome-icon-button(
+    $size: 36px,
+    $radius: 12px,
+    $border: 1px solid color-mix(in srgb, var(--border) 74%, transparent),
+    $background: color-mix(in srgb, var(--surface) 86%, transparent)
+  );
 
   .material-icons {
     font-size: 18px;
@@ -105,15 +70,16 @@
 .flyout-body {
   flex: 1;
   overflow-y: auto;
-  padding: 20px;
+  padding: 22px;
 }
 
 .flyout-title {
-  font-size: 19px;
-  font-weight: 600;
+  font-size: 28px;
+  font-weight: 700;
   color: var(--text-primary);
-  margin: 0 0 10px;
-  line-height: 1.4;
+  margin: 0 0 12px;
+  line-height: 1.15;
+  letter-spacing: -0.04em;
   word-break: break-word;
 }
 
@@ -123,7 +89,11 @@
   gap: 6px;
   font-size: 14px;
   color: var(--text-secondary);
-  margin: 0 0 24px;
+  margin: 0 0 28px;
+  padding: 12px 14px;
+  border-radius: 16px;
+  background: color-mix(in srgb, var(--surface-alt) 75%, var(--surface) 25%);
+  border: 1px solid color-mix(in srgb, var(--border) 72%, transparent);
 
   .material-icons {
     font-size: 15px;
@@ -140,15 +110,17 @@
 }
 
 .flyout-section {
-  padding-bottom: 20px;
-  border-bottom: 1px solid var(--border-subtle);
+  padding: 18px;
+  border: 1px solid var(--panel-border);
+  border-radius: 22px;
+  background: var(--panel-bg-muted);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.05);
 
   & + .flyout-section {
-    padding-top: 20px;
+    margin-top: 16px;
   }
   &:last-child {
-    border-bottom: none;
-    padding-bottom: 0;
+    margin-bottom: 0;
   }
 }
 
@@ -156,7 +128,7 @@
   display: flex;
   align-items: center;
   gap: 10px;
-  margin-bottom: 6px;
+  margin-bottom: 12px;
 
   .flyout-badge {
     flex-shrink: 0;
@@ -165,7 +137,7 @@
 
 .flyout-section-entry-title {
   font-size: 14px;
-  font-weight: 500;
+  font-weight: 600;
   color: var(--text-primary);
   flex: 1;
   min-width: 0;
@@ -174,7 +146,7 @@
 
 .flyout-section-title {
   display: inline-flex;
-  margin-bottom: 6px;
+  margin-bottom: 12px;
 }
 
 // ── Fields ────────────────────────────────────────────────────────────────────
@@ -182,16 +154,18 @@
 .flyout-fields {
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: 8px;
 }
 
 .field-row {
   display: grid;
   grid-template-columns: 116px 1fr;
   gap: 8px;
-  padding: 9px 12px;
-  border-radius: 8px;
+  padding: 11px 12px;
+  border-radius: 14px;
   font-size: 14px;
+  background: color-mix(in srgb, var(--surface) 88%, transparent);
+  border: 1px solid color-mix(in srgb, var(--border) 65%, transparent);
   transition: background 0.1s ease;
 }
 
@@ -205,6 +179,27 @@
   color: var(--text-primary);
   word-break: break-all;
   font-size: 13px;
+}
+
+@include ui.down('phone') {
+  .flyout {
+    top: 8px;
+    right: 8px;
+    width: calc(100vw - 16px);
+    height: calc(100dvh - 16px);
+    border-radius: 22px;
+  }
+
+  .flyout-body,
+  .flyout-header {
+    padding-left: 16px;
+    padding-right: 16px;
+  }
+
+  .field-row {
+    grid-template-columns: 1fr;
+    gap: 4px;
+  }
 }
 
 // ── Animations ────────────────────────────────────────────────────────────────
