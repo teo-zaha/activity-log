@@ -1,8 +1,7 @@
 use crate::{
     model::{
         ActivityEntry, ActivityLog, ActivityLogMeta, CollectOptions, CollectedActivity,
-        CollectedActivitySummary,
-        IntoActivityEntries,
+        CollectedActivitySummary, IntoActivityEntries,
     },
     utils::{merge_git_with_gitlab, now_iso},
 };
@@ -62,7 +61,13 @@ pub fn collect_activity_from_results(
     );
 
     entries.extend(merged.merged_git.iter().cloned().into_activity_entries());
-    entries.extend(merged.remaining_gitlab.iter().cloned().into_activity_entries());
+    entries.extend(
+        merged
+            .remaining_gitlab
+            .iter()
+            .cloned()
+            .into_activity_entries(),
+    );
     entries.extend(jira_entries.iter().cloned().into_activity_entries());
     entries.extend(outlook_entries.iter().cloned().into_activity_entries());
     entries.extend(system_entries.iter().cloned().into_activity_entries());

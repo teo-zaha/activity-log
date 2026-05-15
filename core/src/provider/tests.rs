@@ -1,13 +1,18 @@
 use futures::future::BoxFuture;
-use std::sync::{
-    Arc,
-    atomic::{AtomicUsize, Ordering},
+use std::{
+    path::PathBuf,
+    sync::{
+        Arc,
+        atomic::{AtomicUsize, Ordering},
+    },
 };
 
 use crate::{
+    collect::git::{resolve_git_repos_from_roots, resolve_git_repos_with_home_root},
     model::{ActivityEntry, CollectOptions, Source, SupportedOs},
     provider::{
         current_os,
+        git::{GitConfig, default_git_root_with_lookup},
         provider_adapter::ProviderAdapter,
         provider_check_result::ProviderCheckResult,
         provider_config::{
@@ -19,6 +24,7 @@ use crate::{
         provider_runtime::ProviderRuntime,
     },
 };
+use tempfile::tempdir;
 
 #[test]
 fn registry_includes_all_builtin_providers() {
@@ -343,6 +349,7 @@ crate::provider_config! {
 
 #[test]
 fn provider_config_macro_bool_defaults_to_false() {
+    let _ = MacroBoolConfig::binding();
     let source = TestConfigSource::default();
     let config = ProviderConfig::resolve(&source, MacroBoolConfig::requirements());
     let parsed = MacroBoolConfig::from_config(&config).expect("macro bool config should parse");
@@ -351,6 +358,7 @@ fn provider_config_macro_bool_defaults_to_false() {
 
 #[test]
 fn provider_config_macro_default_string_is_used_when_missing() {
+    let _ = MacroDefaultStringConfig::binding();
     let source = TestConfigSource::default();
     let config = ProviderConfig::resolve(&source, MacroDefaultStringConfig::requirements());
     let parsed =
@@ -361,13 +369,82 @@ fn provider_config_macro_default_string_is_used_when_missing() {
 #[test]
 fn provider_config_macro_generates_expected_key_metadata() {
     assert_eq!(TEST_MACRO_BOOL_FLAG.name, "TEST_MACRO_BOOL_FLAG");
-    assert!(!TEST_MACRO_BOOL_FLAG.required);
-    assert_eq!(TEST_MACRO_BOOL_FLAG.value_type, ProviderConfigValueType::Bool);
+    assert!(!std::hint::black_box(TEST_MACRO_BOOL_FLAG.required));
+    assert_eq!(
+        TEST_MACRO_BOOL_FLAG.value_type,
+        ProviderConfigValueType::Bool
+    );
 
     assert_eq!(TEST_MACRO_DEFAULT_VALUE.name, "TEST_MACRO_DEFAULT_VALUE");
-    assert!(!TEST_MACRO_DEFAULT_VALUE.required);
+    assert!(!std::hint::black_box(TEST_MACRO_DEFAULT_VALUE.required));
     assert_eq!(
         TEST_MACRO_DEFAULT_VALUE.value_type,
         ProviderConfigValueType::String
     );
+}
+
+#[test]
+fn windows_git_default_root_prefers_user_profile() {
+    let root = default_git_root_with_lookup(SupportedOs::Windows, |key| match key {
+        "USERPROFILE" => Some(r"C:\Users\teodora".into()),
+        _ => None,
+    });
+
+    assert_eq!(root, Some(PathBuf::from(r"C:\Users\teodora")));
+}
+
+#[test]
+fn unix_git_default_root_uses_home() {
+    let macos_root = default_git_root_with_lookup(SupportedOs::Macos, |key| match key {
+        "HOME" => Some("/Users/teodora".into()),
+        _ => None,
+    });
+    let linux_root = default_git_root_with_lookup(SupportedOs::Linux, |key| match key {
+        "HOME" => Some("/home/teodora".into()),
+        _ => None,
+    });
+
+    assert_eq!(macos_root, Some(PathBuf::from("/Users/teodora")));
+    assert_eq!(linux_root, Some(PathBuf::from("/home/teodora")));
+}
+
+#[test]
+fn unix_git_default_root_does_not_fall_back_to_root() {
+    let root = default_git_root_with_lookup(SupportedOs::Linux, |_| None);
+    assert_eq!(root, None);
+}
+
+#[test]
+fn git_resolution_uses_home_discovery_when_dirs_are_unset() {
+    let tmp = tempdir().expect("tempdir");
+    let home_root = tmp.path().join("home");
+    let nested_repo = home_root.join("workspace").join("nested-repo");
+
+    std::fs::create_dir_all(nested_repo.join(".git")).expect("nested repo");
+
+    let repos = resolve_git_repos_with_home_root(&GitConfig { dirs: None }, Some(home_root))
+        .expect("home discovery should succeed");
+
+    assert_eq!(repos, vec![nested_repo]);
+}
+
+#[test]
+fn git_repo_resolution_accepts_repo_paths_and_search_roots() {
+    let tmp = tempdir().expect("tempdir");
+    let direct_repo = tmp.path().join("direct-repo");
+    let nested_root = tmp.path().join("workspace");
+    let nested_repo = nested_root.join("nested-repo");
+    let duplicate_root = nested_repo.clone();
+
+    std::fs::create_dir_all(direct_repo.join(".git")).expect("direct repo");
+    std::fs::create_dir_all(nested_repo.join(".git")).expect("nested repo");
+
+    let repos = resolve_git_repos_from_roots(&[
+        direct_repo.clone(),
+        nested_root,
+        duplicate_root,
+        tmp.path().join("missing"),
+    ]);
+
+    assert_eq!(repos, vec![direct_repo, nested_repo]);
 }

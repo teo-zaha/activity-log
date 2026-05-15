@@ -40,16 +40,26 @@
 
 .flyout-badge {
   @include ui.provider-badge-base($padding: 5px 10px, $font-size: 12px);
-
-  gap: 5px;
+  position: relative;
+  justify-content: center;
+  padding-left: 30px;
+  padding-right: 12px;
   letter-spacing: 0.5px;
 }
 
 @include ui.provider-badge-variants('.flyout-badge');
 
 .flyout-badge-icon {
+  position: absolute;
+  left: 10px;
   font-size: 15px;
   line-height: 1;
+}
+
+.flyout-badge-label {
+  display: block;
+  flex: 1;
+  text-align: center;
 }
 
 .flyout-close {

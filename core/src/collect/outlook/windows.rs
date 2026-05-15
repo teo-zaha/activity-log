@@ -1,7 +1,7 @@
 use anyhow::{Result, anyhow};
-use tokio::process::Command;
 
 use crate::model::{CollectOptions, OutlookEntry};
+use crate::platform::powershell_command;
 
 use super::{normalize_outlook_events, parse_raw_outlook_events};
 
@@ -42,9 +42,7 @@ if ($result.Count -gt 0) {{ $result | ConvertTo-Json -Compress }} else {{ '[]' }
         until = options.until.format("%Y-%m-%d"),
     );
 
-    let output = Command::new("powershell.exe")
-        .arg("-NoProfile")
-        .arg("-NonInteractive")
+    let output = powershell_command()
         .arg("-Command")
         .arg(script)
         .output()

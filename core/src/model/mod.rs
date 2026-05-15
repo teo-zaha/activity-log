@@ -10,7 +10,8 @@ pub use activity::{
     activity_entry::{ActivityEntry, IntoActivityEntries},
     activity_log::ActivityLog,
     activity_log_meta::ActivityLogMeta,
-    collected_activity::CollectedActivity, collected_activity_summary::CollectedActivitySummary,
+    collected_activity::CollectedActivity,
+    collected_activity_summary::CollectedActivitySummary,
     merge_result::MergeResult,
 };
 pub use common::{

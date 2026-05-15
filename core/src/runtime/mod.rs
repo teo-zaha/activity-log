@@ -178,10 +178,7 @@ pub fn resolve_collect_options(
             let until = parse_date(until, "until")
                 .map_err(|_| "since and until must be valid dates in YYYY-MM-DD format")?;
 
-            Ok(CollectOptions {
-                since,
-                until,
-            })
+            Ok(CollectOptions { since, until })
         }
         (None, None, Some(preset)) => {
             let (since, until) = resolve_range(preset.clone());
@@ -190,10 +187,7 @@ pub fn resolve_collect_options(
             let until = parse_date(&until, "until")
                 .map_err(|_| "since and until must be valid dates in YYYY-MM-DD format")?;
 
-            Ok(CollectOptions {
-                since,
-                until,
-            })
+            Ok(CollectOptions { since, until })
         }
         _ => Err("Provide either since/until or preset"),
     }

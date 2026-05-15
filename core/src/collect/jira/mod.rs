@@ -1,5 +1,4 @@
 use anyhow::{Result, anyhow};
-use reqwest::{Client, header};
 
 use crate::{
     cache::with_range_cache,
@@ -7,7 +6,10 @@ use crate::{
         CollectOptions, JiraEntry, JiraEntryType,
         jira::{jira_issue::JiraIssue, jira_search_response::JiraSearchResponse},
     },
-    provider::{jira::JiraConfig, provider_context::ProviderContext},
+    provider::{
+        jira::{JiraConfig, jira_client},
+        provider_context::ProviderContext,
+    },
 };
 
 pub async fn collect_jira(
@@ -19,28 +21,7 @@ pub async fn collect_jira(
     let until = options.until.format("%Y-%m-%d").to_string();
 
     with_range_cache("jira", options, |_| {}, || async {
-        let mut headers = header::HeaderMap::new();
-        headers.insert(
-            header::CONTENT_TYPE,
-            header::HeaderValue::from_static("application/json"),
-        );
-
-        let auth_header = if config.auth_type.eq_ignore_ascii_case("basic") {
-            let credentials = format!("{}:{}", config.email, config.token);
-            format!("Basic {}", base64_encode(credentials.as_bytes()))
-        } else {
-            format!("Bearer {}", config.token)
-        };
-        headers.insert(
-            header::AUTHORIZATION,
-            header::HeaderValue::from_str(&auth_header)
-                .map_err(|_| anyhow!("Jira authentication setup failed"))?,
-        );
-
-        let client = Client::builder()
-            .default_headers(headers)
-            .danger_accept_invalid_certs(config.insecure)
-            .build()?;
+        let client = jira_client(config)?;
 
         let mut entries = Vec::new();
         let mut start_at = 0;
@@ -161,32 +142,6 @@ fn is_timestamp_in_range(timestamp: &str, since: &str, until: &str) -> bool {
         .get(0..10)
         .map(|date| date >= since && date <= until)
         .unwrap_or(false)
-}
-
-fn base64_encode(input: &[u8]) -> String {
-    const TABLE: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
-    let mut output = String::new();
-    let mut index = 0;
-    while index < input.len() {
-        let a = input[index];
-        let b = *input.get(index + 1).unwrap_or(&0);
-        let c = *input.get(index + 2).unwrap_or(&0);
-
-        output.push(TABLE[(a >> 2) as usize] as char);
-        output.push(TABLE[(((a & 0b11) << 4) | (b >> 4)) as usize] as char);
-        output.push(if index + 1 < input.len() {
-            TABLE[(((b & 0b1111) << 2) | (c >> 6)) as usize] as char
-        } else {
-            '='
-        });
-        output.push(if index + 2 < input.len() {
-            TABLE[(c & 0b11_1111) as usize] as char
-        } else {
-            '='
-        });
-        index += 3;
-    }
-    output
 }
 
 #[cfg(test)]

@@ -2,7 +2,21 @@ use chrono::{TimeZone, Utc};
 
 use crate::model::SystemEntryType;
 
-use super::{WINDOWS_SYSTEM_EVENTS, macos::parse_last_output, map_windows_events};
+use super::{
+    WINDOWS_SYSTEM_EVENTS, macos::parse_last_output, map_windows_events, parse_raw_system_events,
+};
+
+#[test]
+fn parses_windows_event_json_payloads() {
+    let events = parse_raw_system_events(
+        r#"[{"id":6005,"ts":"2026-03-25T08:00:00Z"},{"id":6006,"ts":"2026-03-25T18:00:00Z"}]"#,
+    )
+    .unwrap();
+
+    assert_eq!(events.len(), 2);
+    assert_eq!(events[0].id, 6005);
+    assert_eq!(events[1].ts, "2026-03-25T18:00:00Z");
+}
 
 #[test]
 fn windows_mapping_excludes_sleep_and_wake() {

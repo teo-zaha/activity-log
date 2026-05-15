@@ -53,7 +53,10 @@ macro_rules! provider {
                 &self,
                 current_os: $crate::model::SupportedOs,
                 context: $crate::provider::provider_context::ProviderContext,
-            ) -> futures::future::BoxFuture<'_, $crate::provider::provider_check_result::ProviderCheckResult> {
+            ) -> futures::future::BoxFuture<
+                '_,
+                $crate::provider::provider_check_result::ProviderCheckResult,
+            > {
                 let $startup_os = current_os;
                 let $startup_ctx = context;
                 Box::pin(async move { $startup_body })
@@ -64,7 +67,8 @@ macro_rules! provider {
                 current_os: $crate::model::SupportedOs,
                 options: $crate::model::CollectOptions,
                 context: $crate::provider::provider_context::ProviderContext,
-            ) -> futures::future::BoxFuture<'_, anyhow::Result<Vec<$crate::model::ActivityEntry>>> {
+            ) -> futures::future::BoxFuture<'_, anyhow::Result<Vec<$crate::model::ActivityEntry>>>
+            {
                 let $collect_os = current_os;
                 let $collect_options = options;
                 let $collect_ctx = context;
@@ -93,7 +97,10 @@ macro_rules! provider {
                 &self,
                 current_os: $crate::model::SupportedOs,
                 context: $crate::provider::provider_context::ProviderContext,
-            ) -> futures::future::BoxFuture<'_, $crate::provider::provider_check_result::ProviderCheckResult> {
+            ) -> futures::future::BoxFuture<
+                '_,
+                $crate::provider::provider_check_result::ProviderCheckResult,
+            > {
                 let $startup_os = current_os;
                 let $startup_ctx = context;
                 Box::pin(async move { $startup_body })
@@ -104,7 +111,8 @@ macro_rules! provider {
                 current_os: $crate::model::SupportedOs,
                 options: $crate::model::CollectOptions,
                 context: $crate::provider::provider_context::ProviderContext,
-            ) -> futures::future::BoxFuture<'_, anyhow::Result<Vec<$crate::model::ActivityEntry>>> {
+            ) -> futures::future::BoxFuture<'_, anyhow::Result<Vec<$crate::model::ActivityEntry>>>
+            {
                 let $collect_os = current_os;
                 let $collect_options = options;
                 let $collect_ctx = context;

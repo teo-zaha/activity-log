@@ -1,17 +1,20 @@
 use anyhow::{Result, anyhow};
 use chrono::{DateTime, TimeZone, Utc};
+#[cfg(any(target_os = "windows", test))]
 use serde_json::Value;
 
-use crate::model::{
-    CollectOptions, SupportedOs, SystemEntry, SystemEntryType,
-    system::raw_system_event::RawSystemEvent,
-};
+use crate::model::{CollectOptions, SupportedOs, SystemEntry};
+#[cfg(any(target_os = "windows", test))]
+use crate::model::{SystemEntryType, system::raw_system_event::RawSystemEvent};
 
+#[cfg(any(target_os = "macos", test))]
 mod macos;
 #[cfg(test)]
 mod tests;
+#[cfg(target_os = "windows")]
 mod windows;
 
+#[cfg(any(target_os = "windows", test))]
 pub(crate) const WINDOWS_SYSTEM_EVENTS: &[(i32, SystemEntryType, &str)] = &[
     (6005, SystemEntryType::Boot, "System started"),
     (6006, SystemEntryType::Shutdown, "System shutdown"),
@@ -22,17 +25,63 @@ pub(crate) const WINDOWS_SYSTEM_EVENTS: &[(i32, SystemEntryType, &str)] = &[
     ),
 ];
 
+#[cfg(target_os = "windows")]
+use self::windows as windows_impl;
+#[cfg(not(target_os = "windows"))]
+mod windows_impl {
+    use anyhow::Result;
+
+    use crate::{
+        model::{CollectOptions, SystemEntry},
+        platform::unsupported_result,
+    };
+
+    pub(super) async fn collect_system(_options: &CollectOptions) -> Result<Vec<SystemEntry>> {
+        unsupported_result("System collection is not supported on this OS")
+    }
+}
+
+#[cfg(target_os = "macos")]
+use self::macos as macos_impl;
+#[cfg(not(target_os = "macos"))]
+mod macos_impl {
+    use anyhow::Result;
+
+    use crate::{
+        model::{CollectOptions, SystemEntry},
+        platform::unsupported_result,
+    };
+
+    pub(super) async fn collect_system(_options: &CollectOptions) -> Result<Vec<SystemEntry>> {
+        unsupported_result("System collection is not supported on this OS")
+    }
+}
+
+mod linux_impl {
+    use anyhow::Result;
+
+    use crate::{
+        model::{CollectOptions, SystemEntry},
+        platform::unsupported_result,
+    };
+
+    pub(super) async fn collect_system(_options: &CollectOptions) -> Result<Vec<SystemEntry>> {
+        unsupported_result("System collection is not supported on this OS")
+    }
+}
+
 pub async fn collect_system(
     options: &CollectOptions,
     current_os: SupportedOs,
 ) -> Result<Vec<SystemEntry>> {
     match current_os {
-        SupportedOs::Windows => windows::collect_system(options).await,
-        SupportedOs::Macos => macos::collect_system(options).await,
-        SupportedOs::Linux => Err(anyhow!("System collection is not supported on this OS")),
+        SupportedOs::Windows => windows_impl::collect_system(options).await,
+        SupportedOs::Macos => macos_impl::collect_system(options).await,
+        SupportedOs::Linux => linux_impl::collect_system(options).await,
     }
 }
 
+#[cfg(any(target_os = "windows", test))]
 pub(crate) fn parse_raw_system_events(stdout: &str) -> Result<Vec<RawSystemEvent>> {
     let stdout = stdout.trim();
     if stdout.is_empty() || stdout == "[]" {
@@ -52,6 +101,7 @@ pub(crate) fn parse_raw_system_events(stdout: &str) -> Result<Vec<RawSystemEvent
     }
 }
 
+#[cfg(any(target_os = "windows", test))]
 pub(crate) fn map_windows_events(
     raw: &[RawSystemEvent],
     mapping: &[(i32, SystemEntryType, &str)],

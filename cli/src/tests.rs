@@ -18,7 +18,10 @@ use generate_ts_support::generate_ts;
 fn parses_cli_defaults() {
     let cli = Cli::try_parse_from(["activity-log-cli"]).unwrap();
     let request = build_collect_request(&cli, &OutputFormat::Json).unwrap();
-    assert_eq!(request.output_path.as_deref(), Some("logs/activity_log.json"));
+    assert_eq!(
+        request.output_path.as_deref(),
+        Some("logs/activity_log.json")
+    );
 }
 
 #[test]
@@ -54,19 +57,24 @@ fn invalid_range_lists_values_from_enum() {
 #[test]
 fn rejects_set_without_separator() {
     let err = parse_provider_config_overrides(&["JIRA_URL".to_string()]).unwrap_err();
-    assert_eq!(err.to_string(), "Invalid --set \"JIRA_URL\". Use KEY=VALUE.");
+    assert_eq!(
+        err.to_string(),
+        "Invalid --set \"JIRA_URL\". Use KEY=VALUE."
+    );
 }
 
 #[test]
 fn rejects_unknown_set_key() {
     let err = parse_provider_config_overrides(&["NOPE=value".to_string()]).unwrap_err();
-    assert!(err.to_string().contains("Unknown provider config key \"NOPE\""));
+    assert!(
+        err.to_string()
+            .contains("Unknown provider config key \"NOPE\"")
+    );
 }
 
 #[test]
 fn rejects_invalid_typed_set_value() {
-    let err =
-        parse_provider_config_overrides(&["JIRA_INSECURE=1".to_string()]).unwrap_err();
+    let err = parse_provider_config_overrides(&["JIRA_INSECURE=1".to_string()]).unwrap_err();
     assert_eq!(
         err.to_string(),
         "Invalid value for \"JIRA_INSECURE\": expected bool"

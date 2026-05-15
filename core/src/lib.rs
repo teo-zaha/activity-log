@@ -2,6 +2,7 @@ pub mod aggregator;
 pub mod cache;
 pub mod collect;
 pub mod model;
+pub(crate) mod platform;
 pub mod provider;
 pub mod runtime;
 pub mod ts;

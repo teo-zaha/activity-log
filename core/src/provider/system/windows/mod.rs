@@ -1,4 +1,4 @@
-use tokio::process::Command;
+use crate::platform::powershell_command;
 
 use super::SystemSupport;
 
@@ -10,9 +10,7 @@ pub async fn check_system_support() -> SystemSupport {
 }
 
 async fn check_log_access(log_name: &str) -> Result<(), String> {
-    let output = Command::new("powershell.exe")
-        .arg("-NoProfile")
-        .arg("-NonInteractive")
+    let output = powershell_command()
         .arg("-Command")
         .arg(format!(
             "Get-WinEvent -ListLog '{log_name}' -ErrorAction Stop | Out-Null"

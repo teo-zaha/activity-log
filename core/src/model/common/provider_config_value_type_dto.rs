@@ -1,3 +1,4 @@
+use crate::provider::provider_config::ProviderConfigValueType;
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
@@ -11,4 +12,17 @@ pub enum ProviderConfigValueTypeDto {
     Password,
     Email,
     Url,
+}
+
+impl From<ProviderConfigValueType> for ProviderConfigValueTypeDto {
+    fn from(value_type: ProviderConfigValueType) -> Self {
+        match value_type {
+            ProviderConfigValueType::String => Self::String,
+            ProviderConfigValueType::Bool => Self::Bool,
+            ProviderConfigValueType::Int => Self::Int,
+            ProviderConfigValueType::Password => Self::Password,
+            ProviderConfigValueType::Email => Self::Email,
+            ProviderConfigValueType::Url => Self::Url,
+        }
+    }
 }
