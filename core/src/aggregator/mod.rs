@@ -2,15 +2,16 @@ use crate::{
     model::{
         ActivityEntry, ActivityLog, ActivityLogMeta, CollectOptions, CollectedActivity,
         CollectedActivitySummary,
+        IntoActivityEntries,
     },
-    provider::provider_collection::ProviderCollection,
     utils::{merge_git_with_gitlab, now_iso},
 };
 
 pub fn collect_activity_from_results(
     options: CollectOptions,
-    results: Vec<(crate::model::Source, anyhow::Result<ProviderCollection>)>,
+    results: Vec<(crate::model::Source, anyhow::Result<Vec<ActivityEntry>>)>,
 ) -> CollectedActivity {
+    let mut collected_entries = Vec::new();
     let mut git_entries = Vec::new();
     let mut gitlab_entries = Vec::new();
     let mut jira_entries = Vec::new();
@@ -19,12 +20,18 @@ pub fn collect_activity_from_results(
 
     for (source, result) in results {
         match result {
-            Ok(ProviderCollection::Git(entries)) => git_entries.extend(entries),
-            Ok(ProviderCollection::GitLab(entries)) => gitlab_entries.extend(entries),
-            Ok(ProviderCollection::Jira(entries)) => jira_entries.extend(entries),
-            Ok(ProviderCollection::Outlook(entries)) => outlook_entries.extend(entries),
-            Ok(ProviderCollection::System(entries)) => system_entries.extend(entries),
+            Ok(mut entries) => collected_entries.append(&mut entries),
             Err(err) => eprintln!("  [{}] {err}", source),
+        }
+    }
+
+    for entry in collected_entries {
+        match entry {
+            ActivityEntry::Git(entry) => git_entries.push(entry),
+            ActivityEntry::GitLab(entry) => gitlab_entries.push(entry),
+            ActivityEntry::Jira(entry) => jira_entries.push(entry),
+            ActivityEntry::Outlook(entry) => outlook_entries.push(entry),
+            ActivityEntry::System(entry) => system_entries.push(entry),
         }
     }
 
@@ -54,17 +61,11 @@ pub fn collect_activity_from_results(
             + summary.system_count,
     );
 
-    entries.extend(merged.merged_git.iter().cloned().map(ActivityEntry::Git));
-    entries.extend(
-        merged
-            .remaining_gitlab
-            .iter()
-            .cloned()
-            .map(ActivityEntry::GitLab),
-    );
-    entries.extend(jira_entries.iter().cloned().map(ActivityEntry::Jira));
-    entries.extend(outlook_entries.iter().cloned().map(ActivityEntry::Outlook));
-    entries.extend(system_entries.iter().cloned().map(ActivityEntry::System));
+    entries.extend(merged.merged_git.iter().cloned().into_activity_entries());
+    entries.extend(merged.remaining_gitlab.iter().cloned().into_activity_entries());
+    entries.extend(jira_entries.iter().cloned().into_activity_entries());
+    entries.extend(outlook_entries.iter().cloned().into_activity_entries());
+    entries.extend(system_entries.iter().cloned().into_activity_entries());
     entries.sort_by(|a, b| b.timestamp().cmp(a.timestamp()));
 
     CollectedActivity {

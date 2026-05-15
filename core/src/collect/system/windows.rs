@@ -1,12 +1,11 @@
-use std::process::Command;
-
 use anyhow::{Result, anyhow};
+use tokio::process::Command;
 
 use crate::model::{CollectOptions, SystemEntry};
 
 use super::{WINDOWS_SYSTEM_EVENTS, map_windows_events, parse_raw_system_events};
 
-pub(super) fn collect_system(options: &CollectOptions) -> Result<Vec<SystemEntry>> {
+pub(super) async fn collect_system(options: &CollectOptions) -> Result<Vec<SystemEntry>> {
     let system_raw = query_log(
         "System",
         &WINDOWS_SYSTEM_EVENTS
@@ -15,12 +14,13 @@ pub(super) fn collect_system(options: &CollectOptions) -> Result<Vec<SystemEntry
             .collect::<Vec<_>>(),
         &options.since.format("%Y-%m-%d").to_string(),
         &options.until.format("%Y-%m-%d").to_string(),
-    )?;
+    )
+    .await?;
 
     Ok(map_windows_events(&system_raw, WINDOWS_SYSTEM_EVENTS))
 }
 
-fn query_log(
+async fn query_log(
     log_name: &str,
     ids: &[i32],
     since: &str,
@@ -48,7 +48,8 @@ if ($events) {{ $events | ConvertTo-Json -Compress }} else {{ '[]' }}
         .arg("-NonInteractive")
         .arg("-Command")
         .arg(script)
-        .output()?;
+        .output()
+        .await?;
 
     if !output.status.success() {
         return Err(anyhow!(

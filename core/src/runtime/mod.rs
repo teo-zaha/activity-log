@@ -181,8 +181,6 @@ pub fn resolve_collect_options(
             Ok(CollectOptions {
                 since,
                 until,
-                output: None,
-                git_dirs: None,
             })
         }
         (None, None, Some(preset)) => {
@@ -195,8 +193,6 @@ pub fn resolve_collect_options(
             Ok(CollectOptions {
                 since,
                 until,
-                output: None,
-                git_dirs: None,
             })
         }
         _ => Err("Provide either since/until or preset"),
@@ -217,7 +213,5 @@ fn default_collect_options() -> CollectOptions {
     CollectOptions {
         since: parse_date(&days_ago(30), "since").expect("valid default since"),
         until: parse_date(&today(), "until").expect("valid default until"),
-        output: None,
-        git_dirs: None,
     }
 }

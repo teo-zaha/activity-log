@@ -1,6 +1,6 @@
-use std::process::Command;
+use tokio::process::Command;
 
-pub fn check_outlook_ready() -> anyhow::Result<()> {
+pub async fn check_outlook_ready() -> anyhow::Result<()> {
     let output = Command::new("powershell.exe")
         .arg("-NoProfile")
         .arg("-NonInteractive")
@@ -10,16 +10,16 @@ pub fn check_outlook_ready() -> anyhow::Result<()> {
 try {
   $ol = New-Object -ComObject Outlook.Application -ErrorAction Stop
   $ns = $ol.GetNamespace("MAPI")
-
-  $currentUser = $ns.CurrentUser
-  if ($null -eq $currentUser -or [string]::IsNullOrWhiteSpace($currentUser.Name)) {
-    throw "Outlook is not signed in"
+  if ($null -eq $ns) {
+    throw "Outlook MAPI namespace unavailable"
   }
 
   $calendar = $ns.GetDefaultFolder(9)
   if ($null -eq $calendar) {
     throw "Outlook calendar unavailable"
   }
+
+  $null = $calendar.Items
 
   exit 0
 } catch {
@@ -28,7 +28,8 @@ try {
 }
 "#,
         )
-        .output()?;
+        .output()
+        .await?;
 
     if output.status.success() {
         Ok(())

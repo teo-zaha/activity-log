@@ -1,12 +1,11 @@
-use std::process::Command;
-
 use anyhow::{Result, anyhow};
+use tokio::process::Command;
 
 use crate::model::{CollectOptions, OutlookEntry};
 
 use super::{normalize_outlook_events, parse_raw_outlook_events};
 
-pub(super) fn collect_outlook(options: &CollectOptions) -> Result<Vec<OutlookEntry>> {
+pub(super) async fn collect_outlook(options: &CollectOptions) -> Result<Vec<OutlookEntry>> {
     let script = format!(
         r#"
 function isoDate(value) {{
@@ -92,7 +91,8 @@ JSON.stringify(payload);
         .arg("JavaScript")
         .arg("-e")
         .arg(script)
-        .output()?;
+        .output()
+        .await?;
 
     if !output.status.success() {
         return Err(anyhow!(

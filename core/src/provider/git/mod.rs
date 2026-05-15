@@ -1,68 +1,39 @@
-use futures::future::BoxFuture;
+mod config;
+
+pub use config::*;
 
 use crate::{
-    collect::git::{
-        collect_git, discover_home_repos, git_is_available, resolve_git_dirs_from_context,
-    },
-    model::{CollectOptions, Source, SupportedOs},
-    provider::{
-        ALL_OS, provider_adapter::ProviderAdapter, provider_check_result::ProviderCheckResult,
-        provider_collection::ProviderCollection, provider_config::ProviderConfigKey,
-        provider_context::ProviderContext,
-    },
+    collect::git::{collect_git, discover_home_repos, git_is_available},
+    model::{IntoActivityEntries, Source, SupportedOs},
+    provider::provider_check_result::ProviderCheckResult,
 };
 
-pub struct GitProvider;
-
-pub const GIT_DIRS: ProviderConfigKey = ProviderConfigKey::optional_string("GIT_DIRS");
-
-const CONFIG_KEYS: &[ProviderConfigKey] = &[GIT_DIRS];
-
-impl ProviderAdapter for GitProvider {
-    fn id(&self) -> Source {
-        Source::Git
-    }
-
-    fn supported_os(&self) -> &'static [SupportedOs] {
-        ALL_OS
-    }
-
-    fn config_requirements(&self) -> &'static [ProviderConfigKey] {
-        CONFIG_KEYS
-    }
-
-    fn startup_check(
-        &self,
-        _current_os: SupportedOs,
-        context: ProviderContext,
-    ) -> BoxFuture<'_, ProviderCheckResult> {
-        Box::pin(async move {
-            if !git_is_available() {
+crate::provider! {
+    GitProvider(Source::Git, &[SupportedOs::Windows, SupportedOs::Macos, SupportedOs::Linux], GitConfig) {
+        async fn startup_check(&self, _current_os, context) {
+            if !git_is_available().await {
                 return ProviderCheckResult::unavailable("Git not installed");
             }
 
-            let repos = resolve_git_dirs_from_context(&context).unwrap_or_else(discover_home_repos);
+            let config = match context.config::<GitConfig>() {
+                Ok(c) => c,
+                Err(_) => {
+                    return ProviderCheckResult::unavailable("Git config resolution failed");
+                }
+            };
+
+            let repos = config.dirs.clone().unwrap_or_else(discover_home_repos);
             if repos.is_empty() {
                 return ProviderCheckResult::unavailable("No repositories found");
             }
 
             ProviderCheckResult::available()
-        })
-    }
+        }
 
-    fn collect(
-        &self,
-        _current_os: SupportedOs,
-        options: CollectOptions,
-        context: ProviderContext,
-    ) -> BoxFuture<'_, anyhow::Result<ProviderCollection>> {
-        Box::pin(async move {
-            let result = tokio::task::spawn_blocking(move || collect_git(&options, &context)).await;
-            let entries = match result {
-                Ok(entries) => entries?,
-                Err(err) => return Err(err.into()),
-            };
-            Ok(ProviderCollection::Git(entries))
-        })
+        async fn collect(&self, _current_os, options, context) {
+            let config = context.config::<GitConfig>()?.clone();
+            let entries = collect_git(&options, &config).await?;
+            Ok(entries.into_activity_entries())
+        }
     }
 }

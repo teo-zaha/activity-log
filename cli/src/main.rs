@@ -1,17 +1,21 @@
 use std::{
+    collections::BTreeMap,
     fs,
-    path::{Path, PathBuf},
+    path::Path,
 };
 
 use activity_log_core::{
     collect_activity_detailed_with_provider_runtimes,
     model::{CollectOptions, CollectedActivity, OutputFormat, ProviderInfo, RangePreset, Source},
-    provider::inspect_provider_runtimes,
+    provider::{
+        inspect_provider_runtimes_with,
+        provider_config::{ConfigSource, ProviderConfigKey, provider_config_value_matches_type},
+        provider_registry,
+    },
     utils::{days_ago, parse_date, to_markdown, today},
 };
 use anyhow::{Result, anyhow};
 use clap::Parser;
-use dotenvy::dotenv;
 use strum::IntoEnumIterator;
 
 #[derive(Debug, Parser)]
@@ -25,16 +29,36 @@ struct Cli {
     output: Option<String>,
     #[arg(long)]
     range: Option<String>,
-    #[arg(long = "git-dirs", value_delimiter = ',')]
-    git_dirs: Option<Vec<PathBuf>>,
+    #[arg(long = "set", value_name = "KEY=VALUE")]
+    set: Vec<String>,
     #[arg(long, default_value = "json")]
     format: String,
 }
 
+#[derive(Debug, Clone)]
+struct CliCollectionRequest {
+    collect_options: CollectOptions,
+    output_path: Option<String>,
+    config_overrides: BTreeMap<String, String>,
+}
+
+#[derive(Debug, Clone, Default)]
+struct CliConfigSource {
+    overrides: BTreeMap<String, String>,
+}
+
+impl ConfigSource for CliConfigSource {
+    fn get(&self, key: &str) -> Option<String> {
+        if let Some(value) = self.overrides.get(key) {
+            return Some(value.clone());
+        }
+
+        std::env::var(key).ok()
+    }
+}
+
 #[tokio::main]
 async fn main() {
-    dotenv().ok();
-
     if let Err(err) = run().await {
         eprintln!("Fatal: {err}");
         std::process::exit(1);
@@ -48,20 +72,23 @@ async fn run() -> Result<()> {
 
 async fn collect(cli: Cli) -> Result<()> {
     let format = parse_format(&cli.format)?;
-    let options = build_collect_options(&cli, &format)?;
+    let request = build_collect_request(&cli, &format)?;
 
     println!(
         "\nCollecting activity from {} to {} ...\n",
-        options.since, options.until
+        request.collect_options.since, request.collect_options.until
     );
 
-    let provider_runtimes = inspect_provider_runtimes().await;
+    let config_source = CliConfigSource {
+        overrides: request.config_overrides.clone(),
+    };
+    let provider_runtimes = inspect_provider_runtimes_with(&config_source).await;
     let provider_info = provider_runtimes
         .iter()
         .map(|runtime| runtime.info().clone())
         .collect::<Vec<_>>();
     let collected =
-        collect_activity_detailed_with_provider_runtimes(options.clone(), &provider_runtimes)
+        collect_activity_detailed_with_provider_runtimes(request.collect_options, &provider_runtimes)
             .await?;
 
     for line in provider_summary_lines(&provider_info, &collected) {
@@ -73,7 +100,7 @@ async fn collect(cli: Cli) -> Result<()> {
         OutputFormat::Markdown => to_markdown(&collected.log),
     };
 
-    if let Some(output) = &options.output {
+    if let Some(output) = &request.output_path {
         if let Some(parent) = Path::new(output).parent() {
             fs::create_dir_all(parent)?;
         }
@@ -96,7 +123,7 @@ fn parse_format(value: &str) -> Result<OutputFormat> {
         .map_err(|_| anyhow!("Invalid --format \"{value}\". Use json or markdown."))
 }
 
-fn build_collect_options(cli: &Cli, format: &OutputFormat) -> Result<CollectOptions> {
+fn build_collect_request(cli: &Cli, format: &OutputFormat) -> Result<CliCollectionRequest> {
     let default_output = match format {
         OutputFormat::Json => "logs/activity_log.json",
         OutputFormat::Markdown => "logs/activity_log.md",
@@ -114,16 +141,65 @@ fn build_collect_options(cli: &Cli, format: &OutputFormat) -> Result<CollectOpti
         (parse_date(&since, "since")?, parse_date(&until, "until")?)
     };
 
-    Ok(CollectOptions {
-        since,
-        until,
-        output: Some(
+    Ok(CliCollectionRequest {
+        collect_options: CollectOptions { since, until },
+        output_path: Some(
             cli.output
                 .clone()
                 .unwrap_or_else(|| default_output.to_string()),
         ),
-        git_dirs: cli.git_dirs.clone(),
+        config_overrides: parse_provider_config_overrides(&cli.set)?,
     })
+}
+
+fn parse_provider_config_overrides(entries: &[String]) -> Result<BTreeMap<String, String>> {
+    let known_requirements = provider_requirements_by_key();
+    let mut overrides = BTreeMap::new();
+
+    for entry in entries {
+        if entry.matches('=').count() != 1 {
+            return Err(anyhow!("Invalid --set \"{entry}\". Use KEY=VALUE."));
+        }
+
+        let (key, value) = entry
+            .split_once('=')
+            .ok_or_else(|| anyhow!("Invalid --set \"{entry}\". Use KEY=VALUE."))?;
+        if key.is_empty() {
+            return Err(anyhow!("Invalid --set \"{entry}\". Use KEY=VALUE."));
+        }
+
+        let requirement = known_requirements.get(key).ok_or_else(|| {
+            let allowed = known_requirements
+                .keys()
+                .cloned()
+                .collect::<Vec<_>>()
+                .join(", ");
+            anyhow!("Unknown provider config key \"{key}\". Allowed keys: {allowed}")
+        })?;
+
+        if !provider_config_value_matches_type(value, requirement.value_type) {
+            return Err(anyhow!(
+                "Invalid value for \"{key}\": expected {}",
+                requirement.value_type
+            ));
+        }
+
+        overrides.insert(key.to_string(), value.to_string());
+    }
+
+    Ok(overrides)
+}
+
+fn provider_requirements_by_key() -> BTreeMap<String, ProviderConfigKey> {
+    let mut requirements = BTreeMap::new();
+    for adapter in provider_registry() {
+        for requirement in adapter.config_requirements() {
+            requirements
+                .entry(requirement.name.to_string())
+                .or_insert(*requirement);
+        }
+    }
+    requirements
 }
 
 fn valid_range_presets() -> String {

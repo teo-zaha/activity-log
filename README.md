@@ -140,11 +140,16 @@ pnpm cli:collect --range week --output reports/week.json
 pnpm cli:collect --range week --format markdown --output reports/week.md
 ```
 
-### Other options
+`--output` is a CLI-only export setting. It is not part of backend `CollectOptions`.
+
+### Provider config overrides
 
 ```bash
---git-dirs /path/to/repo1,/path/to/repo2   # scan specific repos instead of auto-discovering
+pnpm cli:collect --range week --set GIT_DIRS=/path/to/repo1,/path/to/repo2
+pnpm cli:collect --range month --set JIRA_URL=https://jira.example.com --set JIRA_INSECURE=true
 ```
+
+`--set KEY=VALUE` is repeatable and validated against Rust provider config metadata. CLI `--set` values take precedence over environment variables.
 
 ### Generate Angular DTO types
 
@@ -174,6 +179,7 @@ pnpm verify
 ## Environment variables
 
 Copy `.env.example` to `.env` and fill in the sources you want to enable. Any source without credentials is silently skipped.
+For CLI runs, you can override any provider key dynamically with `--set KEY=VALUE`.
 
 | Variable        | Description                                                                  |
 | --------------- | ---------------------------------------------------------------------------- |

@@ -1,19 +1,15 @@
-use std::process::Command;
+use tokio::process::Command;
 
-pub enum SystemSupport {
-    Available,
-    Degraded(String),
-    Unavailable(String),
-}
+use super::SystemSupport;
 
-pub fn check_system_support() -> SystemSupport {
-    match check_log_access("System") {
+pub async fn check_system_support() -> SystemSupport {
+    match check_log_access("System").await {
         Ok(()) => SystemSupport::Available,
         Err(err) => SystemSupport::Unavailable(err),
     }
 }
 
-fn check_log_access(log_name: &str) -> Result<(), String> {
+async fn check_log_access(log_name: &str) -> Result<(), String> {
     let output = Command::new("powershell.exe")
         .arg("-NoProfile")
         .arg("-NonInteractive")
@@ -22,6 +18,7 @@ fn check_log_access(log_name: &str) -> Result<(), String> {
             "Get-WinEvent -ListLog '{log_name}' -ErrorAction Stop | Out-Null"
         ))
         .output()
+        .await
         .map_err(|_| "Windows event log unavailable".to_string())?;
 
     if output.status.success() {

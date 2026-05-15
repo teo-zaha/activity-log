@@ -1,19 +1,29 @@
 use futures::future::BoxFuture;
 
 use crate::{
-    model::{CollectOptions, Source, SupportedOs},
+    model::{ActivityEntry, CollectOptions, Source, SupportedOs},
     provider::{
-        provider_check_result::ProviderCheckResult, provider_collection::ProviderCollection,
-        provider_config::ProviderConfigKey, provider_context::ProviderContext,
+        provider_check_result::ProviderCheckResult,
+        provider_config::{ConfigBinding, ProviderConfigKey},
+        provider_context::ProviderContext,
     },
 };
 
 pub trait ProviderAdapter: Send + Sync {
     fn id(&self) -> Source;
     fn supported_os(&self) -> &'static [SupportedOs];
-    fn config_requirements(&self) -> &'static [ProviderConfigKey] {
-        &[]
+
+    fn config_binding(&self) -> Option<ConfigBinding> {
+        None
     }
+
+    fn config_requirements(&self) -> &'static [ProviderConfigKey] {
+        match self.config_binding() {
+            Some(binding) => binding.requirements,
+            None => &[],
+        }
+    }
+
     fn startup_check(
         &self,
         current_os: SupportedOs,
@@ -24,5 +34,5 @@ pub trait ProviderAdapter: Send + Sync {
         current_os: SupportedOs,
         options: CollectOptions,
         context: ProviderContext,
-    ) -> BoxFuture<'_, anyhow::Result<ProviderCollection>>;
+    ) -> BoxFuture<'_, anyhow::Result<Vec<ActivityEntry>>>;
 }

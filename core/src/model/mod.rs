@@ -7,7 +7,9 @@ pub mod outlook;
 pub mod system;
 
 pub use activity::{
-    activity_entry::ActivityEntry, activity_log::ActivityLog, activity_log_meta::ActivityLogMeta,
+    activity_entry::{ActivityEntry, IntoActivityEntries},
+    activity_log::ActivityLog,
+    activity_log_meta::ActivityLogMeta,
     collected_activity::CollectedActivity, collected_activity_summary::CollectedActivitySummary,
     merge_result::MergeResult,
 };

@@ -173,12 +173,15 @@ export class ActivityService {
     this.activeSources.set(current)
   }
 
-  isolateSource(source: string): void {
+  isolateSource(source: Source): void {
+    if (!this.providerInfoFor(source)?.usable) return
     const current = this.activeSources()
     if (current.size === 1 && current.has(source)) {
-      this.activeSources.set(new Set(['git', 'gitlab', 'jira', 'outlook', 'system']))
+      this.activeSources.set(
+        new Set(this.providerInfo().filter(provider => provider.usable).map(provider => provider.id))
+      )
     } else {
-      this.activeSources.set(new Set([source]))
+      this.activeSources.set(new Set<Source>([source]))
     }
   }
 

@@ -1,29 +1,46 @@
-use anyhow::Result;
+use std::any::Any;
+use std::fmt;
+use std::sync::Arc;
 
-use crate::provider::provider_config::{ConfigSource, ProviderConfig, ProviderConfigKey};
+use anyhow::{Result, anyhow};
 
-#[derive(Debug, Clone, Default)]
+use crate::provider::provider_config::{
+    ConfigSource, ProviderConfig, ProviderConfigKey, ProviderConfigResolve,
+};
+
+#[derive(Clone, Default)]
 pub struct ProviderContext {
     config: ProviderConfig,
+    typed: Option<Arc<dyn Any + Send + Sync>>,
+}
+
+impl fmt::Debug for ProviderContext {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("ProviderContext")
+            .field("config", &self.config)
+            .finish()
+    }
 }
 
 impl ProviderContext {
     pub fn resolve(source: &dyn ConfigSource, requirements: &[ProviderConfigKey]) -> Self {
         Self {
             config: ProviderConfig::resolve(source, requirements),
+            typed: None,
         }
     }
 
-    pub fn get(&self, key: ProviderConfigKey) -> Option<&str> {
-        self.config.get(key)
+    pub fn with_typed<T: ProviderConfigResolve>(&mut self) -> Result<()> {
+        let parsed = T::from_config(&self.config)?;
+        self.typed = Some(Arc::new(parsed));
+        Ok(())
     }
 
-    pub fn require(&self, key: ProviderConfigKey) -> Result<&str> {
-        self.config.require(key)
-    }
-
-    pub fn bool(&self, key: ProviderConfigKey) -> bool {
-        self.config.bool(key)
+    pub fn config<T: 'static>(&self) -> Result<&T> {
+        self.typed
+            .as_ref()
+            .and_then(|any| any.downcast_ref::<T>())
+            .ok_or_else(|| anyhow!("Config not resolved or wrong type"))
     }
 
     pub fn missing_required_keys<'a>(&self, requirements: &'a [ProviderConfigKey]) -> Vec<&'a str> {

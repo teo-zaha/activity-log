@@ -7,21 +7,40 @@ use crate::{
         CollectOptions, JiraEntry, JiraEntryType,
         jira::{jira_issue::JiraIssue, jira_search_response::JiraSearchResponse},
     },
-    provider::{
-        jira::{JIRA_AUTH_TYPE, JIRA_EMAIL, JIRA_INSECURE, JIRA_TOKEN, JIRA_URL},
-        provider_context::ProviderContext,
-    },
+    provider::{jira::JiraConfig, provider_context::ProviderContext},
 };
 
 pub async fn collect_jira(
     options: &CollectOptions,
     context: &ProviderContext,
 ) -> Result<Vec<JiraEntry>> {
+    let config = context.config::<JiraConfig>()?;
     let since = options.since.format("%Y-%m-%d").to_string();
     let until = options.until.format("%Y-%m-%d").to_string();
 
     with_range_cache("jira", options, |_| {}, || async {
-        let (client, jira_url) = jira_client_context(context)?;
+        let mut headers = header::HeaderMap::new();
+        headers.insert(
+            header::CONTENT_TYPE,
+            header::HeaderValue::from_static("application/json"),
+        );
+
+        let auth_header = if config.auth_type.eq_ignore_ascii_case("basic") {
+            let credentials = format!("{}:{}", config.email, config.token);
+            format!("Basic {}", base64_encode(credentials.as_bytes()))
+        } else {
+            format!("Bearer {}", config.token)
+        };
+        headers.insert(
+            header::AUTHORIZATION,
+            header::HeaderValue::from_str(&auth_header)
+                .map_err(|_| anyhow!("Jira authentication setup failed"))?,
+        );
+
+        let client = Client::builder()
+            .default_headers(headers)
+            .danger_accept_invalid_certs(config.insecure)
+            .build()?;
 
         let mut entries = Vec::new();
         let mut start_at = 0;
@@ -35,7 +54,7 @@ pub async fn collect_jira(
             let jql = urlencoding::encode(&jql_query);
             let url = format!(
                 "{}/rest/api/2/search?jql={jql}&startAt={start_at}&maxResults={max_results}&fields=summary,status,issuetype,created,updated&expand=changelog",
-                jira_url.trim_end_matches('/')
+                config.url.trim_end_matches('/')
             );
             let response = client.get(url).send().await?;
 
@@ -64,41 +83,6 @@ pub async fn collect_jira(
         Ok(entries)
     })
     .await
-}
-
-pub(crate) fn jira_client_context(context: &ProviderContext) -> Result<(Client, String)> {
-    let jira_url = context.require(JIRA_URL)?.to_string();
-    let jira_email = context.require(JIRA_EMAIL)?;
-    let jira_token = context.require(JIRA_TOKEN)?;
-    let insecure = context.bool(JIRA_INSECURE);
-    let auth_type = context
-        .get(JIRA_AUTH_TYPE)
-        .unwrap_or("bearer")
-        .to_lowercase();
-
-    let mut headers = header::HeaderMap::new();
-    headers.insert(
-        header::CONTENT_TYPE,
-        header::HeaderValue::from_static("application/json"),
-    );
-
-    let auth_header = if auth_type == "basic" {
-        let credentials = format!("{jira_email}:{jira_token}");
-        format!("Basic {}", base64_encode(credentials.as_bytes()))
-    } else {
-        format!("Bearer {jira_token}")
-    };
-    headers.insert(
-        header::AUTHORIZATION,
-        header::HeaderValue::from_str(&auth_header)
-            .map_err(|_| anyhow!("Jira authentication setup failed"))?,
-    );
-
-    let client = Client::builder()
-        .default_headers(headers)
-        .danger_accept_invalid_certs(insecure)
-        .build()?;
-    Ok((client, jira_url))
 }
 
 fn map_jira_issues(issues: &[JiraIssue], since: &str, until: &str) -> Vec<JiraEntry> {

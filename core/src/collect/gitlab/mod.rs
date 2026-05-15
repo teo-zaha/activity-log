@@ -6,16 +6,15 @@ use serde_json::{Map, Value};
 use crate::{
     cache::with_range_cache,
     model::{CollectOptions, GitLabEntry, GitLabType},
-    provider::{
-        gitlab::{GITLAB_TOKEN, GITLAB_URL, GITLAB_USER},
-        provider_context::ProviderContext,
-    },
+    provider::{gitlab::GitLabConfig, provider_context::ProviderContext},
 };
 
 pub async fn collect_gitlab(
     options: &CollectOptions,
     context: &ProviderContext,
 ) -> Result<Vec<GitLabEntry>> {
+    let config = context.config::<GitLabConfig>()?;
+
     with_range_cache(
         "gitlab",
         options,
@@ -23,8 +22,7 @@ pub async fn collect_gitlab(
             eprintln!("  [gitlab] cache hit ({} events)", cached.len());
         },
         || async {
-            let (client, gitlab_url, gitlab_token) = gitlab_client_context(context)?;
-            let gitlab_user = context.require(GITLAB_USER)?;
+            let client = Client::builder().build()?;
 
             let after = options.since.checked_sub_days(Days::new(1)).unwrap();
             let before = options.until.checked_add_days(Days::new(1)).unwrap();
@@ -35,15 +33,15 @@ pub async fn collect_gitlab(
             loop {
                 let url = format!(
                     "{}/api/v4/users/{}/events?after={}&before={}&per_page=100&page={page}",
-                    gitlab_url.trim_end_matches('/'),
-                    gitlab_user,
+                    config.url.trim_end_matches('/'),
+                    config.user,
                     after.format("%Y-%m-%d"),
                     before.format("%Y-%m-%d"),
                 );
 
                 let response = client
                     .get(&url)
-                    .header("PRIVATE-TOKEN", gitlab_token.as_str())
+                    .header("PRIVATE-TOKEN", config.token.as_str())
                     .send()
                     .await?;
 
@@ -74,13 +72,6 @@ pub async fn collect_gitlab(
         },
     )
     .await
-}
-
-pub(crate) fn gitlab_client_context(context: &ProviderContext) -> Result<(Client, String, String)> {
-    let gitlab_url = context.require(GITLAB_URL)?.to_string();
-    let gitlab_token = context.require(GITLAB_TOKEN)?.to_string();
-    let client = Client::builder().build()?;
-    Ok((client, gitlab_url, gitlab_token))
 }
 
 pub fn map_gitlab_event(event: &Value) -> Option<GitLabEntry> {

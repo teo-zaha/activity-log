@@ -1,7 +1,7 @@
-use std::process::Command;
+use tokio::process::Command;
 
-pub fn check_outlook_ready() -> anyhow::Result<()> {
-    if !outlook_installed()? {
+pub async fn check_outlook_ready() -> anyhow::Result<()> {
+    if !outlook_installed().await? {
         return Err(anyhow::anyhow!("Outlook not installed"));
     }
 
@@ -39,7 +39,8 @@ if (!Array.isArray(calendars) || calendars.length === 0) {
 "ok";
 "#,
         )
-        .output()?;
+        .output()
+        .await?;
 
     if output.status.success() {
         return Ok(());
@@ -57,10 +58,11 @@ if (!Array.isArray(calendars) || calendars.length === 0) {
     ))
 }
 
-fn outlook_installed() -> anyhow::Result<bool> {
+async fn outlook_installed() -> anyhow::Result<bool> {
     let output = Command::new("/usr/bin/mdfind")
         .arg("kMDItemCFBundleIdentifier == 'com.microsoft.Outlook'")
-        .output()?;
+        .output()
+        .await?;
 
     if !output.status.success() {
         return Err(anyhow::anyhow!(

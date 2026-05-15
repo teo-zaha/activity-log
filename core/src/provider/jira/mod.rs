@@ -1,64 +1,63 @@
-use futures::future::BoxFuture;
+mod config;
+
+pub use config::*;
 
 use crate::{
-    collect::jira::{collect_jira, jira_client_context},
-    model::{CollectOptions, Source, SupportedOs},
-    provider::{
-        ALL_OS, provider_adapter::ProviderAdapter, provider_check_result::ProviderCheckResult,
-        provider_collection::ProviderCollection, provider_config::ProviderConfigKey,
-        provider_context::ProviderContext,
-    },
+    collect::jira::collect_jira,
+    model::{IntoActivityEntries, Source, SupportedOs},
+    provider::provider_check_result::ProviderCheckResult,
 };
 
-pub struct JiraProvider;
+crate::provider! {
+    JiraProvider(Source::Jira, &[SupportedOs::Windows, SupportedOs::Macos, SupportedOs::Linux], JiraConfig) {
+        async fn startup_check(&self, _current_os, context) {
+            let config = match context.config::<JiraConfig>() {
+                Ok(c) => c,
+                Err(_) => {
+                    return ProviderCheckResult::unavailable("Jira config resolution failed");
+                }
+            };
 
-pub const JIRA_URL: ProviderConfigKey = ProviderConfigKey::required_url("JIRA_URL");
-pub const JIRA_EMAIL: ProviderConfigKey = ProviderConfigKey::required_email("JIRA_EMAIL");
-pub const JIRA_TOKEN: ProviderConfigKey = ProviderConfigKey::required_password("JIRA_TOKEN");
-pub const JIRA_AUTH_TYPE: ProviderConfigKey = ProviderConfigKey::optional_string("JIRA_AUTH_TYPE");
-pub const JIRA_INSECURE: ProviderConfigKey = ProviderConfigKey::optional_bool("JIRA_INSECURE");
+            let mut headers = reqwest::header::HeaderMap::new();
+            headers.insert(
+                reqwest::header::CONTENT_TYPE,
+                reqwest::header::HeaderValue::from_static("application/json"),
+            );
 
-const CONFIG_KEYS: &[ProviderConfigKey] = &[
-    JIRA_URL,
-    JIRA_EMAIL,
-    JIRA_TOKEN,
-    JIRA_AUTH_TYPE,
-    JIRA_INSECURE,
-];
-
-impl ProviderAdapter for JiraProvider {
-    fn id(&self) -> Source {
-        Source::Jira
-    }
-
-    fn supported_os(&self) -> &'static [SupportedOs] {
-        ALL_OS
-    }
-
-    fn config_requirements(&self) -> &'static [ProviderConfigKey] {
-        CONFIG_KEYS
-    }
-
-    fn startup_check(
-        &self,
-        _current_os: SupportedOs,
-        context: ProviderContext,
-    ) -> BoxFuture<'_, ProviderCheckResult> {
-        Box::pin(async move {
-            let (client, jira_url) = match jira_client_context(&context) {
-                Ok(values) => values,
-                Err(err) => {
-                    let reason = err.to_string();
-                    if reason.contains("authentication setup failed") {
+            let auth_header = if config.auth_type.eq_ignore_ascii_case("basic") {
+                let credentials = format!("{}:{}", config.email, config.token);
+                format!("Basic {}", base64_encode(credentials.as_bytes()))
+            } else {
+                format!("Bearer {}", config.token)
+            };
+            headers.insert(
+                reqwest::header::AUTHORIZATION,
+                match reqwest::header::HeaderValue::from_str(&auth_header) {
+                    Ok(value) => value,
+                    Err(_) => {
                         return ProviderCheckResult::unavailable(
                             "Jira authentication setup failed",
                         );
+                    }
+                },
+            );
+
+            let client = match reqwest::Client::builder()
+                .default_headers(headers)
+                .danger_accept_invalid_certs(config.insecure)
+                .build()
+            {
+                Ok(client) => client,
+                Err(err) => {
+                    let reason = err.to_string();
+                    if reason.contains("authentication setup failed") {
+                        return ProviderCheckResult::unavailable("Jira authentication setup failed");
                     }
                     return ProviderCheckResult::unavailable("Jira client setup failed");
                 }
             };
 
-            let url = format!("{}/rest/api/2/myself", jira_url.trim_end_matches('/'));
+            let url = format!("{}/rest/api/2/myself", config.url.trim_end_matches('/'));
             let response = client.get(url).send().await;
 
             match response {
@@ -66,25 +65,43 @@ impl ProviderAdapter for JiraProvider {
                 Ok(response) if response.status() == reqwest::StatusCode::UNAUTHORIZED => {
                     ProviderCheckResult::unavailable("Jira credentials invalid")
                 }
-                Ok(response) => ProviderCheckResult::unavailable(format!(
-                    "Jira unavailable ({})",
-                    response.status()
-                )),
+                Ok(response) => {
+                    ProviderCheckResult::unavailable(format!("Jira unavailable ({})", response.status()))
+                }
                 Err(_) => ProviderCheckResult::unavailable("Jira unreachable"),
             }
-        })
-    }
+        }
 
-    fn collect(
-        &self,
-        _current_os: SupportedOs,
-        options: CollectOptions,
-        context: ProviderContext,
-    ) -> BoxFuture<'_, anyhow::Result<ProviderCollection>> {
-        Box::pin(async move {
+        async fn collect(&self, _current_os, options, context) {
             collect_jira(&options, &context)
                 .await
-                .map(ProviderCollection::Jira)
-        })
+                .map(|entries| entries.into_activity_entries())
+        }
     }
+}
+
+fn base64_encode(input: &[u8]) -> String {
+    const TABLE: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    let mut output = String::new();
+    let mut index = 0;
+    while index < input.len() {
+        let a = input[index];
+        let b = *input.get(index + 1).unwrap_or(&0);
+        let c = *input.get(index + 2).unwrap_or(&0);
+
+        output.push(TABLE[(a >> 2) as usize] as char);
+        output.push(TABLE[(((a & 0b11) << 4) | (b >> 4)) as usize] as char);
+        output.push(if index + 1 < input.len() {
+            TABLE[(((b & 0b1111) << 2) | (c >> 6)) as usize] as char
+        } else {
+            '='
+        });
+        output.push(if index + 2 < input.len() {
+            TABLE[(c & 0b11_1111) as usize] as char
+        } else {
+            '='
+        });
+        index += 3;
+    }
+    output
 }
