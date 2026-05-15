@@ -3,7 +3,7 @@ use std::sync::Arc;
 use futures::future::join_all;
 
 use crate::{
-    model::{CollectOptions, ProviderInfo, ProviderStatus, ProvidersResponse},
+    model::{ActivityEntry, CollectOptions, ProviderInfo, ProviderStatus, ProvidersResponse},
     utils::now_iso,
 };
 
@@ -11,7 +11,6 @@ use super::{
     current_os,
     provider_adapter::ProviderAdapter,
     provider_check_result::ProviderCheckResult,
-    provider_collection::ProviderCollection,
     provider_config::{ConfigSource, EnvConfigSource},
     provider_context::ProviderContext,
     provider_registry,
@@ -30,8 +29,8 @@ impl ProviderRuntime {
         config_source: &dyn ConfigSource,
     ) -> Self {
         // Resolve provider config once so startup checks and later collections use the same input.
-        let context = ProviderContext::resolve(config_source, adapter.config_requirements());
-        let info = build_provider_info(adapter.as_ref(), &context).await;
+        let mut context = ProviderContext::resolve(config_source, adapter.config_requirements());
+        let info = build_provider_info(adapter.as_ref(), &mut context).await;
 
         Self {
             adapter,
@@ -56,7 +55,7 @@ impl ProviderRuntime {
         self.info.clone()
     }
 
-    pub async fn collect(&self, options: CollectOptions) -> anyhow::Result<ProviderCollection> {
+    pub async fn collect(&self, options: CollectOptions) -> anyhow::Result<Vec<ActivityEntry>> {
         let current_os = current_os();
         self.adapter
             .collect(current_os, options, self.context.clone())
@@ -88,18 +87,24 @@ pub fn providers_response_from_runtimes(runtimes: &[ProviderRuntime]) -> Provide
 
 async fn build_provider_info(
     adapter: &dyn ProviderAdapter,
-    context: &ProviderContext,
+    context: &mut ProviderContext,
 ) -> ProviderInfo {
     let current_os = current_os();
+    let requirements = adapter.config_requirements();
     let result = if !adapter.supported_os().contains(&current_os) {
         ProviderCheckResult::unavailable("OS not supported")
-    } else if !context
-        .missing_required_keys(adapter.config_requirements())
-        .is_empty()
-    {
+    } else if !context.missing_required_keys(requirements).is_empty() {
         ProviderCheckResult::unavailable(format!("{} not configured", adapter.id()))
-    } else if let Some(key) = context.first_invalid_key(adapter.config_requirements()) {
+    } else if let Some(key) = context.first_invalid_key(requirements) {
         ProviderCheckResult::unavailable(format!("{} must be a {}", key.name, key.value_type))
+    } else if let Some(binding) = adapter.config_binding() {
+        if let Err(err) = (binding.resolve)(context) {
+            ProviderCheckResult::unavailable(format!("Config resolution failed: {err}"))
+        } else {
+            adapter
+                .startup_check(current_os.clone(), context.clone())
+                .await
+        }
     } else {
         adapter
             .startup_check(current_os.clone(), context.clone())

@@ -1,25 +1,21 @@
 use std::{
     env, fs,
     path::{Path, PathBuf},
-    process::Command,
 };
 
 use anyhow::Result;
+use tokio::process::Command;
 
 use crate::{
     model::{CollectOptions, GitEntry},
-    provider::{git::GIT_DIRS, provider_context::ProviderContext},
+    provider::git::GitConfig,
 };
 
-pub fn collect_git(options: &CollectOptions, context: &ProviderContext) -> Result<Vec<GitEntry>> {
+pub async fn collect_git(options: &CollectOptions, config: &GitConfig) -> Result<Vec<GitEntry>> {
     let since = options.since.format("%Y-%m-%d").to_string();
     let until = options.until.format("%Y-%m-%d").to_string();
 
-    let dirs = options
-        .git_dirs
-        .clone()
-        .or_else(|| resolve_git_dirs_from_context(context))
-        .unwrap_or_else(discover_home_repos);
+    let dirs = config.dirs.clone().unwrap_or_else(discover_home_repos);
 
     let mut entries = Vec::new();
     for repo_path in dirs {
@@ -38,7 +34,8 @@ pub fn collect_git(options: &CollectOptions, context: &ProviderContext) -> Resul
             .arg("config")
             .arg("user.email")
             .current_dir(&repo_path)
-            .output();
+            .output()
+            .await;
         let email_output = match email_output {
             Ok(output) if output.status.success() => output,
             _ => continue,
@@ -58,7 +55,8 @@ pub fn collect_git(options: &CollectOptions, context: &ProviderContext) -> Resul
             .arg(format!("--author={author_email}"))
             .arg("--format=%H|%aI|%ae|%s|%D")
             .current_dir(&repo_path)
-            .output();
+            .output()
+            .await;
         let log_output = match log_output {
             Ok(output) if output.status.success() => output,
             _ => continue,
@@ -95,24 +93,13 @@ pub fn collect_git(options: &CollectOptions, context: &ProviderContext) -> Resul
     Ok(entries)
 }
 
-pub(crate) fn git_is_available() -> bool {
+pub(crate) async fn git_is_available() -> bool {
     Command::new("git")
         .arg("--version")
         .output()
+        .await
         .map(|output| output.status.success())
         .unwrap_or(false)
-}
-
-pub(crate) fn resolve_git_dirs_from_context(context: &ProviderContext) -> Option<Vec<PathBuf>> {
-    context.get(GIT_DIRS).and_then(|value| {
-        let dirs = value
-            .split(',')
-            .map(str::trim)
-            .filter(|value| !value.is_empty())
-            .map(PathBuf::from)
-            .collect::<Vec<_>>();
-        (!dirs.is_empty()).then_some(dirs)
-    })
 }
 
 pub(crate) fn discover_home_repos() -> Vec<PathBuf> {

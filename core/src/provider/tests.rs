@@ -5,13 +5,15 @@ use std::sync::{
 };
 
 use crate::{
-    model::{CollectOptions, Source, SupportedOs},
+    model::{ActivityEntry, CollectOptions, Source, SupportedOs},
     provider::{
         current_os,
         provider_adapter::ProviderAdapter,
         provider_check_result::ProviderCheckResult,
-        provider_collection::ProviderCollection,
-        provider_config::{ConfigSource, ProviderConfigKey, ProviderConfigValueType},
+        provider_config::{
+            ConfigBinding, ConfigSource, ProviderConfig, ProviderConfigKey, ProviderConfigResolve,
+            ProviderConfigValueType,
+        },
         provider_context::ProviderContext,
         provider_registry,
         provider_runtime::ProviderRuntime,
@@ -70,6 +72,10 @@ struct TestProvider {
     calls: Arc<AtomicUsize>,
 }
 
+fn noop_resolve(_context: &mut ProviderContext) -> anyhow::Result<()> {
+    Ok(())
+}
+
 impl ProviderAdapter for TestProvider {
     fn id(&self) -> Source {
         Source::Git
@@ -79,8 +85,11 @@ impl ProviderAdapter for TestProvider {
         self.supported_os
     }
 
-    fn config_requirements(&self) -> &'static [ProviderConfigKey] {
-        self.requirements
+    fn config_binding(&self) -> Option<ConfigBinding> {
+        Some(ConfigBinding {
+            requirements: self.requirements,
+            resolve: noop_resolve,
+        })
     }
 
     fn startup_check(
@@ -98,7 +107,7 @@ impl ProviderAdapter for TestProvider {
         _current_os: SupportedOs,
         _options: CollectOptions,
         _context: ProviderContext,
-    ) -> BoxFuture<'_, anyhow::Result<ProviderCollection>> {
+    ) -> BoxFuture<'_, anyhow::Result<Vec<ActivityEntry>>> {
         Box::pin(async { unreachable!("collect is not exercised in provider runtime tests") })
     }
 }
@@ -230,5 +239,135 @@ async fn strict_bool_config_rejects_non_true_false_values() {
     assert_eq!(
         runtime.info().reason.as_deref(),
         Some("TEST_BOOL must be a bool")
+    );
+}
+
+#[derive(Debug, Clone)]
+struct TypedTestConfig {
+    value: String,
+}
+
+static TYPED_KEYS: &[ProviderConfigKey] = &[ProviderConfigKey::required_string("TYPED_KEY")];
+
+impl ProviderConfigResolve for TypedTestConfig {
+    fn requirements() -> &'static [ProviderConfigKey] {
+        TYPED_KEYS
+    }
+
+    fn from_config(config: &ProviderConfig) -> anyhow::Result<Self> {
+        Ok(Self {
+            value: config.require(TYPED_KEYS[0])?.to_string(),
+        })
+    }
+}
+
+impl TypedTestConfig {
+    fn binding() -> ConfigBinding {
+        ConfigBinding::of::<Self>()
+    }
+}
+
+struct TypedTestProvider {
+    calls: Arc<AtomicUsize>,
+}
+
+impl ProviderAdapter for TypedTestProvider {
+    fn id(&self) -> Source {
+        Source::Git
+    }
+
+    fn supported_os(&self) -> &'static [SupportedOs] {
+        &[SupportedOs::Windows, SupportedOs::Macos, SupportedOs::Linux]
+    }
+
+    fn config_binding(&self) -> Option<ConfigBinding> {
+        Some(TypedTestConfig::binding())
+    }
+
+    fn startup_check(
+        &self,
+        _current_os: SupportedOs,
+        context: ProviderContext,
+    ) -> BoxFuture<'_, ProviderCheckResult> {
+        self.calls.fetch_add(1, Ordering::SeqCst);
+        Box::pin(async move {
+            let config = context
+                .config::<TypedTestConfig>()
+                .expect("typed config should be resolved");
+            assert_eq!(config.value, "hello");
+            ProviderCheckResult::available()
+        })
+    }
+
+    fn collect(
+        &self,
+        _current_os: SupportedOs,
+        _options: CollectOptions,
+        _context: ProviderContext,
+    ) -> BoxFuture<'_, anyhow::Result<Vec<ActivityEntry>>> {
+        Box::pin(async { unreachable!() })
+    }
+}
+
+#[tokio::test]
+async fn typed_config_is_available_in_startup_check() {
+    let calls = Arc::new(AtomicUsize::new(0));
+    let mut config = TestConfigSource::default();
+    config
+        .values
+        .insert("TYPED_KEY".to_string(), "hello".to_string());
+
+    let runtime = ProviderRuntime::inspect(
+        Arc::new(TypedTestProvider {
+            calls: Arc::clone(&calls),
+        }),
+        &config,
+    )
+    .await;
+
+    assert_eq!(calls.load(Ordering::SeqCst), 1);
+    assert!(runtime.info().usable);
+}
+
+crate::provider_config! {
+    struct MacroBoolConfig {
+        flag => TEST_MACRO_BOOL_FLAG: Bool,
+    }
+}
+
+crate::provider_config! {
+    struct MacroDefaultStringConfig {
+        value => TEST_MACRO_DEFAULT_VALUE: String = "fallback",
+    }
+}
+
+#[test]
+fn provider_config_macro_bool_defaults_to_false() {
+    let source = TestConfigSource::default();
+    let config = ProviderConfig::resolve(&source, MacroBoolConfig::requirements());
+    let parsed = MacroBoolConfig::from_config(&config).expect("macro bool config should parse");
+    assert!(!parsed.flag);
+}
+
+#[test]
+fn provider_config_macro_default_string_is_used_when_missing() {
+    let source = TestConfigSource::default();
+    let config = ProviderConfig::resolve(&source, MacroDefaultStringConfig::requirements());
+    let parsed =
+        MacroDefaultStringConfig::from_config(&config).expect("macro default config should parse");
+    assert_eq!(parsed.value, "fallback");
+}
+
+#[test]
+fn provider_config_macro_generates_expected_key_metadata() {
+    assert_eq!(TEST_MACRO_BOOL_FLAG.name, "TEST_MACRO_BOOL_FLAG");
+    assert!(!TEST_MACRO_BOOL_FLAG.required);
+    assert_eq!(TEST_MACRO_BOOL_FLAG.value_type, ProviderConfigValueType::Bool);
+
+    assert_eq!(TEST_MACRO_DEFAULT_VALUE.name, "TEST_MACRO_DEFAULT_VALUE");
+    assert!(!TEST_MACRO_DEFAULT_VALUE.required);
+    assert_eq!(
+        TEST_MACRO_DEFAULT_VALUE.value_type,
+        ProviderConfigValueType::String
     );
 }

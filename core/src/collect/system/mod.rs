@@ -22,13 +22,13 @@ pub(crate) const WINDOWS_SYSTEM_EVENTS: &[(i32, SystemEntryType, &str)] = &[
     ),
 ];
 
-pub fn collect_system(
+pub async fn collect_system(
     options: &CollectOptions,
     current_os: SupportedOs,
 ) -> Result<Vec<SystemEntry>> {
     match current_os {
-        SupportedOs::Windows => windows::collect_system(options),
-        SupportedOs::Macos => macos::collect_system(options),
+        SupportedOs::Windows => windows::collect_system(options).await,
+        SupportedOs::Macos => macos::collect_system(options).await,
         SupportedOs::Linux => Err(anyhow!("System collection is not supported on this OS")),
     }
 }

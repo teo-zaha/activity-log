@@ -104,7 +104,9 @@
   transition: filter 0.1s ease;
   z-index: 1;
 
-  &:hover { filter: brightness(0.93); }
+  &:hover {
+    filter: brightness(0.93);
+  }
 
   .cal-event-icon {
     font-size: 11px;

@@ -8,10 +8,10 @@ const HOUR_START = 0
 const HOUR_END = 23
 const DEFAULT_SCROLL_HOUR = 6.5 // 06:30
 const ALLDAY_BAR_HEIGHT = 26
-const ALLDAY_BAR_GAP    = 2
+const ALLDAY_BAR_GAP = 2
 
 interface MultiDayBar {
-  entry: OutlookEntry
+  entry: EntryUiAdapter
   startCol: number
   spanCols: number
   row: number
@@ -77,9 +77,11 @@ export class WeekViewComponent implements AfterViewInit {
 
   // ── Multi-day event support ───────────────────────────────────────────────
 
-  private isMultiDayEvent(e: ActivityEntry): e is OutlookEntry {
+  private isMultiDayEvent(e: EntryUiAdapter): boolean {
     if (e.source !== 'outlook') return false
-    const endMs = new Date(e.timestamp).getTime() + (e as OutlookEntry).duration_minutes * 60000
+    const durationMinutes = e.calendarDurationMinutes
+    if (durationMinutes == null) return false
+    const endMs = new Date(e.timestamp).getTime() + durationMinutes * 60000
     return new Date(endMs).toISOString().slice(0, 10) > e.timestamp.slice(0, 10)
   }
 
@@ -87,27 +89,34 @@ export class WeekViewComponent implements AfterViewInit {
     const days = this.days
     if (!days.length) return []
     const weekStart = days[0]
-    const weekEnd   = days[days.length - 1]
+    const weekEnd = days[days.length - 1]
 
     // Collect multi-day events overlapping this week
     const events = this.activity.filteredEntries().filter(e => {
       if (!this.isMultiDayEvent(e)) return false
-      const endMs  = new Date(e.timestamp).getTime() + (e as OutlookEntry).duration_minutes * 60000
+      const endMs = new Date(e.timestamp).getTime() + (e.calendarDurationMinutes ?? 0) * 60000
       const endDay = new Date(endMs).toISOString().slice(0, 10)
       const startDay = e.timestamp.slice(0, 10)
       return startDay <= weekEnd && endDay > weekStart
-    }) as OutlookEntry[]
+    })
 
     // Determine column span for each event (clipped to visible week)
     const bars: Omit<MultiDayBar, 'row'>[] = events.map(ev => {
-      const endMs    = new Date(ev.timestamp).getTime() + ev.duration_minutes * 60000
-      const endDay   = new Date(endMs).toISOString().slice(0, 10)
+      const endMs = new Date(ev.timestamp).getTime() + (ev.calendarDurationMinutes ?? 0) * 60000
+      const endDay = new Date(endMs).toISOString().slice(0, 10)
       const startDay = ev.timestamp.slice(0, 10)
       const clippedStart = startDay < weekStart ? weekStart : startDay
-      const clippedEnd   = endDay   > weekEnd   ? weekEnd   : new Date(new Date(endMs).getTime() - 1).toISOString().slice(0, 10)
+      const clippedEnd =
+        endDay > weekEnd
+          ? weekEnd
+          : new Date(new Date(endMs).getTime() - 1).toISOString().slice(0, 10)
       const startCol = days.indexOf(clippedStart)
-      const endCol   = days.indexOf(clippedEnd)
-      return { entry: ev, startCol: Math.max(0, startCol), spanCols: Math.max(1, endCol - Math.max(0, startCol) + 1) }
+      const endCol = days.indexOf(clippedEnd)
+      return {
+        entry: ev,
+        startCol: Math.max(0, startCol),
+        spanCols: Math.max(1, endCol - Math.max(0, startCol) + 1),
+      }
     })
 
     // Greedy row packing
@@ -129,9 +138,9 @@ export class WeekViewComponent implements AfterViewInit {
     const total = this.days.length
     const GAP = 3
     return {
-      left:  `calc(${(bar.startCol / total) * 100}% + ${GAP}px)`,
-      width: `calc(${(bar.spanCols  / total) * 100}% - ${GAP * 2}px)`,
-      top:   `${bar.row * (ALLDAY_BAR_HEIGHT + ALLDAY_BAR_GAP) + ALLDAY_BAR_GAP}px`,
+      left: `calc(${(bar.startCol / total) * 100}% + ${GAP}px)`,
+      width: `calc(${(bar.spanCols / total) * 100}% - ${GAP * 2}px)`,
+      top: `${bar.row * (ALLDAY_BAR_HEIGHT + ALLDAY_BAR_GAP) + ALLDAY_BAR_GAP}px`,
       height: `${ALLDAY_BAR_HEIGHT}px`,
     }
   }
@@ -139,7 +148,7 @@ export class WeekViewComponent implements AfterViewInit {
   protected dayHasMultiDayEvent(dateStr: string): boolean {
     return this.multiDayLayout().some(bar => {
       const start = this.days[bar.startCol]
-      const end   = this.days[bar.startCol + bar.spanCols - 1]
+      const end = this.days[bar.startCol + bar.spanCols - 1]
       return dateStr >= start && dateStr <= end
     })
   }

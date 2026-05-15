@@ -1,59 +1,29 @@
-use futures::future::BoxFuture;
-
 use crate::{
     collect::outlook::collect_outlook,
-    model::{CollectOptions, Source, SupportedOs},
-    provider::{
-        provider_adapter::ProviderAdapter, provider_check_result::ProviderCheckResult,
-        provider_collection::ProviderCollection, provider_context::ProviderContext,
-    },
+    model::{IntoActivityEntries, Source, SupportedOs},
+    provider::provider_check_result::ProviderCheckResult,
 };
 
 pub mod macos;
 pub mod windows;
 
-pub struct OutlookProvider;
-
-impl ProviderAdapter for OutlookProvider {
-    fn id(&self) -> Source {
-        Source::Outlook
-    }
-
-    fn supported_os(&self) -> &'static [SupportedOs] {
-        &[SupportedOs::Windows, SupportedOs::Macos]
-    }
-
-    fn startup_check(
-        &self,
-        current_os: SupportedOs,
-        _context: ProviderContext,
-    ) -> BoxFuture<'_, ProviderCheckResult> {
-        Box::pin(async move {
-            let result = tokio::task::spawn_blocking(move || match current_os {
-                SupportedOs::Windows => windows::check_outlook_ready(),
-                SupportedOs::Macos => macos::check_outlook_ready(),
+crate::provider! {
+    OutlookProvider(Source::Outlook, &[SupportedOs::Windows, SupportedOs::Macos]) {
+        async fn startup_check(&self, current_os, _context) {
+            let result = match current_os {
+                SupportedOs::Windows => windows::check_outlook_ready().await,
+                SupportedOs::Macos => macos::check_outlook_ready().await,
                 SupportedOs::Linux => Err(anyhow::anyhow!("OS not supported")),
-            })
-            .await;
+            };
             match result {
-                Ok(Ok(())) => ProviderCheckResult::available(),
-                Ok(Err(err)) => ProviderCheckResult::unavailable(err.to_string()),
-                Err(_) => ProviderCheckResult::unavailable("Outlook startup check failed"),
+                Ok(()) => ProviderCheckResult::available(),
+                Err(err) => ProviderCheckResult::unavailable(err.to_string()),
             }
-        })
-    }
+        }
 
-    fn collect(
-        &self,
-        current_os: SupportedOs,
-        options: CollectOptions,
-        _context: ProviderContext,
-    ) -> BoxFuture<'_, anyhow::Result<ProviderCollection>> {
-        Box::pin(async move {
-            let entries =
-                tokio::task::spawn_blocking(move || collect_outlook(&options, current_os))
-                    .await??;
-            Ok(ProviderCollection::Outlook(entries))
-        })
+        async fn collect(&self, current_os, options, _context) {
+            let entries = collect_outlook(&options, current_os).await?;
+            Ok(entries.into_activity_entries())
+        }
     }
 }

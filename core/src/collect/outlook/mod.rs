@@ -10,13 +10,13 @@ mod macos;
 mod tests;
 mod windows;
 
-pub fn collect_outlook(
+pub async fn collect_outlook(
     options: &CollectOptions,
     current_os: SupportedOs,
 ) -> Result<Vec<OutlookEntry>> {
     match current_os {
-        SupportedOs::Windows => windows::collect_outlook(options),
-        SupportedOs::Macos => macos::collect_outlook(options),
+        SupportedOs::Windows => windows::collect_outlook(options).await,
+        SupportedOs::Macos => macos::collect_outlook(options).await,
         SupportedOs::Linux => Err(anyhow!("Outlook collection is not supported on this OS")),
     }
 }

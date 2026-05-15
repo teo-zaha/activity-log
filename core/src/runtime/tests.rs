@@ -35,8 +35,6 @@ fn fixture_options() -> CollectOptions {
     CollectOptions {
         since: chrono::NaiveDate::from_ymd_opt(2026, 3, 1).unwrap(),
         until: chrono::NaiveDate::from_ymd_opt(2026, 3, 25).unwrap(),
-        output: None,
-        git_dirs: None,
     }
 }
 
@@ -162,6 +160,5 @@ fn resolve_collect_options_accepts_preset() {
     };
 
     let options = resolve_collect_options(&request).unwrap();
-    assert_eq!(options.output, None);
-    assert_eq!(options.git_dirs, None);
+    assert!(options.since <= options.until);
 }

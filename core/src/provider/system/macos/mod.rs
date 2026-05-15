@@ -1,19 +1,20 @@
-use std::process::Command;
+use tokio::process::Command;
 
-use crate::provider::system::windows::SystemSupport;
+use crate::provider::system::SystemSupport;
 
-pub fn check_system_support() -> SystemSupport {
-    match check_last_access() {
+pub async fn check_system_support() -> SystemSupport {
+    match check_last_access().await {
         Ok(()) => SystemSupport::Available,
         Err(err) => SystemSupport::Unavailable(format!("boot/shutdown history unavailable: {err}")),
     }
 }
 
-fn check_last_access() -> Result<(), String> {
+async fn check_last_access() -> Result<(), String> {
     let output = Command::new("/usr/bin/last")
         .arg("-n")
         .arg("1")
         .output()
+        .await
         .map_err(|err| err.to_string())?;
 
     if output.status.success() {

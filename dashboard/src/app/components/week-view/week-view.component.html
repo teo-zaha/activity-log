@@ -31,7 +31,6 @@
 
   <!-- Scrollable time grid (headers live inside to share the same scrollbar-gutter) -->
   <div class="cal-scroll" #scrollEl>
-
     <!-- Sticky header: day labels + all-day banner row -->
     <div class="cal-sticky-header">
       <div class="week-col-headers">
@@ -86,7 +85,11 @@
       <!-- Day columns -->
       <div class="week-body">
         @for (day of days; track day) {
-          <div class="day-col" [class.is-today]="isToday(day)" [class.has-allday]="dayHasMultiDayEvent(day)">
+          <div
+            class="day-col"
+            [class.is-today]="isToday(day)"
+            [class.has-allday]="dayHasMultiDayEvent(day)"
+          >
             @for (item of getLayoutForDay(day); track $index) {
               @if (item.kind === 'overflow') {
                 <div

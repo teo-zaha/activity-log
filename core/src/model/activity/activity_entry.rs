@@ -17,6 +17,58 @@ pub enum ActivityEntry {
     System(SystemEntry),
 }
 
+pub trait IntoActivityEntry {
+    fn into_activity_entry(self) -> ActivityEntry;
+}
+
+impl IntoActivityEntry for GitEntry {
+    fn into_activity_entry(self) -> ActivityEntry {
+        ActivityEntry::Git(self)
+    }
+}
+
+impl IntoActivityEntry for GitLabEntry {
+    fn into_activity_entry(self) -> ActivityEntry {
+        ActivityEntry::GitLab(self)
+    }
+}
+
+impl IntoActivityEntry for JiraEntry {
+    fn into_activity_entry(self) -> ActivityEntry {
+        ActivityEntry::Jira(self)
+    }
+}
+
+impl IntoActivityEntry for OutlookEntry {
+    fn into_activity_entry(self) -> ActivityEntry {
+        ActivityEntry::Outlook(self)
+    }
+}
+
+impl IntoActivityEntry for SystemEntry {
+    fn into_activity_entry(self) -> ActivityEntry {
+        ActivityEntry::System(self)
+    }
+}
+
+pub trait IntoActivityEntries: IntoIterator
+where
+    Self::Item: IntoActivityEntry,
+{
+    fn into_activity_entries(self) -> Vec<ActivityEntry> {
+        self.into_iter()
+            .map(IntoActivityEntry::into_activity_entry)
+            .collect()
+    }
+}
+
+impl<T> IntoActivityEntries for T
+where
+    T: IntoIterator,
+    T::Item: IntoActivityEntry,
+{
+}
+
 impl ActivityEntry {
     pub fn timestamp(&self) -> &str {
         match self {

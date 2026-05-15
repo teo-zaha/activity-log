@@ -9,7 +9,7 @@ export const HOUR_END = 23
 
 const DEFAULT_SCROLL_HOUR = 6.5 // 06:30
 const ALLDAY_BAR_HEIGHT = 26
-const ALLDAY_BAR_GAP    = 2
+const ALLDAY_BAR_GAP = 2
 
 @Component({
   selector: 'app-day-view',
@@ -63,21 +63,23 @@ export class DayViewComponent implements AfterViewInit {
     return 22
   }
 
-  private isMultiDayEvent(e: ActivityEntry): e is OutlookEntry {
+  private isMultiDayEvent(e: EntryUiAdapter): boolean {
     if (e.source !== 'outlook') return false
-    const endMs = new Date(e.timestamp).getTime() + (e as OutlookEntry).duration_minutes * 60000
+    const durationMinutes = e.calendarDurationMinutes
+    if (durationMinutes == null) return false
+    const endMs = new Date(e.timestamp).getTime() + durationMinutes * 60000
     return new Date(endMs).toISOString().slice(0, 10) > e.timestamp.slice(0, 10)
   }
 
-  readonly multiDayEntries = computed(() => {
+  readonly multiDayEntries = computed<EntryUiAdapter[]>(() => {
     const day = this.activity.selectedDay()
     return this.activity.filteredEntries().filter(e => {
       if (!this.isMultiDayEvent(e)) return false
       const startDay = e.timestamp.slice(0, 10)
-      const endMs = new Date(e.timestamp).getTime() + (e as OutlookEntry).duration_minutes * 60000
+      const endMs = new Date(e.timestamp).getTime() + (e.calendarDurationMinutes ?? 0) * 60000
       const endDay = new Date(endMs).toISOString().slice(0, 10)
       return startDay <= day && endDay > day
-    }) as OutlookEntry[]
+    })
   })
 
   protected allDayRowHeight(): number {

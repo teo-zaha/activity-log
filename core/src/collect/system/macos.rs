@@ -1,7 +1,6 @@
-use std::process::Command;
-
 use anyhow::{Result, anyhow};
 use chrono::{DateTime, Local, NaiveDateTime, TimeZone, Utc};
+use tokio::process::Command;
 
 use crate::model::{CollectOptions, SystemEntry, SystemEntryType};
 
@@ -10,16 +9,17 @@ use super::utc_bounds;
 const BOOT_LABEL: &str = "System started";
 const SHUTDOWN_LABEL: &str = "System shutdown";
 
-pub(super) fn collect_system(options: &CollectOptions) -> Result<Vec<SystemEntry>> {
+pub(super) async fn collect_system(options: &CollectOptions) -> Result<Vec<SystemEntry>> {
     let (start, end) = utc_bounds(options.since, options.until)?;
-    parse_last_output(last_output()?, start, end)
+    parse_last_output(last_output().await?, start, end)
 }
 
-fn last_output() -> Result<String> {
+async fn last_output() -> Result<String> {
     let output = Command::new("/usr/bin/last")
         .arg("-y")
         .arg("reboot")
-        .output()?;
+        .output()
+        .await?;
 
     if !output.status.success() {
         return Err(anyhow!(

@@ -1,6 +1,5 @@
 use anyhow::Result;
 use clap::Parser;
-use dotenvy::dotenv;
 
 mod generate_ts_support;
 
@@ -16,7 +15,6 @@ struct GenerateTsCli {
 }
 
 fn main() -> Result<()> {
-    dotenv().ok();
     let cli = GenerateTsCli::parse();
     generate_ts_support::generate_ts(&cli.out)
 }
