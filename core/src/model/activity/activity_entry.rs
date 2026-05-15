@@ -55,7 +55,10 @@ pub trait IntoActivityEntries: IntoIterator
 where
     Self::Item: IntoActivityEntry,
 {
-    fn into_activity_entries(self) -> Vec<ActivityEntry> {
+    fn into_activity_entries(self) -> Vec<ActivityEntry>
+    where
+        Self: Sized,
+    {
         self.into_iter()
             .map(IntoActivityEntry::into_activity_entry)
             .collect()
