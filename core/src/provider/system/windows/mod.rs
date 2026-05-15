@@ -19,7 +19,7 @@ async fn check_log_access(log_name: &str) -> Result<(), String> {
         ))
         .output()
         .await
-        .map_err(|_| "Windows event log unavailable".to_string())?;
+        .map_err(|_| "System event log unavailable".to_string())?;
 
     if output.status.success() {
         Ok(())
