@@ -677,6 +677,7 @@ dependencies = [
  "anyhow",
  "clap",
  "core",
+ "dotenvy",
  "serde_json",
  "strum",
  "tempfile",
