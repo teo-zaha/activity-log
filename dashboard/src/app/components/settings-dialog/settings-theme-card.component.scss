@@ -83,7 +83,7 @@
   height: 56px;
   padding: 6px;
   border-radius: 16px;
-  background: var(--theme-preview-bg, #fff);
+  background: var(--surface);
   box-shadow: inset 0 0 0 1px rgba(15, 23, 42, 0.08);
 }
 
@@ -95,17 +95,17 @@
 }
 
 .theme-preview-top {
-  background: var(--theme-preview-top);
+  background: var(--border);
   margin-bottom: 6px;
 }
 
 .theme-preview-main {
-  background: var(--theme-preview-main);
+  background: var(--surface-alt);
   margin-bottom: 8px;
 }
 
 .theme-preview-accent {
-  background: var(--theme-preview-accent);
+  background: var(--btn-primary);
 }
 
 .theme-copy {
@@ -124,8 +124,6 @@
   color: var(--text-tertiary);
   font-size: 12px;
 }
-
-@include ui.theme-preview-variants('.theme-preview');
 
 @include ui.down('tablet') {
   .general-card {

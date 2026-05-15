@@ -88,7 +88,8 @@ html.dark {
 
 // ── Design tokens ────────────────────────────────────────────────────────────
 
-:root {
+:root,
+[data-theme-option='light'] {
   // Surfaces — noticeable depth between layers
   --bg: #e8ecf1;
   --surface: #ffffff;
@@ -166,7 +167,8 @@ html.dark {
 }
 
 html[data-theme='dark'],
-html.dark {
+html.dark,
+[data-theme-option='dark'] {
   // Surfaces
   --bg: #0d1117;
   --surface: #161b22;
@@ -187,6 +189,11 @@ html.dark {
   --accent: #58a6ff;
   --accent-hover: #79b8ff;
   --accent-fg: #ffffff;
+
+  // Primary button (defaults to accent)
+  --btn-primary: var(--accent);
+  --btn-primary-hover: var(--accent-hover);
+  --btn-primary-fg: var(--accent-fg);
 
   // Error
   --error-bg: #3b0f0f;
@@ -230,7 +237,8 @@ html.dark {
 }
 
 // ── Green ─────────────────────────────────────────────────────────────────────
-html[data-theme='green'] {
+html[data-theme='green'],
+[data-theme-option='green'] {
   --bg: #e2ede4;
   --surface: #f2faf4;
   --surface-alt: #e2ede4;
@@ -247,6 +255,10 @@ html[data-theme='green'] {
   --accent: #2e7d32;
   --accent-hover: #1b5e20;
   --accent-fg: #ffffff;
+
+  --btn-primary: var(--accent);
+  --btn-primary-hover: var(--accent-hover);
+  --btn-primary-fg: var(--accent-fg);
 
   --error-bg: #fee2e2;
   --error-fg: #b91c1c;
@@ -283,7 +295,8 @@ html[data-theme='green'] {
 }
 
 // ── Lilac ─────────────────────────────────────────────────────────────────────
-html[data-theme='lilac'] {
+html[data-theme='lilac'],
+[data-theme-option='lilac'] {
   --bg: #ebe6f8;
   --surface: #f8f4ff;
   --surface-alt: #ebe6f8;
@@ -300,6 +313,10 @@ html[data-theme='lilac'] {
   --accent: #7c4dff;
   --accent-hover: #651fff;
   --accent-fg: #ffffff;
+
+  --btn-primary: var(--accent);
+  --btn-primary-hover: var(--accent-hover);
+  --btn-primary-fg: var(--accent-fg);
 
   --error-bg: #fee2e2;
   --error-fg: #b91c1c;
@@ -336,7 +353,8 @@ html[data-theme='lilac'] {
 }
 
 // ── Dim ───────────────────────────────────────────────────────────────────────
-html[data-theme='dim'] {
+html[data-theme='dim'],
+[data-theme-option='dim'] {
   --bg: #1c2128;
   --surface: #22272e;
   --surface-alt: #2d333b;
@@ -353,6 +371,10 @@ html[data-theme='dim'] {
   --accent: #539bf5;
   --accent-hover: #6cb6ff;
   --accent-fg: #ffffff;
+
+  --btn-primary: var(--accent);
+  --btn-primary-hover: var(--accent-hover);
+  --btn-primary-fg: var(--accent-fg);
 
   --error-bg: #3b0f0f;
   --error-fg: #fca5a5;
@@ -389,7 +411,8 @@ html[data-theme='dim'] {
 }
 
 // ── Solarized ─────────────────────────────────────────────────────────────────
-html[data-theme='solarized'] {
+html[data-theme='solarized'],
+[data-theme-option='solarized'] {
   --bg: #eee8d5;
   --surface: #fdf6e3;
   --surface-alt: #eee8d5;
@@ -406,6 +429,10 @@ html[data-theme='solarized'] {
   --accent: #268bd2;
   --accent-hover: #1a6fb0;
   --accent-fg: #ffffff;
+
+  --btn-primary: var(--accent);
+  --btn-primary-hover: var(--accent-hover);
+  --btn-primary-fg: var(--accent-fg);
 
   --error-bg: #f5d0d0;
   --error-fg: #862222;
@@ -442,7 +469,8 @@ html[data-theme='solarized'] {
 }
 
 // ── Midnight ──────────────────────────────────────────────────────────────────
-html[data-theme='midnight'] {
+html[data-theme='midnight'],
+[data-theme-option='midnight'] {
   --bg: #000000;
   --surface: #0c0c0c;
   --surface-alt: #141414;
@@ -459,6 +487,10 @@ html[data-theme='midnight'] {
   --accent: #6e8eff;
   --accent-hover: #8ca4ff;
   --accent-fg: #ffffff;
+
+  --btn-primary: var(--accent);
+  --btn-primary-hover: var(--accent-hover);
+  --btn-primary-fg: var(--accent-fg);
 
   --error-bg: #300808;
   --error-fg: #f09898;
@@ -502,7 +534,8 @@ html[data-theme='midnight'] {
 //   Teal     #94e2d5  → jira          Blue    #89b4fa → outlook
 // Available for future use:
 //   Green #a6e3a1 · Pink #f5c2e7 · Sky #89dceb · Rosewater #f5e0dc · Maroon #eba0ac · Sapphire #74c7ec
-html[data-theme='mocha'] {
+html[data-theme='mocha'],
+[data-theme-option='mocha'] {
   --bg: #1e1e2e;
   --surface: #181825;
   --surface-alt: #11111b;
