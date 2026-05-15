@@ -1,7 +1,7 @@
 use anyhow::{Result, anyhow};
-use tokio::process::Command;
 
 use crate::model::{CollectOptions, SystemEntry};
+use crate::platform::powershell_command;
 
 use super::{WINDOWS_SYSTEM_EVENTS, map_windows_events, parse_raw_system_events};
 
@@ -43,9 +43,7 @@ if ($events) {{ $events | ConvertTo-Json -Compress }} else {{ '[]' }}
 "#
     );
 
-    let output = Command::new("powershell.exe")
-        .arg("-NoProfile")
-        .arg("-NonInteractive")
+    let output = powershell_command()
         .arg("-Command")
         .arg(script)
         .output()

@@ -3,7 +3,7 @@ mod config;
 pub use config::*;
 
 use crate::{
-    collect::git::{collect_git, discover_home_repos, git_is_available},
+    collect::git::{collect_git, git_is_available, resolve_git_repos},
     model::{IntoActivityEntries, Source, SupportedOs},
     provider::provider_check_result::ProviderCheckResult,
 };
@@ -22,7 +22,12 @@ crate::provider! {
                 }
             };
 
-            let repos = config.dirs.clone().unwrap_or_else(discover_home_repos);
+            let repos = match resolve_git_repos(config) {
+                Ok(repos) => repos,
+                Err(err) => {
+                    return ProviderCheckResult::unavailable(err.to_string());
+                }
+            };
             if repos.is_empty() {
                 return ProviderCheckResult::unavailable("No repositories found");
             }

@@ -1,9 +1,7 @@
-use tokio::process::Command;
+use crate::platform::powershell_command;
 
 pub async fn check_outlook_ready() -> anyhow::Result<()> {
-    let output = Command::new("powershell.exe")
-        .arg("-NoProfile")
-        .arg("-NonInteractive")
+    let output = powershell_command()
         .arg("-Command")
         .arg(
             r#"

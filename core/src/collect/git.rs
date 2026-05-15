@@ -1,29 +1,25 @@
 use std::{
-    env, fs,
+    collections::BTreeSet,
+    fs,
     path::{Path, PathBuf},
 };
 
-use anyhow::Result;
+use anyhow::{Result, anyhow};
 use tokio::process::Command;
 
 use crate::{
     model::{CollectOptions, GitEntry},
-    provider::git::GitConfig,
+    provider::git::{GitConfig, default_git_root},
 };
 
 pub async fn collect_git(options: &CollectOptions, config: &GitConfig) -> Result<Vec<GitEntry>> {
     let since = options.since.format("%Y-%m-%d").to_string();
     let until = options.until.format("%Y-%m-%d").to_string();
 
-    let dirs = config.dirs.clone().unwrap_or_else(discover_home_repos);
+    let dirs = resolve_git_repos(config)?;
 
     let mut entries = Vec::new();
     for repo_path in dirs {
-        let git_dir = repo_path.join(".git");
-        if !git_dir.exists() {
-            continue;
-        }
-
         let repo_name = repo_path
             .file_name()
             .and_then(|name| name.to_str())
@@ -102,11 +98,41 @@ pub(crate) async fn git_is_available() -> bool {
         .unwrap_or(false)
 }
 
-pub(crate) fn discover_home_repos() -> Vec<PathBuf> {
-    env::var_os("HOME")
-        .map(PathBuf::from)
-        .map(|home| discover_repos(&home, 0, 4))
-        .unwrap_or_default()
+pub(crate) fn resolve_git_repos(config: &GitConfig) -> Result<Vec<PathBuf>> {
+    resolve_git_repos_with_home_root(config, default_git_root())
+}
+
+pub(crate) fn resolve_git_repos_with_home_root(
+    config: &GitConfig,
+    home_root: Option<PathBuf>,
+) -> Result<Vec<PathBuf>> {
+    match &config.dirs {
+        Some(dirs) if !dirs.is_empty() => Ok(resolve_git_repos_from_roots(dirs)),
+        _ => discover_home_repos_with_root(home_root),
+    }
+}
+
+pub(crate) fn resolve_git_repos_from_roots(roots: &[PathBuf]) -> Vec<PathBuf> {
+    let mut repos = BTreeSet::new();
+
+    for root in roots {
+        repos.extend(expand_git_dir_input(root));
+    }
+
+    repos.into_iter().collect()
+}
+
+fn discover_home_repos_with_root(home_root: Option<PathBuf>) -> Result<Vec<PathBuf>> {
+    let home_root = home_root.ok_or_else(|| anyhow!("Git home directory unavailable"))?;
+    Ok(expand_git_dir_input(&home_root))
+}
+
+fn expand_git_dir_input(path: &Path) -> Vec<PathBuf> {
+    if path.join(".git").exists() {
+        return vec![path.to_path_buf()];
+    }
+
+    discover_repos(path, 0, 4)
 }
 
 fn discover_repos(root: &Path, depth: usize, max_depth: usize) -> Vec<PathBuf> {

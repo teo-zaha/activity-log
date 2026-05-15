@@ -4,7 +4,9 @@ use crate::{
     provider::provider_check_result::ProviderCheckResult,
 };
 
+#[cfg(target_os = "macos")]
 pub mod macos;
+#[cfg(target_os = "windows")]
 pub mod windows;
 
 pub enum SystemSupport {
@@ -13,13 +15,47 @@ pub enum SystemSupport {
     Unavailable(String),
 }
 
+fn unsupported_system_support() -> SystemSupport {
+    SystemSupport::Unavailable("OS not supported".to_string())
+}
+
+#[cfg(target_os = "windows")]
+use self::windows as windows_impl;
+#[cfg(not(target_os = "windows"))]
+mod windows_impl {
+    use super::{SystemSupport, unsupported_system_support};
+
+    pub(super) async fn check_system_support() -> SystemSupport {
+        unsupported_system_support()
+    }
+}
+
+#[cfg(target_os = "macos")]
+use self::macos as macos_impl;
+#[cfg(not(target_os = "macos"))]
+mod macos_impl {
+    use super::{SystemSupport, unsupported_system_support};
+
+    pub(super) async fn check_system_support() -> SystemSupport {
+        unsupported_system_support()
+    }
+}
+
+mod linux_impl {
+    use super::{SystemSupport, unsupported_system_support};
+
+    pub(super) async fn check_system_support() -> SystemSupport {
+        unsupported_system_support()
+    }
+}
+
 crate::provider! {
     SystemProvider(Source::System, &[SupportedOs::Windows, SupportedOs::Macos]) {
         async fn startup_check(&self, current_os, _context) {
             let result = match current_os {
-                SupportedOs::Windows => windows::check_system_support().await,
-                SupportedOs::Macos => macos::check_system_support().await,
-                SupportedOs::Linux => SystemSupport::Unavailable("OS not supported".to_string()),
+                SupportedOs::Windows => windows_impl::check_system_support().await,
+                SupportedOs::Macos => macos_impl::check_system_support().await,
+                SupportedOs::Linux => linux_impl::check_system_support().await,
             };
             match result {
                 SystemSupport::Available => ProviderCheckResult::available(),

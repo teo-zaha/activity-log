@@ -127,12 +127,24 @@
 
 .badge {
   @include ui.provider-badge-base($width: 92px);
+  position: relative;
+  justify-content: center;
+  padding-left: 24px;
+  padding-right: 10px;
 }
 
 .badge-icon {
+  position: absolute;
+  left: 10px;
   font-size: 12px;
   line-height: 1;
   flex-shrink: 0;
+}
+
+.badge-label {
+  display: block;
+  flex: 1;
+  text-align: center;
 }
 
 @include ui.provider-badge-variants('.badge');

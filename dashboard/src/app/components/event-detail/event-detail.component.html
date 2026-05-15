@@ -12,7 +12,7 @@
                 [source]="badge.source"
                 [fallbackIcon]="badge.icon"
               ></app-provider-icon>
-              {{ badge.label }}
+              <span class="flyout-badge-label">{{ badge.label }}</span>
             </span>
           }
         </div>
@@ -37,7 +37,7 @@
                   [source]="section.source"
                   [fallbackIcon]="section.icon"
                 ></app-provider-icon>
-                {{ section.title }}
+                <span class="flyout-badge-label">{{ section.title }}</span>
               </span>
               <div class="flyout-fields">
                 @for (field of section.fields; track field.label) {
@@ -80,7 +80,7 @@
                   [source]="entry.badge.source"
                   [fallbackIcon]="entry.badge.icon"
                 ></app-provider-icon>
-                {{ entry.badge.label }}
+                <span class="flyout-badge-label">{{ entry.badge.label }}</span>
               </span>
               <span class="flyout-section-entry-title">{{ entry.title }}</span>
             </div>
@@ -93,7 +93,7 @@
                       [source]="section.source"
                       [fallbackIcon]="section.icon"
                     ></app-provider-icon>
-                    {{ section.title }}
+                    <span class="flyout-badge-label">{{ section.title }}</span>
                   </span>
                   <div class="flyout-fields">
                     @for (field of section.fields; track field.label) {

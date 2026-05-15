@@ -1,23 +1,70 @@
-use anyhow::{Result, anyhow};
+use anyhow::Result;
 use serde_json::Value;
 
 use crate::model::{
     CollectOptions, OutlookEntry, SupportedOs, outlook::raw_outlook_event::RawOutlookEvent,
 };
 
+#[cfg(target_os = "macos")]
 mod macos;
 #[cfg(test)]
 mod tests;
+#[cfg(target_os = "windows")]
 mod windows;
+
+#[cfg(target_os = "windows")]
+use self::windows as windows_impl;
+#[cfg(not(target_os = "windows"))]
+mod windows_impl {
+    use anyhow::Result;
+
+    use crate::{
+        model::{CollectOptions, OutlookEntry},
+        platform::unsupported_result,
+    };
+
+    pub(super) async fn collect_outlook(_options: &CollectOptions) -> Result<Vec<OutlookEntry>> {
+        unsupported_result("Outlook collection is not supported on this OS")
+    }
+}
+
+#[cfg(target_os = "macos")]
+use self::macos as macos_impl;
+#[cfg(not(target_os = "macos"))]
+mod macos_impl {
+    use anyhow::Result;
+
+    use crate::{
+        model::{CollectOptions, OutlookEntry},
+        platform::unsupported_result,
+    };
+
+    pub(super) async fn collect_outlook(_options: &CollectOptions) -> Result<Vec<OutlookEntry>> {
+        unsupported_result("Outlook collection is not supported on this OS")
+    }
+}
+
+mod linux_impl {
+    use anyhow::Result;
+
+    use crate::{
+        model::{CollectOptions, OutlookEntry},
+        platform::unsupported_result,
+    };
+
+    pub(super) async fn collect_outlook(_options: &CollectOptions) -> Result<Vec<OutlookEntry>> {
+        unsupported_result("Outlook collection is not supported on this OS")
+    }
+}
 
 pub async fn collect_outlook(
     options: &CollectOptions,
     current_os: SupportedOs,
 ) -> Result<Vec<OutlookEntry>> {
     match current_os {
-        SupportedOs::Windows => windows::collect_outlook(options).await,
-        SupportedOs::Macos => macos::collect_outlook(options).await,
-        SupportedOs::Linux => Err(anyhow!("Outlook collection is not supported on this OS")),
+        SupportedOs::Windows => windows_impl::collect_outlook(options).await,
+        SupportedOs::Macos => macos_impl::collect_outlook(options).await,
+        SupportedOs::Linux => linux_impl::collect_outlook(options).await,
     }
 }
 

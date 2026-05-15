@@ -181,17 +181,16 @@ pnpm verify
 Copy `.env.example` to `.env` and fill in the sources you want to enable. Any source without credentials is silently skipped.
 For CLI runs, you can override any provider key dynamically with `--set KEY=VALUE`.
 
-| Variable        | Description                                                                  |
-| --------------- | ---------------------------------------------------------------------------- |
-| `GITLAB_URL`    | Your GitLab instance URL                                                     |
-| `GITLAB_TOKEN`  | GitLab personal access token                                                 |
-| `GITLAB_USER`   | Your GitLab username                                                         |
-| `JIRA_URL`      | Your Jira instance URL                                                       |
-| `JIRA_EMAIL`    | Your Jira account email                                                      |
-| `JIRA_TOKEN`    | Jira API token (or PAT for Jira Data Center)                                 |
-| `JIRA_INSECURE` | Set to `true` to skip TLS verification (self-signed certs)                   |
-| `GIT_DIRS`      | Comma-separated paths to Git repos (auto-discovers from home dir if not set) |
-| `PORT`          | Server port (default: `3000`, UI mode only)                                  |
+| Variable        | Description                                                                 |
+| --------------- | --------------------------------------------------------------------------- |
+| `GITLAB_URL`    | Your GitLab instance URL                                                    |
+| `GITLAB_TOKEN`  | GitLab personal access token                                                |
+| `GITLAB_USER`   | Your GitLab username                                                        |
+| `JIRA_URL`      | Your Jira instance URL                                                      |
+| `JIRA_TOKEN`    | Jira access token                                                           |
+| `JIRA_INSECURE` | Set to `true` to skip TLS verification (self-signed certs)                  |
+| `GIT_DIRS`      | Comma-separated repo paths or parent folders (defaults to your OS home dir) |
+| `PORT`          | Server port (default: `3000`, UI mode only)                                 |
 
 Outlook and System collectors require no credentials — they read from the local Outlook app and Windows Event Log respectively.
 
@@ -204,6 +203,7 @@ In the desktop app, provider configuration fields are generated from Rust provid
 - Storage: persisted in Tauri Store (`settings.json`).
 - Secret fields: values are write-only in UI/API; the frontend only receives `isSet`.
 - Runtime behavior: save operations rebuild provider runtime config and refresh startup status.
+- Git defaults: when `GIT_DIRS` is unset, the desktop settings UI shows your OS home directory as the default Git root.
 
 ---
 

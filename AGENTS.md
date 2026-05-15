@@ -62,6 +62,10 @@ Important behavior:
 - Preserve wire compatibility for public API fields unless the task explicitly changes the contract
 - Use comments sparingly and only where behavior is not obvious
 - Keep PowerShell and subprocess integrations parity-focused unless the task explicitly replaces them
+- For OS-specific Rust implementations, gate child modules at the parent boundary with `#[cfg(target_os = "...")]`
+- Name OS-specific child modules by platform (`windows`, `macos`, `linux`) and keep runtime dispatch in the parent module
+- In parent modules, prefer a `*_impl` alias/stub pattern so runtime dispatch never calls raw `windows`/`macos`/`linux` modules directly
+- Keep shared cross-platform logic in shared modules; only split into OS-specific modules when behavior is genuinely platform-specific
 
 ## Angular and TypeScript Rules
 

@@ -1,8 +1,4 @@
-use std::{
-    collections::BTreeMap,
-    fs,
-    path::Path,
-};
+use std::{collections::BTreeMap, fs, path::Path};
 
 use activity_log_core::{
     collect_activity_detailed_with_provider_runtimes,
@@ -87,9 +83,11 @@ async fn collect(cli: Cli) -> Result<()> {
         .iter()
         .map(|runtime| runtime.info().clone())
         .collect::<Vec<_>>();
-    let collected =
-        collect_activity_detailed_with_provider_runtimes(request.collect_options, &provider_runtimes)
-            .await?;
+    let collected = collect_activity_detailed_with_provider_runtimes(
+        request.collect_options,
+        &provider_runtimes,
+    )
+    .await?;
 
     for line in provider_summary_lines(&provider_info, &collected) {
         println!("{line}");
