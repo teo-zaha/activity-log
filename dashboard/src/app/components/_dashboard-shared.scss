@@ -22,57 +22,6 @@ $breakpoints: (
   }
 }
 
-$theme-previews: (
-  'light': (
-    bg: #ffffff,
-    top: #dbeafe,
-    main: #f3f4f6,
-    accent: #3b82f6,
-  ),
-  'green': (
-    bg: #f2faf4,
-    top: #c8e6cc,
-    main: #d4e6d6,
-    accent: #2e7d32,
-  ),
-  'lilac': (
-    bg: #f8f4ff,
-    top: #e9ddff,
-    main: #efe7ff,
-    accent: #8b5cf6,
-  ),
-  'solarized': (
-    bg: #fdf6e3,
-    top: #eee8d5,
-    main: #f5efdf,
-    accent: #b58900,
-  ),
-  'dim': (
-    bg: #22272e,
-    top: #48515d,
-    main: #2d333b,
-    accent: #58a6ff,
-  ),
-  'dark': (
-    bg: #161b22,
-    top: #30363d,
-    main: #21262d,
-    accent: #58a6ff,
-  ),
-  'midnight': (
-    bg: #000000,
-    top: #1f2937,
-    main: #111827,
-    accent: #38bdf8,
-  ),
-  'mocha': (
-    bg: #1e1e2e,
-    top: #45475a,
-    main: #313244,
-    accent: #89b4fa,
-  ),
-);
-
 @mixin panel-shell(
   $radius: 28px,
   $background: var(--panel-bg),
@@ -388,16 +337,5 @@ $theme-previews: (
     --badge-bg: var(--badge-system-bg);
     --badge-fg: var(--badge-system-fg);
     --badge-accent: var(--badge-system-accent);
-  }
-}
-
-@mixin theme-preview-variants($selector: '.theme-preview') {
-  @each $theme, $colors in $theme-previews {
-    #{$selector}[data-theme-option='#{$theme}'] {
-      --theme-preview-bg: #{map.get($colors, bg)};
-      --theme-preview-top: #{map.get($colors, top)};
-      --theme-preview-main: #{map.get($colors, main)};
-      --theme-preview-accent: #{map.get($colors, accent)};
-    }
   }
 }
