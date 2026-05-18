@@ -1,4 +1,4 @@
-import { Component, computed, inject, signal } from '@angular/core'
+import { Component, computed, inject, signal, ChangeDetectionStrategy } from '@angular/core'
 import { MatDialogModule, MatDialogRef } from '@angular/material/dialog'
 import { MatIconModule } from '@angular/material/icon'
 import type { Source } from '../../generated/activity'
@@ -9,11 +9,14 @@ import { SettingsDialogMobileTabsComponent } from './settings-dialog-mobile-tabs
 import { SettingsDialogNavComponent } from './settings-dialog-nav.component'
 import { SettingsGeneralPaneComponent } from './settings-general-pane.component'
 import { SettingsSourcePaneComponent } from './settings-source-pane.component'
-import type { SettingsProviderRow, SettingsSelection } from './settings-dialog.types'
+import type {
+  SettingsFutureProviderRow,
+  SettingsProviderRow,
+  SettingsSelection,
+} from './settings-dialog.types'
 
 @Component({
   selector: 'app-settings-dialog',
-  standalone: true,
   imports: [
     MatDialogModule,
     MatIconModule,
@@ -25,12 +28,39 @@ import type { SettingsProviderRow, SettingsSelection } from './settings-dialog.t
   ],
   templateUrl: './settings-dialog.component.html',
   styleUrl: './settings-dialog.component.scss',
+  changeDetection: ChangeDetectionStrategy.OnPush,
 })
 export class SettingsDialogComponent {
   protected readonly activity = inject(ActivityService)
   protected readonly dialogRef = inject(MatDialogRef<SettingsDialogComponent>)
 
   protected readonly selection = signal<SettingsSelection>('general')
+  protected readonly futureProviderRows: readonly SettingsFutureProviderRow[] = [
+    {
+      id: 'figma',
+      label: 'Figma',
+      iconUrl: 'assets/provider-icons/figma.svg',
+      tooltip: 'Figma integration is coming soon.',
+    },
+    {
+      id: 'miro',
+      label: 'Miro',
+      iconUrl: 'assets/provider-icons/miro.svg',
+      tooltip: 'Miro integration is coming soon.',
+    },
+    {
+      id: 'teams',
+      label: 'Teams',
+      iconUrl: 'assets/provider-icons/teams.svg',
+      tooltip: 'Teams integration is coming soon.',
+    },
+    {
+      id: 'github',
+      label: 'GitHub',
+      iconUrl: 'assets/provider-icons/github.svg',
+      tooltip: 'GitHub integration is coming soon.',
+    },
+  ]
   protected readonly providerRows = computed<SettingsProviderRow[]>(() =>
     this.activity.providerInfo().map(info => {
       const adapter = getProviderAdapter(info.id)

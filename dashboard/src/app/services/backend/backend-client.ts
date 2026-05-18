@@ -1,4 +1,4 @@
-import { inject, makeEnvironmentProviders } from '@angular/core'
+import { inject, makeEnvironmentProviders, type EnvironmentProviders } from '@angular/core'
 import type {
   ActivityLog,
   CollectRequest,
@@ -33,13 +33,13 @@ export abstract class ActivityBackendClient {
   abstract export(request: ExportRequest): Promise<void>
 }
 
-export function provideActivityBackendClient() {
+export function provideActivityBackendClient(): EnvironmentProviders {
   return makeEnvironmentProviders([
     HttpBackendClient,
     TauriBackendClient,
     {
       provide: ActivityBackendClient,
-      useFactory: () => {
+      useFactory: (): ActivityBackendClient => {
         const environment = inject(RuntimeEnvironmentService)
         return environment.isTauri() ? inject(TauriBackendClient) : inject(HttpBackendClient)
       },

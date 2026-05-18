@@ -1,4 +1,4 @@
-import { Component, effect, inject } from '@angular/core'
+import { Component, effect, inject, ChangeDetectionStrategy } from '@angular/core'
 import { MatIconModule } from '@angular/material/icon'
 import { ActivityService } from '../../services/activity.service'
 import { ProviderIconComponent } from '../provider-icon/provider-icon.component'
@@ -7,10 +7,10 @@ import type { EntryUiAdapter } from '../../providers/types'
 
 @Component({
   selector: 'app-timeline',
-  standalone: true,
   imports: [MatIconModule, ProviderIconComponent, SearchBarComponent],
   templateUrl: './timeline.component.html',
   styleUrl: './timeline.component.scss',
+  changeDetection: ChangeDetectionStrategy.OnPush,
 })
 export class TimelineComponent {
   protected readonly activity = inject(ActivityService)
@@ -42,5 +42,9 @@ export class TimelineComponent {
 
   protected formatTime(ts: string): string {
     return new Date(ts).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })
+  }
+
+  protected entryAriaLabel(entry: EntryUiAdapter): string {
+    return `Open ${entry.badge.label} event: ${entry.title} at ${this.formatTime(entry.timestamp)}`
   }
 }

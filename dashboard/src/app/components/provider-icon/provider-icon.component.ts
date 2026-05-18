@@ -1,13 +1,13 @@
-import { Component, input } from '@angular/core'
+import { Component, input, ChangeDetectionStrategy } from '@angular/core'
 import { MatIconModule } from '@angular/material/icon'
 import type { Source } from '../../generated/activity'
 
 @Component({
   selector: 'app-provider-icon',
-  standalone: true,
   imports: [MatIconModule],
   templateUrl: './provider-icon.component.html',
   styleUrl: './provider-icon.component.scss',
+  changeDetection: ChangeDetectionStrategy.OnPush,
 })
 export class ProviderIconComponent {
   readonly source = input.required<Source>()

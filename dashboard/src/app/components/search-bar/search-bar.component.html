@@ -1,6 +1,6 @@
 <div class="search-dock">
   <div class="search-field">
-    <span class="material-icons search-icon">search</span>
+    <span class="material-icons search-icon" aria-hidden="true">search</span>
     <input
       class="search-input"
       type="text"
@@ -10,7 +10,7 @@
     />
     @if (value()) {
       <button class="search-clear" (click)="clear()" aria-label="Clear">
-        <span class="material-icons">close</span>
+        <span class="material-icons" aria-hidden="true">close</span>
       </button>
     }
   </div>

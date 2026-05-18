@@ -16,6 +16,17 @@ export interface OverflowItem<T> {
 
 export type CalendarItem<T> = LayoutItem<T> | OverflowItem<T>
 
+export interface CalendarEntryKeyLike {
+  readonly source: string
+  readonly timestamp: string
+  readonly title: string
+  readonly meta?: string
+}
+
+export function calendarEntryKey(entry: CalendarEntryKeyLike): string {
+  return `${entry.source}:${entry.timestamp}:${entry.title}:${entry.meta ?? ''}`
+}
+
 /**
  * Assigns non-overlapping columns to events so they can be rendered side-by-side.
  * Events that don't overlap take the full width (cols=1, col=0).

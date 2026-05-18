@@ -1,14 +1,29 @@
-import { Component, inject, AfterViewInit, ElementRef, ViewChild, computed } from '@angular/core'
-import { NgStyle } from '@angular/common'
+import {
+  AfterViewInit,
+  ChangeDetectionStrategy,
+  Component,
+  ElementRef,
+  ViewChild,
+  computed,
+  inject,
+} from '@angular/core'
 import { ActivityService } from '../../services/activity.service'
 import type { EntryUiAdapter } from '../../providers/types'
-import { layoutEventsWithOverflow, type CalendarItem } from '../calendar-layout'
+import { calendarEntryKey, layoutEventsWithOverflow } from '../calendar-layout'
 
 const HOUR_START = 0
 const HOUR_END = 23
 const DEFAULT_SCROLL_HOUR = 6.5 // 06:30
 const ALLDAY_BAR_HEIGHT = 26
 const ALLDAY_BAR_GAP = 2
+const ALLDAY_BAR_SIDE_GAP = 3
+const EVENT_GAP = 4
+
+interface EventStyleVars {
+  readonly left: string
+  readonly width: string
+  readonly right: string
+}
 
 interface MultiDayBar {
   entry: EntryUiAdapter
@@ -17,12 +32,37 @@ interface MultiDayBar {
   row: number
 }
 
+interface PositionedMultiDayBar extends MultiDayBar {
+  readonly key: string
+  readonly left: string
+  readonly width: string
+  readonly top: number
+  readonly height: number
+}
+
+interface PositionedWeekEvent {
+  readonly kind: 'event'
+  readonly key: string
+  readonly entry: EntryUiAdapter
+  readonly top: number
+  readonly height: number
+  readonly style: EventStyleVars
+}
+
+interface PositionedWeekOverflow {
+  readonly kind: 'overflow'
+  readonly key: string
+  readonly entries: EntryUiAdapter[]
+  readonly top: number
+  readonly height: number
+  readonly style: EventStyleVars
+}
+
 @Component({
   selector: 'app-week-view',
-  standalone: true,
-  imports: [NgStyle],
   templateUrl: './week-view.component.html',
   styleUrl: './week-view.component.scss',
+  changeDetection: ChangeDetectionStrategy.OnPush,
 })
 export class WeekViewComponent implements AfterViewInit {
   protected readonly activity = inject(ActivityService)
@@ -129,20 +169,23 @@ export class WeekViewComponent implements AfterViewInit {
     })
   })
 
+  protected readonly positionedMultiDayLayout = computed<PositionedMultiDayBar[]>(() =>
+    this.multiDayLayout().map(bar => {
+      const total = this.days.length
+      return {
+        ...bar,
+        key: calendarEntryKey(bar.entry),
+        left: `calc(${(bar.startCol / total) * 100}% + ${ALLDAY_BAR_SIDE_GAP}px)`,
+        width: `calc(${(bar.spanCols / total) * 100}% - ${ALLDAY_BAR_SIDE_GAP * 2}px)`,
+        top: bar.row * (ALLDAY_BAR_HEIGHT + ALLDAY_BAR_GAP) + ALLDAY_BAR_GAP,
+        height: ALLDAY_BAR_HEIGHT,
+      }
+    })
+  )
+
   protected allDayRowHeight(): number {
     const maxRow = this.multiDayLayout().reduce((m, b) => Math.max(m, b.row), -1)
     return maxRow < 0 ? 0 : (maxRow + 1) * (ALLDAY_BAR_HEIGHT + ALLDAY_BAR_GAP) + ALLDAY_BAR_GAP * 2
-  }
-
-  protected getAllDayBarStyle(bar: MultiDayBar): Record<string, string> {
-    const total = this.days.length
-    const GAP = 3
-    return {
-      left: `calc(${(bar.startCol / total) * 100}% + ${GAP}px)`,
-      width: `calc(${(bar.spanCols / total) * 100}% - ${GAP * 2}px)`,
-      top: `${bar.row * (ALLDAY_BAR_HEIGHT + ALLDAY_BAR_GAP) + ALLDAY_BAR_GAP}px`,
-      height: `${ALLDAY_BAR_HEIGHT}px`,
-    }
   }
 
   protected dayHasMultiDayEvent(dateStr: string): boolean {
@@ -159,25 +202,61 @@ export class WeekViewComponent implements AfterViewInit {
     return this.activity.weekEntriesByDay().get(dateStr) ?? []
   }
 
-  protected getLayoutForDay(dateStr: string): CalendarItem<EntryUiAdapter>[] {
+  protected readonly layoutsByDay = computed<
+    Map<string, (PositionedWeekEvent | PositionedWeekOverflow)[]>
+  >(() => {
     const maxVisible = this.activity.currentView() === 'workweek' ? 4 : 3
-    // Exclude multi-day events — they render in the all-day banner row instead
-    const entries = this.getEntriesForDay(dateStr).filter(e => !this.isMultiDayEvent(e))
-    return layoutEventsWithOverflow(
-      entries,
-      (entry: EntryUiAdapter) => this.getTop(entry.timestamp),
-      (entry: EntryUiAdapter) => this.getHeight(entry),
-      22,
-      maxVisible
-    )
+    const map = new Map<string, (PositionedWeekEvent | PositionedWeekOverflow)[]>()
+
+    for (const day of this.days) {
+      const entries = this.getEntriesForDay(day).filter(e => !this.isMultiDayEvent(e))
+      const layout = layoutEventsWithOverflow(
+        entries,
+        (entry: EntryUiAdapter) => this.getTop(entry.timestamp),
+        (entry: EntryUiAdapter) => this.getHeight(entry),
+        22,
+        maxVisible
+      )
+
+      map.set(
+        day,
+        layout.map(item => {
+          const style = this.eventStyle(item.col, item.cols)
+          if (item.kind === 'overflow') {
+            return {
+              kind: 'overflow',
+              key: `overflow:${day}:${item.entries.map(calendarEntryKey).join('|')}`,
+              entries: item.entries,
+              top: item.top,
+              height: item.height,
+              style,
+            }
+          }
+
+          return {
+            kind: 'event',
+            key: calendarEntryKey(item.entry),
+            entry: item.entry,
+            top: this.getTop(item.entry.timestamp),
+            height: this.getHeight(item.entry),
+            style,
+          }
+        })
+      )
+    }
+
+    return map
+  })
+
+  protected getLayoutForDay(dateStr: string): (PositionedWeekEvent | PositionedWeekOverflow)[] {
+    return this.layoutsByDay().get(dateStr) ?? []
   }
 
-  protected getEventStyle(col: number, cols: number): Record<string, string> {
-    const GAP = 4
+  private eventStyle(col: number, cols: number): EventStyleVars {
     const pct = 100 / cols
     return {
-      left: `calc(${col * pct}% + ${GAP}px)`,
-      width: `calc(${pct}% - ${GAP * 2}px)`,
+      left: `calc(${col * pct}% + ${EVENT_GAP}px)`,
+      width: `calc(${pct}% - ${EVENT_GAP * 2}px)`,
       right: 'unset',
     }
   }
@@ -220,5 +299,17 @@ export class WeekViewComponent implements AfterViewInit {
 
   protected formatHour(h: number): string {
     return `${String(h).padStart(2, '0')}:00`
+  }
+
+  protected eventAriaLabel(entry: EntryUiAdapter): string {
+    return `Open event: ${entry.title}`
+  }
+
+  protected overflowAriaLabel(entries: readonly EntryUiAdapter[]): string {
+    return `Open ${entries.length} additional events`
+  }
+
+  protected dayAriaLabel(day: string): string {
+    return `Open day view for ${this.formatDayCol(day).weekday} ${this.formatDayCol(day).date}`
   }
 }

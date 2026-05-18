@@ -1,22 +1,27 @@
-import { Component, input, output } from '@angular/core'
+import { Component, input, output, ChangeDetectionStrategy } from '@angular/core'
 import { MatIconModule } from '@angular/material/icon'
 import { MatTooltipModule } from '@angular/material/tooltip'
 import type { Source } from '../../generated/activity'
 import { ProviderIconComponent } from '../provider-icon/provider-icon.component'
 import { providerStatusLabel } from '../ui-status/provider-status-label'
 import { StatusDotComponent } from '../ui-status/status-dot.component'
-import type { SettingsProviderRow, SettingsSelection } from './settings-dialog.types'
+import type {
+  SettingsFutureProviderRow,
+  SettingsProviderRow,
+  SettingsSelection,
+} from './settings-dialog.types'
 
 @Component({
   selector: 'app-settings-dialog-nav',
-  standalone: true,
   imports: [MatIconModule, MatTooltipModule, ProviderIconComponent, StatusDotComponent],
   templateUrl: './settings-dialog-nav.component.html',
   styleUrl: './settings-dialog-nav.component.scss',
+  changeDetection: ChangeDetectionStrategy.OnPush,
 })
 export class SettingsDialogNavComponent {
   readonly selection = input.required<SettingsSelection>()
   readonly providers = input.required<readonly SettingsProviderRow[]>()
+  readonly futureProviders = input.required<readonly SettingsFutureProviderRow[]>()
 
   readonly generalSelected = output<void>()
   readonly sourceSelected = output<Source>()

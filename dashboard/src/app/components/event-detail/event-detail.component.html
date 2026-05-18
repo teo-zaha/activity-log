@@ -1,7 +1,23 @@
 @if (activity.selectedEntry() || activity.selectedEntries()) {
-  <div class="backdrop" (click)="close()"></div>
+  <button
+    type="button"
+    class="backdrop"
+    (click)="close()"
+    aria-label="Close event details"
+    tabindex="-1"
+  ></button>
 
-  <aside class="flyout" role="dialog">
+  <aside
+    class="flyout"
+    role="dialog"
+    aria-modal="true"
+    [attr.aria-labelledby]="
+      activity.selectedEntry() ? 'event-detail-title' : 'event-detail-overflow-title'
+    "
+    cdkTrapFocus
+    [cdkTrapFocusAutoCapture]="true"
+    (keydown.escape)="close()"
+  >
     @if (activity.selectedEntry(); as entry) {
       <div class="flyout-header">
         <div class="flyout-badges">
@@ -16,15 +32,15 @@
             </span>
           }
         </div>
-        <button class="flyout-close" (click)="close()" aria-label="Close">
-          <span class="material-icons">close</span>
+        <button class="flyout-close" (click)="close()" aria-label="Close event details">
+          <span class="material-icons" aria-hidden="true">close</span>
         </button>
       </div>
 
       <div class="flyout-body">
-        <h2 class="flyout-title">{{ entry.title }}</h2>
+        <h2 id="event-detail-title" class="flyout-title">{{ entry.title }}</h2>
         <p class="flyout-time">
-          <span class="material-icons">schedule</span>
+          <span class="material-icons" aria-hidden="true">schedule</span>
           {{ formatDateTime(entry.timestamp) }}
         </p>
 
@@ -64,14 +80,16 @@
 
     @if (activity.selectedEntries(); as entries) {
       <div class="flyout-header">
-        <span class="flyout-overflow-count">Additional events ({{ entries.length }})</span>
-        <button class="flyout-close" (click)="close()" aria-label="Close">
-          <span class="material-icons">close</span>
+        <span id="event-detail-overflow-title" class="flyout-overflow-count">
+          Additional events ({{ entries.length }})
+        </span>
+        <button class="flyout-close" (click)="close()" aria-label="Close event details">
+          <span class="material-icons" aria-hidden="true">close</span>
         </button>
       </div>
 
       <div class="flyout-body">
-        @for (entry of entries; track $index) {
+        @for (entry of entries; track entry.timestamp + entry.title) {
           <div class="flyout-section">
             <div class="flyout-section-header">
               <span class="flyout-badge" [class]="entry.badge.badgeClass">

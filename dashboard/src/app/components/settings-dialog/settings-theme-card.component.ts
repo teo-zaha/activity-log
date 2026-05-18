@@ -1,14 +1,14 @@
-import { Component, inject } from '@angular/core'
+import { Component, inject, ChangeDetectionStrategy } from '@angular/core'
 import { MatCardModule } from '@angular/material/card'
 import { MatIconModule } from '@angular/material/icon'
 import { THEMES, ThemeService, type Theme } from '../../services/theme.service'
 
 @Component({
   selector: 'app-settings-theme-card',
-  standalone: true,
   imports: [MatCardModule, MatIconModule],
   templateUrl: './settings-theme-card.component.html',
   styleUrl: './settings-theme-card.component.scss',
+  changeDetection: ChangeDetectionStrategy.OnPush,
 })
 export class SettingsThemeCardComponent {
   private readonly theme = inject(ThemeService)

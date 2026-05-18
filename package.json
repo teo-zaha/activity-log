@@ -23,6 +23,8 @@
     "types:generate": "cargo run -p cli --bin generate-ts --",
     "dashboard:install": "pnpm --dir dashboard install",
     "dashboard:dev": "pnpm --dir dashboard run dev",
+    "dashboard:lint": "eslint .",
+    "dashboard:test": "pnpm --dir dashboard run test",
     "dashboard:typecheck": "pnpm --dir dashboard exec tsc -p tsconfig.json --noEmit",
     "dashboard:build": "pnpm run types:generate && pnpm --dir dashboard run build",
     "dashboard:build:prod": "pnpm run types:generate && pnpm --dir dashboard exec ng build --configuration production",
@@ -36,19 +38,22 @@
     "rust:test": "cargo test --workspace",
     "format": "pnpm run rust:fmt && prettier --write .",
     "format:check": "pnpm run rust:fmt:check && prettier --check .",
-    "verify": "pnpm run types:generate && pnpm run format:check && pnpm run rust:check && pnpm run rust:clippy && pnpm run rust:test && pnpm run dashboard:typecheck && pnpm run dashboard:build"
+    "verify": "pnpm run types:generate && pnpm run format:check && pnpm run rust:check && pnpm run rust:clippy && pnpm run rust:test && pnpm run dashboard:lint && pnpm run dashboard:test && pnpm run dashboard:typecheck && pnpm run dashboard:build"
   },
   "dependencies": {
     "@fontsource/inter": "^5.2.8",
     "material-icons": "^1.13.14"
   },
   "devDependencies": {
+    "@angular-eslint/eslint-plugin": "^21.0.0",
+    "@angular-eslint/eslint-plugin-template": "^21.0.0",
+    "@angular-eslint/template-parser": "^21.0.0",
     "@types/node": "^25.8.0",
     "@typescript-eslint/eslint-plugin": "^8.59.3",
     "@typescript-eslint/parser": "^8.59.3",
     "concurrently": "^9.0.0",
     "cross-env": "^10.1.0",
-    "eslint": "^10.3.0",
+    "eslint": "^10.4.0",
     "eslint-config-prettier": "^10.1.8",
     "prettier": "^3.8.3",
     "typescript": "^5.9.3"

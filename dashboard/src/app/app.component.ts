@@ -1,4 +1,4 @@
-import { Component, OnInit, effect, inject } from '@angular/core'
+import { Component, OnInit, effect, inject, ChangeDetectionStrategy } from '@angular/core'
 import { MatProgressBarModule } from '@angular/material/progress-bar'
 import {
   MatSnackBar,
@@ -17,7 +17,6 @@ import { EventDetailComponent } from './components/event-detail/event-detail.com
 
 @Component({
   selector: 'app-root',
-  standalone: true,
   imports: [
     MatProgressBarModule,
     MatSnackBarModule,
@@ -30,6 +29,7 @@ import { EventDetailComponent } from './components/event-detail/event-detail.com
   ],
   templateUrl: './app.component.html',
   styleUrl: './app.component.scss',
+  changeDetection: ChangeDetectionStrategy.OnPush,
 })
 export class AppComponent implements OnInit {
   protected readonly activity = inject(ActivityService)

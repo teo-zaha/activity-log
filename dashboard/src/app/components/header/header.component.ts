@@ -1,4 +1,4 @@
-import { Component, inject, computed } from '@angular/core'
+import { Component, inject, computed, ChangeDetectionStrategy } from '@angular/core'
 import { FormsModule } from '@angular/forms'
 import { MatButtonModule } from '@angular/material/button'
 import { MatIconModule } from '@angular/material/icon'
@@ -14,7 +14,6 @@ import { RuntimeEnvironmentService } from '../../services/backend/runtime-enviro
 
 @Component({
   selector: 'app-header',
-  standalone: true,
   imports: [
     FormsModule,
     MatButtonModule,
@@ -28,6 +27,7 @@ import { RuntimeEnvironmentService } from '../../services/backend/runtime-enviro
   ],
   templateUrl: './header.component.html',
   styleUrl: './header.component.scss',
+  changeDetection: ChangeDetectionStrategy.OnPush,
 })
 export class HeaderComponent {
   protected readonly activity = inject(ActivityService)
