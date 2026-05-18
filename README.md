@@ -21,12 +21,12 @@ The Angular app stays in `dashboard/` and now consumes generated DTOs from `dash
 
 ## Data sources
 
-| Source      | What it collects                                                     |
-| ----------- | -------------------------------------------------------------------- |
-| **Git**     | Commits from all local repositories                                  |
-| **GitLab**  | MRs, pushes, comments, reviews                                       |
-| **Jira**    | Issues you worked on or reported                                     |
-| **Outlook** | Calendar events (via local Outlook desktop app)                      |
+| Source      | What it collects                                                       |
+| ----------- | ---------------------------------------------------------------------- |
+| **Git**     | Commits from all local repositories                                    |
+| **GitLab**  | MRs, pushes, comments, reviews                                         |
+| **Jira**    | Issues you worked on or reported                                       |
+| **Outlook** | Calendar events (via local Outlook desktop app)                        |
 | **System**  | Boot and shutdown events (Windows Event Log; reboot/shutdown on macOS) |
 
 When a local git commit matches a GitLab push event (same commit SHA), they are merged into a single **git/lab** entry instead of appearing twice.
@@ -52,22 +52,18 @@ cp .env.example .env   # fill in your credentials
 
 ## Option A — UI (web dashboard)
 
-### First-time only: build the dashboard
+### Start the web dashboard + API
 
-```bash
-pnpm dashboard:install
-pnpm dashboard:build
-```
-
-### Start the API server
+Run these in separate terminals:
 
 ```bash
 pnpm api:start
+pnpm dashboard:dev
 ```
 
 The API listens on [http://localhost:3000](http://localhost:3000) by default. The last 30 days are collected automatically on startup. Use the date pickers in the header to change the range and re-collect on the fly.
 
-Run the Angular dev server separately with `pnpm dashboard:dev`, or use the combined dev mode below.
+If you only build the dashboard (`pnpm dashboard:build`), it produces static files under `dashboard/dist/dashboard/` and does not serve them. To preview that build, run a static file server (for example `pnpm --dir dashboard exec npx http-server dist/dashboard/browser -p 4200`) or use `pnpm dashboard:dev`.
 
 The header has two export buttons:
 
