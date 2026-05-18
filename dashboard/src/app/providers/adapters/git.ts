@@ -57,7 +57,12 @@ class GitEntryUiAdapter extends EntryUiAdapter<GitEntry> {
         entry.gitlabEvent?.title,
       ]),
       entryIcon: 'commit',
-      searchTerms: toDefinedStrings([entry.message, entry.branch, entry.repo]),
+      searchTerms: toDefinedStrings([
+        entry.message,
+        entry.branch,
+        entry.repo,
+        ...(mergedGitlabEntry?.searchTerms ?? []),
+      ]),
       calendarDurationMinutes: null,
       detailFields,
       badge,
