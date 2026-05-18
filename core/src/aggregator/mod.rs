@@ -1,3 +1,5 @@
+use chrono::{DateTime, FixedOffset};
+
 use crate::{
     model::{
         ActivityEntry, ActivityLog, ActivityLogMeta, CollectOptions, CollectedActivity,
@@ -71,7 +73,7 @@ pub fn collect_activity_from_results(
     entries.extend(jira_entries.iter().cloned().into_activity_entries());
     entries.extend(outlook_entries.iter().cloned().into_activity_entries());
     entries.extend(system_entries.iter().cloned().into_activity_entries());
-    entries.sort_by(|a, b| b.timestamp().cmp(a.timestamp()));
+    entries.sort_by(|a, b| compare_timestamps_desc(a.timestamp(), b.timestamp()));
 
     CollectedActivity {
         summary: summary.clone(),
@@ -86,3 +88,19 @@ pub fn collect_activity_from_results(
         },
     }
 }
+
+fn compare_timestamps_desc(a: &str, b: &str) -> std::cmp::Ordering {
+    match (parse_timestamp(a), parse_timestamp(b)) {
+        (Some(a_parsed), Some(b_parsed)) => b_parsed.cmp(&a_parsed).then_with(|| b.cmp(a)),
+        (Some(_), None) => std::cmp::Ordering::Less,
+        (None, Some(_)) => std::cmp::Ordering::Greater,
+        (None, None) => b.cmp(a),
+    }
+}
+
+fn parse_timestamp(timestamp: &str) -> Option<DateTime<FixedOffset>> {
+    DateTime::parse_from_rfc3339(timestamp).ok()
+}
+
+#[cfg(test)]
+mod tests;
