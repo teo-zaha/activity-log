@@ -62,6 +62,8 @@ async fn main() {
 }
 
 async fn run() -> Result<()> {
+    dotenvy::dotenv().ok();
+
     let cli = Cli::parse();
     collect(cli).await
 }
@@ -155,7 +157,7 @@ fn parse_provider_config_overrides(entries: &[String]) -> Result<BTreeMap<String
     let mut overrides = BTreeMap::new();
 
     for entry in entries {
-        if entry.matches('=').count() != 1 {
+        if !entry.contains('=') {
             return Err(anyhow!("Invalid --set \"{entry}\". Use KEY=VALUE."));
         }
 
