@@ -21,13 +21,13 @@ The Angular app stays in `dashboard/` and now consumes generated DTOs from `dash
 
 ## Data sources
 
-| Source      | What it collects                                           |
-| ----------- | ---------------------------------------------------------- |
-| **Git**     | Commits from all local repositories                        |
-| **GitLab**  | MRs, pushes, comments, reviews                             |
-| **Jira**    | Issues you worked on or reported                           |
-| **Outlook** | Calendar events (via local Outlook desktop app)            |
-| **System**  | Boot, shutdown, sleep, and wake events (Windows Event Log) |
+| Source      | What it collects                                                     |
+| ----------- | -------------------------------------------------------------------- |
+| **Git**     | Commits from all local repositories                                  |
+| **GitLab**  | MRs, pushes, comments, reviews                                       |
+| **Jira**    | Issues you worked on or reported                                     |
+| **Outlook** | Calendar events (via local Outlook desktop app)                      |
+| **System**  | Boot and shutdown events (Windows Event Log; reboot/shutdown on macOS) |
 
 When a local git commit matches a GitLab push event (same commit SHA), they are merged into a single **git/lab** entry instead of appearing twice.
 
