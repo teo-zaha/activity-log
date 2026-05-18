@@ -39,7 +39,8 @@
       @for (provider of activity.providers(); track provider.info.id) {
         <span
           class="filter-chip-wrap"
-          [matTooltip]="provider.tooltip"
+          [matTooltip]="provider.tooltip ?? ''"
+          [matTooltipDisabled]="!provider.tooltip"
           matTooltipPosition="above"
           (dblclick)="activity.isolateSource(provider.info.id)"
         >
