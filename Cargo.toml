@@ -16,7 +16,11 @@ reqwest = { version = "0.12", default-features = false, features = [
   "json",
   "rustls-tls",
 ] }
-rfd = { version = "0.16", features = ["tokio"] }
+rfd = { version = "0.16", default-features = false, features = [
+  "tokio",
+  "wayland",
+  "xdg-portal",
+] }
 rocket = { version = "0.5", features = ["json"] }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
