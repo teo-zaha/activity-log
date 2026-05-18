@@ -1,0 +1,151 @@
+import { Injectable, InjectionToken, computed, inject, signal } from '@angular/core'
+import type {
+  ActivityEntry,
+  ActivityLog,
+  CollectedActivitySummary,
+  CollectingResponse,
+  ProviderInfo,
+  Source,
+} from '../generated/activity'
+import { createEntryAdapter, getProviderAdapter } from '../providers/provider-adapter'
+import type { ActivityResponse } from './backend/backend-client'
+import { ActivityBackendClient } from './backend/backend-client'
+import { extractBackendErrorMessage } from './backend/error-message'
+import { ActivityViewStateService } from './activity-view-state.service'
+import type { ProviderViewModel } from './types'
+
+export const ACTIVITY_POLL_ATTEMPTS = new InjectionToken<number>('ACTIVITY_POLL_ATTEMPTS', {
+  providedIn: 'root',
+  factory: (): number => 60,
+})
+
+export const ACTIVITY_POLL_DELAY_MS = new InjectionToken<number>('ACTIVITY_POLL_DELAY_MS', {
+  providedIn: 'root',
+  factory: (): number => 1000,
+})
+
+@Injectable({ providedIn: 'root' })
+export class ActivityDataService {
+  private readonly backend = inject(ActivityBackendClient)
+  private readonly viewState = inject(ActivityViewStateService)
+  private readonly pollAttempts = inject(ACTIVITY_POLL_ATTEMPTS)
+  private readonly pollDelayMs = inject(ACTIVITY_POLL_DELAY_MS)
+
+  readonly allEntries = signal<ActivityEntry[]>([])
+  readonly allEntryAdapters = computed(() => this.allEntries().map(createEntryAdapter))
+  readonly providerInfo = signal<ProviderInfo[]>([])
+  readonly summary = signal<CollectedActivitySummary | null>(null)
+  readonly meta = signal<ActivityLog['meta'] | null>(null)
+  readonly isLoading = signal(false)
+  readonly error = signal<string | null>(null)
+
+  readonly sourceCounts = computed<Map<Source, number>>(() => {
+    const summary = this.summary()
+    if (!summary) return new Map()
+    return new Map<Source, number>([
+      ['git', summary.git_count],
+      ['gitlab', summary.gitlab_count],
+      ['jira', summary.jira_count],
+      ['outlook', summary.outlook_count],
+      ['system', summary.system_count],
+    ])
+  })
+
+  readonly providers = computed<ProviderViewModel[]>(() =>
+    this.providerInfo()
+      .filter(info => info.usable)
+      .map(info => {
+        const adapter = getProviderAdapter(info.id)
+        return {
+          info,
+          label: adapter.label,
+          icon: adapter.providerIcon,
+          chipKey: info.id,
+          tooltip: adapter.getStatusTooltip(info),
+          count: this.sourceCounts().get(info.id) ?? 0,
+        }
+      })
+  )
+
+  loadLog(log: ActivityLog): void {
+    this.allEntries.set(log.entries)
+    this.viewState.clearSelection()
+    this.summary.set(log.summary)
+    this.meta.set(log.meta)
+    if (log.meta.since) this.viewState.dateFrom.set(log.meta.since.slice(0, 10))
+    if (log.meta.until) this.viewState.dateTo.set(log.meta.until.slice(0, 10))
+  }
+
+  async initLoad(): Promise<void> {
+    this.isLoading.set(true)
+    this.error.set(null)
+    try {
+      await this.loadProviders()
+      const log = await this.waitForActivity()
+      if (log) {
+        this.loadLog(log)
+        return
+      }
+      this.error.set('Timed out waiting for initial collection.')
+    } catch (error) {
+      this.error.set(`Failed to load: ${extractBackendErrorMessage(error)}`)
+    } finally {
+      this.isLoading.set(false)
+    }
+  }
+
+  async collect(since: string, until: string): Promise<void> {
+    this.isLoading.set(true)
+    this.error.set(null)
+    try {
+      const response = await this.backend.collect({ since, until })
+      if (this.isCollectingResponse(response)) {
+        const log = await this.waitForActivity()
+        if (!log) {
+          this.error.set('Timed out waiting for collection.')
+          return
+        }
+        this.loadLog(log)
+        return
+      }
+
+      this.loadLog(response)
+    } catch (error) {
+      this.error.set(`Collection failed: ${extractBackendErrorMessage(error)}`)
+    } finally {
+      this.isLoading.set(false)
+    }
+  }
+
+  async loadProviders(): Promise<void> {
+    const response = await this.backend.getProviders()
+    this.applyProviders(response.providers, true)
+  }
+
+  applyProviders(providers: ProviderInfo[], activateAllUsable: boolean): void {
+    this.providerInfo.set(providers)
+    if (activateAllUsable) {
+      this.viewState.activateAllUsable(providers)
+      return
+    }
+
+    this.viewState.retainUsableSources(providers)
+  }
+
+  private async waitForActivity(): Promise<ActivityLog | null> {
+    for (let i = 0; i < this.pollAttempts; i++) {
+      const response = await this.backend.getActivity()
+      if (this.isCollectingResponse(response)) {
+        await new Promise(resolve => setTimeout(resolve, this.pollDelayMs))
+        continue
+      }
+      return response
+    }
+
+    return null
+  }
+
+  private isCollectingResponse(response: ActivityResponse): response is CollectingResponse {
+    return 'collecting' in response
+  }
+}

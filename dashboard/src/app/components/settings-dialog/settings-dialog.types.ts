@@ -3,6 +3,15 @@ import type { Theme } from '../../services/theme.service'
 
 export type SettingsSelection = 'general' | `source:${Source}`
 
+export type FutureProviderId = 'figma' | 'miro' | 'teams' | 'github'
+
+export interface SettingsFutureProviderRow {
+  readonly id: FutureProviderId
+  readonly label: string
+  readonly iconUrl: string
+  readonly tooltip: string
+}
+
 export interface SettingsProviderRow {
   readonly info: ProviderInfo
   readonly label: string

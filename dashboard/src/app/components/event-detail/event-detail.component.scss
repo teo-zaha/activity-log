@@ -1,8 +1,11 @@
 @use '../dashboard-shared' as ui;
 
 .backdrop {
+  appearance: none;
   position: fixed;
   inset: 0;
+  border: 0;
+  padding: 0;
   background: rgba(15, 23, 42, 0.42);
   z-index: 200;
   animation: fadeIn 0.2s ease;

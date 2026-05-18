@@ -1,4 +1,12 @@
-import type { ActivityEntry, Source } from '../generated/activity'
+import type {
+  ActivityEntry,
+  GitEntry,
+  GitLabEntry,
+  JiraEntry,
+  OutlookEntry,
+  Source,
+  SystemEntry,
+} from '../generated/activity'
 import { gitAdapter } from './adapters/git'
 import { gitlabAdapter } from './adapters/gitlab'
 import { jiraAdapter } from './adapters/jira'
@@ -22,19 +30,23 @@ export function getProviderAdapter<S extends Source>(source: S): ProviderAdapter
   return providerAdapters[source]
 }
 
-export function createEntryAdapter<TEntry extends ActivityEntry>(
-  entry: TEntry
-): EntryUiAdapter<TEntry> {
+export function createEntryAdapter(entry: GitEntry): EntryUiAdapter<GitEntry>
+export function createEntryAdapter(entry: GitLabEntry): EntryUiAdapter<GitLabEntry>
+export function createEntryAdapter(entry: JiraEntry): EntryUiAdapter<JiraEntry>
+export function createEntryAdapter(entry: OutlookEntry): EntryUiAdapter<OutlookEntry>
+export function createEntryAdapter(entry: SystemEntry): EntryUiAdapter<SystemEntry>
+export function createEntryAdapter(entry: ActivityEntry): EntryUiAdapter
+export function createEntryAdapter(entry: ActivityEntry): EntryUiAdapter {
   switch (entry.source) {
     case 'git':
-      return gitAdapter.create(entry) as EntryUiAdapter<TEntry>
+      return gitAdapter.create(entry)
     case 'gitlab':
-      return gitlabAdapter.create(entry) as EntryUiAdapter<TEntry>
+      return gitlabAdapter.create(entry)
     case 'jira':
-      return jiraAdapter.create(entry) as EntryUiAdapter<TEntry>
+      return jiraAdapter.create(entry)
     case 'outlook':
-      return outlookAdapter.create(entry) as EntryUiAdapter<TEntry>
+      return outlookAdapter.create(entry)
     case 'system':
-      return systemAdapter.create(entry) as EntryUiAdapter<TEntry>
+      return systemAdapter.create(entry)
   }
 }

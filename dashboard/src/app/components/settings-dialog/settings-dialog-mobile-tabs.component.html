@@ -22,7 +22,7 @@
         <span class="mobile-tab-main">
           <span class="mobile-tab-icon" [attr.data-status]="provider.info.status">
             <app-provider-icon
-              class="mobile-tab-glyph"
+              class="mobile-tab-brand"
               [source]="provider.info.id"
               [fallbackIcon]="provider.icon"
             ></app-provider-icon>
@@ -30,6 +30,20 @@
           <span>{{ provider.label }}</span>
         </span>
         <app-status-dot [status]="provider.info.status" size="sm" [glow]="false"></app-status-dot>
+      </button>
+    }
+
+    @for (provider of futureProviders(); track provider.id) {
+      <button type="button" class="mobile-tab mobile-tab-upcoming" disabled>
+        <span class="mobile-tab-main">
+          <span class="mobile-tab-icon mobile-tab-icon-upcoming">
+            <img class="mobile-tab-brand" [src]="provider.iconUrl" alt="" aria-hidden="true" />
+          </span>
+          <span class="mobile-tab-copy">
+            <span>{{ provider.label }}</span>
+            <span class="mobile-tab-status">Coming soon</span>
+          </span>
+        </span>
       </button>
     }
   </div>

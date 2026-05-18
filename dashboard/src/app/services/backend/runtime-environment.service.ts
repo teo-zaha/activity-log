@@ -19,7 +19,7 @@ export class RuntimeEnvironmentService {
     const { getCurrentWindow } = await import('@tauri-apps/api/window')
     const appWindow = getCurrentWindow()
 
-    const applyFullscreenClass = async () => {
+    const applyFullscreenClass = async (): Promise<void> => {
       document.documentElement.classList.toggle('fullscreen', await appWindow.isFullscreen())
     }
 

@@ -1,4 +1,4 @@
-import { Component, inject } from '@angular/core'
+import { Component, inject, ChangeDetectionStrategy } from '@angular/core'
 import { MatDialog, MatDialogModule } from '@angular/material/dialog'
 import { MatIconModule } from '@angular/material/icon'
 import { MatTooltipModule } from '@angular/material/tooltip'
@@ -9,10 +9,10 @@ import { SettingsDialogComponent } from '../settings-dialog/settings-dialog.comp
 
 @Component({
   selector: 'app-sidebar',
-  standalone: true,
   imports: [MatDialogModule, MatIconModule, MatTooltipModule, ProviderIconComponent],
   templateUrl: './sidebar.component.html',
   styleUrl: './sidebar.component.scss',
+  changeDetection: ChangeDetectionStrategy.OnPush,
 })
 export class SidebarComponent {
   protected readonly activity = inject(ActivityService)

@@ -3,28 +3,28 @@
   <div class="cal-nav">
     <h2 class="cal-title">{{ formatWeekRange(days) }}</h2>
     <div class="nav-controls">
-      <button class="nav-btn" (click)="activity.navigateWeek(-1)" title="Previous week">
-        <span class="material-icons">chevron_left</span>
+      <button class="nav-btn" (click)="activity.navigateWeek(-1)" aria-label="Previous week">
+        <span class="material-icons" aria-hidden="true">chevron_left</span>
       </button>
       <button class="nav-btn today-btn" (click)="activity.goToToday()">Today</button>
-      <button class="nav-btn" (click)="activity.navigateWeek(1)" title="Next week">
-        <span class="material-icons">chevron_right</span>
+      <button class="nav-btn" (click)="activity.navigateWeek(1)" aria-label="Next week">
+        <span class="material-icons" aria-hidden="true">chevron_right</span>
       </button>
     </div>
     <div class="nav-controls zoom-controls">
-      <button class="nav-btn" (click)="zoomOut()" title="Zoom out">
-        <span class="material-icons">remove</span>
+      <button class="nav-btn" (click)="zoomOut()" aria-label="Zoom out">
+        <span class="material-icons" aria-hidden="true">remove</span>
       </button>
       <button
         class="nav-btn zoom-reset-btn"
         (click)="activity.hourHeight.set(64)"
-        title="Reset zoom"
+        aria-label="Reset zoom"
         [class.at-default]="activity.hourHeight() === 64"
       >
         1h
       </button>
-      <button class="nav-btn" (click)="zoomIn()" title="Zoom in">
-        <span class="material-icons">add</span>
+      <button class="nav-btn" (click)="zoomIn()" aria-label="Zoom in">
+        <span class="material-icons" aria-hidden="true">add</span>
       </button>
     </div>
   </div>
@@ -36,15 +36,17 @@
       <div class="week-col-headers">
         <div class="time-gutter"></div>
         @for (day of days; track day) {
-          <div
+          <button
+            type="button"
             class="day-col-hdr"
             [class.is-today]="isToday(day)"
             [class.is-selected]="isSelectedDay(day)"
             (click)="selectDay(day)"
+            [attr.aria-label]="dayAriaLabel(day)"
           >
             <span class="day-weekday">{{ formatDayCol(day).weekday }}</span>
             <span class="day-date">{{ formatDayCol(day).date }}</span>
-          </div>
+          </button>
         }
       </div>
 
@@ -53,16 +55,20 @@
         <div class="cal-allday-row" [style.height.px]="allDayRowHeight()">
           <div class="time-gutter-allday"></div>
           <div class="allday-bars">
-            @for (bar of multiDayLayout(); track $index) {
-              <div
+            @for (bar of positionedMultiDayLayout(); track bar.key) {
+              <button
+                type="button"
                 class="cal-allday-bar"
-                [ngStyle]="getAllDayBarStyle(bar)"
+                [style.left]="bar.left"
+                [style.width]="bar.width"
+                [style.top.px]="bar.top"
+                [style.height.px]="bar.height"
                 (click)="selectEntry(bar.entry)"
-                [title]="bar.entry.title"
+                [attr.aria-label]="eventAriaLabel(bar.entry)"
               >
-                <span class="material-icons cal-event-icon">event</span>
+                <span class="material-icons cal-event-icon" aria-hidden="true">event</span>
                 <span class="cal-event-title">{{ bar.entry.title }}</span>
-              </div>
+              </button>
             }
           </div>
         </div>
@@ -90,30 +96,39 @@
             [class.is-today]="isToday(day)"
             [class.has-allday]="dayHasMultiDayEvent(day)"
           >
-            @for (item of getLayoutForDay(day); track $index) {
+            @for (item of getLayoutForDay(day); track item.key) {
               @if (item.kind === 'overflow') {
-                <div
+                <button
+                  type="button"
                   class="cal-overflow"
                   [style.top.px]="item.top"
                   [style.height.px]="item.height"
-                  [ngStyle]="getEventStyle(item.col, item.cols)"
+                  [style.left]="item.style.left"
+                  [style.width]="item.style.width"
+                  [style.right]="item.style.right"
                   (click)="selectOverflow(item.entries)"
+                  [attr.aria-label]="overflowAriaLabel(item.entries)"
                 >
-                  <span class="material-icons cal-event-icon">more_horiz</span>
+                  <span class="material-icons cal-event-icon" aria-hidden="true">more_horiz</span>
                   <span class="cal-event-title">+{{ item.entries.length }}</span>
-                </div>
+                </button>
               } @else {
-                <div
+                <button
+                  type="button"
                   [class]="'cal-event cal-event-' + item.entry.styleKey"
-                  [style.top.px]="getTop(item.entry.timestamp)"
-                  [style.height.px]="getHeight(item.entry)"
-                  [ngStyle]="getEventStyle(item.col, item.cols)"
+                  [style.top.px]="item.top"
+                  [style.height.px]="item.height"
+                  [style.left]="item.style.left"
+                  [style.width]="item.style.width"
+                  [style.right]="item.style.right"
                   (click)="selectEntry(item.entry)"
-                  [title]="item.entry.title"
+                  [attr.aria-label]="eventAriaLabel(item.entry)"
                 >
-                  <span class="material-icons cal-event-icon">{{ item.entry.entryIcon }}</span
+                  <span class="material-icons cal-event-icon" aria-hidden="true">{{
+                    item.entry.entryIcon
+                  }}</span
                   ><span class="cal-event-title">{{ item.entry.title }}</span>
-                </div>
+                </button>
               }
             }
           </div>

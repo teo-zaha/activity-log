@@ -47,5 +47,22 @@
         <app-status-dot [status]="provider.info.status"></app-status-dot>
       </button>
     }
+
+    @for (provider of futureProviders(); track provider.id) {
+      <span class="source-item-tooltip" [matTooltip]="provider.tooltip" matTooltipPosition="right">
+        <button class="nav-item source-item source-item-upcoming" type="button" disabled>
+          <span class="nav-item-main">
+            <span class="source-icon source-icon-upcoming">
+              <img class="source-icon-brand" [src]="provider.iconUrl" alt="" aria-hidden="true" />
+            </span>
+            <span class="source-copy">
+              <span class="source-name">{{ provider.label }}</span>
+              <span class="source-status">Coming soon</span>
+            </span>
+          </span>
+          <span class="coming-soon-pill">Soon</span>
+        </button>
+      </span>
+    }
   </div>
 </aside>

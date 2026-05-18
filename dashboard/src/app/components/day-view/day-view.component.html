@@ -5,28 +5,28 @@
       {{ formatDayHeader(activity.selectedDay()) }}
     </h2>
     <div class="nav-controls">
-      <button class="nav-btn" (click)="activity.navigateDay(-1)" title="Previous day">
-        <span class="material-icons">chevron_left</span>
+      <button class="nav-btn" (click)="activity.navigateDay(-1)" aria-label="Previous day">
+        <span class="material-icons" aria-hidden="true">chevron_left</span>
       </button>
       <button class="nav-btn today-btn" (click)="activity.goToToday()">Today</button>
-      <button class="nav-btn" (click)="activity.navigateDay(1)" title="Next day">
-        <span class="material-icons">chevron_right</span>
+      <button class="nav-btn" (click)="activity.navigateDay(1)" aria-label="Next day">
+        <span class="material-icons" aria-hidden="true">chevron_right</span>
       </button>
     </div>
     <div class="nav-controls zoom-controls">
-      <button class="nav-btn" (click)="zoomOut()" title="Zoom out">
-        <span class="material-icons">remove</span>
+      <button class="nav-btn" (click)="zoomOut()" aria-label="Zoom out">
+        <span class="material-icons" aria-hidden="true">remove</span>
       </button>
       <button
         class="nav-btn zoom-reset-btn"
         (click)="activity.hourHeight.set(64)"
-        title="Reset zoom"
+        aria-label="Reset zoom"
         [class.at-default]="activity.hourHeight() === 64"
       >
         1h
       </button>
-      <button class="nav-btn" (click)="zoomIn()" title="Zoom in">
-        <span class="material-icons">add</span>
+      <button class="nav-btn" (click)="zoomIn()" aria-label="Zoom in">
+        <span class="material-icons" aria-hidden="true">add</span>
       </button>
     </div>
   </div>
@@ -39,16 +39,21 @@
         <div class="cal-allday-row" [style.height.px]="allDayRowHeight()">
           <div class="time-gutter-allday"></div>
           <div class="allday-bars">
-            @for (entry of multiDayEntries(); track $index) {
-              <div
+            @for (item of allDayEntries(); track item.key) {
+              <button
+                type="button"
                 class="cal-allday-bar"
-                [ngStyle]="getDayAllDayBarStyle($index)"
-                (click)="selectEntry(entry)"
-                [title]="entry.title"
+                [style.left]="item.left"
+                [style.right]="item.right"
+                [style.width]="item.width"
+                [style.top.px]="item.top"
+                [style.height.px]="item.height"
+                (click)="selectEntry(item.entry)"
+                [attr.aria-label]="eventAriaLabel(item.entry)"
               >
-                <span class="material-icons cal-event-icon">event</span>
-                <span class="cal-event-title">{{ entry.title }}</span>
-              </div>
+                <span class="material-icons cal-event-icon" aria-hidden="true">event</span>
+                <span class="cal-event-title">{{ item.entry.title }}</span>
+              </button>
             }
           </div>
         </div>
@@ -70,30 +75,39 @@
 
       <!-- Events column -->
       <div class="events-col">
-        @for (item of dayLayout(); track $index) {
+        @for (item of dayLayout(); track item.key) {
           @if (item.kind === 'overflow') {
-            <div
+            <button
+              type="button"
               class="cal-overflow"
               [style.top.px]="item.top"
               [style.height.px]="item.height"
-              [ngStyle]="getEventStyle(item.col, item.cols)"
+              [style.left]="item.style.left"
+              [style.width]="item.style.width"
+              [style.right]="item.style.right"
               (click)="selectOverflow(item.entries)"
+              [attr.aria-label]="overflowAriaLabel(item.entries)"
             >
-              <span class="material-icons cal-event-icon">more_horiz</span>
+              <span class="material-icons cal-event-icon" aria-hidden="true">more_horiz</span>
               <span class="cal-event-title">+{{ item.entries.length }}</span>
-            </div>
+            </button>
           } @else {
-            <div
+            <button
+              type="button"
               [class]="'cal-event cal-event-' + item.entry.styleKey"
-              [style.top.px]="getTop(item.entry.timestamp)"
-              [style.height.px]="getHeight(item.entry)"
-              [ngStyle]="getEventStyle(item.col, item.cols)"
+              [style.top.px]="item.top"
+              [style.height.px]="item.height"
+              [style.left]="item.style.left"
+              [style.width]="item.style.width"
+              [style.right]="item.style.right"
               (click)="selectEntry(item.entry)"
-              [title]="item.entry.title"
+              [attr.aria-label]="eventAriaLabel(item.entry)"
             >
-              <span class="material-icons cal-event-icon">{{ item.entry.entryIcon }}</span
+              <span class="material-icons cal-event-icon" aria-hidden="true">{{
+                item.entry.entryIcon
+              }}</span
               ><span class="cal-event-title">{{ item.entry.title }}</span>
-            </div>
+            </button>
           }
         }
       </div>

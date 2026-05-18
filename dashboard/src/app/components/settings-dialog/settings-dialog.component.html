@@ -2,6 +2,7 @@
   <app-settings-dialog-nav
     [selection]="selection()"
     [providers]="providerRows()"
+    [futureProviders]="futureProviderRows"
     (generalSelected)="selectGeneral()"
     (sourceSelected)="selectSource($event)"
   />
@@ -46,6 +47,7 @@
     <app-settings-dialog-mobile-tabs
       [selection]="selection()"
       [providers]="providerRows()"
+      [futureProviders]="futureProviderRows"
       (generalSelected)="selectGeneral()"
       (sourceSelected)="selectSource($event)"
     />

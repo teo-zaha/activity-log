@@ -76,21 +76,55 @@
 
 .source-item {
   padding-right: 12px;
+
+  &.source-item-upcoming {
+    border-color: color-mix(in srgb, var(--border) 74%, transparent);
+    border-style: dashed;
+    background: color-mix(in srgb, var(--surface-alt) 56%, transparent);
+    cursor: not-allowed;
+    opacity: 0.68;
+
+    &:disabled {
+      color: var(--text-secondary);
+    }
+  }
+}
+
+.source-item-tooltip {
+  display: block;
 }
 
 .source-icon {
+  --source-icon-bg: color-mix(in srgb, var(--surface) 82%, var(--accent) 18%);
+  --source-icon-fg: var(--accent);
+
   display: inline-flex;
   align-items: center;
   justify-content: center;
   width: 40px;
   height: 40px;
   border-radius: 14px;
-  background: color-mix(in srgb, var(--surface) 82%, var(--accent) 18%);
-  color: var(--accent);
+  background: var(--source-icon-bg);
+  color: var(--source-icon-fg);
+
+  &.source-icon-upcoming {
+    --source-icon-bg: color-mix(in srgb, var(--surface-alt) 86%, var(--surface) 14%);
+    --source-icon-fg: var(--text-tertiary);
+  }
 }
 
-.source-icon-glyph {
+.source-icon-glyph,
+.source-icon-upcoming mat-icon {
   font-size: 19px;
+  width: 19px;
+  height: 19px;
+}
+
+.source-icon-brand {
+  display: block;
+  width: 22px;
+  height: 22px;
+  object-fit: contain;
 }
 
 .source-copy {
@@ -107,4 +141,17 @@
 .source-status {
   color: var(--text-tertiary);
   font-size: 12px;
+}
+
+.coming-soon-pill {
+  flex-shrink: 0;
+  min-width: 42px;
+  padding: 3px 8px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--surface) 80%, var(--text-tertiary) 20%);
+  color: var(--text-tertiary);
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1;
+  text-align: center;
 }

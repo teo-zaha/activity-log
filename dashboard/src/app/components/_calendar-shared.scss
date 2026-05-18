@@ -112,11 +112,14 @@
 
 @mixin event-styles {
   .cal-event {
+    appearance: none;
     position: absolute;
     border-radius: 14px;
     padding: 8px 10px;
     font-size: 13px;
+    font-family: inherit;
     font-weight: 600;
+    text-align: left;
     cursor: pointer;
     overflow: hidden;
     border-left: 4px solid;
@@ -138,16 +141,25 @@
       transform: translateY(-1px);
       z-index: 2;
     }
+
+    &:focus-visible {
+      outline: 2px solid var(--accent);
+      outline-offset: 2px;
+      z-index: 3;
+    }
   }
 
   @include ui.provider-event-variants('.cal-event');
 
   .cal-overflow {
+    appearance: none;
     position: absolute;
     border-radius: 14px;
     padding: 8px 10px;
     font-size: 12px;
+    font-family: inherit;
     font-weight: 700;
+    text-align: left;
     cursor: pointer;
     overflow: hidden;
     border: 1px dashed color-mix(in srgb, var(--border-strong) 82%, transparent);
@@ -166,6 +178,12 @@
       background: var(--surface-hover);
       color: var(--text-primary);
       transform: translateY(-1px);
+    }
+
+    &:focus-visible {
+      outline: 2px solid var(--accent);
+      outline-offset: 2px;
+      z-index: 3;
     }
   }
 

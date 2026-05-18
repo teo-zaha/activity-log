@@ -1,8 +1,15 @@
-import { Component, inject, AfterViewInit, ElementRef, ViewChild, computed } from '@angular/core'
-import { NgStyle } from '@angular/common'
+import {
+  AfterViewInit,
+  ChangeDetectionStrategy,
+  Component,
+  ElementRef,
+  ViewChild,
+  computed,
+  inject,
+} from '@angular/core'
 import { ActivityService } from '../../services/activity.service'
 import type { EntryUiAdapter } from '../../providers/types'
-import { layoutEventsWithOverflow, type CalendarItem } from '../calendar-layout'
+import { calendarEntryKey, layoutEventsWithOverflow } from '../calendar-layout'
 
 export const HOUR_START = 0
 export const HOUR_END = 23
@@ -10,13 +17,48 @@ export const HOUR_END = 23
 const DEFAULT_SCROLL_HOUR = 6.5 // 06:30
 const ALLDAY_BAR_HEIGHT = 26
 const ALLDAY_BAR_GAP = 2
+const ALLDAY_BAR_SIDE_GAP = 3
+const EVENT_GAP = 4
+
+interface EventStyleVars {
+  readonly left: string
+  readonly width: string
+  readonly right: string
+}
+
+interface PositionedDayEvent {
+  readonly kind: 'event'
+  readonly key: string
+  readonly entry: EntryUiAdapter
+  readonly top: number
+  readonly height: number
+  readonly style: EventStyleVars
+}
+
+interface PositionedDayOverflow {
+  readonly kind: 'overflow'
+  readonly key: string
+  readonly entries: EntryUiAdapter[]
+  readonly top: number
+  readonly height: number
+  readonly style: EventStyleVars
+}
+
+interface PositionedAllDayEntry {
+  readonly key: string
+  readonly entry: EntryUiAdapter
+  readonly top: number
+  readonly height: number
+  readonly left: string
+  readonly width: string
+  readonly right: string
+}
 
 @Component({
   selector: 'app-day-view',
-  standalone: true,
-  imports: [NgStyle],
   templateUrl: './day-view.component.html',
   styleUrl: './day-view.component.scss',
+  changeDetection: ChangeDetectionStrategy.OnPush,
 })
 export class DayViewComponent implements AfterViewInit {
   protected readonly activity = inject(ActivityService)
@@ -82,38 +124,61 @@ export class DayViewComponent implements AfterViewInit {
     })
   })
 
+  protected readonly allDayEntries = computed<PositionedAllDayEntry[]>(() =>
+    this.multiDayEntries().map((entry, index) => ({
+      key: calendarEntryKey(entry),
+      entry,
+      left: `${ALLDAY_BAR_SIDE_GAP}px`,
+      right: `${ALLDAY_BAR_SIDE_GAP}px`,
+      width: `calc(100% - ${ALLDAY_BAR_SIDE_GAP * 2}px)`,
+      top: index * (ALLDAY_BAR_HEIGHT + ALLDAY_BAR_GAP) + ALLDAY_BAR_GAP,
+      height: ALLDAY_BAR_HEIGHT,
+    }))
+  )
+
   protected allDayRowHeight(): number {
     const count = this.multiDayEntries().length
     return count === 0 ? 0 : count * (ALLDAY_BAR_HEIGHT + ALLDAY_BAR_GAP) + ALLDAY_BAR_GAP * 2
   }
 
-  protected getDayAllDayBarStyle(index: number): Record<string, string> {
-    const GAP = 3
-    return {
-      left: `${GAP}px`,
-      right: `${GAP}px`,
-      width: `calc(100% - ${GAP * 2}px)`,
-      top: `${index * (ALLDAY_BAR_HEIGHT + ALLDAY_BAR_GAP) + ALLDAY_BAR_GAP}px`,
-      height: `${ALLDAY_BAR_HEIGHT}px`,
-    }
-  }
-
-  protected dayLayout(): CalendarItem<EntryUiAdapter>[] {
-    return layoutEventsWithOverflow(
+  protected readonly dayLayout = computed<(PositionedDayEvent | PositionedDayOverflow)[]>(() => {
+    const layout = layoutEventsWithOverflow(
       this.activity.dayEntries().filter(e => !this.isMultiDayEvent(e)),
       entry => this.getTop(entry.timestamp),
       entry => this.getHeight(entry),
       22,
       5
     )
-  }
 
-  protected getEventStyle(col: number, cols: number): Record<string, string> {
-    const GAP = 4
+    return layout.map(item => {
+      const style = this.eventStyle(item.col, item.cols)
+      if (item.kind === 'overflow') {
+        return {
+          kind: 'overflow',
+          key: `overflow:${item.entries.map(calendarEntryKey).join('|')}`,
+          entries: item.entries,
+          top: item.top,
+          height: item.height,
+          style,
+        }
+      }
+
+      return {
+        kind: 'event',
+        key: calendarEntryKey(item.entry),
+        entry: item.entry,
+        top: this.getTop(item.entry.timestamp),
+        height: this.getHeight(item.entry),
+        style,
+      }
+    })
+  })
+
+  private eventStyle(col: number, cols: number): EventStyleVars {
     const pct = 100 / cols
     return {
-      left: `calc(${col * pct}% + ${GAP}px)`,
-      width: `calc(${pct}% - ${GAP * 2}px)`,
+      left: `calc(${col * pct}% + ${EVENT_GAP}px)`,
+      width: `calc(${pct}% - ${EVENT_GAP * 2}px)`,
       right: 'unset',
     }
   }
@@ -137,5 +202,13 @@ export class DayViewComponent implements AfterViewInit {
 
   protected formatHour(h: number): string {
     return `${String(h).padStart(2, '0')}:00`
+  }
+
+  protected eventAriaLabel(entry: EntryUiAdapter): string {
+    return `Open event: ${entry.title}`
+  }
+
+  protected overflowAriaLabel(entries: readonly EntryUiAdapter[]): string {
+    return `Open ${entries.length} additional events`
   }
 }

@@ -6,7 +6,7 @@
   ></div>
   <div class="header-inner">
     <div class="brand">
-      <span class="brand-icon material-icons">timeline</span>
+      <span class="brand-icon material-icons" aria-hidden="true">timeline</span>
       <span class="brand-title">Activity Log</span>
     </div>
 
@@ -47,9 +47,9 @@
         matTooltip="Collect activity for selected range"
       >
         @if (activity.isLoading()) {
-          <span class="material-icons spin">sync</span>
+          <span class="material-icons spin" aria-hidden="true">sync</span>
         } @else {
-          <span class="material-icons">play_arrow</span>
+          <span class="material-icons" aria-hidden="true">play_arrow</span>
         }
         {{ activity.isLoading() ? 'Collecting…' : 'Apply' }}
       </button>
@@ -59,8 +59,9 @@
         (click)="exportMd()"
         [disabled]="!activity.meta()"
         matTooltip="Export Markdown"
+        aria-label="Export Markdown"
       >
-        <span class="material-icons">description</span>
+        <span class="material-icons" aria-hidden="true">description</span>
       </button>
 
       <button
@@ -68,8 +69,9 @@
         (click)="exportJson()"
         [disabled]="!activity.meta()"
         matTooltip="Export JSON"
+        aria-label="Export JSON"
       >
-        <span class="material-icons">data_object</span>
+        <span class="material-icons" aria-hidden="true">data_object</span>
       </button>
     </div>
   </div>

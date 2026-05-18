@@ -7,13 +7,13 @@
 <div class="timeline-wrap">
   @if (activity.isLoading() && activity.groupedByDay().length === 0) {
     <div class="empty-state">
-      <span class="material-icons empty-icon">hourglass_top</span>
+      <span class="material-icons empty-icon" aria-hidden="true">hourglass_top</span>
       <p class="empty-title">Collecting activity…</p>
       <p class="empty-sub">This may take a few seconds</p>
     </div>
   } @else if (activity.groupedByDay().length === 0) {
     <div class="empty-state">
-      <span class="material-icons empty-icon">inbox</span>
+      <span class="material-icons empty-icon" aria-hidden="true">inbox</span>
       <p class="empty-title">No events found</p>
       <p class="empty-sub">Try adjusting the filters or date range</p>
     </div>
@@ -26,8 +26,13 @@
             <span class="day-count">{{ group.entries.length }}</span>
           </div>
           <div class="entries">
-            @for (entry of group.entries; track $index) {
-              <div class="entry" (click)="selectEntry(entry)">
+            @for (entry of group.entries; track entry.timestamp + entry.title) {
+              <button
+                type="button"
+                class="entry"
+                (click)="selectEntry(entry)"
+                [attr.aria-label]="entryAriaLabel(entry)"
+              >
                 <div class="entry-accent" [class]="'accent-' + entry.styleKey"></div>
                 <span class="badge" [class]="entry.badge.badgeClass">
                   <app-provider-icon
@@ -44,7 +49,7 @@
                   }
                 </div>
                 <span class="entry-time">{{ formatTime(entry.timestamp) }}</span>
-              </div>
+              </button>
             }
           </div>
         </div>

@@ -1,4 +1,12 @@
-import { Component, computed, effect, inject, input, signal } from '@angular/core'
+import {
+  Component,
+  computed,
+  effect,
+  inject,
+  input,
+  signal,
+  ChangeDetectionStrategy,
+} from '@angular/core'
 import { FormsModule } from '@angular/forms'
 import { MatButtonModule } from '@angular/material/button'
 import { MatCardModule } from '@angular/material/card'
@@ -11,17 +19,17 @@ import type {
   ProviderConfigFieldStateDto,
   ProviderConfigSaveRequestDto,
   ProviderConfigSnapshotDto,
-  ProviderConfigValueTypeDto,
+  Source,
   SupportedOs,
 } from '../../generated/activity'
 import { ActivityService } from '../../services/activity.service'
 import { RuntimeEnvironmentService } from '../../services/backend/runtime-environment.service'
 import { StatusPillComponent } from '../ui-status/status-pill.component'
+import { validateProviderConfigValue } from './provider-config-validation'
 import type { SettingsProviderRow } from './settings-dialog.types'
 
 @Component({
   selector: 'app-settings-source-pane',
-  standalone: true,
   imports: [
     FormsModule,
     MatButtonModule,
@@ -35,6 +43,7 @@ import type { SettingsProviderRow } from './settings-dialog.types'
   ],
   templateUrl: './settings-source-pane.component.html',
   styleUrl: './settings-source-pane.component.scss',
+  changeDetection: ChangeDetectionStrategy.OnPush,
 })
 export class SettingsSourcePaneComponent {
   private readonly activity = inject(ActivityService)
@@ -124,7 +133,7 @@ export class SettingsSourcePaneComponent {
         continue
       }
 
-      const error = this.validationErrorForValue(value.value, field.valueType)
+      const error = validateProviderConfigValue(value.value, field.valueType)
       if (error) {
         errors.set(value.key, error)
       }
@@ -144,7 +153,7 @@ export class SettingsSourcePaneComponent {
 
   constructor() {
     effect(() => {
-      this.provider().info.id
+      const source = this.provider().info.id
       this.configMessage.set(null)
       this.configError.set(null)
 
@@ -152,7 +161,7 @@ export class SettingsSourcePaneComponent {
         return
       }
 
-      void this.loadProviderConfig()
+      void this.loadProviderConfig(source)
     })
   }
 
@@ -264,7 +273,7 @@ export class SettingsSourcePaneComponent {
     }
   }
 
-  private async loadProviderConfig(): Promise<void> {
+  private async loadProviderConfig(_source: Source): Promise<void> {
     this.loadingConfig.set(true)
 
     try {
@@ -304,7 +313,10 @@ export class SettingsSourcePaneComponent {
     return this.normalizeDraftValue(field.value ?? '', field.valueType)
   }
 
-  private normalizeDraftValue(value: string, valueType: ProviderConfigValueTypeDto): string {
+  private normalizeDraftValue(
+    value: string,
+    valueType: ProviderConfigFieldStateDto['valueType']
+  ): string {
     if (valueType !== 'bool') {
       return value
     }
@@ -319,40 +331,6 @@ export class SettingsSourcePaneComponent {
     }
 
     return value
-  }
-
-  private validationErrorForValue(
-    value: string,
-    valueType: ProviderConfigValueTypeDto
-  ): string | null {
-    if (valueType === 'string' || valueType === 'password') {
-      return null
-    }
-
-    if (valueType === 'bool') {
-      const normalized = value.trim().toLowerCase()
-      return normalized === 'true' || normalized === 'false' ? null : 'Enter true/false.'
-    }
-
-    if (valueType === 'int') {
-      return Number.isInteger(Number(value)) ? null : 'Enter a whole number.'
-    }
-
-    if (valueType === 'email') {
-      return /.+@.+\..+/.test(value) ? null : 'Enter a valid email.'
-    }
-
-    if (valueType === 'url') {
-      try {
-        // Keep URL parsing aligned with backend URL-type validation.
-        new URL(value)
-        return null
-      } catch {
-        return 'Enter a valid URL.'
-      }
-    }
-
-    return null
   }
 
   private errorMessage(error: unknown): string {

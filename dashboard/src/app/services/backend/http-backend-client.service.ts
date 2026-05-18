@@ -13,6 +13,7 @@ import {
   type ActivityResponse,
   DesktopOnlyBackendError,
 } from './backend-client'
+import { ApiRoutes } from './backend-contract'
 import type { ExportRequest } from './export-request'
 
 @Injectable()
@@ -20,15 +21,15 @@ export class HttpBackendClient implements ActivityBackendClient {
   private readonly http = inject(HttpClient)
 
   getActivity(): Promise<ActivityResponse> {
-    return firstValueFrom(this.http.get<ActivityResponse>('/api/activity'))
+    return firstValueFrom(this.http.get<ActivityResponse>(ApiRoutes.activity))
   }
 
   getProviders(): Promise<ProvidersResponse> {
-    return firstValueFrom(this.http.get<ProvidersResponse>('/api/providers'))
+    return firstValueFrom(this.http.get<ProvidersResponse>(ApiRoutes.providers))
   }
 
   collect(request: CollectRequest): Promise<ActivityResponse> {
-    return firstValueFrom(this.http.post<ActivityResponse>('/api/collect', request))
+    return firstValueFrom(this.http.post<ActivityResponse>(ApiRoutes.collect, request))
   }
 
   getProviderConfig(): Promise<ProviderConfigSnapshotDto> {
