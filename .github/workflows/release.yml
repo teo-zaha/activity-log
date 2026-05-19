@@ -1,0 +1,86 @@
+# One-time setup:
+#   1. Create a fine-grained PAT with Contents: read & write on this repo.
+#   2. Add it as repo secret `RELEASE_PAT`.
+#   3. If branch protection on `main` is enabled, allow the PAT identity
+#      to push directly (or bypass required reviews for it).
+#
+# Loop prevention layers (all three active):
+#   - paths-ignore on CHANGELOG.md (auto-commit does not retrigger)
+#   - job-level `if:` skips chore(release): commits
+#   - [skip ci] in the auto-commit message
+name: Release
+
+on:
+  push:
+    branches: [main]
+    paths-ignore:
+      - 'CHANGELOG.md'
+  workflow_dispatch:
+
+concurrency:
+  group: release-main
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    if: "!startsWith(github.event.head_commit.message, 'chore(release):')"
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.RELEASE_PAT }}
+
+      - name: Configure git identity
+        run: |
+          git config user.name  'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+
+      - name: Install git-cliff
+        uses: taiki-e/install-action@v2
+        with:
+          tool: git-cliff
+
+      - name: Compute next tag
+        id: bump
+        run: |
+          NEXT_TAG=$(git cliff --bumped-version)
+          CURRENT_TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "")
+          if [ -z "$NEXT_TAG" ] || [ "$NEXT_TAG" = "$CURRENT_TAG" ]; then
+            echo "Nothing to release (current=$CURRENT_TAG, computed=$NEXT_TAG)"
+            echo "release_needed=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "Releasing $NEXT_TAG (previous=$CURRENT_TAG)"
+            echo "release_needed=true" >> "$GITHUB_OUTPUT"
+            echo "next_tag=$NEXT_TAG" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Regenerate CHANGELOG.md
+        if: steps.bump.outputs.release_needed == 'true'
+        run: git cliff --tag "${{ steps.bump.outputs.next_tag }}" -o CHANGELOG.md
+
+      - name: Build release notes for GitHub Release body
+        if: steps.bump.outputs.release_needed == 'true'
+        # --unreleased --tag emits only the section for the upcoming tag.
+        # --latest would emit notes for the prior tag because the new tag isn't pushed yet.
+        run: git cliff --unreleased --tag "${{ steps.bump.outputs.next_tag }}" --strip header > .release-notes.md
+
+      - name: Commit, tag, push
+        if: steps.bump.outputs.release_needed == 'true'
+        run: |
+          NEXT_TAG='${{ steps.bump.outputs.next_tag }}'
+          git add CHANGELOG.md
+          git commit -m "chore(release): $NEXT_TAG [skip ci]"
+          git tag -a "$NEXT_TAG" -m "Release $NEXT_TAG"
+          git push origin HEAD:main --follow-tags
+
+      - name: Create GitHub Release
+        if: steps.bump.outputs.release_needed == 'true'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.bump.outputs.next_tag }}
+          body_path: .release-notes.md
+          token: ${{ secrets.RELEASE_PAT }}
