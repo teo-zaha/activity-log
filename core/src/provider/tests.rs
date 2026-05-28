@@ -1,6 +1,8 @@
 use futures::future::BoxFuture;
 use std::{
+    fs,
     path::PathBuf,
+    process::Command,
     sync::{
         Arc,
         atomic::{AtomicUsize, Ordering},
@@ -12,7 +14,7 @@ use crate::{
     model::{ActivityEntry, CollectOptions, Source, SupportedOs},
     provider::{
         current_os,
-        git::{GitConfig, default_git_root_with_lookup},
+        git::{GitConfig, GitProvider, default_git_root_with_lookup},
         provider_adapter::ProviderAdapter,
         provider_check_result::ProviderCheckResult,
         provider_config::{
@@ -447,4 +449,79 @@ fn git_repo_resolution_accepts_repo_paths_and_search_roots() {
     ]);
 
     assert_eq!(repos, vec![direct_repo, nested_repo]);
+}
+
+fn run_git(repo: &std::path::Path, args: &[&str]) {
+    let output = Command::new("git")
+        .args(args)
+        .current_dir(repo)
+        .output()
+        .expect("run git");
+    assert!(
+        output.status.success(),
+        "git {:?} failed: {}",
+        args,
+        String::from_utf8_lossy(&output.stderr)
+    );
+}
+
+fn init_git_repo() -> tempfile::TempDir {
+    let dir = tempdir().expect("tempdir");
+    run_git(dir.path(), &["init"]);
+    run_git(dir.path(), &["checkout", "-b", "main"]);
+    dir
+}
+
+#[tokio::test]
+async fn git_provider_is_unavailable_when_no_repositories_are_found() {
+    let empty_root = tempdir().expect("tempdir");
+    let mut config = TestConfigSource::default();
+    config.values.insert(
+        "GIT_DIRS".to_string(),
+        empty_root.path().display().to_string(),
+    );
+
+    let runtime = ProviderRuntime::inspect(Arc::new(GitProvider), &config).await;
+
+    assert!(!runtime.info().usable);
+    assert_eq!(
+        runtime.info().reason.as_deref(),
+        Some("No repositories found")
+    );
+}
+
+#[tokio::test]
+async fn git_provider_is_available_when_a_repository_can_be_opened() {
+    let repo = init_git_repo();
+    let mut config = TestConfigSource::default();
+    config
+        .values
+        .insert("GIT_DIRS".to_string(), repo.path().display().to_string());
+
+    let runtime = ProviderRuntime::inspect(Arc::new(GitProvider), &config).await;
+
+    assert!(runtime.info().usable);
+}
+
+#[tokio::test]
+async fn git_provider_is_unavailable_when_discovered_repositories_are_invalid() {
+    let invalid_root = tempdir().expect("tempdir");
+    fs::create_dir_all(invalid_root.path().join(".git")).expect("fake git dir");
+
+    let mut config = TestConfigSource::default();
+    config.values.insert(
+        "GIT_DIRS".to_string(),
+        invalid_root.path().display().to_string(),
+    );
+
+    let runtime = ProviderRuntime::inspect(Arc::new(GitProvider), &config).await;
+
+    assert!(!runtime.info().usable);
+    assert!(
+        runtime
+            .info()
+            .reason
+            .as_deref()
+            .is_some_and(|reason| reason.starts_with("No readable repositories found:"))
+    );
 }

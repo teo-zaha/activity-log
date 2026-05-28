@@ -21,13 +21,13 @@ The Angular app stays in `dashboard/` and now consumes generated DTOs from `dash
 
 ## Data sources
 
-| Source      | What it collects                                                       |
-| ----------- | ---------------------------------------------------------------------- |
-| **Git**     | Commits from all local repositories                                    |
-| **GitLab**  | MRs, pushes, comments, reviews                                         |
-| **Jira**    | Issues you worked on or reported                                       |
-| **Outlook** | Calendar events (via local Outlook desktop app)                        |
-| **System**  | Boot and shutdown events (Windows Event Log; reboot/shutdown on macOS) |
+| Source      | What it collects                                                           |
+| ----------- | -------------------------------------------------------------------------- |
+| **Git**     | Commits from all local repositories via an embedded Git library            |
+| **GitLab**  | MRs, pushes, comments, reviews                                             |
+| **Jira**    | Issues you worked on or reported                                           |
+| **Outlook** | Calendar events from the local Outlook desktop app via native desktop APIs |
+| **System**  | Boot and shutdown events from Windows Event Log and macOS session history  |
 
 When a local git commit matches a GitLab push event (same commit SHA), they are merged into a single **git/lab** entry instead of appearing twice.
 
@@ -36,8 +36,7 @@ When a local git commit matches a GitLab push event (same commit SHA), they are 
 - Rust toolchain (`cargo`, `rustc`)
 - [Node.js](https://nodejs.org) >= 20
 - [pnpm](https://pnpm.io) >= 10
-- Git installed locally
-- Windows (for Outlook and System collectors — others work cross-platform)
+- Windows or macOS for the local Outlook and System collectors
 
 ## Setup
 
@@ -188,7 +187,7 @@ For CLI runs, you can override any provider key dynamically with `--set KEY=VALU
 | `GIT_DIRS`      | Comma-separated repo paths or parent folders (defaults to your OS home dir) |
 | `PORT`          | Server port (default: `3000`, UI mode only)                                 |
 
-Outlook and System collectors require no credentials — they read from the local Outlook app and Windows Event Log respectively.
+Git collection requires no external `git` executable at runtime. Outlook and System collectors require no credentials — they read from the local Outlook app plus the platform's native event and session history APIs.
 
 ### Desktop dynamic provider settings
 

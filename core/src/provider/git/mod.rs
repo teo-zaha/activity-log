@@ -3,7 +3,7 @@ mod config;
 pub use config::*;
 
 use crate::{
-    collect::git::{collect_git, git_is_available, resolve_git_repos},
+    collect::git::{collect_git, open_repo_strict, resolve_git_repos},
     model::{IntoActivityEntries, Source, SupportedOs},
     provider::provider_check_result::ProviderCheckResult,
 };
@@ -11,10 +11,6 @@ use crate::{
 crate::provider! {
     GitProvider(Source::Git, &[SupportedOs::Windows, SupportedOs::Macos, SupportedOs::Linux], GitConfig) {
         async fn startup_check(&self, _current_os, context) {
-            if !git_is_available().await {
-                return ProviderCheckResult::unavailable("Git not installed");
-            }
-
             let config = match context.config::<GitConfig>() {
                 Ok(c) => c,
                 Err(_) => {
@@ -32,7 +28,21 @@ crate::provider! {
                 return ProviderCheckResult::unavailable("No repositories found");
             }
 
-            ProviderCheckResult::available()
+            let mut last_error = None;
+            for repo in repos {
+                match open_repo_strict(&repo) {
+                    Ok(_) => return ProviderCheckResult::available(),
+                    Err(err) => last_error = Some(err.to_string()),
+                }
+            }
+
+            if let Some(reason) = last_error {
+                return ProviderCheckResult::unavailable(format!(
+                    "No readable repositories found: {reason}"
+                ));
+            }
+
+            ProviderCheckResult::unavailable("No readable repositories found")
         }
 
         async fn collect(&self, _current_os, options, context) {
