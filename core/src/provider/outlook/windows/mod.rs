@@ -1,40 +1,16 @@
-use crate::platform::powershell_command;
+use crate::platform::{ComGuard, create_outlook_application};
 
 pub async fn check_outlook_ready() -> anyhow::Result<()> {
-    let output = powershell_command()
-        .arg("-Command")
-        .arg(
-            r#"
-try {
-  $ol = New-Object -ComObject Outlook.Application -ErrorAction Stop
-  $ns = $ol.GetNamespace("MAPI")
-  if ($null -eq $ns) {
-    throw "Outlook MAPI namespace unavailable"
-  }
-
-  $calendar = $ns.GetDefaultFolder(9)
-  if ($null -eq $calendar) {
-    throw "Outlook calendar unavailable"
-  }
-
-  $null = $calendar.Items
-
-  exit 0
-} catch {
-  Write-Error $_
-  exit 1
+    tokio::task::spawn_blocking(check_outlook_ready_blocking)
+        .await
+        .map_err(|err| anyhow::anyhow!("Outlook startup check task failed: {err}"))?
 }
-"#,
-        )
-        .output()
-        .await?;
 
-    if output.status.success() {
-        Ok(())
-    } else {
-        Err(anyhow::anyhow!(
-            "{}",
-            String::from_utf8_lossy(&output.stderr).trim()
-        ))
-    }
+fn check_outlook_ready_blocking() -> anyhow::Result<()> {
+    let _com = ComGuard::new()?;
+    let outlook = create_outlook_application()?;
+    let namespace = outlook.method_dispatch_string("GetNamespace", "MAPI")?;
+    let calendar = namespace.method_dispatch_i32("GetDefaultFolder", 9)?;
+    let _items = calendar.property_dispatch("Items")?;
+    Ok(())
 }

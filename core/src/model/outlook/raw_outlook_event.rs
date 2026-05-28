@@ -8,4 +8,6 @@ pub(crate) struct RawOutlookEvent {
     pub location: Option<String>,
     pub organizer: Option<String>,
     pub is_organizer: Option<bool>,
+    #[serde(default)]
+    pub is_default_calendar: Option<bool>,
 }
