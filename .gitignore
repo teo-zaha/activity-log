@@ -8,3 +8,6 @@ logs/
 .direnv
 target/
 desktop/gen/
+
+# Playwright MCP browser logs and screenshots
+.playwright-mcp/

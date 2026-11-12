@@ -43,12 +43,6 @@ export class HeaderComponent {
     },
   })
 
-  protected readonly rangeLabel = computed(() => {
-    if (!this.activity.meta()) return null
-    const count = this.activity.filteredEntries().length
-    return `${count} ${count === 1 ? 'event' : 'events'} shown`
-  })
-
   protected parseDateStr(s: string): Date | null {
     if (!s) return null
     return new Date(s + 'T12:00:00')
