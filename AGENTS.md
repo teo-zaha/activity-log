@@ -23,7 +23,8 @@ The backend contract is owned by Rust. The frontend consumes generated DTOs and 
 - `core/src/lib.rs`: orchestration entry point used by both `api` and `cli`
 - `core/src/ts.rs`: generated TypeScript contract source
 - `core/src/utils/`: date utilities, markdown formatting, merge logic
-- `core/src/cache/`: local file cache
+- `core/src/cache/`: per-day disk cache for remote API providers. A provider opts in with `cache: CachePolicy::api()` in its `provider!` declaration; the runtime then fetches only missing or stale days. Files live in the OS cache dir (`ACTIVITY_LOG_CACHE_DIR` overrides it), never the working directory
+- `core/src/diagnostics/`: in-memory diagnostic log (ring buffer) shown in the settings Logs pane; use `diagnostics::info/warn/error` instead of `eprintln!` so messages are visible in the desktop app
 
 ### API
 
@@ -33,7 +34,9 @@ The backend contract is owned by Rust. The frontend consumes generated DTOs and 
 Routes:
 
 - `GET /api/activity`
+- `GET /api/providers`
 - `POST /api/collect`
+- `GET /api/logs`, `DELETE /api/logs`
 
 ### CLI
 

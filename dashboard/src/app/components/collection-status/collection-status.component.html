@@ -1,0 +1,45 @@
+<!--
+  Everything here floats over the main panel: a collection that starts or ends
+  must never push the timeline around.
+-->
+<div class="live-region" role="status" aria-live="polite">
+  @if (banner(); as banner) {
+    @if (banner.busy) {
+      <div class="sync-pill" [attr.data-tone]="banner.tone" [title]="banner.message">
+        <span class="material-icons sync-icon u-spin" aria-hidden="true">{{ banner.icon }}</span>
+        <span class="sync-title">{{ banner.title }}</span>
+        <span class="u-sr-only">{{ banner.message }}</span>
+        <span class="sync-elapsed" aria-hidden="true">{{ elapsedSeconds() }}s</span>
+      </div>
+    }
+  }
+</div>
+
+@if (banner(); as banner) {
+  @if (!banner.busy) {
+    <div class="toast" role="alert" [attr.data-tone]="banner.tone">
+      <span class="material-icons toast-icon" aria-hidden="true">{{ banner.icon }}</span>
+      <div class="toast-copy">
+        <strong class="toast-title">{{ banner.title }}</strong>
+        <span class="toast-message">{{ banner.message }}</span>
+      </div>
+      <div class="toast-actions">
+        <button type="button" class="u-btn u-btn-primary" (click)="retry()">
+          <span class="material-icons" aria-hidden="true">refresh</span>
+          Retry
+        </button>
+        @if (banner.tone === 'warn') {
+          <button type="button" class="u-btn" (click)="openSources()">Check sources</button>
+        }
+        <button
+          type="button"
+          class="u-btn u-btn-ghost u-btn-icon"
+          (click)="dismiss()"
+          aria-label="Dismiss"
+        >
+          <span class="material-icons" aria-hidden="true">close</span>
+        </button>
+      </div>
+    </div>
+  }
+}

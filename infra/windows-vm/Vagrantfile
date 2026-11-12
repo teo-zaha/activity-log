@@ -1,0 +1,59 @@
+# Windows 11 (ARM) test VM for exercising the live Windows features of
+# activity-log (Win32 Event Log + Outlook COM) from a Mac.
+#
+# Prerequisites (the "right program" each contributor installs once):
+#   - VMware Fusion (free for personal use)
+#   - Vagrant + the `vagrant-vmware-desktop` plugin + the VMware Vagrant Utility
+#   - The base box, built once from infra/windows-vm/packer (see README / docs)
+#
+# Typical flow (wrapped as pnpm scripts at the repo root):
+#   pnpm win:box:build   # one-time: build activity-log/windows-11-arm
+#   pnpm win:up          # boot + provision
+#   pnpm win:test        # rsync working tree -> run cargo test in the VM
+#   pnpm win:halt        # shut down
+#
+# See docs/testing-windows-on-mac.md for the full walkthrough.
+
+Vagrant.configure("2") do |config|
+  config.vm.box = "activity-log/windows-11-arm"
+  config.vm.guest = :windows
+
+  # Drive the VM from the Mac over SSH (the Packer build enables the Windows
+  # OpenSSH Server and installs the Vagrant insecure key). WinRM remains the
+  # provisioning fallback.
+  config.vm.communicator = "ssh"
+  config.vm.boot_timeout = 600
+  config.ssh.insert_key = false
+
+  # Mount the repo root into the guest as C:\vagrant using rsync (one-way,
+  # host -> guest). VMware HGFS shared folders are unreliable on a
+  # Windows-on-ARM guest; rsync needs nothing special in the guest. Re-sync
+  # after edits with `vagrant rsync` (or `vagrant rsync-auto`). Build artifacts
+  # produced in the guest intentionally do not sync back.
+  config.vm.synced_folder "../..", "/vagrant",
+    type: "rsync",
+    rsync__exclude: [".git/", "target/", "node_modules/", "dashboard/dist/", "dashboard/node_modules/"]
+
+  config.vm.provider "vmware_desktop" do |v|
+    v.gui = false
+    v.vmx["memsize"] = "8192"
+    v.vmx["numvcpus"] = "4"
+  end
+
+  # One-time toolchain install: rustup + native ARM64 MSVC toolchain and the
+  # VS 2022 Build Tools (ARM64 components). Runs on `vagrant up` / `vagrant provision`.
+  config.vm.provision "bootstrap",
+    type: "shell",
+    privileged: true,
+    path: "packer/scripts/install-rust.ps1"
+
+  # Repeatable test run: `vagrant provision --provision-with test`.
+  config.vm.provision "test",
+    type: "shell",
+    run: "never",
+    privileged: false,
+    inline: <<~PS
+      cd C:/vagrant
+      cargo test --workspace --exclude activity-log-desktop
+    PS
+end

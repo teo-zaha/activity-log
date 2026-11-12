@@ -8,7 +8,7 @@
   flex-shrink: 0;
   background: var(--border-strong);
   color: var(--border-strong);
-  box-shadow: 0 0 0 4px color-mix(in srgb, currentColor 12%, transparent);
+  box-shadow: 0 0 0 3px color-mix(in srgb, currentColor 18%, transparent);
 }
 
 :host(.size-sm) {
@@ -20,16 +20,16 @@
 }
 
 :host([data-status='available']) {
-  color: #16a34a;
-  background: #22c55e;
+  color: var(--status-ok);
+  background: var(--status-ok);
 }
 
 :host([data-status='degraded']) {
-  color: #d97706;
-  background: #f59e0b;
+  color: var(--status-warn);
+  background: var(--status-warn);
 }
 
 :host([data-status='unavailable']) {
-  color: #dc2626;
-  background: #ef4444;
+  color: var(--status-error);
+  background: var(--status-error);
 }

@@ -1,7 +1,5 @@
 use anyhow::{Result, anyhow};
 use chrono::{DateTime, TimeZone, Utc};
-#[cfg(any(target_os = "windows", test))]
-use serde_json::Value;
 
 use crate::model::{CollectOptions, SupportedOs, SystemEntry};
 #[cfg(any(target_os = "windows", test))]
@@ -11,7 +9,7 @@ use crate::model::{SystemEntryType, system::raw_system_event::RawSystemEvent};
 mod macos;
 #[cfg(test)]
 mod tests;
-#[cfg(target_os = "windows")]
+#[cfg(any(target_os = "windows", test))]
 mod windows;
 
 #[cfg(any(target_os = "windows", test))]
@@ -78,26 +76,6 @@ pub async fn collect_system(
         SupportedOs::Windows => windows_impl::collect_system(options).await,
         SupportedOs::Macos => macos_impl::collect_system(options).await,
         SupportedOs::Linux => linux_impl::collect_system(options).await,
-    }
-}
-
-#[cfg(any(target_os = "windows", test))]
-pub(crate) fn parse_raw_system_events(stdout: &str) -> Result<Vec<RawSystemEvent>> {
-    let stdout = stdout.trim();
-    if stdout.is_empty() || stdout == "[]" {
-        return Ok(Vec::new());
-    }
-
-    let parsed = serde_json::from_str::<Value>(stdout)?;
-    if let Some(array) = parsed.as_array() {
-        array
-            .iter()
-            .cloned()
-            .map(serde_json::from_value)
-            .collect::<Result<Vec<RawSystemEvent>, _>>()
-            .map_err(Into::into)
-    } else {
-        Ok(vec![serde_json::from_value::<RawSystemEvent>(parsed)?])
     }
 }
 

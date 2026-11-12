@@ -2,7 +2,7 @@ use anyhow::Result;
 
 use crate::{
     model::{CollectOptions, OutlookEntry, outlook::raw_outlook_event::RawOutlookEvent},
-    platform::{ComGuard, create_outlook_application, local_date_bounds_as_systemtime},
+    platform::{ComGuard, local_date_bounds_as_systemtime, running_outlook_application},
 };
 
 use super::normalize_outlook_events;
@@ -12,12 +12,12 @@ pub(super) async fn collect_outlook(options: &CollectOptions) -> Result<Vec<Outl
     let events = tokio::task::spawn_blocking(move || collect_outlook_blocking(&blocking_options))
         .await
         .map_err(|err| anyhow::anyhow!("Outlook collection task failed: {err}"))??;
-    Ok(normalize_outlook_events(events, &options))
+    Ok(normalize_outlook_events(events, options))
 }
 
 fn collect_outlook_blocking(options: &CollectOptions) -> Result<Vec<RawOutlookEvent>> {
     let _com = ComGuard::new()?;
-    let outlook = create_outlook_application()?;
+    let outlook = running_outlook_application()?;
     let namespace = outlook.method_dispatch_string("GetNamespace", "MAPI")?;
     let calendar = namespace.method_dispatch_i32("GetDefaultFolder", 9)?;
     let items = calendar.property_dispatch("Items")?;

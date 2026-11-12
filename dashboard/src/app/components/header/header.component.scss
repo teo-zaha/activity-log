@@ -1,319 +1,302 @@
 @use '../dashboard-shared' as ui;
 
+:host {
+  display: block;
+  flex-shrink: 0;
+}
+
 .app-header {
-  position: sticky;
-  top: 0;
+  position: relative;
   z-index: 100;
-  overflow: visible;
-  padding: 0 18px;
-  background: transparent;
-  border-bottom: none;
-  transition:
-    background-color 0.25s ease,
-    border-color 0.25s ease;
 }
 
 .window-drag-strip {
   height: 0;
   width: 100%;
-  flex-shrink: 0;
   cursor: default;
   opacity: 0;
   pointer-events: none;
   user-select: none;
   -webkit-user-select: none;
-  transition:
-    height 0.22s ease,
-    opacity 0.18s ease;
-}
-
-:host {
-  display: block;
-}
-
-.header-inner {
-  display: flex;
-  align-items: center;
-  gap: 16px;
-  flex-wrap: wrap;
-  padding: 16px 18px;
-  @include ui.panel-shell;
-  transition:
-    padding 0.22s ease,
-    background-color 0.22s ease,
-    border-color 0.22s ease;
 }
 
 :host-context(html.tauri) .window-drag-strip {
-  height: 30px;
-  cursor: grab;
+  height: 28px;
   opacity: 1;
   pointer-events: auto;
 }
 
 :host-context(html.tauri.fullscreen) .window-drag-strip {
-  height: 30px;
-  opacity: 1;
-  cursor: default;
   pointer-events: none;
 }
 
-// ── Brand ──────────────────────────────────────────────────────────────────
+.header-inner {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 64px;
+  // Left padding centres the brand mark over the sidebar icons below it
+  // (shell 12px + sidebar 8px + row border 1px + row padding 10px + half icon 10px = 41px).
+  padding: 12px 16px 12px 24px;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+:host-context(html.tauri) .header-inner {
+  min-height: 52px;
+  padding-top: 0;
+}
+
+// ── Brand ────────────────────────────────────────────────────────────────────
 
 .brand {
   display: flex;
   align-items: center;
-  gap: 12px;
-  flex-shrink: 0;
-  min-width: fit-content;
-}
-
-.brand-icon {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  flex: 0 0 30px;
-  width: 30px;
-  height: 30px;
-  font-size: 24px;
-  color: var(--accent);
-  border-radius: 12px;
-  background: color-mix(in srgb, var(--accent) 12%, var(--surface) 88%);
-}
-
-.brand-title {
-  font-size: 18px;
-  font-weight: 700;
-  color: var(--text-primary);
-  letter-spacing: -0.04em;
-  white-space: nowrap;
-}
-
-.meta-range {
-  font-size: 13px;
-  color: var(--text-tertiary);
-  font-weight: 400;
-  padding-left: 6px;
-  border-left: 1px solid var(--border);
-  margin-left: 2px;
-  white-space: nowrap;
-}
-
-// ── Controls ───────────────────────────────────────────────────────────────
-
-.controls {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  flex-wrap: wrap;
-  flex: 1;
-  justify-content: flex-end;
+  gap: 10px;
   min-width: 0;
+  margin-right: auto;
 }
 
-.ctrl-input-wrap {
-  display: inline-flex;
-  align-items: center;
-  width: 200px;
-  flex: 0 0 200px;
-  min-width: 168px;
-  height: 38px;
-  border: 1px solid var(--border);
-  border-radius: 14px;
-  background: color-mix(in srgb, var(--surface) 88%, transparent);
-  padding: 0 4px 0 10px;
-  box-sizing: border-box;
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06);
-  transition:
-    border-color 0.15s ease,
-    box-shadow 0.15s ease,
-    transform 0.15s ease;
-
-  &:focus-within {
-    border-color: var(--accent);
-    box-shadow:
-      inset 0 1px 0 rgba(255, 255, 255, 0.08),
-      0 0 0 4px color-mix(in srgb, var(--accent) 12%, transparent);
-    transform: translateY(-1px);
-  }
-
-  // Hide the default Material form-field wrapper inside toggle
-  mat-datepicker-toggle {
-    flex-shrink: 0;
-    color: var(--text-secondary);
-
-    button {
-      width: 28px;
-      height: 28px;
-      line-height: 28px;
-    }
-
-    .mat-icon-button,
-    .mdc-icon-button {
-      width: 28px;
-      height: 28px;
-      padding: 2px;
-    }
-  }
-}
-
-.ctrl-label {
-  font-size: 13px;
-  font-weight: 500;
-  color: var(--text-secondary);
-  white-space: nowrap;
-  padding-right: 6px;
-  border-right: 1px solid var(--border);
-  margin-right: 6px;
-  flex-shrink: 0;
-}
-
-.ctrl-input {
-  flex: 1;
-  min-width: 0;
-  border: none;
-  outline: none;
-  background: transparent;
-  color: var(--text-primary);
-  font-size: 14px;
-  font-family: Inter, sans-serif;
-
-  &::placeholder {
-    color: var(--text-tertiary);
-  }
-}
-
-// ── Buttons ────────────────────────────────────────────────────────────────
-
-.btn-apply {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 5px;
-  padding: 0 16px;
-  height: 38px;
-  min-width: 128px;
-  border-radius: 14px;
-  border: none;
+.brand-mark {
+  display: inline-grid;
+  place-items: center;
+  flex: 0 0 34px;
+  height: 34px;
+  border-radius: var(--radius-sm);
   background: linear-gradient(
-    135deg,
-    var(--btn-primary),
-    color-mix(in srgb, var(--btn-primary) 74%, white 26%)
+    145deg,
+    var(--accent),
+    color-mix(in srgb, var(--accent) 62%, var(--text-primary))
   );
-  color: var(--btn-primary-fg);
-  font-size: 14px;
-  font-weight: 500;
-  font-family: Inter, sans-serif;
-  cursor: pointer;
-  white-space: nowrap;
-  transition:
-    background 0.15s ease,
-    opacity 0.15s ease,
-    transform 0.15s ease,
-    box-shadow 0.15s ease;
-  box-shadow: 0 16px 28px color-mix(in srgb, var(--btn-primary) 28%, transparent);
-  flex: 0 0 auto;
-
-  .material-icons {
-    font-size: 18px;
-  }
-
-  &:hover:not(:disabled) {
-    background: var(--btn-primary-hover);
-    transform: translateY(-1px);
-  }
-
-  &:disabled {
-    opacity: 0.6;
-    cursor: not-allowed;
-  }
-
-  &.loading .material-icons {
-    animation: spin 1s linear infinite;
-  }
-}
-
-.btn-icon {
-  @include ui.chrome-icon-button;
-
-  flex-shrink: 0;
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.05);
-  flex: 0 0 38px;
+  color: var(--accent-fg);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.25),
+    0 1px 3px color-mix(in srgb, var(--accent) 22%, transparent);
 
   .material-icons {
     font-size: 20px;
   }
 }
 
-@include ui.down('desktop-compact') {
-  .header-inner {
-    gap: 14px;
+.brand-copy {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  line-height: 1.15;
+}
+
+.brand-title {
+  font-size: 16px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  color: var(--text-primary);
+  white-space: nowrap;
+}
+
+.brand-sub {
+  font-size: 12px;
+  color: var(--text-tertiary);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+// ── Range ────────────────────────────────────────────────────────────────────
+
+.range-form {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.range {
+  display: flex;
+  align-items: center;
+  height: 40px;
+  padding: 0 2px 0 4px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--surface);
+  transition:
+    border-color 0.15s ease,
+    box-shadow 0.15s ease;
+
+  &:focus-within {
+    border-color: var(--accent);
+    box-shadow: 0 0 0 3px var(--accent-soft);
   }
 
-  .controls {
-    width: 100%;
-    justify-content: flex-end;
+  &.is-disabled {
+    opacity: 0.7;
   }
 }
 
-@include ui.down('tablet') {
-  .app-header {
-    padding: 0 12px;
+.range-field {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  padding-left: 8px;
+  cursor: text;
+}
+
+.range-label {
+  margin-right: 8px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-tertiary);
+}
+
+.range-input {
+  width: 92px;
+  min-width: 0;
+  border: 0;
+  outline: none;
+  background: transparent;
+  color: var(--text-primary);
+  font:
+    500 14px Inter,
+    sans-serif;
+  font-variant-numeric: tabular-nums;
+
+  &:focus-visible {
+    outline: none;
+  }
+}
+
+.range-toggle {
+  color: var(--text-tertiary);
+  --mat-icon-button-state-layer-size: 32px;
+  --mat-datepicker-toggle-icon-color: var(--text-tertiary);
+  --mat-datepicker-toggle-active-state-icon-color: var(--accent);
+}
+
+.range-sep {
+  font-size: 16px;
+  color: var(--text-tertiary);
+  margin: 0 2px;
+}
+
+.btn-collect {
+  height: 40px;
+  min-width: 112px;
+  border-radius: var(--radius-md);
+}
+
+.btn-collect-label {
+  display: inline-grid;
+
+  > span {
+    grid-area: 1 / 1;
   }
 
-  .header-inner {
-    flex-wrap: wrap;
-    padding: 14px;
-    border-radius: 22px;
+  > .is-inactive {
+    visibility: hidden;
   }
+}
 
-  .controls {
-    width: 100%;
-    flex-wrap: wrap;
-    justify-content: flex-end;
-    gap: 10px;
-  }
+// ── Export actions ───────────────────────────────────────────────────────────
 
-  .ctrl-input-wrap {
-    flex: 1 1 180px;
-    width: auto;
-    min-width: 150px;
-  }
+.header-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding-left: 12px;
+  border-left: 1px solid var(--hairline);
+}
 
-  .btn-apply {
-    flex: 1 1 180px;
-    min-width: 140px;
-    padding: 0 14px;
-  }
+.btn-export {
+  width: 40px;
+  height: 40px;
+  border-radius: var(--radius-md);
+  background: transparent;
+  border-color: var(--hairline);
+  color: var(--text-secondary);
+}
 
-  .brand-title {
+// ── Responsive ───────────────────────────────────────────────────────────────
+
+@include ui.down('desktop-compact') {
+  .brand-sub {
     display: none;
   }
 }
 
-@include ui.down('phone') {
-  .brand {
-    padding: 8px;
+@include ui.down('tablet') {
+  .header-inner {
+    gap: 8px;
+    // Centres the brand mark over the rail icons (shell 8px + rail 6px + half of 62px content).
+    padding: 10px 12px 10px 28px;
   }
 
-  .ctrl-input-wrap {
-    flex: 1 1 100%;
-    width: 100%;
-    min-width: 0;
+  .range-label {
+    @include ui.visually-hidden;
   }
 
-  .btn-apply {
-    flex: 1 1 100%;
-    min-width: 0;
-    padding: 0 12px;
+  .header-actions {
+    padding-left: 4px;
+    border-left: 0;
   }
 }
 
-@keyframes spin {
-  from {
-    transform: rotate(0deg);
+// The Tauri window bottoms out at 760px; keep the header on one row there.
+@include ui.between('phone', 'window-min') {
+  .brand-title {
+    @include ui.visually-hidden;
   }
-  to {
-    transform: rotate(360deg);
+}
+
+@include ui.down('window-min') {
+  .btn-collect {
+    min-width: 0;
+  }
+}
+
+@include ui.down('phone') {
+  .header-inner {
+    padding-left: 12px;
+    flex-wrap: wrap;
+    row-gap: 10px;
+    min-height: 0;
+  }
+
+  .range-form {
+    order: 3;
+    flex: 1 1 100%;
+  }
+
+  .range {
+    flex: 1;
+    min-width: 0;
+  }
+
+  .range-field {
+    flex: 1;
+    padding-left: 6px;
+  }
+
+  .range-input {
+    width: 100%;
+    font-size: 13px;
+  }
+
+  .btn-collect {
+    width: 40px;
+    padding: 0;
+  }
+
+  .btn-collect-label {
+    @include ui.visually-hidden;
+  }
+}
+
+@include ui.down('phone-narrow') {
+  .range-sep {
+    display: none;
+  }
+
+  .range-toggle {
+    --mat-icon-button-state-layer-size: 28px;
   }
 }

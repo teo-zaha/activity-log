@@ -142,7 +142,7 @@ impl CollectionRuntime {
                 .run_locked_collection(default_collect_options())
                 .await
             {
-                eprintln!("Initial collection failed: {err}");
+                crate::diagnostics::error("runtime", format!("Initial collection failed: {err}"));
             }
         }))
     }

@@ -60,6 +60,10 @@
       </div>
     }
 
+    @if (dayLayout().length === 0 && multiDayEntries().length === 0) {
+      <div class="u-floating-hint" role="status"><span>No activity on this day</span></div>
+    }
+
     <div class="cal-grid" [style.height.px]="gridHeight()">
       <!-- Hour labels + lines -->
       @for (hour of hours; track hour) {

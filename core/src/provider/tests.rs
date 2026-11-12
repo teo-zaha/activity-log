@@ -23,7 +23,7 @@ use crate::{
         },
         provider_context::ProviderContext,
         provider_registry,
-        provider_runtime::ProviderRuntime,
+        provider_runtime::{ProviderRuntime, with_startup_timeout},
     },
 };
 use tempfile::tempdir;
@@ -524,4 +524,84 @@ async fn git_provider_is_unavailable_when_discovered_repositories_are_invalid() 
             .as_deref()
             .is_some_and(|reason| reason.starts_with("No readable repositories found:"))
     );
+}
+
+#[test]
+fn git_repo_discovery_skips_dependency_and_appdata_folders() {
+    let tmp = tempdir().expect("tempdir");
+    let kept = tmp.path().join("code").join("app");
+    std::fs::create_dir_all(kept.join(".git")).expect("kept repo");
+    for skipped in ["node_modules", "AppData"] {
+        std::fs::create_dir_all(tmp.path().join(skipped).join("pkg").join(".git"))
+            .expect("skipped repo");
+    }
+
+    let repos = resolve_git_repos_from_roots(&[tmp.path().to_path_buf()]);
+
+    assert_eq!(repos, vec![kept]);
+}
+
+#[tokio::test]
+async fn git_provider_accepts_quoted_paths_from_windows_copy_as_path() {
+    let repo = init_git_repo();
+    let mut config = TestConfigSource::default();
+    config.values.insert(
+        "GIT_DIRS".to_string(),
+        format!("\"{}\"", repo.path().display()),
+    );
+
+    let runtime = ProviderRuntime::inspect(Arc::new(GitProvider), &config).await;
+
+    assert!(runtime.info().usable, "{:?}", runtime.info().reason);
+}
+
+#[tokio::test]
+async fn startup_checks_that_hang_report_a_timeout() {
+    let result = with_startup_timeout(
+        std::future::pending::<ProviderCheckResult>(),
+        std::time::Duration::from_millis(10),
+    )
+    .await;
+
+    assert_eq!(result.status, crate::model::ProviderStatus::Unavailable);
+    assert!(
+        result
+            .reason
+            .as_deref()
+            .is_some_and(|reason| reason.starts_with("Startup check timed out"))
+    );
+}
+
+#[test]
+fn only_remote_api_providers_opt_into_the_disk_cache() {
+    use crate::provider::provider_registry;
+
+    let cached: Vec<Source> = provider_registry()
+        .iter()
+        .filter(|adapter| adapter.cache_policy().is_some())
+        .map(|adapter| adapter.id())
+        .collect();
+
+    assert_eq!(cached, [Source::Gitlab, Source::Jira]);
+}
+
+#[test]
+fn cache_fingerprint_separates_accounts_but_ignores_secrets() {
+    const KEYS: &[ProviderConfigKey] = &[
+        ProviderConfigKey::required("URL", ProviderConfigValueType::Url),
+        ProviderConfigKey::required("USER", ProviderConfigValueType::String),
+        ProviderConfigKey::required("TOKEN", ProviderConfigValueType::Password),
+    ];
+    let fingerprint = |user: &str, token: &str| {
+        let mut source = TestConfigSource::default();
+        source
+            .values
+            .insert("URL".into(), "https://gitlab.example".into());
+        source.values.insert("USER".into(), user.into());
+        source.values.insert("TOKEN".into(), token.into());
+        ProviderConfig::resolve(&source, KEYS).fingerprint(KEYS)
+    };
+
+    assert_eq!(fingerprint("alice", "one"), fingerprint("alice", "two"));
+    assert_ne!(fingerprint("alice", "one"), fingerprint("bob", "one"));
 }

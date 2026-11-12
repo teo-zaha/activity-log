@@ -12,7 +12,7 @@ pub mod system;
 #[cfg(test)]
 mod tests;
 
-use std::sync::Arc;
+use std::{sync::Arc, time::Duration};
 
 use crate::model::{ProvidersResponse, SupportedOs};
 
@@ -26,10 +26,17 @@ pub use provider_runtime::{
     ProviderRuntime, inspect_provider_runtimes, inspect_provider_runtimes_with,
 };
 
+/// HTTP client defaults for remote providers; reqwest has no timeouts by default.
+pub(crate) fn http_client_builder() -> reqwest::ClientBuilder {
+    reqwest::Client::builder()
+        .connect_timeout(Duration::from_secs(10))
+        .timeout(Duration::from_secs(30))
+}
+
 #[macro_export]
 macro_rules! provider {
     (
-        $provider:ident($source:expr, $supported_os:expr, $config:ty) {
+        $provider:ident($source:expr, $supported_os:expr, $config:ty $(, cache: $cache:expr)?) {
             async fn startup_check(&self, $startup_os:ident, $startup_ctx:ident) $startup_body:block
             async fn collect(&self, $collect_os:ident, $collect_options:ident, $collect_ctx:ident) $collect_body:block
         }
@@ -48,6 +55,12 @@ macro_rules! provider {
             fn config_binding(&self) -> Option<$crate::provider::provider_config::ConfigBinding> {
                 Some(<$config>::binding())
             }
+
+            $(
+                fn cache_policy(&self) -> Option<$crate::cache::CachePolicy> {
+                    Some($cache)
+                }
+            )?
 
             fn startup_check(
                 &self,

@@ -1,74 +1,124 @@
-<aside class="sidebar">
-  <div class="sidebar-section sidebar-section-view">
+<aside class="sidebar" [class.is-rail]="isRail()" aria-label="Views and sources">
+  <nav class="view-nav" aria-label="Views">
     <span class="section-label">View</span>
-    <div class="view-toggle">
-      <button
-        class="view-btn"
-        [class.active]="activity.currentView() === 'list'"
-        (click)="activity.setView('list')"
-      >
-        <mat-icon>view_list</mat-icon>List
-      </button>
-      <button
-        class="view-btn"
-        [class.active]="activity.currentView() === 'day'"
-        (click)="activity.setView('day')"
-      >
-        <mat-icon>calendar_today</mat-icon>Day
-      </button>
-      <button
-        class="view-btn"
-        [class.active]="activity.currentView() === 'workweek'"
-        (click)="activity.setView('workweek')"
-      >
-        <mat-icon>view_week</mat-icon>Work Week
-      </button>
-      <button
-        class="view-btn"
-        [class.active]="activity.currentView() === 'week'"
-        (click)="activity.setView('week')"
-      >
-        <mat-icon>calendar_view_week</mat-icon>Week
-      </button>
-    </div>
-  </div>
-
-  <div class="sidebar-section sidebar-section-sources">
-    <span class="section-label">Sources</span>
-    <div class="source-chips">
-      @for (provider of activity.providers(); track provider.info.id) {
-        <span
-          class="filter-chip-wrap"
-          [matTooltip]="provider.tooltip ?? ''"
-          [matTooltipDisabled]="!provider.tooltip"
-          matTooltipPosition="above"
-          (dblclick)="activity.isolateSource(provider.info.id)"
+    <div class="view-list">
+      @for (view of views; track view.id) {
+        <button
+          type="button"
+          class="view-btn"
+          [class.active]="activity.currentView() === view.id"
+          [attr.aria-pressed]="activity.currentView() === view.id"
+          (click)="activity.setView(view.id)"
+          [matTooltip]="view.label"
+          [matTooltipDisabled]="!isRail()"
+          matTooltipPosition="right"
         >
-          <button
-            class="filter-chip"
-            [class.active]="isActive(provider.info.id)"
-            [class.degraded]="provider.info.status === 'degraded'"
-            [attr.data-src]="provider.chipKey"
-            (click)="activity.toggleSource(provider.info.id)"
-          >
-            <app-provider-icon
-              class="filter-chip-icon"
-              [source]="provider.info.id"
-              [fallbackIcon]="provider.icon"
-            ></app-provider-icon>
-            {{ provider.label }}
-            @if (provider.count > 0) {
-              <span class="chip-count">{{ provider.count }}</span>
-            }
-          </button>
-        </span>
+          <mat-icon aria-hidden="true">{{ view.icon }}</mat-icon>
+          <span class="view-label">{{ isPhone() ? view.shortLabel : view.label }}</span>
+        </button>
+      }
+      @if (isPhone()) {
+        <button type="button" class="view-btn" (click)="openSettings()">
+          <mat-icon aria-hidden="true">settings</mat-icon>
+          <span class="view-label">Settings</span>
+        </button>
       }
     </div>
-  </div>
-  <div class="sidebar-bottom">
-    <button class="settings-button" type="button" (click)="openSettings()">
-      <mat-icon>settings</mat-icon>
-      <span>Settings</span>
-    </button>
-  </div>
+  </nav>
+
+  <section class="sources" aria-labelledby="sidebar-sources-label">
+    <div class="section-head">
+      <span id="sidebar-sources-label" class="section-label">Sources</span>
+      @if (activity.providers().length > 1 && !isRail()) {
+        <span class="section-hint">Double-click to solo</span>
+      }
+    </div>
+
+    <div class="source-list">
+      @for (provider of activity.providers(); track provider.info.id) {
+        <button
+          type="button"
+          class="source-chip"
+          [class.active]="isActive(provider.info.id)"
+          [attr.aria-pressed]="isActive(provider.info.id)"
+          [attr.data-src]="provider.chipKey"
+          [attr.aria-label]="sourceAriaLabel(provider)"
+          (click)="activity.toggleSource(provider.info.id)"
+          (dblclick)="activity.isolateSource(provider.info.id)"
+          [matTooltip]="sourceTooltip(provider)"
+          [matTooltipDisabled]="!sourceTooltip(provider)"
+          [matTooltipPosition]="isRail() ? 'right' : 'above'"
+        >
+          <span class="source-icon">
+            <app-provider-icon [source]="provider.info.id" [fallbackIcon]="provider.icon" />
+          </span>
+          <span class="source-label">{{ provider.label }}</span>
+          @if (provider.info.status === 'degraded') {
+            <app-status-dot class="source-warn" status="degraded" size="sm" />
+          }
+          <span class="source-count">{{ provider.count }}</span>
+        </button>
+      } @empty {
+        @if (!isRail()) {
+          <p class="sources-empty">No sources ready yet.</p>
+        }
+      }
+
+      @if (activity.unusableProviders().length && (isRail() || isPhone())) {
+        <button
+          type="button"
+          class="issues-chip"
+          (click)="openSettings(activity.unusableProviders()[0].info.id)"
+          [matTooltip]="issuesTooltip()"
+          [matTooltipPosition]="isRail() ? 'right' : 'above'"
+          [attr.aria-label]="issuesAriaLabel()"
+        >
+          <span class="material-icons" aria-hidden="true">report_gmailerrorred</span>
+          <span class="issues-count">{{ activity.unusableProviders().length }}</span>
+          <span class="issues-label">unavailable</span>
+        </button>
+      }
+    </div>
+  </section>
+
+  @if (activity.unusableProviders().length && !isRail() && !isPhone()) {
+    <section class="issues" aria-labelledby="sidebar-issues-label">
+      <span id="sidebar-issues-label" class="section-label">Unavailable</span>
+      @for (provider of activity.unusableProviders(); track provider.info.id) {
+        <button
+          type="button"
+          class="issue"
+          (click)="openSettings(provider.info.id)"
+          [matTooltip]="provider.info.reason ?? ''"
+          [matTooltipDisabled]="!provider.info.reason"
+          matTooltipPosition="right"
+        >
+          <span class="issue-icon">
+            <app-provider-icon [source]="provider.info.id" [fallbackIcon]="provider.icon" />
+          </span>
+          <span class="issue-copy">
+            <span class="issue-name">{{ provider.label }}</span>
+            <span class="issue-reason">{{ provider.info.reason ?? 'Unavailable' }}</span>
+          </span>
+          <app-status-dot [status]="provider.info.status" size="sm" [glow]="false" />
+        </button>
+      }
+    </section>
+  }
+
+  @if (!isPhone()) {
+    <div class="sidebar-bottom">
+      <button
+        class="settings-button"
+        type="button"
+        (click)="openSettings()"
+        matTooltip="Settings"
+        [matTooltipDisabled]="!isRail()"
+        matTooltipPosition="right"
+      >
+        <mat-icon aria-hidden="true">settings</mat-icon>
+        <span class="settings-label">Settings</span>
+      </button>
+    </div>
+  }
 </aside>

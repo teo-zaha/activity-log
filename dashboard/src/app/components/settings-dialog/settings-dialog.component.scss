@@ -5,7 +5,6 @@
   box-sizing: border-box;
   width: 100%;
   max-width: 100%;
-  padding: 16px;
   overflow: hidden;
 }
 
@@ -15,15 +14,23 @@
   grid-template-columns: 280px minmax(0, 1fr);
   width: min(1040px, 100%);
   max-width: 100%;
-  height: min(760px, calc(100vh - 64px));
-  max-height: calc(100vh - 64px);
+  height: min(720px, calc(100dvh - 32px));
+  max-height: calc(100dvh - 32px);
   color: var(--text-primary);
   @include ui.panel-shell(
+    $radius: var(--radius-xl),
     $background: var(--surface),
-    $border: 1px solid color-mix(in srgb, var(--border) 80%, transparent),
-    $shadow: none
+    $shadow: var(--panel-shadow-strong)
   );
   overflow: hidden;
+  animation: u-rise 0.26s var(--ease-out);
+}
+
+:host-context(.settings-dialog-fullscreen) .settings-shell {
+  height: 100dvh;
+  max-height: 100dvh;
+  border: 0;
+  border-radius: 0;
 }
 
 .settings-content {
@@ -32,7 +39,7 @@
   flex-direction: column;
   min-width: 0;
   min-height: 0;
-  padding: 28px 24px 0 30px;
+  padding: 24px 20px 0 28px;
   background: var(--surface);
   overflow: hidden;
 }
@@ -62,9 +69,9 @@
 
   h2 {
     margin: 0;
-    font-size: 32px;
-    line-height: 1.05;
-    letter-spacing: -0.04em;
+    font-size: 26px;
+    line-height: 1.1;
+    letter-spacing: -0.03em;
   }
 
   p {
@@ -93,24 +100,8 @@
   width: 40px;
   height: 40px;
   border-radius: 14px;
-  background: color-mix(in srgb, var(--surface) 82%, var(--accent) 18%);
-  color: var(--accent);
   flex-shrink: 0;
-
-  &[data-status='available'] {
-    background: color-mix(in srgb, #22c55e 20%, var(--surface) 80%);
-    color: #15803d;
-  }
-
-  &[data-status='degraded'] {
-    background: color-mix(in srgb, #f59e0b 20%, var(--surface) 80%);
-    color: #b45309;
-  }
-
-  &[data-status='unavailable'] {
-    background: color-mix(in srgb, #ef4444 18%, var(--surface) 82%);
-    color: #b91c1c;
-  }
+  @include ui.status-tone($mix: 18%);
 }
 
 .provider-heading-glyph {
@@ -119,9 +110,10 @@
 
 .close-btn {
   @include ui.chrome-icon-button(
-    $size: 42px,
-    $radius: 999px,
-    $background: color-mix(in srgb, var(--surface) 92%, transparent)
+    $size: 38px,
+    $radius: var(--radius-sm),
+    $border: 1px solid transparent,
+    $background: transparent
   );
 
   padding: 0;
@@ -147,8 +139,8 @@
     grid-template-columns: 1fr;
     width: 100%;
     max-width: 100%;
-    height: min(760px, calc(100vh - 48px));
-    border-radius: 22px;
+    height: min(720px, calc(100dvh - 32px));
+    border-radius: var(--radius-lg);
   }
 
   app-settings-dialog-nav {
@@ -190,15 +182,9 @@
 }
 
 @include ui.down('phone') {
-  :host {
-    padding: 10px;
-  }
-
   .settings-shell {
     width: 100%;
     max-width: 100%;
-    height: calc(100vh - 20px);
-    border-radius: 18px;
   }
 
   .settings-content {

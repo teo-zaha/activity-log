@@ -1,7 +1,7 @@
 <div class="week-view">
   <!-- Navigation -->
   <div class="cal-nav">
-    <h2 class="cal-title">{{ formatWeekRange(days) }}</h2>
+    <h2 class="cal-title">{{ formatWeekRange(days()) }}</h2>
     <div class="nav-controls">
       <button class="nav-btn" (click)="activity.navigateWeek(-1)" aria-label="Previous week">
         <span class="material-icons" aria-hidden="true">chevron_left</span>
@@ -35,7 +35,7 @@
     <div class="cal-sticky-header">
       <div class="week-col-headers">
         <div class="time-gutter"></div>
-        @for (day of days; track day) {
+        @for (day of days(); track day) {
           <button
             type="button"
             class="day-col-hdr"
@@ -75,6 +75,10 @@
       }
     </div>
 
+    @if (isEmpty()) {
+      <div class="u-floating-hint" role="status"><span>No activity in this week</span></div>
+    }
+
     <div class="week-grid" [style.height.px]="gridHeight()">
       <!-- Hour lines -->
       @for (hour of hours; track hour) {
@@ -90,7 +94,7 @@
 
       <!-- Day columns -->
       <div class="week-body">
-        @for (day of days; track day) {
+        @for (day of days(); track day) {
           <div
             class="day-col"
             [class.is-today]="isToday(day)"

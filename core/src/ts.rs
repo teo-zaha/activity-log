@@ -1,44 +1,49 @@
-use ts_rs::TS;
+use ts_rs::{Config, TS};
 
 use crate::model::{
     ActivityEntry, ActivityLog, ActivityLogMeta, CollectRequest, CollectedActivitySummary,
     CollectingResponse, ErrorResponse, GitEntry, GitLabEntry, GitLabType, JiraEntry, JiraEntryType,
-    OutlookEntry, ProviderConfigFieldStateDto, ProviderConfigProviderStateDto,
-    ProviderConfigSaveRequestDto, ProviderConfigSaveResponseDto, ProviderConfigSaveValueDto,
-    ProviderConfigSnapshotDto, ProviderConfigValueTypeDto, ProviderInfo, ProviderStatus,
-    ProvidersResponse, RangePreset, Source, SupportedOs, SystemEntry, SystemEntryType,
+    LogEntry, LogLevel, LogsResponse, OutlookEntry, ProviderConfigFieldStateDto,
+    ProviderConfigProviderStateDto, ProviderConfigSaveRequestDto, ProviderConfigSaveResponseDto,
+    ProviderConfigSaveValueDto, ProviderConfigSnapshotDto, ProviderConfigValueTypeDto,
+    ProviderInfo, ProviderStatus, ProvidersResponse, RangePreset, Source, SupportedOs, SystemEntry,
+    SystemEntryType,
 };
 
 pub fn activity_typescript() -> String {
+    let cfg = Config::default();
     let declarations = [
-        export_decl::<Source>(),
-        export_decl::<SupportedOs>(),
-        export_decl::<ProviderStatus>(),
-        export_decl::<ProviderInfo>(),
-        export_decl::<ProvidersResponse>(),
-        export_decl::<ProviderConfigValueTypeDto>(),
-        export_decl::<ProviderConfigFieldStateDto>(),
-        export_decl::<ProviderConfigProviderStateDto>(),
-        export_decl::<ProviderConfigSnapshotDto>(),
-        export_decl::<ProviderConfigSaveValueDto>(),
-        export_decl::<ProviderConfigSaveRequestDto>(),
-        export_decl::<ProviderConfigSaveResponseDto>(),
-        export_decl::<RangePreset>(),
-        export_decl::<GitLabType>(),
-        export_decl::<JiraEntryType>(),
-        export_decl::<SystemEntryType>(),
-        export_decl::<GitLabEntry>(),
-        export_decl::<GitEntry>(),
-        export_decl::<JiraEntry>(),
-        export_decl::<OutlookEntry>(),
-        export_decl::<SystemEntry>(),
-        export_decl::<ActivityEntry>(),
-        export_decl::<ActivityLogMeta>(),
-        export_decl::<CollectedActivitySummary>(),
-        export_decl::<ActivityLog>(),
-        export_decl::<CollectRequest>(),
-        export_decl::<CollectingResponse>(),
-        export_decl::<ErrorResponse>(),
+        export_decl::<Source>(&cfg),
+        export_decl::<SupportedOs>(&cfg),
+        export_decl::<ProviderStatus>(&cfg),
+        export_decl::<ProviderInfo>(&cfg),
+        export_decl::<ProvidersResponse>(&cfg),
+        export_decl::<ProviderConfigValueTypeDto>(&cfg),
+        export_decl::<ProviderConfigFieldStateDto>(&cfg),
+        export_decl::<ProviderConfigProviderStateDto>(&cfg),
+        export_decl::<ProviderConfigSnapshotDto>(&cfg),
+        export_decl::<ProviderConfigSaveValueDto>(&cfg),
+        export_decl::<ProviderConfigSaveRequestDto>(&cfg),
+        export_decl::<ProviderConfigSaveResponseDto>(&cfg),
+        export_decl::<RangePreset>(&cfg),
+        export_decl::<GitLabType>(&cfg),
+        export_decl::<JiraEntryType>(&cfg),
+        export_decl::<SystemEntryType>(&cfg),
+        export_decl::<GitLabEntry>(&cfg),
+        export_decl::<GitEntry>(&cfg),
+        export_decl::<JiraEntry>(&cfg),
+        export_decl::<OutlookEntry>(&cfg),
+        export_decl::<SystemEntry>(&cfg),
+        export_decl::<ActivityEntry>(&cfg),
+        export_decl::<ActivityLogMeta>(&cfg),
+        export_decl::<CollectedActivitySummary>(&cfg),
+        export_decl::<ActivityLog>(&cfg),
+        export_decl::<CollectRequest>(&cfg),
+        export_decl::<CollectingResponse>(&cfg),
+        export_decl::<ErrorResponse>(&cfg),
+        export_decl::<LogLevel>(&cfg),
+        export_decl::<LogEntry>(&cfg),
+        export_decl::<LogsResponse>(&cfg),
     ];
 
     let mut output =
@@ -48,6 +53,6 @@ pub fn activity_typescript() -> String {
     output
 }
 
-fn export_decl<T: TS>() -> String {
-    format!("export {}", T::decl())
+fn export_decl<T: TS>(cfg: &Config) -> String {
+    format!("export {}", T::decl(cfg))
 }

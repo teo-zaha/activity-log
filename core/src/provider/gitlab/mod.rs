@@ -9,7 +9,7 @@ use crate::{
 };
 
 crate::provider! {
-    GitLabProvider(Source::Gitlab, &[SupportedOs::Windows, SupportedOs::Macos, SupportedOs::Linux], GitLabConfig) {
+    GitLabProvider(Source::Gitlab, &[SupportedOs::Windows, SupportedOs::Macos, SupportedOs::Linux], GitLabConfig, cache: crate::cache::CachePolicy::api()) {
         async fn startup_check(&self, _current_os, context) {
             let config = match context.config::<GitLabConfig>() {
                 Ok(c) => c,
@@ -18,7 +18,7 @@ crate::provider! {
                 }
             };
 
-            let client = match reqwest::Client::builder().build() {
+            let client = match crate::provider::http_client_builder().build() {
                 Ok(client) => client,
                 Err(_) => {
                     return ProviderCheckResult::unavailable("GitLab client setup failed");

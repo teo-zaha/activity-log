@@ -14,17 +14,33 @@ use gix::{
 };
 
 use crate::{
+    diagnostics,
     model::{CollectOptions, GitEntry},
+    platform::background_command,
     provider::git::{GitConfig, default_git_root},
 };
 
 #[cfg(test)]
 mod tests;
 
+// Directories that never hold a user's own repositories but are expensive to walk.
+const SKIPPED_DIR_NAMES: &[&str] = &["node_modules", "AppData", ".direnv"];
+
 pub async fn collect_git(options: &CollectOptions, config: &GitConfig) -> Result<Vec<GitEntry>> {
+    let options = options.clone();
+    let config = config.clone();
+    tokio::task::spawn_blocking(move || collect_git_blocking(&options, &config))
+        .await
+        .map_err(|err| anyhow!("Git collection task failed: {err}"))?
+}
+
+fn collect_git_blocking(options: &CollectOptions, config: &GitConfig) -> Result<Vec<GitEntry>> {
     let dirs = resolve_git_repos(config)?;
     let (start, end) = utc_bounds(options.since, options.until)?;
     let mut entries = Vec::new();
+    let mut without_email = Vec::new();
+    let mut via_cli = 0;
+    diagnostics::info("git", format!("Scanning {} repositories", dirs.len()));
 
     for repo_path in dirs {
         let repo_name = repo_path
@@ -32,18 +48,51 @@ pub async fn collect_git(options: &CollectOptions, config: &GitConfig) -> Result
             .and_then(|name| name.to_str())
             .unwrap_or_default()
             .to_string();
-        let Ok(repo) = open_repo_strict(&repo_path) else {
+        let repo = match open_repo_strict(&repo_path) {
+            Ok(repo) => repo,
+            Err(err) => {
+                diagnostics::warn(
+                    "git",
+                    format!("Skipped {}: cannot open: {err}", repo_path.display()),
+                );
+                continue;
+            }
+        };
+        let Some(author_email) = repo_user_email(&repo).or_else(|| {
+            let email = git_cli_user_email(&repo_path)?;
+            via_cli += 1;
+            Some(email)
+        }) else {
+            without_email.push(repo_name);
             continue;
         };
-        let Some(author_email) = repo_user_email(&repo) else {
-            continue;
-        };
-        let Ok(mut repo_entries) =
-            collect_repo_entries(&repo, &repo_name, &author_email, start, end)
-        else {
-            continue;
-        };
-        entries.append(&mut repo_entries);
+        match collect_repo_entries(&repo, &repo_name, &author_email, start, end) {
+            Ok(mut repo_entries) => entries.append(&mut repo_entries),
+            Err(err) => diagnostics::warn(
+                "git",
+                format!(
+                    "Skipped {}: reading history failed: {err}",
+                    repo_path.display()
+                ),
+            ),
+        }
+    }
+
+    if via_cli > 0 {
+        diagnostics::info(
+            "git",
+            format!("Read user.email from the git command for {via_cli} repositories"),
+        );
+    }
+    if !without_email.is_empty() {
+        diagnostics::warn(
+            "git",
+            format!(
+                "Skipped {} repositories without user.email (set it with `git config --global user.email`): {}",
+                without_email.len(),
+                without_email.join(", ")
+            ),
+        );
     }
 
     entries.sort_by(|a, b| {
@@ -73,6 +122,23 @@ pub(crate) fn open_repo_strict(path: &Path) -> Result<Repository> {
 pub(crate) fn repo_user_email(repo: &Repository) -> Option<String> {
     let value = repo.config_snapshot().string("user.email")?;
     let email = bstr_to_string(value.as_ref()).trim().to_string();
+    (!email.is_empty()).then_some(email)
+}
+
+/// Asks the git command when the config files gix reads have no user.email. Git for Windows
+/// can find a global config gix does not, for example under `HOMEDRIVE`/`HOMEPATH` on a network
+/// home or in the installation's system config.
+fn git_cli_user_email(repo_path: &Path) -> Option<String> {
+    let output = background_command("git")
+        .arg("-C")
+        .arg(repo_path)
+        .args(["config", "--get", "user.email"])
+        .output()
+        .ok()?;
+    if !output.status.success() {
+        return None;
+    }
+    let email = String::from_utf8_lossy(&output.stdout).trim().to_string();
     (!email.is_empty()).then_some(email)
 }
 
@@ -111,9 +177,14 @@ fn collect_repo_entries(
     let tips = reachable_ref_tips(repo)?;
     let mut entries = Vec::new();
 
+    // Commit time is never before author time in practice, so stopping at the
+    // range start skips the rest of history without dropping matches.
     let walk = repo
         .rev_walk(tips)
-        .sorting(Sorting::ByCommitTime(Default::default()))
+        .sorting(Sorting::ByCommitTimeCutoff {
+            order: Default::default(),
+            seconds: start.timestamp(),
+        })
         .all()?;
 
     for item in walk {
@@ -213,7 +284,7 @@ fn discover_repos(root: &Path, depth: usize, max_depth: usize) -> Vec<PathBuf> {
             Ok(metadata) => metadata,
             Err(_) => continue,
         };
-        if !metadata.is_dir() {
+        if !metadata.is_dir() || is_skipped_dir(&path) {
             continue;
         }
 
@@ -225,6 +296,12 @@ fn discover_repos(root: &Path, depth: usize, max_depth: usize) -> Vec<PathBuf> {
     }
 
     repos
+}
+
+fn is_skipped_dir(path: &Path) -> bool {
+    path.file_name()
+        .and_then(|name| name.to_str())
+        .is_some_and(|name| SKIPPED_DIR_NAMES.contains(&name))
 }
 
 fn utc_bounds(since: NaiveDate, until: NaiveDate) -> Result<(DateTime<Utc>, DateTime<Utc>)> {

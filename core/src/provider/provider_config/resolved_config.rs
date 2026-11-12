@@ -44,6 +44,30 @@ impl ProviderConfig {
             .collect()
     }
 
+    /// Stable hash of the non-secret values, used to keep caches of different accounts apart.
+    /// Passwords and tokens are left out so they never influence file names on disk.
+    pub fn fingerprint(&self, requirements: &[ProviderConfigKey]) -> u64 {
+        // FNV-1a: stable across Rust versions, unlike `DefaultHasher`.
+        let mut hash: u64 = 0xcbf2_9ce4_8422_2325;
+        for key in requirements
+            .iter()
+            .filter(|key| key.value_type != ProviderConfigValueType::Password)
+        {
+            let value = self.values.get(key.name).map(String::as_str).unwrap_or("");
+            for byte in key
+                .name
+                .bytes()
+                .chain(*b"=")
+                .chain(value.bytes())
+                .chain(*b"\n")
+            {
+                hash ^= u64::from(byte);
+                hash = hash.wrapping_mul(0x0000_0100_0000_01b3);
+            }
+        }
+        hash
+    }
+
     pub fn first_invalid_key<'a>(
         &self,
         requirements: &'a [ProviderConfigKey],

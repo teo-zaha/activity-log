@@ -1,4 +1,4 @@
-import { Injectable, inject } from '@angular/core'
+import { inject, Service } from '@angular/core'
 import type { ActivityLog } from '../generated/activity'
 import type { DayGroup } from '../models/day-group'
 import type { ExportedActivityLog } from '../models/exported-activity-log'
@@ -6,7 +6,7 @@ import type { EntryUiAdapter } from '../providers/types'
 import { ActivityBackendClient } from './backend/backend-client'
 import { extractBackendErrorMessage } from './backend/error-message'
 
-@Injectable({ providedIn: 'root' })
+@Service()
 export class ActivityExportService {
   private readonly backend = inject(ActivityBackendClient)
 

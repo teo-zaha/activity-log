@@ -1,0 +1,146 @@
+@use '../dashboard-shared' as ui;
+
+// Overlay layer inside `.main-content`; takes no space in the layout.
+:host {
+  position: absolute;
+  inset: 0;
+  z-index: 20;
+  pointer-events: none;
+}
+
+// ── Collecting (the window-level top loader draws the progress line) ─────────
+
+.sync-pill {
+  position: absolute;
+  bottom: 16px;
+  left: 50%;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  max-width: calc(100% - 32px);
+  padding: 6px 6px 6px 12px;
+  border: 1px solid var(--hairline);
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--text-primary);
+  box-shadow: var(--panel-shadow-strong);
+  font-size: 12.5px;
+  font-weight: 600;
+  transform: translateX(-50%);
+  animation: pill-in 0.22s var(--ease-out);
+}
+
+@keyframes pill-in {
+  from {
+    opacity: 0;
+    transform: translate(-50%, 6px);
+  }
+}
+
+.sync-icon {
+  font-size: 16px;
+  color: var(--accent);
+}
+
+.sync-title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sync-elapsed {
+  flex-shrink: 0;
+  min-width: 34px;
+  padding: 3px 7px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+  color: var(--accent);
+  font-size: 11.5px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  text-align: center;
+}
+
+// ── Timed out / failed ───────────────────────────────────────────────────────
+
+.toast {
+  position: absolute;
+  bottom: 16px;
+  left: 50%;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: min(640px, calc(100% - 32px));
+  padding: 10px 10px 10px 14px;
+  border-radius: var(--radius-md);
+  border: 1px solid color-mix(in srgb, currentColor 22%, transparent);
+  box-shadow: var(--panel-shadow-strong);
+  pointer-events: auto;
+  transform: translateX(-50%);
+  animation: pill-in 0.22s var(--ease-out);
+  // Opaque tint so the timeline underneath does not show through.
+  @include ui.status-tone($mix: 10%);
+}
+
+.toast-icon {
+  font-size: 20px;
+}
+
+.toast-copy {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  flex: 1;
+  min-width: 0;
+}
+
+.toast-title {
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.toast-message {
+  color: var(--text-secondary);
+  font-size: 13px;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+
+.toast-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+
+  .u-btn {
+    height: 32px;
+  }
+
+  .u-btn-icon {
+    width: 32px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sync-pill,
+  .toast {
+    animation: none;
+  }
+}
+
+@include ui.down('phone') {
+  .sync-pill,
+  .toast {
+    bottom: 12px;
+  }
+
+  .toast {
+    flex-wrap: wrap;
+    width: calc(100% - 24px);
+  }
+
+  .toast-actions {
+    width: 100%;
+    padding-left: 32px;
+  }
+}

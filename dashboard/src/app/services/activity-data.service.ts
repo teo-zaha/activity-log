@@ -1,4 +1,4 @@
-import { Injectable, InjectionToken, computed, inject, signal } from '@angular/core'
+import { InjectionToken, Service, computed, inject, signal } from '@angular/core'
 import type {
   ActivityEntry,
   ActivityLog,
@@ -8,11 +8,11 @@ import type {
   Source,
 } from '../generated/activity'
 import { createEntryAdapter, getProviderAdapter } from '../providers/provider-adapter'
-import type { ActivityResponse } from './backend/backend-client'
+import type { ActivityResponse } from './backend/backend-contract'
 import { ActivityBackendClient } from './backend/backend-client'
 import { extractBackendErrorMessage } from './backend/error-message'
 import { ActivityViewStateService } from './activity-view-state.service'
-import type { ProviderViewModel } from './types'
+import type { CollectionOperation, CollectionStatus, ProviderViewModel } from './types'
 
 export const ACTIVITY_POLL_ATTEMPTS = new InjectionToken<number>('ACTIVITY_POLL_ATTEMPTS', {
   providedIn: 'root',
@@ -24,7 +24,7 @@ export const ACTIVITY_POLL_DELAY_MS = new InjectionToken<number>('ACTIVITY_POLL_
   factory: (): number => 1000,
 })
 
-@Injectable({ providedIn: 'root' })
+@Service()
 export class ActivityDataService {
   private readonly backend = inject(ActivityBackendClient)
   private readonly viewState = inject(ActivityViewStateService)
@@ -38,6 +38,7 @@ export class ActivityDataService {
   readonly meta = signal<ActivityLog['meta'] | null>(null)
   readonly isLoading = signal(false)
   readonly error = signal<string | null>(null)
+  readonly collectionStatus = signal<CollectionStatus>({ kind: 'idle' })
 
   readonly sourceCounts = computed<Map<Source, number>>(() => {
     const summary = this.summary()
@@ -51,21 +52,22 @@ export class ActivityDataService {
     ])
   })
 
-  readonly providers = computed<ProviderViewModel[]>(() =>
-    this.providerInfo()
-      .filter(info => info.usable)
-      .map(info => {
-        const adapter = getProviderAdapter(info.id)
-        return {
-          info,
-          label: adapter.label,
-          icon: adapter.providerIcon,
-          chipKey: info.id,
-          tooltip: adapter.getStatusTooltip(info),
-          count: this.sourceCounts().get(info.id) ?? 0,
-        }
-      })
+  private readonly providerViewModels = computed<ProviderViewModel[]>(() =>
+    this.providerInfo().map(info => {
+      const adapter = getProviderAdapter(info.id)
+      return {
+        info,
+        label: adapter.label,
+        icon: adapter.providerIcon,
+        chipKey: info.id,
+        tooltip: adapter.getStatusTooltip(info),
+        count: this.sourceCounts().get(info.id) ?? 0,
+      }
+    })
   )
+
+  readonly providers = computed(() => this.providerViewModels().filter(p => p.info.usable))
+  readonly unusableProviders = computed(() => this.providerViewModels().filter(p => !p.info.usable))
 
   loadLog(log: ActivityLog): void {
     this.allEntries.set(log.entries)
@@ -77,8 +79,7 @@ export class ActivityDataService {
   }
 
   async initLoad(): Promise<void> {
-    this.isLoading.set(true)
-    this.error.set(null)
+    this.begin('initial')
     try {
       await this.loadProviders()
       const log = await this.waitForActivity()
@@ -86,23 +87,22 @@ export class ActivityDataService {
         this.loadLog(log)
         return
       }
-      this.error.set('Timed out waiting for initial collection.')
+      this.fail('initial', 'timedOut', 'Timed out waiting for initial collection.')
     } catch (error) {
-      this.error.set(`Failed to load: ${extractBackendErrorMessage(error)}`)
+      this.fail('initial', 'failed', extractBackendErrorMessage(error))
     } finally {
-      this.isLoading.set(false)
+      this.finish()
     }
   }
 
   async collect(since: string, until: string): Promise<void> {
-    this.isLoading.set(true)
-    this.error.set(null)
+    this.begin('collect')
     try {
       const response = await this.backend.collect({ since, until })
       if (this.isCollectingResponse(response)) {
         const log = await this.waitForActivity()
         if (!log) {
-          this.error.set('Timed out waiting for collection.')
+          this.fail('collect', 'timedOut', 'Timed out waiting for collection.')
           return
         }
         this.loadLog(log)
@@ -111,9 +111,34 @@ export class ActivityDataService {
 
       this.loadLog(response)
     } catch (error) {
-      this.error.set(`Collection failed: ${extractBackendErrorMessage(error)}`)
+      this.fail('collect', 'failed', extractBackendErrorMessage(error))
     } finally {
-      this.isLoading.set(false)
+      this.finish()
+    }
+  }
+
+  dismissCollectionStatus(): void {
+    const status = this.collectionStatus()
+    if (status.kind !== 'timedOut' && status.kind !== 'failed') return
+    this.collectionStatus.set({ kind: 'idle' })
+    if (this.error() === status.message) this.error.set(null)
+  }
+
+  private begin(operation: CollectionOperation): void {
+    this.isLoading.set(true)
+    this.error.set(null)
+    this.collectionStatus.set({ kind: 'collecting', operation, startedAt: Date.now() })
+  }
+
+  private fail(operation: CollectionOperation, kind: 'timedOut' | 'failed', message: string): void {
+    this.error.set(message)
+    this.collectionStatus.set({ kind, operation, message })
+  }
+
+  private finish(): void {
+    this.isLoading.set(false)
+    if (this.collectionStatus().kind === 'collecting') {
+      this.collectionStatus.set({ kind: 'idle' })
     }
   }
 

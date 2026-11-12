@@ -1,4 +1,13 @@
-import { signal, type WritableSignal } from '@angular/core'
+import { linkedSignal, type WritableSignal } from '@angular/core'
+
+function persisted<T>(key: string, initial: T, serialize: (value: T) => string): WritableSignal<T> {
+  return linkedSignal(() => initial, {
+    set: (value, rawSet) => {
+      rawSet(value)
+      localStorage.setItem(key, serialize(value))
+    },
+  })
+}
 
 export function persistedSignal<T extends string>(
   key: string,
@@ -7,47 +16,11 @@ export function persistedSignal<T extends string>(
 ): WritableSignal<T> {
   const stored = localStorage.getItem(key)
   const initial = stored !== null ? (parse(stored) ?? defaultValue) : defaultValue
-
-  const s = signal<T>(initial)
-  const originalSet = s.set.bind(s)
-  const originalUpdate = s.update.bind(s)
-
-  s.set = (value: T): void => {
-    originalSet(value)
-    localStorage.setItem(key, value)
-  }
-
-  s.update = (fn: (value: T) => T): void => {
-    originalUpdate((v: T): T => {
-      const next = fn(v)
-      localStorage.setItem(key, next)
-      return next
-    })
-  }
-
-  return s
+  return persisted(key, initial, value => value)
 }
 
 export function persistedBooleanSignal(key: string, defaultValue = false): WritableSignal<boolean> {
   const stored = localStorage.getItem(key)
   const initial = stored !== null ? stored === 'true' : defaultValue
-
-  const s = signal(initial)
-  const originalSet = s.set.bind(s)
-  const originalUpdate = s.update.bind(s)
-
-  s.set = (value: boolean): void => {
-    originalSet(value)
-    localStorage.setItem(key, String(value))
-  }
-
-  s.update = (fn: (value: boolean) => boolean): void => {
-    originalUpdate((v: boolean): boolean => {
-      const next = fn(v)
-      localStorage.setItem(key, String(next))
-      return next
-    })
-  }
-
-  return s
+  return persisted(key, initial, String)
 }

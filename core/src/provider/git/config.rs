@@ -30,7 +30,7 @@ impl ProviderConfigResolve for GitConfig {
         let dirs = config.get(GIT_DIRS).and_then(|value| {
             let paths: Vec<PathBuf> = value
                 .split(',')
-                .map(str::trim)
+                .map(|v| v.trim().trim_matches('"').trim())
                 .filter(|v| !v.is_empty())
                 .map(PathBuf::from)
                 .collect();

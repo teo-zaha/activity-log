@@ -44,6 +44,9 @@ end jsonTextValue
 set startDate to my parseIsoDate("{start}")
 set endDate to my parseIsoDate("{end}")
 
+-- Never launch Outlook just to read the calendar; collect only from a running instance.
+if application id "com.microsoft.Outlook" is not running then error "Outlook is not running. Open Outlook to include its calendar."
+
 tell application "Microsoft Outlook"
   if (count of exchange accounts) is 0 then error "Outlook not signed in"
   if not (exists default calendar) then error "Outlook default calendar unavailable"

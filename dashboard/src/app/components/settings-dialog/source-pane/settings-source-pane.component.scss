@@ -1,0 +1,335 @@
+@use '../../dashboard-shared' as ui;
+
+:host {
+  display: block;
+}
+
+.source-detail {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  min-width: 0;
+  padding-bottom: 28px;
+}
+
+// ── Health callout ───────────────────────────────────────────────────────────
+
+.health {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: start;
+  gap: 16px;
+  padding: 20px;
+  border: 1px solid color-mix(in srgb, currentColor 24%, var(--border));
+  border-radius: var(--radius-lg);
+  @include ui.status-tone($mix: 7%);
+}
+
+.health-icon {
+  display: grid;
+  place-items: center;
+  width: 40px;
+  height: 40px;
+  border-radius: var(--radius-md);
+  background: color-mix(in srgb, currentColor 14%, transparent);
+
+  .material-icons {
+    font-size: 22px;
+  }
+}
+
+.health-copy {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.health-title,
+.config-title {
+  margin: 0;
+  color: var(--text-primary);
+  font-size: 17px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+}
+
+.health-reason {
+  margin: 2px 0 0;
+  color: var(--text-primary);
+  font-size: 14px;
+  line-height: 1.55;
+  overflow-wrap: anywhere;
+}
+
+.health-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+  margin-top: 8px;
+  color: var(--text-tertiary);
+  font-size: 12.5px;
+}
+
+.health-os {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.os-pill,
+.tag {
+  display: inline-flex;
+  align-items: center;
+  min-height: 20px;
+  padding: 0 8px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--text-tertiary) 12%, transparent);
+  color: var(--text-secondary);
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.tag {
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  font-size: 10px;
+  @include ui.status-tone($mix: 16%);
+}
+
+// ── Configuration ────────────────────────────────────────────────────────────
+
+.config {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding: 20px;
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius-lg);
+  background: var(--surface);
+}
+
+.config-head {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.config-note {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  margin: 0;
+  padding: 12px 14px;
+  border-radius: var(--radius-md);
+  background: var(--surface-alt);
+  color: var(--text-secondary);
+  font-size: 13.5px;
+  line-height: 1.5;
+
+  .material-icons {
+    font-size: 18px;
+    color: var(--text-tertiary);
+  }
+}
+
+.config-loading {
+  display: grid;
+  gap: 8px;
+}
+
+.config-loading-label {
+  width: 120px;
+  height: 12px;
+  margin-top: 8px;
+}
+
+.config-loading-field {
+  height: 44px;
+  border-radius: var(--radius-sm);
+}
+
+.config-fields {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+
+  &:disabled {
+    opacity: 0.7;
+  }
+}
+
+.config-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.config-field-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+
+  label {
+    color: var(--text-primary);
+    font-size: 13px;
+    font-weight: 600;
+  }
+}
+
+.config-badges {
+  display: inline-flex;
+  gap: 6px;
+}
+
+.config-control-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.config-control {
+  flex: 1;
+  min-width: 0;
+  --mat-form-field-outlined-outline-color: var(--border);
+  --mat-form-field-outlined-hover-outline-color: var(--border-strong);
+  --mat-form-field-outlined-focus-outline-color: var(--accent);
+  --mat-form-field-outlined-container-shape: var(--radius-sm);
+  --mat-form-field-container-height: 44px;
+  --mat-form-field-container-vertical-padding: 10px;
+}
+
+.has-error .config-control {
+  --mat-form-field-outlined-outline-color: var(--status-error-fg);
+  --mat-form-field-outlined-hover-outline-color: var(--status-error-fg);
+  --mat-form-field-outlined-focus-outline-color: var(--status-error-fg);
+}
+
+.field-error {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0;
+  color: var(--status-error-fg);
+  font-size: 12.5px;
+
+  .material-icons {
+    font-size: 15px;
+  }
+}
+
+// ── Actions & feedback ───────────────────────────────────────────────────────
+
+.config-actions {
+  position: sticky;
+  bottom: 0;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 12px;
+  margin: 20px -20px -20px;
+  padding: 14px 20px;
+  border-top: 1px solid var(--hairline);
+  border-radius: 0 0 var(--radius-lg) var(--radius-lg);
+  background: color-mix(in srgb, var(--surface) 94%, transparent);
+  backdrop-filter: blur(8px);
+}
+
+.config-feedback {
+  flex: 1;
+  min-width: 0;
+}
+
+.feedback {
+  display: inline-flex;
+  align-items: flex-start;
+  gap: 8px;
+  max-width: 100%;
+  padding: 7px 10px;
+  border-radius: var(--radius-sm);
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 1.4;
+  @include ui.status-tone($mix: 10%);
+
+  .material-icons {
+    font-size: 17px;
+  }
+}
+
+.feedback-text {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.feedback-block {
+  display: flex;
+  align-items: center;
+
+  .feedback-text {
+    flex: 1;
+  }
+}
+
+.feedback-muted {
+  color: var(--text-tertiary);
+  font-size: 13px;
+}
+
+.save-config-btn {
+  flex-shrink: 0;
+  min-width: 128px;
+}
+
+// ── Responsive ───────────────────────────────────────────────────────────────
+
+@include ui.down('tablet') {
+  .source-detail {
+    gap: 14px;
+    padding-bottom: 16px;
+  }
+
+  .health,
+  .config {
+    padding: 16px;
+  }
+
+  .health {
+    grid-template-columns: auto minmax(0, 1fr);
+  }
+
+  .health-pill {
+    display: none;
+  }
+
+  .config-actions {
+    margin: 16px -16px -16px;
+    padding: 12px 16px;
+  }
+}
+
+@include ui.down('phone') {
+  .health {
+    gap: 12px;
+  }
+
+  .health-icon {
+    width: 34px;
+    height: 34px;
+  }
+
+  .config-actions {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .save-config-btn {
+    width: 100%;
+  }
+}

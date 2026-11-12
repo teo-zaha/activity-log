@@ -1,58 +1,95 @@
 <app-search-bar
   placeholder="Search commits, MRs, tickets, meetings…"
-  [(value)]="searchValue"
-  (valueChange)="onSearch($event)"
+  [(value)]="activity.searchQuery"
 />
 
 <div class="timeline-wrap">
   @if (activity.isLoading() && activity.groupedByDay().length === 0) {
-    <div class="empty-state">
-      <span class="material-icons empty-icon" aria-hidden="true">hourglass_top</span>
-      <p class="empty-title">Collecting activity…</p>
-      <p class="empty-sub">This may take a few seconds</p>
-    </div>
-  } @else if (activity.groupedByDay().length === 0) {
-    <div class="empty-state">
-      <span class="material-icons empty-icon" aria-hidden="true">inbox</span>
-      <p class="empty-title">No events found</p>
-      <p class="empty-sub">Try adjusting the filters or date range</p>
-    </div>
-  } @else {
-    <div class="timeline">
-      @for (group of activity.groupedByDay(); track group.date) {
-        <div class="day-group">
-          <div class="day-header">
-            <span class="day-label">{{ formatDate(group.date) }}</span>
-            <span class="day-count">{{ group.entries.length }}</span>
-          </div>
-          <div class="entries">
-            @for (entry of group.entries; track entry.timestamp + entry.title) {
-              <button
-                type="button"
-                class="entry"
-                (click)="selectEntry(entry)"
-                [attr.aria-label]="entryAriaLabel(entry)"
-              >
-                <div class="entry-accent" [class]="'accent-' + entry.styleKey"></div>
-                <span class="badge" [class]="entry.badge.badgeClass">
-                  <app-provider-icon
-                    class="badge-icon"
-                    [source]="entry.badge.source"
-                    [fallbackIcon]="entry.badge.icon"
-                  ></app-provider-icon>
-                  <span class="badge-label">{{ entry.badge.label }}</span>
+    <div class="skeleton" aria-hidden="true">
+      @for (group of skeletonGroups; track group) {
+        <div class="skeleton-group">
+          <span class="u-skeleton skeleton-day"></span>
+          <div class="skeleton-card">
+            @for (row of group; track row) {
+              <div class="skeleton-row">
+                <span class="u-skeleton skeleton-time"></span>
+                <span class="u-skeleton skeleton-dot"></span>
+                <span class="skeleton-lines">
+                  <span class="u-skeleton" [style.width.%]="row"></span>
+                  <span class="u-skeleton skeleton-meta"></span>
                 </span>
-                <div class="entry-body">
-                  <div class="entry-title">{{ entry.title }}</div>
-                  @if (entry.meta) {
-                    <div class="entry-meta">{{ entry.meta }}</div>
-                  }
-                </div>
-                <span class="entry-time">{{ formatTime(entry.timestamp) }}</span>
-              </button>
+              </div>
             }
           </div>
         </div>
+      }
+    </div>
+  } @else if (activity.groupedByDay().length === 0) {
+    <div class="empty-state">
+      <span class="empty-icon" aria-hidden="true">
+        <span class="material-icons">{{ emptyState().icon }}</span>
+      </span>
+      <p class="empty-title">{{ emptyState().title }}</p>
+      <p class="empty-sub">{{ emptyState().message }}</p>
+      @if (emptyState().action === 'clear-search') {
+        <button type="button" class="u-btn" (click)="activity.searchQuery.set('')">
+          Clear search
+        </button>
+      }
+    </div>
+  } @else {
+    <p class="timeline-summary" aria-live="polite">{{ summary() }}</p>
+    <div class="timeline">
+      @for (group of activity.groupedByDay(); track group.date) {
+        <section class="day-group" [attr.aria-label]="formatDate(group.date)">
+          <header class="day-header">
+            <h3 class="day-label">
+              @if (relativeDay(group.date); as relative) {
+                <span class="day-relative">{{ relative }}</span>
+              }
+              {{ formatDate(group.date) }}
+            </h3>
+            <span class="day-count">
+              {{ group.entries.length }} {{ group.entries.length === 1 ? 'event' : 'events' }}
+            </span>
+          </header>
+          <ol class="entries">
+            @for (entry of group.entries; track entry.timestamp + entry.title) {
+              <li>
+                <button
+                  type="button"
+                  class="entry"
+                  (click)="selectEntry(entry)"
+                  [attr.aria-label]="entryAriaLabel(entry)"
+                >
+                  <time class="entry-time" [attr.datetime]="entry.timestamp">{{
+                    formatTime(entry.timestamp)
+                  }}</time>
+                  <span class="entry-rail" aria-hidden="true">
+                    <span class="entry-dot" [class]="'accent-' + entry.styleKey"></span>
+                  </span>
+                  <span class="entry-body">
+                    <span class="entry-title">{{ entry.title }}</span>
+                    <span class="entry-meta">
+                      <span class="badge" [class]="entry.badge.badgeClass">
+                        <app-provider-icon
+                          class="badge-icon"
+                          [source]="entry.badge.source"
+                          [fallbackIcon]="entry.badge.icon"
+                        />
+                        <span class="badge-label">{{ entry.badge.label }}</span>
+                      </span>
+                      @if (entry.meta) {
+                        <span class="entry-meta-text">{{ entry.meta }}</span>
+                      }
+                    </span>
+                  </span>
+                  <span class="material-icons entry-chevron" aria-hidden="true">chevron_right</span>
+                </button>
+              </li>
+            }
+          </ol>
+        </section>
       }
     </div>
   }

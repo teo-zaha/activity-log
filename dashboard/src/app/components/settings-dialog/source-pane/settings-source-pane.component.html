@@ -1,0 +1,171 @@
+<div class="source-detail">
+  <section
+    class="health"
+    [attr.data-status]="provider().info.status"
+    aria-labelledby="source-health-title"
+  >
+    <span class="health-icon" aria-hidden="true">
+      <span class="material-icons">{{ health().icon }}</span>
+    </span>
+    <div class="health-copy">
+      <span class="u-kicker">Startup check</span>
+      <h3 id="source-health-title" class="health-title">{{ health().title }}</h3>
+      <p class="health-reason">
+        {{
+          provider().info.reason ?? 'No issues were reported during the latest provider inspection.'
+        }}
+      </p>
+      <div class="health-meta">
+        <span>Checked {{ checkedAtLabel() }}</span>
+        <span class="health-os" role="list" aria-label="Supported operating systems">
+          @for (os of provider().info.supportedOs; track os) {
+            <span class="os-pill" role="listitem">{{ supportedOsLabel(os) }}</span>
+          }
+        </span>
+      </div>
+    </div>
+    <app-status-pill class="health-pill" [status]="provider().info.status" />
+  </section>
+
+  <section class="config" aria-labelledby="source-config-title">
+    <div class="config-head">
+      <span class="u-kicker">Configuration</span>
+      <h3 id="source-config-title" class="config-title">Connection settings</h3>
+    </div>
+
+    @if (!isDesktop) {
+      <p class="config-note">
+        <span class="material-icons" aria-hidden="true">desktop_windows</span>
+        Authentication and provider-specific connection settings are editable only in the desktop
+        app.
+      </p>
+    } @else if (loadingConfig()) {
+      <div class="config-loading" role="status" aria-label="Loading provider settings">
+        @for (row of [1, 2]; track row) {
+          <span class="u-skeleton config-loading-label"></span>
+          <span class="u-skeleton config-loading-field"></span>
+        }
+      </div>
+    } @else if (configFields().length === 0 && configError()) {
+      <div class="feedback feedback-block" data-tone="error" role="alert">
+        <span class="material-icons" aria-hidden="true">error_outline</span>
+        <span class="feedback-text">{{ configError() }}</span>
+        <button type="button" class="u-btn" (click)="reload()">Retry</button>
+      </div>
+    } @else if (configFields().length === 0) {
+      <p class="config-note">
+        <span class="material-icons" aria-hidden="true">check</span>
+        This provider does not expose configurable keys.
+      </p>
+    } @else {
+      <form class="config-form" [formRoot]="draftForm" [attr.aria-busy]="savingConfig()">
+        <fieldset class="config-fields" [disabled]="savingConfig()">
+          <legend class="u-sr-only">Provider configuration fields</legend>
+          @for (field of configFields(); track field.key) {
+            <div class="config-field" [class.has-error]="fieldError(field.key)">
+              <div class="config-field-head">
+                <label [attr.for]="fieldId(field)">{{ field.label }}</label>
+                <span class="config-badges">
+                  @if (field.required) {
+                    <span class="tag">Required</span>
+                  }
+                  @if (field.secret) {
+                    <span class="tag" [attr.data-tone]="isSecretFieldSet(field) ? 'ok' : null">
+                      {{ isSecretFieldSet(field) ? 'Set' : 'Not set' }}
+                    </span>
+                  }
+                </span>
+              </div>
+
+              <div class="config-control-row">
+                @if (field.valueType === 'bool') {
+                  <mat-form-field
+                    appearance="outline"
+                    subscriptSizing="dynamic"
+                    class="config-control"
+                  >
+                    <mat-select
+                      [id]="fieldId(field)"
+                      [formField]="draftForm[field.key]"
+                      [aria-describedby]="fieldError(field.key) ? fieldId(field) + '-error' : ''"
+                    >
+                      <mat-option value="">Unset</mat-option>
+                      <mat-option value="true">True</mat-option>
+                      <mat-option value="false">False</mat-option>
+                    </mat-select>
+                  </mat-form-field>
+                } @else {
+                  <mat-form-field
+                    appearance="outline"
+                    subscriptSizing="dynamic"
+                    class="config-control"
+                  >
+                    <input
+                      matInput
+                      [id]="fieldId(field)"
+                      [type]="inputTypeFor(field)"
+                      [placeholder]="field.valueType === 'password' ? 'Enter new secret' : ''"
+                      [formField]="draftForm[field.key]"
+                      [attr.aria-invalid]="fieldError(field.key) ? true : null"
+                      [attr.aria-describedby]="
+                        fieldError(field.key) ? fieldId(field) + '-error' : null
+                      "
+                      autocomplete="off"
+                    />
+                  </mat-form-field>
+                }
+
+                @if (field.secret && canClearField(field)) {
+                  <button type="button" class="u-btn u-btn-ghost" (click)="clearField(field)">
+                    Clear
+                  </button>
+                }
+              </div>
+
+              @if (fieldError(field.key); as error) {
+                <p class="field-error" [id]="fieldId(field) + '-error'">
+                  <span class="material-icons" aria-hidden="true">error</span>
+                  {{ error }}
+                </p>
+              }
+            </div>
+          }
+        </fieldset>
+
+        <div class="config-actions">
+          <div class="config-feedback" aria-live="polite">
+            @if (savingConfig()) {
+              <span class="feedback" data-tone="info">
+                <span class="material-icons u-spin" aria-hidden="true">autorenew</span>
+                Saving and re-checking {{ provider().label }}…
+              </span>
+            } @else if (configError()) {
+              <span class="feedback" data-tone="error" role="alert">
+                <span class="material-icons" aria-hidden="true">error_outline</span>
+                <span class="feedback-text">{{ configError() }}</span>
+              </span>
+            } @else if (configMessage()) {
+              <span class="feedback" data-tone="ok">
+                <span class="material-icons" aria-hidden="true">check_circle</span>
+                {{ configMessage() }}
+              </span>
+            } @else if (pendingRequest()) {
+              <span class="feedback-muted">Unsaved changes</span>
+            }
+          </div>
+          <button
+            type="submit"
+            class="u-btn u-btn-primary save-config-btn"
+            [class.is-busy]="savingConfig()"
+            [disabled]="!canSave()"
+          >
+            @if (savingConfig()) {
+              <span class="material-icons u-spin" aria-hidden="true">autorenew</span>
+            }
+            {{ savingConfig() ? 'Saving…' : 'Save settings' }}
+          </button>
+        </div>
+      </form>
+    }
+  </section>
+</div>

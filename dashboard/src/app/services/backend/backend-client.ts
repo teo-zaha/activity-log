@@ -1,48 +1,53 @@
-import { inject, makeEnvironmentProviders, type EnvironmentProviders } from '@angular/core'
+import { Service, inject, type ResourceRef } from '@angular/core'
 import type {
-  ActivityLog,
   CollectRequest,
-  CollectingResponse,
   ProviderConfigSaveRequestDto,
   ProviderConfigSaveResponseDto,
   ProviderConfigSnapshotDto,
   ProvidersResponse,
 } from '../../generated/activity'
+import { type ActivityResponse, BackendOperations, type ReadOperation } from './backend-contract'
+import { BackendTransport } from './backend-transport'
 import type { ExportRequest } from './export-request'
-import { HttpBackendClient } from './http-backend-client.service'
-import { RuntimeEnvironmentService } from './runtime-environment.service'
-import { TauriBackendClient } from './tauri-backend-client.service'
 
-export type ActivityResponse = ActivityLog | CollectingResponse
+/** Every backend operation, defined once over whichever transport the runtime picked. */
+@Service()
+export class ActivityBackendClient {
+  private readonly transport = inject(BackendTransport)
 
-export class DesktopOnlyBackendError extends Error {
-  constructor(operation: string) {
-    super(`${operation} is only available in desktop mode.`)
-    this.name = 'DesktopOnlyBackendError'
+  /** A read from `BackendOperations` as a signal resource. */
+  readResource<Res>(read: ReadOperation<Res>): ResourceRef<Res | undefined> {
+    return this.transport.resource(read)
   }
-}
 
-export abstract class ActivityBackendClient {
-  abstract getActivity(): Promise<ActivityResponse>
-  abstract getProviders(): Promise<ProvidersResponse>
-  abstract collect(request: CollectRequest): Promise<ActivityResponse>
-  abstract getProviderConfig(): Promise<ProviderConfigSnapshotDto>
-  abstract saveProviderConfig(
+  getActivity(): Promise<ActivityResponse> {
+    return this.transport.call(BackendOperations.activity, undefined)
+  }
+
+  getProviders(): Promise<ProvidersResponse> {
+    return this.transport.call(BackendOperations.providers, undefined)
+  }
+
+  collect(request: CollectRequest): Promise<ActivityResponse> {
+    return this.transport.call(BackendOperations.collect, request)
+  }
+
+  getProviderConfig(): Promise<ProviderConfigSnapshotDto> {
+    return this.transport.call(BackendOperations.providerConfig, undefined)
+  }
+
+  saveProviderConfig(
     request: ProviderConfigSaveRequestDto
-  ): Promise<ProviderConfigSaveResponseDto>
-  abstract export(request: ExportRequest): Promise<void>
-}
+  ): Promise<ProviderConfigSaveResponseDto> {
+    return this.transport.call(BackendOperations.saveProviderConfig, request)
+  }
 
-export function provideActivityBackendClient(): EnvironmentProviders {
-  return makeEnvironmentProviders([
-    HttpBackendClient,
-    TauriBackendClient,
-    {
-      provide: ActivityBackendClient,
-      useFactory: (): ActivityBackendClient => {
-        const environment = inject(RuntimeEnvironmentService)
-        return environment.isTauri() ? inject(TauriBackendClient) : inject(HttpBackendClient)
-      },
-    },
-  ])
+  export(request: ExportRequest): Promise<void> {
+    return this.transport.saveExport(request)
+  }
+
+  /** Awaited so it resolves `undefined`: an empty response arrives as `null` on both transports. */
+  async clearLogs(): Promise<void> {
+    await this.transport.call(BackendOperations.clearLogs, undefined)
+  }
 }

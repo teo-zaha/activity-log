@@ -4,58 +4,79 @@
     (mousedown)="startWindowDrag($event)"
     (dblclick)="toggleWindowMaximize($event)"
   ></div>
-  <div class="header-inner">
+  <div
+    class="header-inner"
+    (mousedown)="startHeaderDrag($event)"
+    (dblclick)="toggleHeaderMaximize($event)"
+  >
     <div class="brand">
-      <span class="brand-icon material-icons" aria-hidden="true">timeline</span>
-      <span class="brand-title">Activity Log</span>
+      <span class="brand-mark" aria-hidden="true">
+        <span class="material-icons">timeline</span>
+      </span>
+      <span class="brand-copy">
+        <span class="brand-title">Activity Log</span>
+        @if (rangeLabel(); as rangeLabel) {
+          <span class="brand-sub">{{ rangeLabel }}</span>
+        }
+      </span>
     </div>
 
-    <div class="controls">
-      <div class="ctrl-input-wrap">
-        <span class="ctrl-label">From</span>
-        <input
-          class="ctrl-input"
-          [matDatepicker]="pickerFrom"
-          placeholder=""
-          [ngModel]="dateFromObj()"
-          [max]="dateToObj()"
-          (dateChange)="activity.dateFrom.set(fmtDate($event.value))"
-        />
-        <mat-datepicker-toggle [for]="pickerFrom"></mat-datepicker-toggle>
-        <mat-datepicker #pickerFrom></mat-datepicker>
-      </div>
+    <form class="range-form" [formRoot]="rangeForm" aria-label="Collection date range">
+      <div class="range" [class.is-disabled]="activity.isLoading()">
+        <label class="range-field">
+          <span class="range-label">From</span>
+          <input
+            class="range-input"
+            aria-label="From date"
+            [matDatepicker]="pickerFrom"
+            [formField]="rangeForm.from"
+            [max]="dateToObj()"
+            (dateChange)="activity.dateFrom.set(fmtDate($event.value))"
+          />
+          <mat-datepicker-toggle class="range-toggle" [for]="pickerFrom" />
+          <mat-datepicker #pickerFrom />
+        </label>
 
-      <div class="ctrl-input-wrap">
-        <span class="ctrl-label">To</span>
-        <input
-          class="ctrl-input"
-          [matDatepicker]="pickerTo"
-          placeholder=""
-          [ngModel]="dateToObj()"
-          [min]="dateFromObj()"
-          (dateChange)="activity.dateTo.set(fmtDate($event.value))"
-        />
-        <mat-datepicker-toggle [for]="pickerTo"></mat-datepicker-toggle>
-        <mat-datepicker #pickerTo></mat-datepicker>
+        <span class="range-sep material-icons" aria-hidden="true">arrow_forward</span>
+
+        <label class="range-field">
+          <span class="range-label">To</span>
+          <input
+            class="range-input"
+            aria-label="To date"
+            [matDatepicker]="pickerTo"
+            [formField]="rangeForm.to"
+            [min]="dateFromObj()"
+            (dateChange)="activity.dateTo.set(fmtDate($event.value))"
+          />
+          <mat-datepicker-toggle class="range-toggle" [for]="pickerTo" />
+          <mat-datepicker #pickerTo />
+        </label>
       </div>
 
       <button
-        class="btn-apply"
-        (click)="apply()"
+        type="submit"
+        class="u-btn u-btn-primary btn-collect"
+        [class.is-busy]="activity.isLoading()"
         [disabled]="activity.isLoading()"
-        [class.loading]="activity.isLoading()"
-        matTooltip="Collect activity for selected range"
+        [attr.aria-label]="activity.isLoading() ? 'Collecting activity' : 'Collect activity'"
+        matTooltip="Collect activity for the selected range"
       >
-        @if (activity.isLoading()) {
-          <span class="material-icons spin" aria-hidden="true">sync</span>
-        } @else {
-          <span class="material-icons" aria-hidden="true">play_arrow</span>
-        }
-        {{ activity.isLoading() ? 'Collecting…' : 'Apply' }}
+        <span class="material-icons" [class.u-spin]="activity.isLoading()" aria-hidden="true">{{
+          activity.isLoading() ? 'autorenew' : 'sync'
+        }}</span>
+        <!-- Both labels share one grid cell so the button keeps its width while busy. -->
+        <span class="btn-collect-label" aria-hidden="true">
+          <span [class.is-inactive]="activity.isLoading()">Collect</span>
+          <span [class.is-inactive]="!activity.isLoading()">Collecting…</span>
+        </span>
       </button>
+    </form>
 
+    <div class="header-actions" role="group" aria-label="Export">
       <button
-        class="btn-icon"
+        type="button"
+        class="u-btn u-btn-icon btn-export"
         (click)="exportMd()"
         [disabled]="!activity.meta()"
         matTooltip="Export Markdown"
@@ -65,7 +86,8 @@
       </button>
 
       <button
-        class="btn-icon"
+        type="button"
+        class="u-btn u-btn-icon btn-export"
         (click)="exportJson()"
         [disabled]="!activity.meta()"
         matTooltip="Export JSON"

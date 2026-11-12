@@ -1,6 +1,7 @@
 use activity_log_core::{
+    diagnostics,
     model::{
-        CollectRequest, CollectingResponse, ProviderConfigSaveRequestDto,
+        CollectRequest, CollectingResponse, LogsResponse, ProviderConfigSaveRequestDto,
         ProviderConfigSaveResponseDto, ProviderConfigSnapshotDto, ProvidersResponse,
     },
     runtime::{ActivitySnapshot, CollectionResult, CollectionRuntime, resolve_collect_options},
@@ -83,7 +84,7 @@ pub(crate) async fn collect(
         Ok(CollectionResult::Collecting) => {
             Ok(serde_json::to_value(CollectingResponse { collecting: true }).unwrap())
         }
-        Err(err) => Err(format!("Collection failed: {err}")),
+        Err(err) => Err(format!("{err:#}")),
     }
 }
 
@@ -103,14 +104,21 @@ pub(crate) async fn save_provider_config(
 ) -> Result<ProviderConfigSaveResponseDto, String> {
     let mut store_values = read_store_provider_config(&app)?;
     apply_provider_config_updates(&mut store_values, &request)?;
-    write_store_provider_config(&app, &store_values)?;
+    write_store_provider_config(&app, &store_values).inspect_err(|err| {
+        diagnostics::error("settings", format!("Saving settings failed: {err}"));
+    })?;
+    diagnostics::info("settings", "Settings saved, re-running provider checks");
 
     let config_source = StoreEnvConfigSource {
         store_values: store_values.clone(),
     };
     let runtime = CollectionRuntime::build_with_config_source(&config_source)
         .await
-        .map_err(|err| format!("Failed to refresh runtime config: {err}"))?;
+        .map_err(|err| {
+            let message = format!("Failed to refresh runtime config: {err}");
+            diagnostics::error("settings", &message);
+            message
+        })?;
     let providers_response = runtime.providers_response();
 
     {
@@ -123,6 +131,18 @@ pub(crate) async fn save_provider_config(
         snapshot,
         providers_response,
     })
+}
+
+#[tauri::command]
+pub(crate) fn get_logs() -> LogsResponse {
+    LogsResponse {
+        entries: diagnostics::entries(),
+    }
+}
+
+#[tauri::command]
+pub(crate) fn clear_logs() {
+    diagnostics::clear();
 }
 
 #[tauri::command]

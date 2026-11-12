@@ -11,7 +11,7 @@ path = "src/lib.rs"
 anyhow.workspace = true
 chrono.workspace = true
 futures.workspace = true
-gix = "0.83"
+gix = "0.90"
 reqwest.workspace = true
 serde.workspace = true
 serde_json.workspace = true
@@ -22,7 +22,7 @@ urlencoding.workspace = true
 
 [target.'cfg(target_os = "macos")'.dependencies]
 libc = "0.2"
-objc2 = "0.6.4"
+objc2 = "0.6.5"
 objc2-app-kit = { version = "0.3.2", features = ["NSWorkspace"] }
 objc2-foundation = { version = "0.3.2", features = [
   "NSArray",
@@ -37,7 +37,7 @@ objc2-foundation = { version = "0.3.2", features = [
 ] }
 
 [target.'cfg(target_os = "windows")'.dependencies]
-windows = { version = "0.61.3", features = [
+windows = { version = "0.62.2", features = [
   "Win32_Foundation",
   "Win32_System_Com",
   "Win32_System_EventLog",
@@ -46,4 +46,4 @@ windows = { version = "0.61.3", features = [
 ] }
 
 [dev-dependencies]
-tempfile = "3.15"
+tempfile = "3.27"

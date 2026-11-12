@@ -8,7 +8,7 @@ Shared backend crate for `activity-log`.
 - Collect activity from Git, GitLab, Jira, Outlook, and Windows Event Log
 - Merge Git commits with matching GitLab push events
 - Format collected activity as Markdown
-- Provide cache and date/range utilities
+- Provide a per-day disk cache for API providers and date/range utilities
 - Provide the shared in-memory collection runtime used by Rocket and Tauri
 - Generate the TypeScript DTO contract consumed by the Angular app
 
@@ -23,4 +23,5 @@ Shared backend crate for `activity-log`.
 ## Notes
 
 - `api`, `cli`, and the Tauri desktop crate all depend on this crate so collection behavior stays identical across runtimes.
-- Windows-specific integrations for Outlook and system events are intentionally implemented via PowerShell for parity with the old backend.
+- Windows-specific integrations for Outlook and system events use native Windows APIs from Rust.
+- Host-runnable Windows-focused tests live under `core` so XML parsing, query construction, and provider metadata can be verified without a Windows machine.

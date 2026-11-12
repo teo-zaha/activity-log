@@ -1,9 +1,12 @@
 @use 'sass:map';
 
+// Keep in sync with `BREAKPOINTS` in `src/app/utils/breakpoints.ts`.
 $breakpoints: (
   'desktop-compact': 1100px,
   'tablet': 900px,
+  'window-min': 820px,
   'phone': 640px,
+  'phone-narrow': 400px,
 );
 
 @function breakpoint($name) {
@@ -18,6 +21,19 @@ $breakpoints: (
 
 @mixin down($name) {
   @media (max-width: breakpoint($name)) {
+    @content;
+  }
+}
+
+@mixin up($name) {
+  @media (min-width: breakpoint($name) + 1px) {
+    @content;
+  }
+}
+
+// Above `$lower` and at or below `$upper`, e.g. between('phone', 'window-min').
+@mixin between($lower, $upper) {
+  @media (min-width: breakpoint($lower) + 1px) and (max-width: breakpoint($upper)) {
     @content;
   }
 }
@@ -40,9 +56,7 @@ $breakpoints: (
   border-radius: $radius;
   border: 1px solid color-mix(in srgb, var(--border) 75%, transparent);
   background: color-mix(in srgb, var(--surface) 88%, var(--surface-alt) 12%);
-  box-shadow:
-    0 14px 30px rgba(15, 23, 42, 0.04),
-    inset 0 1px 0 rgba(255, 255, 255, 0.5);
+  box-shadow: var(--panel-shadow);
 }
 
 @mixin kicker-label {
@@ -121,18 +135,18 @@ $breakpoints: (
   box-shadow: 0 0 0 4px color-mix(in srgb, currentColor 12%, transparent);
 
   &[data-status='available'] {
-    color: #16a34a;
-    background: #22c55e;
+    color: var(--status-ok);
+    background: var(--status-ok);
   }
 
   &[data-status='degraded'] {
-    color: #d97706;
-    background: #f59e0b;
+    color: var(--status-warn);
+    background: var(--status-warn);
   }
 
   &[data-status='unavailable'] {
-    color: #dc2626;
-    background: #ef4444;
+    color: var(--status-error);
+    background: var(--status-error);
   }
 }
 
@@ -151,19 +165,57 @@ $breakpoints: (
   align-self: flex-start;
   overflow: hidden;
 
-  &[data-status='available'] {
-    color: #15803d;
-    background: color-mix(in srgb, #22c55e 12%, var(--surface) 88%);
+  @include status-tone;
+}
+
+// Sets `color` and a soft tinted `background` from `data-status` or `data-tone`.
+@mixin status-tone($mix: 12%) {
+  &[data-status='available'],
+  &[data-tone='ok'] {
+    color: var(--status-ok-fg);
+    background: color-mix(in srgb, var(--status-ok) $mix, var(--surface));
   }
 
-  &[data-status='degraded'] {
-    color: #b45309;
-    background: color-mix(in srgb, #f59e0b 12%, var(--surface) 88%);
+  &[data-status='degraded'],
+  &[data-tone='warn'] {
+    color: var(--status-warn-fg);
+    background: color-mix(in srgb, var(--status-warn) $mix, var(--surface));
   }
 
-  &[data-status='unavailable'] {
-    color: #b91c1c;
-    background: color-mix(in srgb, #ef4444 12%, var(--surface) 88%);
+  &[data-status='unavailable'],
+  &[data-tone='error'] {
+    color: var(--status-error-fg);
+    background: color-mix(in srgb, var(--status-error) $mix, var(--surface));
+  }
+
+  &[data-tone='info'] {
+    color: var(--accent);
+    background: color-mix(in srgb, var(--accent) $mix, var(--surface));
+  }
+}
+
+@mixin focus-ring {
+  outline: none;
+  box-shadow: var(--focus-ring);
+}
+
+@mixin visually-hidden {
+  position: absolute !important;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+@mixin hide-scrollbar {
+  scrollbar-width: none;
+
+  &::-webkit-scrollbar {
+    display: none;
   }
 }
 

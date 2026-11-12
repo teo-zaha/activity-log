@@ -1,45 +1,53 @@
-import { Component, inject, computed, ChangeDetectionStrategy } from '@angular/core'
-import { FormsModule } from '@angular/forms'
-import { MatButtonModule } from '@angular/material/button'
-import { MatIconModule } from '@angular/material/icon'
-import { MatFormFieldModule } from '@angular/material/form-field'
-import { MatInputModule } from '@angular/material/input'
-import { MatSelectModule } from '@angular/material/select'
+import { Component, computed, inject, linkedSignal } from '@angular/core'
+import { form, FormField, FormRoot } from '@angular/forms/signals'
 import { MatTooltipModule } from '@angular/material/tooltip'
 import { MatDatepickerModule } from '@angular/material/datepicker'
 import { MatNativeDateModule } from '@angular/material/core'
 import { ActivityService } from '../../services/activity.service'
-import { ThemeService } from '../../services/theme.service'
 import { RuntimeEnvironmentService } from '../../services/backend/runtime-environment.service'
+
+interface DateRange {
+  readonly from: Date | null
+  readonly to: Date | null
+}
 
 @Component({
   selector: 'app-header',
-  imports: [
-    FormsModule,
-    MatButtonModule,
-    MatIconModule,
-    MatFormFieldModule,
-    MatInputModule,
-    MatSelectModule,
-    MatTooltipModule,
-    MatDatepickerModule,
-    MatNativeDateModule,
-  ],
+  imports: [FormField, FormRoot, MatTooltipModule, MatDatepickerModule, MatNativeDateModule],
   templateUrl: './header.component.html',
   styleUrl: './header.component.scss',
-  changeDetection: ChangeDetectionStrategy.OnPush,
 })
 export class HeaderComponent {
   protected readonly activity = inject(ActivityService)
-  protected readonly theme = inject(ThemeService)
   protected readonly runtime = inject(RuntimeEnvironmentService)
 
   protected readonly dateFromObj = computed(() => this.parseDateStr(this.activity.dateFrom()))
   protected readonly dateToObj = computed(() => this.parseDateStr(this.activity.dateTo()))
 
-  protected apply(): void {
-    void this.activity.collect(this.activity.dateFrom(), this.activity.dateTo())
-  }
+  /**
+   * What the pickers show while a date is being typed. It only reaches the activity filters once
+   * the input commits (`dateChange`), so half-typed dates never filter the timeline.
+   */
+  protected readonly range = linkedSignal<DateRange>(() => ({
+    from: this.dateFromObj(),
+    to: this.dateToObj(),
+  }))
+
+  protected readonly rangeForm = form(this.range, {
+    submission: {
+      // The pickers' own min/max validators only grey out dates; they never blocked collecting.
+      ignoreValidators: 'all',
+      action: async () => {
+        await this.activity.collect(this.activity.dateFrom(), this.activity.dateTo())
+      },
+    },
+  })
+
+  protected readonly rangeLabel = computed(() => {
+    if (!this.activity.meta()) return null
+    const count = this.activity.filteredEntries().length
+    return `${count} ${count === 1 ? 'event' : 'events'} shown`
+  })
 
   protected parseDateStr(s: string): Date | null {
     if (!s) return null
@@ -60,6 +68,22 @@ export class HeaderComponent {
 
   protected exportJson(): void {
     void this.activity.exportJson()
+  }
+
+  protected startHeaderDrag(event: MouseEvent): void {
+    if (this.isDragSurface(event)) void this.startWindowDrag(event)
+  }
+
+  protected toggleHeaderMaximize(event: MouseEvent): void {
+    if (this.isDragSurface(event)) void this.toggleWindowMaximize(event)
+  }
+
+  private isDragSurface(event: MouseEvent): boolean {
+    const target = event.target
+    return (
+      target === event.currentTarget ||
+      (target instanceof Element && target.closest('.brand') !== null)
+    )
   }
 
   protected async startWindowDrag(event: MouseEvent): Promise<void> {

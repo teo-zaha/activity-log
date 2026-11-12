@@ -18,31 +18,12 @@ crate::provider! {
                 }
             };
 
-            let repos = match resolve_git_repos(config) {
-                Ok(repos) => repos,
-                Err(err) => {
-                    return ProviderCheckResult::unavailable(err.to_string());
-                }
-            };
-            if repos.is_empty() {
-                return ProviderCheckResult::unavailable("No repositories found");
-            }
-
-            let mut last_error = None;
-            for repo in repos {
-                match open_repo_strict(&repo) {
-                    Ok(_) => return ProviderCheckResult::available(),
-                    Err(err) => last_error = Some(err.to_string()),
-                }
-            }
-
-            if let Some(reason) = last_error {
-                return ProviderCheckResult::unavailable(format!(
-                    "No readable repositories found: {reason}"
-                ));
-            }
-
-            ProviderCheckResult::unavailable("No readable repositories found")
+            let config = config.clone();
+            tokio::task::spawn_blocking(move || check_git_repos(&config))
+                .await
+                .unwrap_or_else(|err| {
+                    ProviderCheckResult::unavailable(format!("Git startup check failed: {err}"))
+                })
         }
 
         async fn collect(&self, _current_os, options, context) {
@@ -50,5 +31,30 @@ crate::provider! {
             let entries = collect_git(&options, &config).await?;
             Ok(entries.into_activity_entries())
         }
+    }
+}
+
+fn check_git_repos(config: &GitConfig) -> ProviderCheckResult {
+    let repos = match resolve_git_repos(config) {
+        Ok(repos) => repos,
+        Err(err) => return ProviderCheckResult::unavailable(err.to_string()),
+    };
+    if repos.is_empty() {
+        return ProviderCheckResult::unavailable("No repositories found");
+    }
+
+    let mut last_error = None;
+    for repo in repos {
+        match open_repo_strict(&repo) {
+            Ok(_) => return ProviderCheckResult::available(),
+            Err(err) => last_error = Some(format!("{}: {err}", repo.display())),
+        }
+    }
+
+    match last_error {
+        Some(reason) => {
+            ProviderCheckResult::unavailable(format!("No readable repositories found: {reason}"))
+        }
+        None => ProviderCheckResult::unavailable("No readable repositories found"),
     }
 }

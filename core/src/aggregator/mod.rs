@@ -12,19 +12,16 @@ pub fn collect_activity_from_results(
     options: CollectOptions,
     results: Vec<(crate::model::Source, anyhow::Result<Vec<ActivityEntry>>)>,
 ) -> CollectedActivity {
-    let mut collected_entries = Vec::new();
+    // Failures are logged where providers run, see `collect_activity_detailed_with_provider_runtimes`.
+    let collected_entries = results
+        .into_iter()
+        .filter_map(|(_, result)| result.ok())
+        .flatten();
     let mut git_entries = Vec::new();
     let mut gitlab_entries = Vec::new();
     let mut jira_entries = Vec::new();
     let mut outlook_entries = Vec::new();
     let mut system_entries = Vec::new();
-
-    for (source, result) in results {
-        match result {
-            Ok(mut entries) => collected_entries.append(&mut entries),
-            Err(err) => eprintln!("  [{}] {err}", source),
-        }
-    }
 
     for entry in collected_entries {
         match entry {

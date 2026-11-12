@@ -7,6 +7,7 @@ Rocket HTTP API for `activity-log`.
 - Expose `GET /api/activity`
 - Expose `GET /api/providers`
 - Expose `POST /api/collect`
+- Expose `GET /api/logs` and `DELETE /api/logs` (diagnostic log from `core::diagnostics`)
 - Preserve the HTTP contract over the shared collection runtime from `core`
 - Return `202` while a collection is already in progress
 - Trigger the initial 30-day collection on startup

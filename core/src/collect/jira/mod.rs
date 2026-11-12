@@ -1,7 +1,6 @@
 use anyhow::{Result, anyhow};
 
 use crate::{
-    cache::with_range_cache,
     model::{
         CollectOptions, JiraEntry, JiraEntryType,
         jira::{jira_issue::JiraIssue, jira_search_response::JiraSearchResponse},
@@ -20,50 +19,47 @@ pub async fn collect_jira(
     let since = options.since.format("%Y-%m-%d").to_string();
     let until = options.until.format("%Y-%m-%d").to_string();
 
-    with_range_cache("jira", options, |_| {}, || async {
-        let client = jira_client(config)?;
+    let client = jira_client(config)?;
 
-        let mut entries = Vec::new();
-        let mut start_at = 0;
-        let max_results = 50;
+    let mut entries = Vec::new();
+    let mut start_at = 0;
+    let max_results = 50;
 
-        loop {
-            let jql_query = format!(
-                "updatedDate >= \"{}\" AND updatedDate <= \"{}\" AND (assignee = currentUser() OR reporter = currentUser())",
-                since, until
-            );
-            let jql = urlencoding::encode(&jql_query);
-            let url = format!(
-                "{}/rest/api/2/search?jql={jql}&startAt={start_at}&maxResults={max_results}&fields=summary,status,issuetype,created,updated&expand=changelog",
-                config.url.trim_end_matches('/')
-            );
-            let response = client.get(url).send().await?;
+    loop {
+        let jql_query = jira_search_jql(&since);
+        let jql = urlencoding::encode(&jql_query);
+        let url = format!(
+            "{}/rest/api/2/search?jql={jql}&startAt={start_at}&maxResults={max_results}&fields=summary,status,issuetype,created,updated&expand=changelog",
+            config.url.trim_end_matches('/')
+        );
+        let response = client.get(url).send().await?;
 
-            if !response.status().is_success() {
-                let status = response.status();
-                let body = response.text().await.unwrap_or_default();
-                return Err(anyhow!("[jira] API error {status}: {body}"));
-            }
-
-            let data = response.json::<JiraSearchResponse>().await?;
-            if data.issues.is_empty() {
-                break;
-            }
-
-            entries.extend(map_jira_issues(
-                &data.issues,
-                &since,
-                &until,
-            ));
-            if data.issues.len() < max_results {
-                break;
-            }
-            start_at += max_results;
+        if !response.status().is_success() {
+            let status = response.status();
+            let body = response.text().await.unwrap_or_default();
+            return Err(anyhow!("[jira] API error {status}: {body}"));
         }
 
-        Ok(entries)
-    })
-    .await
+        let data = response.json::<JiraSearchResponse>().await?;
+        if data.issues.is_empty() {
+            break;
+        }
+
+        entries.extend(map_jira_issues(&data.issues, &since, &until));
+        if data.issues.len() < max_results {
+            break;
+        }
+        start_at += max_results;
+    }
+
+    Ok(entries)
+}
+
+/// Issues touched on or after `since`. There is deliberately no upper bound on `updatedDate`:
+/// an issue changed inside the range and again later is still relevant, and the changelog
+/// filter in `map_jira_issues` cuts entries off at `until`.
+pub(crate) fn jira_search_jql(since: &str) -> String {
+    format!("updatedDate >= \"{since}\" AND (assignee = currentUser() OR reporter = currentUser())")
 }
 
 fn map_jira_issues(issues: &[JiraIssue], since: &str, until: &str) -> Vec<JiraEntry> {

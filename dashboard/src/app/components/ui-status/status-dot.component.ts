@@ -1,11 +1,10 @@
-import { Component, input, ChangeDetectionStrategy } from '@angular/core'
+import { Component, input } from '@angular/core'
 import type { ProviderStatus } from '../../generated/activity'
 
 @Component({
   selector: 'app-status-dot',
   templateUrl: './status-dot.component.html',
   styleUrl: './status-dot.component.scss',
-  changeDetection: ChangeDetectionStrategy.OnPush,
   host: {
     'aria-hidden': 'true',
     '[attr.data-status]': 'status()',

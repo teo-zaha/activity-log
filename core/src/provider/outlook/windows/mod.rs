@@ -1,5 +1,7 @@
-use crate::platform::{ComGuard, create_outlook_application};
+use crate::platform::{ComGuard, outlook_is_installed};
 
+/// Only checks that Outlook is installed: talking to it would launch Outlook at app start.
+/// Whether it is running is decided per collection.
 pub async fn check_outlook_ready() -> anyhow::Result<()> {
     tokio::task::spawn_blocking(check_outlook_ready_blocking)
         .await
@@ -8,9 +10,9 @@ pub async fn check_outlook_ready() -> anyhow::Result<()> {
 
 fn check_outlook_ready_blocking() -> anyhow::Result<()> {
     let _com = ComGuard::new()?;
-    let outlook = create_outlook_application()?;
-    let namespace = outlook.method_dispatch_string("GetNamespace", "MAPI")?;
-    let calendar = namespace.method_dispatch_i32("GetDefaultFolder", 9)?;
-    let _items = calendar.property_dispatch("Items")?;
-    Ok(())
+    if outlook_is_installed() {
+        Ok(())
+    } else {
+        Err(anyhow::anyhow!("Outlook not installed"))
+    }
 }

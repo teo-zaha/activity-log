@@ -23,6 +23,36 @@ fn parses_outlook_event_arrays() {
 }
 
 #[test]
+fn parses_empty_outlook_payloads_as_no_events() {
+    assert!(parse_raw_outlook_events("").unwrap().is_empty());
+    assert!(parse_raw_outlook_events("   ").unwrap().is_empty());
+    assert!(parse_raw_outlook_events("[]").unwrap().is_empty());
+}
+
+#[test]
+fn errors_on_malformed_outlook_json() {
+    assert!(parse_raw_outlook_events(r#"{"subject":"broken""#).is_err());
+}
+
+#[test]
+fn excludes_outlook_events_with_unparseable_dates() {
+    let normalized = normalize_outlook_events(
+        vec![RawOutlookEvent {
+            subject: Some("Bad dates".to_string()),
+            start: "not-a-date".to_string(),
+            end: "also-not-a-date".to_string(),
+            location: None,
+            organizer: None,
+            is_organizer: Some(false),
+            is_default_calendar: Some(true),
+        }],
+        &options("2026-03-25", "2026-03-25"),
+    );
+
+    assert!(normalized.is_empty());
+}
+
+#[test]
 fn parses_outlook_single_object_payloads() {
     let events = parse_raw_outlook_events(
         r#"{"subject":"1:1","start":"2026-03-25T09:00:00Z","end":"2026-03-25T09:45:00Z","location":null,"organizer":"Taylor","is_organizer":false}"#,

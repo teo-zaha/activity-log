@@ -1,6 +1,7 @@
 use futures::future::BoxFuture;
 
 use crate::{
+    cache::CachePolicy,
     model::{ActivityEntry, CollectOptions, Source, SupportedOs},
     provider::{
         provider_check_result::ProviderCheckResult,
@@ -22,6 +23,11 @@ pub trait ProviderAdapter: Send + Sync {
             Some(binding) => binding.requirements,
             None => &[],
         }
+    }
+
+    /// Opt in to the per-day disk cache; meant for providers that call remote APIs.
+    fn cache_policy(&self) -> Option<CachePolicy> {
+        None
     }
 
     fn startup_check(

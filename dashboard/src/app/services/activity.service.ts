@@ -1,4 +1,4 @@
-import { Injectable, computed, inject } from '@angular/core'
+import { Service, computed, inject } from '@angular/core'
 import type {
   ProviderConfigSaveRequestDto,
   ProviderConfigSaveResponseDto,
@@ -13,7 +13,7 @@ import { ActivityViewStateService } from './activity-view-state.service'
 import { ProviderConfigFacade } from './provider-config-facade.service'
 import type { ViewMode } from './types'
 
-@Injectable({ providedIn: 'root' })
+@Service()
 export class ActivityService {
   private readonly data = inject(ActivityDataService)
   private readonly viewState = inject(ActivityViewStateService)
@@ -24,11 +24,13 @@ export class ActivityService {
   readonly allEntryAdapters = this.data.allEntryAdapters
   readonly providerInfo = this.data.providerInfo
   readonly providers = this.data.providers
+  readonly unusableProviders = this.data.unusableProviders
   readonly summary = this.data.summary
   readonly sourceCounts = this.data.sourceCounts
   readonly meta = this.data.meta
   readonly isLoading = this.data.isLoading
   readonly error = this.data.error
+  readonly collectionStatus = this.data.collectionStatus
 
   readonly dateFrom = this.viewState.dateFrom
   readonly dateTo = this.viewState.dateTo
@@ -119,6 +121,17 @@ export class ActivityService {
 
   collect(since: string, until: string): Promise<void> {
     return this.data.collect(since, until)
+  }
+
+  /** Re-runs the last collection: the startup load if no range is known yet, else the range. */
+  retryCollection(): Promise<void> {
+    const from = this.dateFrom()
+    const to = this.dateTo()
+    return from && to ? this.data.collect(from, to) : this.data.initLoad()
+  }
+
+  dismissCollectionStatus(): void {
+    this.data.dismissCollectionStatus()
   }
 
   async exportJson(): Promise<void> {

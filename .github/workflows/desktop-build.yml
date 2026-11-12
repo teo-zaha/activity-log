@@ -40,6 +40,13 @@ jobs:
             librsvg2-dev \
             patchelf
 
+      # pnpm-workspace.yaml points at the company Artifactory, which hosted
+      # runners can't reach. pnpm gives that setting precedence over
+      # --registry/env, so drop it; the lockfile carries no tarball URLs.
+      - name: Use public npm registry
+        shell: bash
+        run: sed -i.bak -e '/^registry:/d' -e '/^registries:/,/^  default:/d' pnpm-workspace.yaml
+
       - name: Install deps
         run: pnpm install --frozen-lockfile
 

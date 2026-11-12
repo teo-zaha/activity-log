@@ -5,7 +5,27 @@
   flex-direction: column;
   height: 100dvh;
   overflow: hidden;
-  background: var(--bg);
+  background:
+    radial-gradient(1100px 520px at 8% -14%, var(--canvas-glow), transparent 70%), var(--bg);
+}
+
+.skip-link {
+  position: fixed;
+  top: 8px;
+  left: 8px;
+  z-index: 10000;
+  padding: 10px 14px;
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  color: var(--text-primary);
+  font-weight: 600;
+  box-shadow: var(--panel-shadow-strong);
+  transform: translateY(-160%);
+  transition: transform 0.2s var(--ease-out);
+
+  &:focus-visible {
+    transform: none;
+  }
 }
 
 mat-progress-bar.top-loader {
@@ -14,12 +34,13 @@ mat-progress-bar.top-loader {
   left: 0;
   right: 0;
   z-index: 9999;
-  height: 3px;
+  height: 2px;
   opacity: 0;
   pointer-events: none;
   --mat-progress-bar-track-color: transparent;
-  --mat-progress-bar-active-indicator-height: 3px;
-  --mat-progress-bar-track-height: 3px;
+  --mat-progress-bar-active-indicator-color: var(--accent);
+  --mat-progress-bar-active-indicator-height: 2px;
+  --mat-progress-bar-track-height: 2px;
   transition: opacity 0.2s ease;
 
   &.visible {
@@ -27,34 +48,47 @@ mat-progress-bar.top-loader {
   }
 }
 
-main {
+.shell {
   flex: 1;
   display: flex;
-  flex-direction: row;
-  overflow: hidden;
   min-height: 0;
-  gap: 18px;
-  padding: 14px 18px 18px;
+  gap: 12px;
+  padding: 0 16px 16px 12px;
 }
 
 .main-content {
+  position: relative; // anchors the collection status overlay
   flex: 1;
   display: flex;
   flex-direction: column;
   overflow: hidden;
   min-height: 0;
   min-width: 0;
-  @include ui.panel-shell($radius: 30px);
+  outline: none;
+  @include ui.panel-shell($radius: var(--radius-xl));
 }
 
 @include ui.down('tablet') {
-  main {
-    flex-direction: column;
-    gap: 12px;
-    padding: 12px;
+  .shell {
+    gap: 8px;
+    padding: 0 12px 12px 8px;
   }
 
   .main-content {
-    border-radius: 24px;
+    border-radius: var(--radius-lg);
+  }
+}
+
+@include ui.down('phone') {
+  .shell {
+    flex-direction: column;
+    gap: 0;
+    padding: 0 0 calc(64px + env(safe-area-inset-bottom));
+  }
+
+  .main-content {
+    border-radius: var(--radius-lg) var(--radius-lg) 0 0;
+    border-bottom: 0;
+    border-inline: 0;
   }
 }

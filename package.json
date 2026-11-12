@@ -5,7 +5,7 @@
   "author": "Teodora Zaharinova <177096303+teo-zaha@users.noreply.github.com>",
   "type": "module",
   "engines": {
-    "node": ">=20",
+    "node": "^22.22.3 || ^24.15.0 || >=26.0.0",
     "pnpm": ">=10"
   },
   "scripts": {
@@ -20,6 +20,7 @@
     "core:build": "cargo build -p core",
     "core:check": "cargo check -p core",
     "core:test": "cargo test -p core",
+    "core:test:windows": "cargo test -p core windows",
     "types:generate": "cargo run -p cli --bin generate-ts --",
     "dashboard:install": "pnpm --dir dashboard install",
     "dashboard:dev": "pnpm --dir dashboard run dev",
@@ -30,6 +31,14 @@
     "dashboard:build:prod": "pnpm run types:generate && pnpm --dir dashboard exec ng build --configuration production",
     "desktop:dev": "pnpm run types:generate && pnpm --dir desktop exec tauri dev",
     "desktop:build": "pnpm run types:generate && pnpm --dir desktop exec tauri build",
+    "desktop:build:windows": "pnpm run types:generate && pnpm --dir desktop exec tauri build --runner cargo-xwin --target x86_64-pc-windows-msvc --bundles nsis",
+    "win:check": "cargo xwin clippy --workspace --all-targets --target x86_64-pc-windows-msvc -- -D warnings",
+    "win:box:build": "cd infra/windows-vm/packer && packer build windows11-arm.pkr.hcl",
+    "win:up": "cd infra/windows-vm && vagrant up",
+    "win:test": "cd infra/windows-vm && vagrant rsync && vagrant ssh -c \"cd C:/vagrant; cargo test --workspace --exclude activity-log-desktop\"",
+    "win:collect": "cd infra/windows-vm && vagrant rsync && vagrant ssh -c \"cd C:/vagrant; cargo run -p cli --bin activity-log --\"",
+    "win:halt": "cd infra/windows-vm && vagrant halt",
+    "win:destroy": "cd infra/windows-vm && vagrant destroy -f",
     "dev": "concurrently \"pnpm run api:dev\" \"pnpm run dashboard:dev\" --names api,ng --prefix-colors cyan,blue",
     "rust:fmt": "cargo fmt --all",
     "rust:fmt:check": "cargo fmt --all --check",
@@ -41,21 +50,21 @@
     "verify": "pnpm run types:generate && pnpm run format:check && pnpm run rust:check && pnpm run rust:clippy && pnpm run rust:test && pnpm run dashboard:lint && pnpm run dashboard:test && pnpm run dashboard:typecheck && pnpm run dashboard:build"
   },
   "dependencies": {
-    "@fontsource/inter": "^5.2.8",
+    "@fontsource/inter": "^5.3.0",
     "material-icons": "^1.13.14"
   },
   "devDependencies": {
-    "@angular-eslint/eslint-plugin": "^21.0.0",
-    "@angular-eslint/eslint-plugin-template": "^21.0.0",
-    "@angular-eslint/template-parser": "^21.0.0",
-    "@types/node": "^25.8.0",
-    "@typescript-eslint/eslint-plugin": "^8.59.3",
-    "@typescript-eslint/parser": "^8.59.3",
-    "concurrently": "^9.0.0",
+    "@angular-eslint/eslint-plugin": "^22.6.0",
+    "@angular-eslint/eslint-plugin-template": "^22.6.0",
+    "@angular-eslint/template-parser": "^22.6.0",
+    "@types/node": "^26.6.6",
+    "@typescript-eslint/eslint-plugin": "^8.72.1",
+    "@typescript-eslint/parser": "^8.72.1",
+    "concurrently": "^10.0.6",
     "cross-env": "^10.1.0",
-    "eslint": "^10.4.0",
+    "eslint": "^10.14.0",
     "eslint-config-prettier": "^10.1.8",
-    "prettier": "^3.8.3",
-    "typescript": "^5.9.3"
+    "prettier": "^3.9.10",
+    "typescript": "~6.0.3"
   }
 }

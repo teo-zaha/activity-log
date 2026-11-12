@@ -5,6 +5,7 @@
 @import '@fontsource/inter/400.css';
 @import '@fontsource/inter/500.css';
 @import '@fontsource/inter/600.css';
+@import '@fontsource/inter/700.css';
 
 @font-face {
   font-family: 'Material Icons';
@@ -158,12 +159,33 @@ html.dark {
   --panel-bg: var(--surface);
   --panel-bg-muted: color-mix(in srgb, var(--surface) 78%, var(--surface-alt) 22%);
   --panel-border: color-mix(in srgb, var(--border) 78%, transparent);
-  --panel-shadow: 0 18px 42px rgba(15, 23, 42, 0.07), 0 4px 12px rgba(15, 23, 42, 0.04);
-  --panel-shadow-strong: 0 22px 58px rgba(15, 23, 42, 0.12), 0 8px 20px rgba(15, 23, 42, 0.05);
-  --control-shadow: 0 10px 22px rgba(15, 23, 42, 0.07);
+  --panel-shadow: 0 1px 2px rgba(15, 23, 42, 0.04), 0 2px 8px rgba(15, 23, 42, 0.03);
+  --panel-shadow-strong: 0 1px 3px rgba(15, 23, 42, 0.05), 0 8px 24px rgba(15, 23, 42, 0.06);
+  --control-shadow: 0 1px 2px rgba(15, 23, 42, 0.05);
   --accent-soft: color-mix(in srgb, var(--accent) 14%, transparent);
   --accent-strong: color-mix(in srgb, var(--accent) 26%, transparent);
   --content-max-width: 1120px;
+
+  // Status — provider health and collection state
+  --status-ok: #22c55e;
+  --status-ok-fg: #15803d;
+  --status-warn: #f59e0b;
+  --status-warn-fg: #b45309;
+  --status-error: #ef4444;
+  --status-error-fg: #b91c1c;
+
+  // Layout, shape and motion
+  --hairline: color-mix(in srgb, var(--border) 58%, transparent);
+  --sidebar-width: 236px;
+  --rail-width: 68px;
+  --radius-xs: 8px;
+  --radius-sm: 10px;
+  --radius-md: 14px;
+  --radius-lg: 20px;
+  --radius-xl: 24px;
+  --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+  --focus-ring: 0 0 0 2px var(--surface), 0 0 0 4px var(--accent);
+  --canvas-glow: color-mix(in srgb, var(--accent) 9%, transparent);
 }
 
 html[data-theme='dark'],
@@ -231,9 +253,14 @@ html.dark,
   --chip-outlook: #7dd3fc;
   --chip-system: #cbd5e1;
 
-  --panel-shadow: 0 24px 56px rgba(0, 0, 0, 0.28), 0 6px 18px rgba(0, 0, 0, 0.16);
-  --panel-shadow-strong: 0 36px 84px rgba(0, 0, 0, 0.4), 0 12px 28px rgba(0, 0, 0, 0.24);
-  --control-shadow: 0 14px 28px rgba(0, 0, 0, 0.22);
+  --panel-shadow: 0 1px 2px rgba(0, 0, 0, 0.16), 0 4px 12px rgba(0, 0, 0, 0.1);
+  --panel-shadow-strong: 0 1px 3px rgba(0, 0, 0, 0.18), 0 10px 28px rgba(0, 0, 0, 0.2);
+  --control-shadow: 0 1px 2px rgba(0, 0, 0, 0.2);
+
+  --status-ok-fg: #4ade80;
+  --status-warn-fg: #fbbf24;
+  --status-error-fg: #f87171;
+  --canvas-glow: color-mix(in srgb, var(--accent) 6%, transparent);
 }
 
 // ── Green ─────────────────────────────────────────────────────────────────────
@@ -607,9 +634,107 @@ body {
   font-family: Inter, 'Helvetica Neue', sans-serif;
   background-color: var(--bg);
   color: var(--text-primary);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
   transition:
     background-color 0.25s ease,
     color 0.25s ease;
+}
+
+::selection {
+  background: color-mix(in srgb, var(--accent) 28%, transparent);
+}
+
+// ── Scrollbars ───────────────────────────────────────────────────────────────
+// A slim pill on a transparent track, tinted from each theme's own tokens so every
+// theme gets a matching bar without per-theme values. It warms to the accent on drag.
+
+:root {
+  --scrollbar-size: 10px;
+  --scrollbar-thumb: color-mix(in srgb, var(--text-tertiary) 32%, transparent);
+  --scrollbar-thumb-hover: color-mix(in srgb, var(--text-tertiary) 55%, transparent);
+  --scrollbar-thumb-active: color-mix(in srgb, var(--accent) 70%, transparent);
+}
+
+// WebKit (macOS WKWebView) and Chromium (Windows WebView2): the pill shape needs these.
+::-webkit-scrollbar {
+  width: var(--scrollbar-size);
+  height: var(--scrollbar-size);
+}
+
+::-webkit-scrollbar-track,
+::-webkit-scrollbar-corner {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  // The transparent border insets the pill from the edge.
+  border: 2px solid transparent;
+  border-radius: 999px;
+  background-color: var(--scrollbar-thumb);
+  background-clip: content-box;
+  min-height: 32px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background-color: var(--scrollbar-thumb-hover);
+}
+
+::-webkit-scrollbar-thumb:active {
+  background-color: var(--scrollbar-thumb-active);
+}
+
+// Firefox has no ::-webkit-scrollbar. Chromium and newer Safari would let these standard
+// properties override the pill above, so they are scoped to Firefox.
+@supports (-moz-appearance: none) {
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: var(--scrollbar-thumb) transparent;
+  }
+}
+
+// Keyboard focus is always visible; pointer focus stays quiet.
+:where(button, a, input, select, textarea, [tabindex]):focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+@keyframes u-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes u-shimmer {
+  from {
+    background-position: 100% 0;
+  }
+  to {
+    background-position: -100% 0;
+  }
+}
+
+@keyframes u-rise {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
 }
 
 // smooth theme transitions on common elements
@@ -632,7 +757,7 @@ mat-card {
   color: var(--text-primary) !important;
   border: 1px solid var(--border) !important;
   border-radius: 12px !important;
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.15) !important;
+  box-shadow: var(--panel-shadow-strong) !important;
   overflow: hidden !important;
 }
 
@@ -720,6 +845,22 @@ mat-card {
   background: transparent;
   box-shadow: none;
   border-radius: 0;
+  overflow: visible;
+}
+
+.settings-dialog-backdrop {
+  background: color-mix(in srgb, #0b1220 46%, transparent);
+  backdrop-filter: blur(3px);
+  -webkit-backdrop-filter: blur(3px);
+}
+
+.mat-mdc-tooltip {
+  --mat-tooltip-container-shape: 8px;
+  --mat-tooltip-supporting-text-size: 12px;
+
+  .mdc-tooltip__surface {
+    white-space: pre-line;
+  }
 }
 
 .error-alert-snackbar {

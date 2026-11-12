@@ -1,9 +1,10 @@
 use activity_log_core::{
-    model::{CollectRequest, CollectingResponse, ErrorResponse},
+    diagnostics,
+    model::{CollectRequest, CollectingResponse, ErrorResponse, LogsResponse},
     runtime::{ActivitySnapshot, CollectionResult, CollectionRuntime, resolve_collect_options},
 };
 use rocket::{
-    Build, Rocket, State, fairing::AdHoc, get, http::Status, post, response::status,
+    Build, Rocket, State, delete, fairing::AdHoc, get, http::Status, post, response::status,
     serde::json::Json,
 };
 
@@ -58,12 +59,25 @@ async fn post_collect(
             Status::InternalServerError,
             Json(
                 serde_json::to_value(ErrorResponse {
-                    error: format!("Collection failed: {err}"),
+                    error: format!("{err:#}"),
                 })
                 .unwrap(),
             ),
         ),
     }
+}
+
+#[get("/api/logs")]
+fn get_logs() -> Json<LogsResponse> {
+    Json(LogsResponse {
+        entries: diagnostics::entries(),
+    })
+}
+
+#[delete("/api/logs")]
+fn delete_logs() -> Status {
+    diagnostics::clear();
+    Status::NoContent
 }
 
 fn bad_request(message: &str) -> status::Custom<Json<serde_json::Value>> {
@@ -89,7 +103,13 @@ pub fn build_rocket_with(
 ) -> Rocket<Build> {
     let rocket = rocket::build().manage(runtime).mount(
         "/",
-        rocket::routes![get_activity, get_providers, post_collect],
+        rocket::routes![
+            get_activity,
+            get_providers,
+            post_collect,
+            get_logs,
+            delete_logs
+        ],
     );
 
     if start_initial_collection {

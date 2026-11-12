@@ -1,10 +1,7 @@
 @use '../calendar-shared' as cal;
 
 :host {
-  display: flex;
-  flex-direction: column;
-  flex: 1;
-  min-height: 0;
+  @include cal.host;
 }
 
 .week-view {
@@ -13,7 +10,7 @@
   flex: 1;
   overflow: hidden;
   min-height: 0;
-  padding: 0 0 20px;
+  padding: 0 0 12px;
 }
 
 .cal-nav {
@@ -63,7 +60,7 @@
 }
 
 .time-gutter {
-  width: 52px;
+  width: var(--cal-gutter);
   flex-shrink: 0;
   border-right: 1px solid var(--border-subtle);
 }
@@ -148,7 +145,7 @@
 }
 
 .time-gutter-allday {
-  width: 52px;
+  width: var(--cal-gutter);
   flex-shrink: 0;
   border-right: 1px solid var(--border-subtle);
 }
@@ -223,7 +220,7 @@
 
 .hour-label {
   @include cal.hour-label;
-  width: 52px;
+  width: var(--cal-gutter);
   flex-shrink: 0;
 }
 
@@ -236,7 +233,7 @@
 
 .week-body {
   position: absolute;
-  left: 52px;
+  left: var(--cal-gutter);
   right: 0;
   top: 0;
   bottom: 0;
@@ -264,8 +261,7 @@
 
 @include cal.event-styles;
 
-@include cal.down('tablet') {
-  .cal-scroll {
-    margin: 0 16px 0;
-  }
+// Sits below the sticky day headers.
+.u-floating-hint {
+  top: 76px;
 }

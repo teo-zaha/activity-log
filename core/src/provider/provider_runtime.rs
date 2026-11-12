@@ -1,9 +1,12 @@
-use std::sync::Arc;
+use std::{future::Future, sync::Arc, time::Duration};
 
 use futures::future::join_all;
 
 use crate::{
-    model::{ActivityEntry, CollectOptions, ProviderInfo, ProviderStatus, ProvidersResponse},
+    diagnostics,
+    model::{
+        ActivityEntry, CollectOptions, LogLevel, ProviderInfo, ProviderStatus, ProvidersResponse,
+    },
     utils::now_iso,
 };
 
@@ -15,6 +18,10 @@ use super::{
     provider_context::ProviderContext,
     provider_registry,
 };
+
+// A hung OS integration (Outlook dialog, unreachable host, huge directory walk)
+// must not block runtime rebuilds such as saving settings.
+const STARTUP_CHECK_TIMEOUT: Duration = Duration::from_secs(15);
 
 #[derive(Clone)]
 pub struct ProviderRuntime {
@@ -57,9 +64,23 @@ impl ProviderRuntime {
 
     pub async fn collect(&self, options: CollectOptions) -> anyhow::Result<Vec<ActivityEntry>> {
         let current_os = current_os();
-        self.adapter
-            .collect(current_os, options, self.context.clone())
-            .await
+        match self.adapter.cache_policy() {
+            Some(policy) => {
+                crate::cache::collect_with_day_cache(
+                    &self.info.id,
+                    self.context.cache_scope(),
+                    &options,
+                    policy,
+                    |span| self.adapter.collect(current_os, span, self.context.clone()),
+                )
+                .await
+            }
+            None => {
+                self.adapter
+                    .collect(current_os, options, self.context.clone())
+                    .await
+            }
+        }
     }
 }
 
@@ -91,6 +112,7 @@ async fn build_provider_info(
 ) -> ProviderInfo {
     let current_os = current_os();
     let requirements = adapter.config_requirements();
+    let started = std::time::Instant::now();
     let result = if !adapter.supported_os().contains(&current_os) {
         ProviderCheckResult::unavailable("OS not supported")
     } else if !context.missing_required_keys(requirements).is_empty() {
@@ -101,17 +123,32 @@ async fn build_provider_info(
         if let Err(err) = (binding.resolve)(context) {
             ProviderCheckResult::unavailable(format!("Config resolution failed: {err}"))
         } else {
-            adapter
-                .startup_check(current_os.clone(), context.clone())
-                .await
+            with_startup_timeout(
+                adapter.startup_check(current_os.clone(), context.clone()),
+                STARTUP_CHECK_TIMEOUT,
+            )
+            .await
         }
     } else {
-        adapter
-            .startup_check(current_os.clone(), context.clone())
-            .await
+        with_startup_timeout(
+            adapter.startup_check(current_os.clone(), context.clone()),
+            STARTUP_CHECK_TIMEOUT,
+        )
+        .await
     };
 
     let status = result.status;
+    let elapsed = started.elapsed().as_millis();
+    let summary = match &result.reason {
+        Some(reason) => format!("Startup check {status} after {elapsed} ms: {reason}"),
+        None => format!("Startup check {status} after {elapsed} ms"),
+    };
+    let level = match status {
+        ProviderStatus::Available => LogLevel::Info,
+        ProviderStatus::Degraded | ProviderStatus::Unavailable => LogLevel::Warn,
+    };
+    diagnostics::record(level, adapter.id().as_ref(), summary);
+
     ProviderInfo {
         id: adapter.id(),
         status: status.clone(),
@@ -120,4 +157,18 @@ async fn build_provider_info(
         reason: result.reason,
         checked_at: now_iso(),
     }
+}
+
+pub(crate) async fn with_startup_timeout(
+    check: impl Future<Output = ProviderCheckResult>,
+    timeout: Duration,
+) -> ProviderCheckResult {
+    tokio::time::timeout(timeout, check)
+        .await
+        .unwrap_or_else(|_| {
+            ProviderCheckResult::unavailable(format!(
+                "Startup check timed out after {}s",
+                timeout.as_secs()
+            ))
+        })
 }

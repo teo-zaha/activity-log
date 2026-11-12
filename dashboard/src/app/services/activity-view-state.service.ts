@@ -1,9 +1,9 @@
-import { Injectable, computed, signal } from '@angular/core'
+import { computed, signal, Service } from '@angular/core'
 import type { ProviderInfo, Source } from '../generated/activity'
 import type { EntryUiAdapter } from '../providers/types'
 import type { ViewMode } from './types'
 
-@Injectable({ providedIn: 'root' })
+@Service()
 export class ActivityViewStateService {
   readonly dateFrom = signal('')
   readonly dateTo = signal('')
