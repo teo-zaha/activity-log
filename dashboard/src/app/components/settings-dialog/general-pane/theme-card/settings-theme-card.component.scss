@@ -36,7 +36,7 @@
 
 .theme-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
   gap: 14px;
   margin-top: 22px;
 }
@@ -79,8 +79,8 @@
 .theme-preview {
   display: grid;
   grid-template-rows: 8px 1fr 12px;
-  width: 56px;
-  height: 56px;
+  width: 48px;
+  height: 48px;
   padding: 6px;
   border-radius: 16px;
   background: var(--surface);
@@ -115,9 +115,12 @@
   min-width: 0;
 }
 
+// Names stay on one line: breaking "Solarized" mid-word reads as a typo.
 .theme-name {
   font-weight: 700;
-  overflow-wrap: anywhere;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .theme-state {
@@ -174,9 +177,5 @@
     padding: 6px 8px;
     border-radius: 12px;
     grid-template-rows: 6px 1fr 8px;
-  }
-
-  .theme-name {
-    overflow-wrap: normal;
   }
 }
