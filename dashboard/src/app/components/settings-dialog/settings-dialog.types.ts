@@ -1,7 +1,7 @@
 import type { ProviderInfo, Source } from '../../generated/activity'
 import type { Theme } from '../../services/theme.service'
 
-export type SettingsSelection = 'general' | `source:${Source}`
+export type SettingsSelection = 'general' | 'logs' | `source:${Source}`
 
 export type FutureProviderId = 'figma' | 'miro' | 'teams' | 'github'
 
@@ -22,4 +22,8 @@ export interface SettingsProviderRow {
 export interface SettingsThemeOption {
   readonly id: Theme
   readonly label: string
+}
+
+export interface SettingsDialogData {
+  readonly initialSelection: SettingsSelection
 }

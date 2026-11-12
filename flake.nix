@@ -6,6 +6,10 @@
     # Tools
     flake-parts.url = "github:hercules-ci/flake-parts";
     flake-root.url = "github:srid/flake-root";
+    rust-overlay = {
+      url = "github:oxalica/rust-overlay";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
 
     # process-compose-flake.url = "github:Platonic-Systems/process-compose-flake";
   };
@@ -40,6 +44,7 @@
           _module.args.pkgs = import nixpkgs {
             inherit system;
             config.allowUnfree = true;
+            overlays = [ inputs.rust-overlay.overlays.default ];
           };
           devShells.default = pkgs.mkShell {
             nativeBuildInputs = with pkgs; [
@@ -47,7 +52,7 @@
               cargo
               clippy
               nodejs
-              pnpm
+              pnpm_10
               python3
               rustc
               rustfmt
@@ -59,6 +64,23 @@
 
             inputsFrom = [
               config.flake-root.devShell
+            ];
+          };
+
+          # Cross-builds the Tauri Windows installer (x86_64-pc-windows-msvc) via
+          # cargo-xwin + NSIS. Used by `pnpm desktop:build:windows`.
+          devShells.windows = pkgs.mkShell {
+            nativeBuildInputs = with pkgs; [
+              (rust-bin.stable.latest.default.override {
+                targets = [ "x86_64-pc-windows-msvc" ];
+              })
+              cargo-xwin
+              llvmPackages.clang-unwrapped
+              llvmPackages.llvm
+              llvmPackages.lld
+              nsis
+              nodejs
+              pnpm_10
             ];
           };
         };

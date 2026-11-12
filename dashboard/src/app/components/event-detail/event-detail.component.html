@@ -18,6 +18,8 @@
     [cdkTrapFocusAutoCapture]="true"
     (keydown.escape)="close()"
   >
+    <span class="grabber" aria-hidden="true"></span>
+
     @if (activity.selectedEntry(); as entry) {
       <div class="flyout-header">
         <div class="flyout-badges">
@@ -27,12 +29,17 @@
                 class="flyout-badge-icon"
                 [source]="badge.source"
                 [fallbackIcon]="badge.icon"
-              ></app-provider-icon>
-              <span class="flyout-badge-label">{{ badge.label }}</span>
+              />
+              {{ badge.label }}
             </span>
           }
         </div>
-        <button class="flyout-close" (click)="close()" aria-label="Close event details">
+        <button
+          type="button"
+          class="flyout-close"
+          (click)="close()"
+          aria-label="Close event details"
+        >
           <span class="material-icons" aria-hidden="true">close</span>
         </button>
       </div>
@@ -41,99 +48,104 @@
         <h2 id="event-detail-title" class="flyout-title">{{ entry.title }}</h2>
         <p class="flyout-time">
           <span class="material-icons" aria-hidden="true">schedule</span>
-          {{ formatDateTime(entry.timestamp) }}
+          <time [attr.datetime]="entry.timestamp">{{ formatDateTime(entry.timestamp) }}</time>
         </p>
 
         @if (entry.detailSections.length) {
           @for (section of entry.detailSections; track section.source) {
-            <div class="flyout-section">
-              <span class="flyout-section-title flyout-badge" [class]="section.badgeClass">
+            <section class="flyout-section">
+              <h3 class="flyout-section-title flyout-badge" [class]="section.badgeClass">
                 <app-provider-icon
                   class="flyout-badge-icon"
                   [source]="section.source"
                   [fallbackIcon]="section.icon"
-                ></app-provider-icon>
-                <span class="flyout-badge-label">{{ section.title }}</span>
-              </span>
-              <div class="flyout-fields">
+                />
+                {{ section.title }}
+              </h3>
+              <dl class="flyout-fields">
                 @for (field of section.fields; track field.label) {
                   <div class="field-row">
-                    <span class="field-label">{{ field.label }}</span>
-                    <span class="field-value">{{ field.value }}</span>
+                    <dt class="field-label">{{ field.label }}</dt>
+                    <dd class="field-value">{{ field.value }}</dd>
                   </div>
                 }
-              </div>
-            </div>
+              </dl>
+            </section>
           }
         } @else {
-          <div class="flyout-fields">
+          <dl class="flyout-fields">
             @for (field of entry.detailFields; track field.label) {
               <div class="field-row">
-                <span class="field-label">{{ field.label }}</span>
-                <span class="field-value">{{ field.value }}</span>
+                <dt class="field-label">{{ field.label }}</dt>
+                <dd class="field-value">{{ field.value }}</dd>
               </div>
             }
-          </div>
+          </dl>
         }
       </div>
     }
 
     @if (activity.selectedEntries(); as entries) {
       <div class="flyout-header">
-        <span id="event-detail-overflow-title" class="flyout-overflow-count">
-          Additional events ({{ entries.length }})
-        </span>
-        <button class="flyout-close" (click)="close()" aria-label="Close event details">
+        <h2 id="event-detail-overflow-title" class="flyout-overflow-count">
+          {{ entries.length }} overlapping events
+        </h2>
+        <button
+          type="button"
+          class="flyout-close"
+          (click)="close()"
+          aria-label="Close event details"
+        >
           <span class="material-icons" aria-hidden="true">close</span>
         </button>
       </div>
 
       <div class="flyout-body">
         @for (entry of entries; track entry.timestamp + entry.title) {
-          <div class="flyout-section">
+          <section class="flyout-section">
             <div class="flyout-section-header">
               <span class="flyout-badge" [class]="entry.badge.badgeClass">
                 <app-provider-icon
                   class="flyout-badge-icon"
                   [source]="entry.badge.source"
                   [fallbackIcon]="entry.badge.icon"
-                ></app-provider-icon>
-                <span class="flyout-badge-label">{{ entry.badge.label }}</span>
+                />
+                {{ entry.badge.label }}
               </span>
-              <span class="flyout-section-entry-title">{{ entry.title }}</span>
+              <h3 class="flyout-section-entry-title">{{ entry.title }}</h3>
             </div>
             @if (entry.detailSections.length) {
               @for (section of entry.detailSections; track section.source) {
-                <div class="flyout-section">
+                <div class="flyout-subsection">
                   <span class="flyout-section-title flyout-badge" [class]="section.badgeClass">
                     <app-provider-icon
                       class="flyout-badge-icon"
                       [source]="section.source"
                       [fallbackIcon]="section.icon"
-                    ></app-provider-icon>
-                    <span class="flyout-badge-label">{{ section.title }}</span>
+                    />
+                    {{ section.title }}
                   </span>
-                  <div class="flyout-fields">
+                  <dl class="flyout-fields">
                     @for (field of section.fields; track field.label) {
                       <div class="field-row">
-                        <span class="field-label">{{ field.label }}</span>
-                        <span class="field-value">{{ field.value }}</span>
+                        <dt class="field-label">{{ field.label }}</dt>
+                        <dd class="field-value">{{ field.value }}</dd>
                       </div>
                     }
-                  </div>
+                  </dl>
                 </div>
               }
             } @else {
-              <div class="flyout-fields">
+              <dl class="flyout-fields">
                 @for (field of entry.detailFields; track field.label) {
                   <div class="field-row">
-                    <span class="field-label">{{ field.label }}</span>
-                    <span class="field-value">{{ field.value }}</span>
+                    <dt class="field-label">{{ field.label }}</dt>
+                    <dd class="field-value">{{ field.value }}</dd>
                   </div>
                 }
-              </div>
+              </dl>
             }
-          </div>
+          </section>
         }
       </div>
     }

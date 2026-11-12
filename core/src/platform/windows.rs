@@ -5,19 +5,20 @@ use chrono::{Datelike, Local, NaiveDate, TimeZone, Utc};
 use windows::{
     Win32::{
         Foundation::{
-            ERROR_INSUFFICIENT_BUFFER, ERROR_NO_MORE_ITEMS, SYSTEMTIME, VARIANT_FALSE, VARIANT_TRUE,
+            DISP_E_EXCEPTION, ERROR_INSUFFICIENT_BUFFER, ERROR_NO_MORE_ITEMS, MK_E_UNAVAILABLE,
+            SYSTEMTIME, VARIANT_FALSE, VARIANT_TRUE,
         },
         System::{
             Com::{
-                CLSCTX_LOCAL_SERVER, CLSIDFromProgID, COINIT_APARTMENTTHREADED, CoCreateInstance,
-                CoInitializeEx, CoUninitialize, DISPATCH_FLAGS, DISPATCH_METHOD,
-                DISPATCH_PROPERTYGET, DISPATCH_PROPERTYPUT, DISPPARAMS, EXCEPINFO, IDispatch,
+                CLSIDFromProgID, COINIT_APARTMENTTHREADED, CoInitializeEx, CoUninitialize,
+                DISPATCH_FLAGS, DISPATCH_METHOD, DISPATCH_PROPERTYGET, DISPATCH_PROPERTYPUT,
+                DISPPARAMS, EXCEPINFO, IDispatch,
             },
             EventLog::{
                 EVT_HANDLE, EvtClose, EvtNext, EvtQuery, EvtQueryChannelPath,
                 EvtQueryForwardDirection, EvtRender, EvtRenderEventXml,
             },
-            Ole::DISPID_PROPERTYPUT,
+            Ole::{DISPID_PROPERTYPUT, GetActiveObject},
             Variant::{
                 VARIANT, VARIANT_0, VARIANT_0_0, VARIANT_0_0_0, VT_BOOL, VT_BSTR, VT_DATE,
                 VT_DISPATCH, VT_EMPTY, VT_I4, VariantChangeType, VariantClear, VariantInit,
@@ -25,11 +26,14 @@ use windows::{
             },
         },
     },
-    core::{BSTR, HRESULT, HSTRING, PCWSTR},
+    core::{BSTR, GUID, HRESULT, HSTRING, IUnknown, Interface, PCWSTR},
 };
 
 const OUTLOOK_APPLICATION: &str = "Outlook.Application";
 const DISPATCH_BUFFER_BYTES: usize = 64 * 1024;
+// IDispatch's reserved `riid` must point at IID_NULL; a null pointer is rejected
+// by the RPC proxy for out-of-process servers like Outlook (0x800706F4).
+const IID_NULL: GUID = GUID::zeroed();
 
 pub struct ComGuard;
 
@@ -37,6 +41,7 @@ impl ComGuard {
     pub fn new() -> Result<Self> {
         unsafe {
             CoInitializeEx(None, COINIT_APARTMENTTHREADED)
+                .ok()
                 .map_err(|err| anyhow!("COM initialization failed: {err}"))?;
         }
         Ok(Self)
@@ -56,19 +61,44 @@ pub struct DispatchObject {
     dispatch: IDispatch,
 }
 
-pub fn create_outlook_application() -> Result<DispatchObject> {
+fn outlook_clsid() -> Result<GUID> {
     let prog_id = HSTRING::from(OUTLOOK_APPLICATION);
-    let clsid = unsafe {
+    unsafe {
         CLSIDFromProgID(PCWSTR(prog_id.as_ptr()))
-            .map_err(|err| anyhow!("Outlook COM registration unavailable: {err}"))?
-    };
+            .map_err(|err| anyhow!("Outlook COM registration unavailable: {err}"))
+    }
+}
 
-    let dispatch = unsafe {
-        CoCreateInstance::<IDispatch>(&clsid, None, CLSCTX_LOCAL_SERVER)
-            .map_err(|err| anyhow!("Outlook COM startup failed: {err}"))?
-    };
+pub fn outlook_is_installed() -> bool {
+    outlook_clsid().is_ok()
+}
+
+/// Attaches to the Outlook the user already has open. Never starts Outlook: creating the COM
+/// server launches a full Outlook window, and a headless instance often has no connection.
+pub fn running_outlook_application() -> Result<DispatchObject> {
+    let clsid = outlook_clsid()?;
+    let mut unknown: Option<IUnknown> = None;
+    unsafe { GetActiveObject(&clsid, None, &mut unknown) }.map_err(|err| {
+        if err.code() == MK_E_UNAVAILABLE {
+            anyhow!("Outlook is not running. Open Outlook to include its calendar.")
+        } else {
+            anyhow!("Could not attach to Outlook: {err}")
+        }
+    })?;
+    let dispatch = unknown
+        .ok_or_else(|| anyhow!("Outlook returned no COM object"))?
+        .cast::<IDispatch>()
+        .map_err(|err| anyhow!("Outlook COM object has no dispatch interface: {err}"))?;
 
     Ok(DispatchObject { dispatch })
+}
+
+/// Keeps subprocesses from flashing a console window in the GUI app.
+pub fn hide_console_window(command: &mut std::process::Command) {
+    use std::os::windows::process::CommandExt;
+
+    const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+    command.creation_flags(CREATE_NO_WINDOW);
 }
 
 pub fn system_log_access(log_name: &str) -> Result<()> {
@@ -109,11 +139,6 @@ impl DispatchObject {
         })
     }
 
-    pub fn property_string(&self, name: &str) -> Result<String> {
-        self.property_optional_string(name)?
-            .ok_or_else(|| anyhow!("{name} was empty"))
-    }
-
     pub fn property_optional_string(&self, name: &str) -> Result<Option<String>> {
         let result = invoke_zero(&self.dispatch, name, DISPATCH_PROPERTYGET)?;
         result.into_optional_string()
@@ -122,11 +147,6 @@ impl DispatchObject {
     pub fn property_i32(&self, name: &str) -> Result<i32> {
         let result = invoke_zero(&self.dispatch, name, DISPATCH_PROPERTYGET)?;
         result.into_i32(name)
-    }
-
-    pub fn property_bool(&self, name: &str) -> Result<bool> {
-        let result = invoke_zero(&self.dispatch, name, DISPATCH_PROPERTYGET)?;
-        result.into_bool(name)
     }
 
     pub fn property_rfc3339(&self, name: &str) -> Result<String> {
@@ -171,7 +191,7 @@ impl EventHandle {
     fn query(log_name: &str, query: &str) -> Result<Self> {
         let log_name = HSTRING::from(log_name);
         let query = HSTRING::from(query);
-        let flags = (EvtQueryChannelPath | EvtQueryForwardDirection).0;
+        let flags = EvtQueryChannelPath.0 | EvtQueryForwardDirection.0;
         let raw = unsafe {
             EvtQuery(
                 None,
@@ -213,53 +233,47 @@ impl OwnedVariant {
 
     fn from_string(value: &str) -> Self {
         let mut variant = Self::empty();
-        unsafe {
-            variant.raw.Anonymous = VARIANT_0 {
-                Anonymous: ManuallyDrop::new(VARIANT_0_0 {
-                    vt: VT_BSTR,
-                    wReserved1: 0,
-                    wReserved2: 0,
-                    wReserved3: 0,
-                    Anonymous: VARIANT_0_0_0 {
-                        bstrVal: ManuallyDrop::new(BSTR::from(value)),
-                    },
-                }),
-            };
-        }
+        variant.raw.Anonymous = VARIANT_0 {
+            Anonymous: ManuallyDrop::new(VARIANT_0_0 {
+                vt: VT_BSTR,
+                wReserved1: 0,
+                wReserved2: 0,
+                wReserved3: 0,
+                Anonymous: VARIANT_0_0_0 {
+                    bstrVal: ManuallyDrop::new(BSTR::from(value)),
+                },
+            }),
+        };
         variant
     }
 
     fn from_i32(value: i32) -> Self {
         let mut variant = Self::empty();
-        unsafe {
-            variant.raw.Anonymous = VARIANT_0 {
-                Anonymous: ManuallyDrop::new(VARIANT_0_0 {
-                    vt: VT_I4,
-                    wReserved1: 0,
-                    wReserved2: 0,
-                    wReserved3: 0,
-                    Anonymous: VARIANT_0_0_0 { lVal: value },
-                }),
-            };
-        }
+        variant.raw.Anonymous = VARIANT_0 {
+            Anonymous: ManuallyDrop::new(VARIANT_0_0 {
+                vt: VT_I4,
+                wReserved1: 0,
+                wReserved2: 0,
+                wReserved3: 0,
+                Anonymous: VARIANT_0_0_0 { lVal: value },
+            }),
+        };
         variant
     }
 
     fn from_bool(value: bool) -> Self {
         let mut variant = Self::empty();
-        unsafe {
-            variant.raw.Anonymous = VARIANT_0 {
-                Anonymous: ManuallyDrop::new(VARIANT_0_0 {
-                    vt: VT_BOOL,
-                    wReserved1: 0,
-                    wReserved2: 0,
-                    wReserved3: 0,
-                    Anonymous: VARIANT_0_0_0 {
-                        boolVal: if value { VARIANT_TRUE } else { VARIANT_FALSE },
-                    },
-                }),
-            };
-        }
+        variant.raw.Anonymous = VARIANT_0 {
+            Anonymous: ManuallyDrop::new(VARIANT_0_0 {
+                vt: VT_BOOL,
+                wReserved1: 0,
+                wReserved2: 0,
+                wReserved3: 0,
+                Anonymous: VARIANT_0_0_0 {
+                    boolVal: if value { VARIANT_TRUE } else { VARIANT_FALSE },
+                },
+            }),
+        };
         variant
     }
 
@@ -298,20 +312,12 @@ impl OwnedVariant {
 
     fn into_i32(self, name: &str) -> Result<i32> {
         let converted = convert_variant(&self.raw, VT_I4)?;
-        let value = unsafe { converted.raw.Anonymous.Anonymous.Anonymous.lVal };
-        if converted.raw.Anonymous.Anonymous.vt != VT_I4 {
+        let inner = unsafe { &converted.raw.Anonymous.Anonymous };
+        if inner.vt != VT_I4 {
             return Err(anyhow!("Expected integer result from {name}"));
         }
+        let value = unsafe { inner.Anonymous.lVal };
         Ok(value)
-    }
-
-    fn into_bool(self, name: &str) -> Result<bool> {
-        let converted = convert_variant(&self.raw, VT_BOOL)?;
-        let value = unsafe { converted.raw.Anonymous.Anonymous.Anonymous.boolVal };
-        if converted.raw.Anonymous.Anonymous.vt != VT_BOOL {
-            return Err(anyhow!("Expected boolean result from {name}"));
-        }
-        Ok(value != VARIANT_FALSE)
     }
 
     fn into_rfc3339(self, name: &str) -> Result<String> {
@@ -365,7 +371,7 @@ fn invoke_zero(dispatch: &IDispatch, name: &str, flags: DISPATCH_FLAGS) -> Resul
         dispatch
             .Invoke(
                 dispid,
-                std::ptr::null(),
+                &IID_NULL,
                 0,
                 flags,
                 &params,
@@ -373,7 +379,7 @@ fn invoke_zero(dispatch: &IDispatch, name: &str, flags: DISPATCH_FLAGS) -> Resul
                 Some(&mut excep),
                 Some(&mut arg_error),
             )
-            .map_err(|err| anyhow!("Windows dispatch {name} failed: {err}"))?;
+            .map_err(|err| dispatch_error(name, &err, &mut excep))?;
     }
 
     Ok(result)
@@ -406,7 +412,7 @@ fn invoke_one(
         dispatch
             .Invoke(
                 dispid,
-                std::ptr::null(),
+                &IID_NULL,
                 0,
                 flags,
                 &params,
@@ -414,10 +420,26 @@ fn invoke_one(
                 Some(&mut excep),
                 Some(&mut arg_error),
             )
-            .map_err(|err| anyhow!("Windows dispatch {name} failed: {err}"))?;
+            .map_err(|err| dispatch_error(name, &err, &mut excep))?;
     }
 
     Ok(result)
+}
+
+fn dispatch_error(name: &str, err: &windows::core::Error, excep: &mut EXCEPINFO) -> anyhow::Error {
+    // The callee allocates these BSTRs only for DISP_E_EXCEPTION; we own them.
+    let description = unsafe {
+        let description = ManuallyDrop::take(&mut excep.bstrDescription).to_string();
+        drop(ManuallyDrop::take(&mut excep.bstrSource));
+        drop(ManuallyDrop::take(&mut excep.bstrHelpFile));
+        description
+    };
+
+    if err.code() == DISP_E_EXCEPTION && !description.is_empty() {
+        anyhow!("Windows dispatch {name} failed: {description}")
+    } else {
+        anyhow!("Windows dispatch {name} failed: {err}")
+    }
 }
 
 fn resolve_dispid(dispatch: &IDispatch, name: &str) -> Result<i32> {
@@ -427,7 +449,7 @@ fn resolve_dispid(dispatch: &IDispatch, name: &str) -> Result<i32> {
 
     unsafe {
         dispatch
-            .GetIDsOfNames(std::ptr::null(), &name_ptr, 1, 0, &mut dispid)
+            .GetIDsOfNames(&IID_NULL, &name_ptr, 1, 0, &mut dispid)
             .map_err(|err| anyhow!("Windows dispatch lookup for {name} failed: {err}"))?;
     }
 

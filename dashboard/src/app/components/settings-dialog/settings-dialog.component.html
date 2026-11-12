@@ -4,6 +4,7 @@
     [providers]="providerRows()"
     [futureProviders]="futureProviderRows"
     (generalSelected)="selectGeneral()"
+    (logsSelected)="selectLogs()"
     (sourceSelected)="selectSource($event)"
   />
 
@@ -18,10 +19,17 @@
                 class="provider-heading-glyph"
                 [source]="provider.info.id"
                 [fallbackIcon]="provider.icon"
-              ></app-provider-icon>
+              />
             </span>
             <h2>{{ provider.label }}</h2>
           </div>
+        } @else if (selection() === 'logs') {
+          <span class="content-kicker u-kicker">Diagnostics</span>
+          <h2>Logs</h2>
+          <p>
+            Provider checks, collection runs and settings saves from this session. Copy them when
+            reporting a problem.
+          </p>
         } @else {
           <span class="content-kicker u-kicker">General</span>
           <h2>Appearance</h2>
@@ -49,12 +57,15 @@
       [providers]="providerRows()"
       [futureProviders]="futureProviderRows"
       (generalSelected)="selectGeneral()"
+      (logsSelected)="selectLogs()"
       (sourceSelected)="selectSource($event)"
     />
 
     <div class="settings-scroll">
       @if (selectedProvider(); as provider) {
         <app-settings-source-pane [provider]="provider" />
+      } @else if (selection() === 'logs') {
+        <app-settings-logs-pane />
       } @else {
         <app-settings-general-pane />
       }

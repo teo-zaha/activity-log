@@ -1,5 +1,6 @@
 use anyhow::{Result, anyhow};
 use chrono::{DateTime, TimeZone, Utc};
+#[cfg(any(target_os = "macos", test))]
 use serde_json::Value;
 
 use crate::model::{
@@ -95,6 +96,7 @@ pub(crate) fn outlook_range_bounds(
     Ok((start, end))
 }
 
+#[cfg(any(target_os = "macos", test))]
 pub(crate) fn parse_raw_outlook_events(stdout: &str) -> Result<Vec<RawOutlookEvent>> {
     let stdout = stdout.trim();
     if stdout.is_empty() || stdout == "[]" {

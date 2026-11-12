@@ -25,8 +25,8 @@ A provider integration that embeds a Rust or domain library directly for collect
 _Avoid_: shell path, native desktop provider
 
 **PowerShell compatibility path**:
-A Windows-specific **Command-based provider integration** that exists only as a temporary compatibility step.
-_Avoid_: normal Windows integration, preferred Windows path
+The former Windows-specific **Command-based provider integration** that existed as a temporary compatibility step before the native Rust implementation landed.
+_Avoid_: current Windows integration, preferred Windows path
 
 **Command-exception provider**:
 A provider that is explicitly allowed to remain on a **Command-based provider integration** until a safe native replacement exists.
@@ -54,11 +54,10 @@ _Avoid_: any Windows version, legacy Windows support
 - A **Collection run** gathers entries from one or more usable providers
 - A **Command-based provider integration** is allowed only as an exception while **Native provider integration** is the default direction for local desktop providers
 - A **Library-backed provider integration** is neither a shell path nor a native desktop path
-- The **PowerShell compatibility path** is one Windows-specific example of a **Command-based provider integration**
+- The **PowerShell compatibility path** is a historical example of a Windows **Command-based provider integration**
 - **Git** is the current **Library-backed provider integration**
-- **Outlook** and **System** are the only current **Command-exception providers**
-- The **Visibility fix phase** comes before the **Native migration phase**
-- The **Native migration phase** follows a **Stability-first migration** rule
+- **Outlook** and **System** are the current **Native provider integrations**
+- The completed Windows migration followed a **Stability-first migration** rule
 - The current **Native Windows baseline** is **Windows 11**
 
 ## Example dialogue
@@ -71,7 +70,7 @@ _Avoid_: any Windows version, legacy Windows support
 - "startup" was used to mean both **Provider startup check** and **Collection run** — resolved: these are distinct concepts.
 - "native" was used to mean both "not PowerShell" and "direct platform APIs" — resolved: use **Native provider integration** only for direct Rust-to-platform API work.
 - "embedded library" did not fit the earlier command-vs-native wording — resolved: use **Library-backed provider integration** for providers like **Git** that embed a domain library directly.
-- "temporary shell support" was vague — resolved: only **Outlook** and **System** are current **Command-exception providers**, and both remain migration targets.
+- "temporary shell support" was vague — resolved: **Outlook** and **System** used to be **Command-exception providers**, but both now use **Native provider integrations**.
 - "fix Windows collection" was ambiguous — resolved: the **Visibility fix phase** and the **Native migration phase** are separate decisions.
 - "weaker integration" was clarified as **Stability-first migration** — reliability on supported modern Windows versions matters more than immediate parity.
 - "modern Windows systems" was ambiguous — resolved: the current **Native Windows baseline** is **Windows 11**.

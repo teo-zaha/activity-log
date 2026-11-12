@@ -1,4 +1,4 @@
-import { Component, OnInit, effect, inject, ChangeDetectionStrategy } from '@angular/core'
+import { Component, OnInit, effect, inject } from '@angular/core'
 import { MatProgressBarModule } from '@angular/material/progress-bar'
 import {
   MatSnackBar,
@@ -14,6 +14,7 @@ import { TimelineComponent } from './components/timeline/timeline.component'
 import { DayViewComponent } from './components/day-view/day-view.component'
 import { WeekViewComponent } from './components/week-view/week-view.component'
 import { EventDetailComponent } from './components/event-detail/event-detail.component'
+import { CollectionStatusComponent } from './components/collection-status/collection-status.component'
 
 @Component({
   selector: 'app-root',
@@ -26,10 +27,10 @@ import { EventDetailComponent } from './components/event-detail/event-detail.com
     DayViewComponent,
     WeekViewComponent,
     EventDetailComponent,
+    CollectionStatusComponent,
   ],
   templateUrl: './app.component.html',
   styleUrl: './app.component.scss',
-  changeDetection: ChangeDetectionStrategy.OnPush,
 })
 export class AppComponent implements OnInit {
   protected readonly activity = inject(ActivityService)
@@ -41,8 +42,12 @@ export class AppComponent implements OnInit {
   constructor() {
     effect(() => {
       const error = this.activity.error()
+      const status = this.activity.collectionStatus()
+      // Collection failures are shown inline by <app-collection-status> with a retry action.
+      const shownInline =
+        (status.kind === 'timedOut' || status.kind === 'failed') && status.message === error
 
-      if (!error) {
+      if (!error || shownInline) {
         this.snackRef?.dismiss()
         this.snackRef = null
         this.activeErrorMessage = null

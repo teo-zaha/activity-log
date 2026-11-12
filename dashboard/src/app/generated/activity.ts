@@ -55,3 +55,21 @@ export type CollectRequest = { since?: string, until?: string, preset?: RangePre
 export type CollectingResponse = { collecting: boolean, };
 
 export type ErrorResponse = { error: string, };
+
+export type LogLevel = "info" | "warn" | "error";
+
+export type LogEntry = { 
+/**
+ * Monotonic per process, so the UI can track rows across refreshes.
+ */
+id: number, timestamp: string, level: LogLevel, 
+/**
+ * Area that emitted the entry, e.g. a provider id, `runtime` or `settings`.
+ */
+scope: string, message: string, };
+
+export type LogsResponse = { 
+/**
+ * Oldest first.
+ */
+entries: Array<LogEntry>, };

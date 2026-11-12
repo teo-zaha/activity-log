@@ -1,5 +1,6 @@
 pub mod activity;
 pub mod common;
+pub mod diagnostics;
 pub mod git;
 pub mod gitlab;
 pub mod jira;
@@ -27,6 +28,7 @@ pub use common::{
     provider_status::ProviderStatus, providers_response::ProvidersResponse,
     range_preset::RangePreset, source::Source, supported_os::SupportedOs,
 };
+pub use diagnostics::{log_entry::LogEntry, log_level::LogLevel, logs_response::LogsResponse};
 pub use git::git_entry::GitEntry;
 pub use gitlab::{gitlab_entry::GitLabEntry, gitlab_entry_type::GitLabType};
 pub use jira::{jira_entry::JiraEntry, jira_entry_type::JiraEntryType};

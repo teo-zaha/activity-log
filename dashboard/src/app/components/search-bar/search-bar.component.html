@@ -2,16 +2,26 @@
   <div class="search-field">
     <span class="material-icons search-icon" aria-hidden="true">search</span>
     <input
+      #input
       class="search-input"
-      type="text"
+      type="search"
+      enterkeyhint="search"
+      [attr.aria-label]="placeholder()"
       [placeholder]="placeholder()"
-      [ngModel]="value()"
-      (ngModelChange)="value.set($event)"
+      [formField]="query"
+      (keydown.escape)="clear()"
     />
     @if (value()) {
-      <button class="search-clear" (click)="clear()" aria-label="Clear">
+      <button
+        type="button"
+        class="search-clear"
+        (click)="clear(); input.focus()"
+        aria-label="Clear search"
+      >
         <span class="material-icons" aria-hidden="true">close</span>
       </button>
+    } @else {
+      <kbd class="search-hint" aria-hidden="true">/</kbd>
     }
   </div>
 </div>

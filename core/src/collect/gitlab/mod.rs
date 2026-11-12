@@ -1,10 +1,8 @@
 use anyhow::{Result, anyhow};
 use chrono::Days;
-use reqwest::Client;
 use serde_json::{Map, Value};
 
 use crate::{
-    cache::with_range_cache,
     model::{CollectOptions, GitLabEntry, GitLabType},
     provider::{gitlab::GitLabConfig, provider_context::ProviderContext},
 };
@@ -15,63 +13,53 @@ pub async fn collect_gitlab(
 ) -> Result<Vec<GitLabEntry>> {
     let config = context.config::<GitLabConfig>()?;
 
-    with_range_cache(
-        "gitlab",
-        options,
-        |cached: &Vec<GitLabEntry>| {
-            eprintln!("  [gitlab] cache hit ({} events)", cached.len());
-        },
-        || async {
-            let client = Client::builder().build()?;
+    let client = crate::provider::http_client_builder().build()?;
 
-            let after = options.since.checked_sub_days(Days::new(1)).unwrap();
-            let before = options.until.checked_add_days(Days::new(1)).unwrap();
+    let after = options.since.checked_sub_days(Days::new(1)).unwrap();
+    let before = options.until.checked_add_days(Days::new(1)).unwrap();
 
-            let mut entries = Vec::new();
-            let mut page = 1;
+    let mut entries = Vec::new();
+    let mut page = 1;
 
-            loop {
-                let url = format!(
-                    "{}/api/v4/users/{}/events?after={}&before={}&per_page=100&page={page}",
-                    config.url.trim_end_matches('/'),
-                    config.user,
-                    after.format("%Y-%m-%d"),
-                    before.format("%Y-%m-%d"),
-                );
+    loop {
+        let url = format!(
+            "{}/api/v4/users/{}/events?after={}&before={}&per_page=100&page={page}",
+            config.url.trim_end_matches('/'),
+            config.user,
+            after.format("%Y-%m-%d"),
+            before.format("%Y-%m-%d"),
+        );
 
-                let response = client
-                    .get(&url)
-                    .header("PRIVATE-TOKEN", config.token.as_str())
-                    .send()
-                    .await?;
+        let response = client
+            .get(&url)
+            .header("PRIVATE-TOKEN", config.token.as_str())
+            .send()
+            .await?;
 
-                if !response.status().is_success() {
-                    let status = response.status();
-                    let body = response.text().await.unwrap_or_default();
-                    return Err(anyhow!("GitLab API {status}: {body}"));
-                }
+        if !response.status().is_success() {
+            let status = response.status();
+            let body = response.text().await.unwrap_or_default();
+            return Err(anyhow!("GitLab API {status}: {body}"));
+        }
 
-                let events = response.json::<Vec<Value>>().await?;
-                if events.is_empty() {
-                    break;
-                }
+        let events = response.json::<Vec<Value>>().await?;
+        if events.is_empty() {
+            break;
+        }
 
-                for event in &events {
-                    if let Some(entry) = map_gitlab_event(event) {
-                        entries.push(entry);
-                    }
-                }
-
-                if events.len() < 100 {
-                    break;
-                }
-                page += 1;
+        for event in &events {
+            if let Some(entry) = map_gitlab_event(event) {
+                entries.push(entry);
             }
+        }
 
-            Ok(entries)
-        },
-    )
-    .await
+        if events.len() < 100 {
+            break;
+        }
+        page += 1;
+    }
+
+    Ok(entries)
 }
 
 pub fn map_gitlab_event(event: &Value) -> Option<GitLabEntry> {

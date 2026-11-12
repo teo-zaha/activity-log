@@ -1,0 +1,7 @@
+# Never commit large/binary VM artifacts.
+.vagrant/
+*.box
+packer/iso/
+packer/output-*/
+packer/packer_cache/
+packer/*.box

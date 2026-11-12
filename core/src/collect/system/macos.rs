@@ -1,26 +1,47 @@
 use anyhow::{Result, anyhow};
 use chrono::{DateTime, Local, NaiveDateTime, TimeZone, Utc};
+#[cfg(target_os = "macos")]
 use tokio::process::Command;
 
-use crate::model::{CollectOptions, SystemEntry, SystemEntryType};
-
-use super::utc_bounds;
+use crate::model::{SystemEntry, SystemEntryType};
+#[cfg(target_os = "macos")]
+use crate::{collect::system::utc_bounds, model::CollectOptions};
 
 const BOOT_LABEL: &str = "System started";
 const SHUTDOWN_LABEL: &str = "System shutdown";
 
+#[cfg(target_os = "macos")]
 pub(super) async fn collect_system(options: &CollectOptions) -> Result<Vec<SystemEntry>> {
-    let (start, end) = utc_bounds(options.since, options.until)?;
-    parse_last_output(last_output().await?, start, end)
-}
+    use std::process::Stdio;
+    use tokio::io::{AsyncBufReadExt, BufReader};
 
-async fn last_output() -> Result<String> {
-    let output = Command::new("/usr/bin/last")
+    let (start, end) = utc_bounds(options.since, options.until)?;
+    // `last` prints newest first and covers the whole wtmp history. Stream it and stop at the
+    // first entry older than the range instead of reading everything; dropping the child
+    // (kill_on_drop) ends the process early.
+    let mut child = Command::new("/usr/bin/last")
         .arg("-y")
         .arg("reboot")
-        .output()
-        .await?;
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .kill_on_drop(true)
+        .spawn()?;
+    let stdout = child
+        .stdout
+        .take()
+        .ok_or_else(|| anyhow!("last produced no output stream"))?;
 
+    let mut lines = BufReader::new(stdout).lines();
+    let mut entries = Vec::new();
+    while let Some(line) = lines.next_line().await? {
+        match classify_last_line(&line, start, end)? {
+            LastLine::Entry(entry) => entries.push(entry),
+            LastLine::Skip => {}
+            LastLine::BeforeRange => return Ok(entries),
+        }
+    }
+
+    let output = child.wait_with_output().await?;
     if !output.status.success() {
         return Err(anyhow!(
             "last exited {}: {}",
@@ -28,39 +49,58 @@ async fn last_output() -> Result<String> {
             String::from_utf8_lossy(&output.stderr).trim()
         ));
     }
-
-    Ok(String::from_utf8_lossy(&output.stdout).into_owned())
+    Ok(entries)
 }
 
+pub(crate) enum LastLine {
+    Entry(SystemEntry),
+    Skip,
+    /// Older than the range; everything after it is older too.
+    BeforeRange,
+}
+
+pub(crate) fn classify_last_line(
+    line: &str,
+    start: DateTime<Utc>,
+    end: DateTime<Utc>,
+) -> Result<LastLine> {
+    let trimmed = line.trim();
+    if trimmed.is_empty() || trimmed.starts_with("wtmp begins") {
+        return Ok(LastLine::Skip);
+    }
+    let Some((entry_type, label, raw_ts)) = parse_last_line(trimmed) else {
+        return Ok(LastLine::Skip);
+    };
+    let timestamp = parse_last_timestamp(raw_ts)?;
+    if timestamp < start {
+        return Ok(LastLine::BeforeRange);
+    }
+    if timestamp > end {
+        return Ok(LastLine::Skip);
+    }
+    Ok(LastLine::Entry(SystemEntry {
+        source: "system".to_string(),
+        entry_type,
+        timestamp: timestamp.to_rfc3339(),
+        label: label.to_string(),
+    }))
+}
+
+/// Same rules as the streaming collector, for captured `last` output.
+#[cfg(test)]
 pub(crate) fn parse_last_output(
     stdout: String,
     start: DateTime<Utc>,
     end: DateTime<Utc>,
 ) -> Result<Vec<SystemEntry>> {
     let mut entries = Vec::new();
-
     for line in stdout.lines() {
-        let trimmed = line.trim();
-        if trimmed.is_empty() || trimmed.starts_with("wtmp begins") {
-            continue;
+        match classify_last_line(line, start, end)? {
+            LastLine::Entry(entry) => entries.push(entry),
+            LastLine::Skip => {}
+            LastLine::BeforeRange => break,
         }
-
-        let Some((entry_type, label, raw_ts)) = parse_last_line(trimmed) else {
-            continue;
-        };
-        let timestamp = parse_last_timestamp(raw_ts)?;
-        if timestamp < start || timestamp > end {
-            continue;
-        }
-
-        entries.push(SystemEntry {
-            source: "system".to_string(),
-            entry_type,
-            timestamp: timestamp.to_rfc3339(),
-            label: label.to_string(),
-        });
     }
-
     Ok(entries)
 }
 

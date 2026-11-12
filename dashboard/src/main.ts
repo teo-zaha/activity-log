@@ -1,8 +1,8 @@
-import { provideHttpClient, withFetch } from '@angular/common/http'
+import { provideHttpClient } from '@angular/common/http'
+import { provideBrowserGlobalErrorListeners } from '@angular/core'
 import { MAT_DATE_FORMATS, MAT_DATE_LOCALE } from '@angular/material/core'
 import { bootstrapApplication } from '@angular/platform-browser'
 import { AppComponent } from './app/app.component'
-import { provideActivityBackendClient } from './app/services/backend/backend-client'
 
 const GB_DATE_FORMATS = {
   parse: { dateInput: 'DD/MM/YYYY' },
@@ -16,8 +16,8 @@ const GB_DATE_FORMATS = {
 
 bootstrapApplication(AppComponent, {
   providers: [
-    provideHttpClient(withFetch()),
-    provideActivityBackendClient(),
+    provideBrowserGlobalErrorListeners(),
+    provideHttpClient(),
     { provide: MAT_DATE_LOCALE, useValue: 'en-GB' },
     { provide: MAT_DATE_FORMATS, useValue: GB_DATE_FORMATS },
   ],

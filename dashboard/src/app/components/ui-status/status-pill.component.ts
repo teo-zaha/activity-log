@@ -1,4 +1,4 @@
-import { Component, computed, input, ChangeDetectionStrategy } from '@angular/core'
+import { Component, computed, input } from '@angular/core'
 import type { ProviderStatus } from '../../generated/activity'
 import { providerStatusLabel } from './provider-status-label'
 import { StatusDotComponent } from './status-dot.component'
@@ -8,7 +8,6 @@ import { StatusDotComponent } from './status-dot.component'
   imports: [StatusDotComponent],
   templateUrl: './status-pill.component.html',
   styleUrl: './status-pill.component.scss',
-  changeDetection: ChangeDetectionStrategy.OnPush,
   host: {
     '[attr.data-status]': 'status()',
     '[class.size-sm]': 'isSmall()',

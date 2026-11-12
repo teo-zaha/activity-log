@@ -1,14 +1,7 @@
-import {
-  AfterViewInit,
-  ChangeDetectionStrategy,
-  Component,
-  ElementRef,
-  ViewChild,
-  computed,
-  inject,
-} from '@angular/core'
+import { Component, ElementRef, afterNextRender, computed, inject, viewChild } from '@angular/core'
 import { ActivityService } from '../../services/activity.service'
 import type { EntryUiAdapter } from '../../providers/types'
+import { injectBreakpointDown } from '../../utils/breakpoints'
 import { calendarEntryKey, layoutEventsWithOverflow } from '../calendar-layout'
 
 export const HOUR_START = 0
@@ -58,31 +51,36 @@ interface PositionedAllDayEntry {
   selector: 'app-day-view',
   templateUrl: './day-view.component.html',
   styleUrl: './day-view.component.scss',
-  changeDetection: ChangeDetectionStrategy.OnPush,
 })
-export class DayViewComponent implements AfterViewInit {
+export class DayViewComponent {
   protected readonly activity = inject(ActivityService)
+  private readonly isPhone = injectBreakpointDown('phone')
 
-  @ViewChild('scrollEl') private scrollEl!: ElementRef<HTMLElement>
+  private readonly scrollEl = viewChild.required<ElementRef<HTMLElement>>('scrollEl')
 
   protected readonly hours = Array.from(
     { length: HOUR_END - HOUR_START + 1 },
     (_, i) => HOUR_START + i
   )
 
+  constructor() {
+    afterNextRender({
+      write: () => {
+        this.scrollEl().nativeElement.scrollTop = DEFAULT_SCROLL_HOUR * this.activity.hourHeight()
+      },
+    })
+  }
+
   protected gridHeight(): number {
     return (HOUR_END - HOUR_START + 1) * this.activity.hourHeight()
   }
 
-  ngAfterViewInit(): void {
-    this.scrollEl.nativeElement.scrollTop = DEFAULT_SCROLL_HOUR * this.activity.hourHeight()
-  }
-
   protected formatDayHeader(dateStr: string): string {
+    const compact = this.isPhone()
     return new Date(dateStr + 'T12:00:00').toLocaleDateString('en-GB', {
-      weekday: 'long',
+      weekday: compact ? 'short' : 'long',
       day: 'numeric',
-      month: 'long',
+      month: compact ? 'short' : 'long',
       year: 'numeric',
     })
   }

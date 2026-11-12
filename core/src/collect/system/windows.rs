@@ -1,13 +1,18 @@
-use anyhow::{Result, anyhow};
+use anyhow::Result;
 use chrono::{DateTime, Utc};
 
+use crate::model::system::raw_system_event::RawSystemEvent;
+
+#[cfg(target_os = "windows")]
 use crate::{
-    model::{CollectOptions, SystemEntry, system::raw_system_event::RawSystemEvent},
+    model::{CollectOptions, SystemEntry},
     platform::query_windows_event_log,
 };
 
-use super::{WINDOWS_SYSTEM_EVENTS, map_windows_events, parse_raw_system_events};
+#[cfg(target_os = "windows")]
+use super::{WINDOWS_SYSTEM_EVENTS, map_windows_events};
 
+#[cfg(target_os = "windows")]
 pub(super) async fn collect_system(options: &CollectOptions) -> Result<Vec<SystemEntry>> {
     let ids = WINDOWS_SYSTEM_EVENTS
         .iter()
@@ -16,28 +21,28 @@ pub(super) async fn collect_system(options: &CollectOptions) -> Result<Vec<Syste
     let options = options.clone();
     let system_raw = tokio::task::spawn_blocking(move || query_log("System", &ids, &options))
         .await
-        .map_err(|err| anyhow!("System collection task failed: {err}"))??;
+        .map_err(|err| anyhow::anyhow!("System collection task failed: {err}"))??;
 
     Ok(map_windows_events(&system_raw, WINDOWS_SYSTEM_EVENTS))
 }
 
+#[cfg(target_os = "windows")]
 fn query_log(log_name: &str, ids: &[i32], options: &CollectOptions) -> Result<Vec<RawSystemEvent>> {
     let (start, end) = super::utc_bounds(options.since, options.until)?;
     let query = build_event_query(ids, start, end);
     let xml_events = query_windows_event_log(log_name, &query)?;
-    let mut payload = Vec::with_capacity(xml_events.len());
+    let mut events = Vec::with_capacity(xml_events.len());
 
     for xml in xml_events {
         if let Some(event) = parse_event_xml(&xml)? {
-            payload.push(event);
+            events.push(event);
         }
     }
 
-    let json = serde_json::to_string(&payload)?;
-    parse_raw_system_events(&json)
+    Ok(events)
 }
 
-fn build_event_query(ids: &[i32], start: DateTime<Utc>, end: DateTime<Utc>) -> String {
+pub(crate) fn build_event_query(ids: &[i32], start: DateTime<Utc>, end: DateTime<Utc>) -> String {
     let ids = ids
         .iter()
         .map(|id| format!("EventID={id}"))
@@ -47,7 +52,7 @@ fn build_event_query(ids: &[i32], start: DateTime<Utc>, end: DateTime<Utc>) -> S
     format!(
         "*[System[({ids}) and TimeCreated[@SystemTime >= '{start}' and @SystemTime <= '{end}']]]",
         start = start.format("%Y-%m-%dT%H:%M:%SZ"),
-        end = end.format("%Y-%m-%dT%H:%M:%SZ"),
+        end = end.format("%Y-%m-%dT%H:%M:%SZ")
     )
 }
 

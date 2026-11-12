@@ -1,10 +1,7 @@
 @use '../calendar-shared' as cal;
 
 :host {
-  display: flex;
-  flex-direction: column;
-  flex: 1;
-  min-height: 0;
+  @include cal.host;
 }
 
 .day-view {
@@ -13,7 +10,7 @@
   flex: 1;
   overflow: hidden;
   min-height: 0;
-  padding: 0 0 20px;
+  padding: 0 0 12px;
 }
 
 .cal-nav {
@@ -77,7 +74,7 @@
 }
 
 .time-gutter-allday {
-  width: 52px;
+  width: var(--cal-gutter);
   flex-shrink: 0;
   border-right: 1px solid var(--border-subtle);
 }
@@ -133,7 +130,7 @@
 .cal-grid {
   position: relative;
   display: grid;
-  grid-template-columns: 52px 1fr;
+  grid-template-columns: var(--cal-gutter) 1fr;
   padding: 18px 18px 18px 0;
 }
 
@@ -143,7 +140,7 @@
   right: 0;
   height: 64px;
   display: grid;
-  grid-template-columns: 52px 1fr;
+  grid-template-columns: var(--cal-gutter) 1fr;
   align-items: flex-start;
   pointer-events: none;
 }
@@ -158,16 +155,10 @@
 
 .events-col {
   position: absolute;
-  left: 52px;
+  left: var(--cal-gutter);
   right: 18px;
   top: 18px;
   bottom: 18px;
 }
 
 @include cal.event-styles;
-
-@include cal.down('tablet') {
-  .cal-scroll {
-    margin: 0 16px 0;
-  }
-}

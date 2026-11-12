@@ -1,0 +1,182 @@
+@use '../../../dashboard-shared' as ui;
+
+:host {
+  display: block;
+}
+
+.general-card {
+  @include ui.surface-card($padding: 28px);
+}
+
+.general-card-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  min-width: 0;
+
+  > div {
+    min-width: 0;
+  }
+
+  h3 {
+    margin: 6px 0 0;
+    font-size: 22px;
+    line-height: 1.15;
+    letter-spacing: -0.03em;
+  }
+}
+
+.general-copy {
+  margin: 0;
+  color: var(--text-secondary);
+  line-height: 1.6;
+  overflow-wrap: anywhere;
+}
+
+.theme-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+  gap: 14px;
+  margin-top: 22px;
+}
+
+.theme-card {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: center;
+  gap: 14px;
+  min-width: 0;
+  width: 100%;
+  padding: 14px;
+  border: 1px solid var(--border);
+  border-radius: 18px;
+  background: color-mix(in srgb, var(--surface) 92%, transparent);
+  color: var(--text-primary);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  @include ui.interactive-option(
+    $hover-transform: translateY(-2px),
+    $active-shadow: 0 0 0 1px color-mix(in srgb, var(--accent) 30%, transparent)
+  );
+
+  &:hover {
+    border-color: color-mix(in srgb, var(--accent) 40%, var(--border) 60%);
+    box-shadow: var(--control-shadow);
+  }
+
+  &.active {
+    border-color: color-mix(in srgb, var(--accent) 55%, var(--border) 45%);
+    background: color-mix(in srgb, var(--accent) 12%, var(--surface) 88%);
+  }
+
+  mat-icon {
+    color: var(--accent);
+  }
+}
+
+.theme-preview {
+  display: grid;
+  grid-template-rows: 8px 1fr 12px;
+  width: 56px;
+  height: 56px;
+  padding: 6px;
+  border-radius: 16px;
+  background: var(--surface);
+  box-shadow: inset 0 0 0 1px rgba(15, 23, 42, 0.08);
+}
+
+.theme-preview-top,
+.theme-preview-main,
+.theme-preview-accent {
+  display: block;
+  border-radius: 999px;
+}
+
+.theme-preview-top {
+  background: var(--border);
+  margin-bottom: 6px;
+}
+
+.theme-preview-main {
+  background: var(--surface-alt);
+  margin-bottom: 8px;
+}
+
+.theme-preview-accent {
+  background: var(--btn-primary);
+}
+
+.theme-copy {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.theme-name {
+  font-weight: 700;
+  overflow-wrap: anywhere;
+}
+
+.theme-state {
+  color: var(--text-tertiary);
+  font-size: 12px;
+}
+
+@include ui.down('tablet') {
+  .general-card {
+    padding: 20px;
+    border-radius: var(--radius-lg);
+  }
+
+  .general-card-head {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 12px;
+
+    h3 {
+      font-size: 20px;
+    }
+  }
+
+  .theme-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 10px;
+    margin-top: 16px;
+  }
+
+  .theme-card {
+    padding: 12px;
+    gap: 12px;
+  }
+}
+
+@include ui.down('phone') {
+  .general-card {
+    padding: 16px;
+  }
+
+  .theme-card {
+    grid-template-columns: 1fr;
+    gap: 10px;
+    padding: 10px;
+
+    mat-icon {
+      display: none;
+    }
+  }
+
+  .theme-preview {
+    width: 100%;
+    height: 44px;
+    padding: 6px 8px;
+    border-radius: 12px;
+    grid-template-rows: 6px 1fr 8px;
+  }
+
+  .theme-name {
+    overflow-wrap: normal;
+  }
+}

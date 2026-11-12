@@ -1,5 +1,5 @@
 import { A11yModule } from '@angular/cdk/a11y'
-import { ChangeDetectionStrategy, Component, effect, inject } from '@angular/core'
+import { Component, effect, inject } from '@angular/core'
 import { ActivityService } from '../../services/activity.service'
 import { ProviderIconComponent } from '../provider-icon/provider-icon.component'
 
@@ -8,7 +8,6 @@ import { ProviderIconComponent } from '../provider-icon/provider-icon.component'
   imports: [A11yModule, ProviderIconComponent],
   templateUrl: './event-detail.component.html',
   styleUrl: './event-detail.component.scss',
-  changeDetection: ChangeDetectionStrategy.OnPush,
 })
 export class EventDetailComponent {
   protected readonly activity = inject(ActivityService)

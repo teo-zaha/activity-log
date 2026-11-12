@@ -12,6 +12,7 @@ use crate::provider::provider_config::{
 pub struct ProviderContext {
     config: ProviderConfig,
     typed: Option<Arc<dyn Any + Send + Sync>>,
+    cache_scope: u64,
 }
 
 impl fmt::Debug for ProviderContext {
@@ -24,9 +25,12 @@ impl fmt::Debug for ProviderContext {
 
 impl ProviderContext {
     pub fn resolve(source: &dyn ConfigSource, requirements: &[ProviderConfigKey]) -> Self {
+        let config = ProviderConfig::resolve(source, requirements);
+        let cache_scope = config.fingerprint(requirements);
         Self {
-            config: ProviderConfig::resolve(source, requirements),
+            config,
             typed: None,
+            cache_scope,
         }
     }
 
@@ -41,6 +45,10 @@ impl ProviderContext {
             .as_ref()
             .and_then(|any| any.downcast_ref::<T>())
             .ok_or_else(|| anyhow!("Config not resolved or wrong type"))
+    }
+
+    pub(crate) fn cache_scope(&self) -> u64 {
+        self.cache_scope
     }
 
     pub fn missing_required_keys<'a>(&self, requirements: &'a [ProviderConfigKey]) -> Vec<&'a str> {

@@ -37,18 +37,18 @@
 }
 
 :host([data-status='available']) {
-  color: #15803d;
-  background: color-mix(in srgb, #22c55e 12%, var(--surface) 88%);
+  color: var(--status-ok-fg);
+  background: color-mix(in srgb, var(--status-ok) 12%, var(--surface));
 }
 
 :host([data-status='degraded']) {
-  color: #b45309;
-  background: color-mix(in srgb, #f59e0b 12%, var(--surface) 88%);
+  color: var(--status-warn-fg);
+  background: color-mix(in srgb, var(--status-warn) 12%, var(--surface));
 }
 
 :host([data-status='unavailable']) {
-  color: #b91c1c;
-  background: color-mix(in srgb, #ef4444 12%, var(--surface) 88%);
+  color: var(--status-error-fg);
+  background: color-mix(in srgb, var(--status-error) 12%, var(--surface));
 }
 
 @include ui.down('phone') {

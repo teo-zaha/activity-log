@@ -1,6 +1,7 @@
 pub mod aggregator;
 pub mod cache;
 pub mod collect;
+pub mod diagnostics;
 pub mod model;
 pub(crate) mod platform;
 pub mod provider;
@@ -27,6 +28,9 @@ pub async fn collect_activity_detailed(options: CollectOptions) -> Result<Collec
     collect_activity_detailed_with_provider_runtimes(options, &provider_runtimes).await
 }
 
+// Keeps one stuck provider from leaving the whole app in the collecting state.
+const COLLECT_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(120);
+
 pub async fn collect_activity_with_provider_runtimes(
     options: CollectOptions,
     provider_runtimes: &[ProviderRuntime],
@@ -42,6 +46,14 @@ pub async fn collect_activity_detailed_with_provider_runtimes(
     options: CollectOptions,
     provider_runtimes: &[ProviderRuntime],
 ) -> Result<CollectedActivity> {
+    diagnostics::info(
+        "runtime",
+        format!(
+            "Collecting {} to {}",
+            options.since.format("%Y-%m-%d"),
+            options.until.format("%Y-%m-%d")
+        ),
+    );
     let results = futures::future::join_all(
         // Providers are filtered at startup/runtime level, so collectors can assume they were
         // called only for supported and configured providers.
@@ -52,7 +64,26 @@ pub async fn collect_activity_detailed_with_provider_runtimes(
                 let options = options.clone();
                 async move {
                     let id = runtime.id();
-                    let result = runtime.collect(options).await;
+                    let started = std::time::Instant::now();
+                    let result = tokio::time::timeout(COLLECT_TIMEOUT, runtime.collect(options))
+                        .await
+                        .unwrap_or_else(|_| {
+                            Err(anyhow::anyhow!(
+                                "Collection timed out after {}s",
+                                COLLECT_TIMEOUT.as_secs()
+                            ))
+                        });
+                    let elapsed = started.elapsed().as_millis();
+                    match &result {
+                        Ok(entries) => diagnostics::info(
+                            id.as_ref(),
+                            format!("Collected {} entries in {elapsed} ms", entries.len()),
+                        ),
+                        Err(err) => diagnostics::error(
+                            id.as_ref(),
+                            format!("Collection failed after {elapsed} ms: {err:#}"),
+                        ),
+                    }
                     (id, result)
                 }
             }),

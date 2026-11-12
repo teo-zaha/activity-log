@@ -1,20 +1,19 @@
 import { TestBed } from '@angular/core/testing'
 import { describe, expect, it, vi } from 'vitest'
-import { activityLog, MockActivityBackendClient } from '../testing/activity-fixtures'
+import { activityLog, MockBackendTransport, provideMockBackend } from '../testing/activity-fixtures'
 import {
   ActivityDataService,
   ACTIVITY_POLL_ATTEMPTS,
   ACTIVITY_POLL_DELAY_MS,
 } from './activity-data.service'
 import { ActivityViewStateService } from './activity-view-state.service'
-import { ActivityBackendClient } from './backend/backend-client'
 
 describe('ActivityDataService', () => {
-  function setup(): { backend: MockActivityBackendClient; service: ActivityDataService } {
-    const backend = new MockActivityBackendClient()
+  function setup(): { backend: MockBackendTransport; service: ActivityDataService } {
+    const backend = new MockBackendTransport()
     TestBed.configureTestingModule({
       providers: [
-        { provide: ActivityBackendClient, useValue: backend },
+        provideMockBackend(backend),
         { provide: ACTIVITY_POLL_ATTEMPTS, useValue: 2 },
         { provide: ACTIVITY_POLL_DELAY_MS, useValue: 1 },
       ],
@@ -41,7 +40,64 @@ describe('ActivityDataService', () => {
     await promise
 
     expect(service.error()).toBe('Timed out waiting for initial collection.')
+    expect(service.collectionStatus()).toEqual({
+      kind: 'timedOut',
+      operation: 'initial',
+      message: 'Timed out waiting for initial collection.',
+    })
     vi.useRealTimers()
+  })
+
+  it('tracks collection progress and failures', async () => {
+    const { backend, service } = setup()
+    backend.collectError = new Error('boom')
+
+    const promise = service.collect('2026-05-18', '2026-05-18')
+    expect(service.collectionStatus().kind).toBe('collecting')
+    await promise
+
+    expect(service.collectionStatus()).toEqual({
+      kind: 'failed',
+      operation: 'collect',
+      message: 'boom',
+    })
+
+    service.dismissCollectionStatus()
+    expect(service.collectionStatus()).toEqual({ kind: 'idle' })
+    expect(service.error()).toBeNull()
+  })
+
+  it('returns to idle after a successful collection', async () => {
+    const { service } = setup()
+
+    await service.collect('2026-05-18', '2026-05-18')
+
+    expect(service.collectionStatus()).toEqual({ kind: 'idle' })
+  })
+
+  it('splits usable and unusable providers', async () => {
+    const { backend, service } = setup()
+    backend.providersResponse = {
+      currentOs: 'macos',
+      providers: [
+        ...backend.providersResponse.providers,
+        {
+          id: 'outlook',
+          status: 'unavailable',
+          usable: false,
+          reason: 'Startup check timed out after 15s',
+          supportedOs: ['macos', 'windows'],
+          checkedAt: '2026-05-18T08:00:00Z',
+        },
+      ],
+    }
+
+    await service.loadProviders()
+
+    expect(service.providers().map(p => p.info.id)).toEqual(['git', 'jira'])
+    expect(service.unusableProviders().map(p => p.info.reason)).toEqual([
+      'Startup check timed out after 15s',
+    ])
   })
 
   it('collects immediate activity logs', async () => {

@@ -1,0 +1,29 @@
+# Runs the Windows-gated code (Event Log, Outlook COM) through clippy and the
+# test suite on a real Windows host. `pnpm verify` only covers the dev host OS.
+name: Windows
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  check:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+
+      - uses: Swatinem/rust-cache@v2
+
+      # The desktop crate embeds the built dashboard at compile time; it is
+      # covered by the Desktop Build workflow and `pnpm win:check`.
+      - name: Clippy
+        run: cargo clippy --workspace --exclude activity-log-desktop --all-targets -- -D warnings
+
+      - name: Test
+        run: cargo test --workspace --exclude activity-log-desktop

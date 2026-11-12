@@ -1,11 +1,25 @@
-<mat-progress-bar mode="indeterminate" class="top-loader" [class.visible]="activity.isLoading()" />
+<a class="skip-link" href="#main-content">Skip to activity</a>
+
+<mat-progress-bar
+  mode="indeterminate"
+  class="top-loader"
+  [class.visible]="activity.isLoading()"
+  aria-hidden="true"
+/>
 
 <app-header />
 
-<main>
+<div class="shell">
   <app-sidebar />
 
-  <div class="main-content">
+  <main
+    id="main-content"
+    class="main-content"
+    tabindex="-1"
+    [attr.aria-busy]="activity.isLoading()"
+  >
+    <app-collection-status />
+
     @switch (activity.currentView()) {
       @case ('list') {
         <app-timeline />
@@ -20,7 +34,7 @@
         <app-week-view />
       }
     }
-  </div>
-</main>
+  </main>
+</div>
 
 <app-event-detail />

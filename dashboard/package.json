@@ -14,7 +14,6 @@
     "watch": "ng build --watch --configuration development"
   },
   "dependencies": {
-    "@angular/animations": "catalog:",
     "@angular/cdk": "catalog:",
     "@angular/common": "catalog:",
     "@angular/compiler": "catalog:",
@@ -22,21 +21,19 @@
     "@angular/forms": "catalog:",
     "@angular/material": "catalog:",
     "@angular/platform-browser": "catalog:",
-    "@angular/platform-browser-dynamic": "catalog:",
     "@tauri-apps/api": "catalog:",
     "rxjs": "catalog:",
-    "tslib": "catalog:",
-    "zone.js": "catalog:"
+    "tslib": "catalog:"
   },
   "devDependencies": {
-    "@angular-devkit/build-angular": "catalog:",
+    "@angular/build": "catalog:",
     "@angular/cli": "catalog:",
     "@angular/compiler-cli": "catalog:",
-    "@testing-library/angular": "^18.0.0",
-    "@testing-library/jest-dom": "^6.9.1",
-    "@testing-library/user-event": "^14.6.1",
-    "jsdom": "^27.3.0",
-    "vitest": "^4.0.8",
-    "typescript": "catalog:"
+    "@testing-library/angular": "^19.6.0",
+    "@testing-library/jest-dom": "^7.0.1",
+    "@testing-library/user-event": "^14.6.8",
+    "jsdom": "^30.1.3",
+    "typescript": "catalog:",
+    "vitest": "^5.1.0"
   }
 }

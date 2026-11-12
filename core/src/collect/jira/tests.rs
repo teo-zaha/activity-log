@@ -1,4 +1,4 @@
-use super::map_jira_issues;
+use super::{jira_search_jql, map_jira_issues};
 use crate::model::{
     JiraEntryType,
     jira::{
@@ -42,4 +42,14 @@ fn maps_jira_issues() {
     assert_eq!(entries[1].entry_type, JiraEntryType::StatusChanged);
     assert_eq!(entries[1].from_status.as_deref(), Some("To Do"));
     assert_eq!(entries[1].to_status.as_deref(), Some("In Progress"));
+}
+
+#[test]
+fn jira_search_has_no_upper_updated_bound() {
+    // An issue changed inside the range and again afterwards must still be found.
+    let jql = jira_search_jql("2026-10-01");
+    assert_eq!(
+        jql,
+        "updatedDate >= \"2026-10-01\" AND (assignee = currentUser() OR reporter = currentUser())"
+    );
 }

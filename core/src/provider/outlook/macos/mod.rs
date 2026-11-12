@@ -1,21 +1,11 @@
-use crate::platform::macos::{outlook_is_installed, run_apple_script};
+use crate::platform::macos::outlook_is_installed;
 
+/// Only checks that Outlook is installed: scripting it would launch Outlook at app start.
+/// Whether it is running and signed in is decided per collection.
 pub async fn check_outlook_ready() -> anyhow::Result<()> {
-    if !outlook_is_installed() {
-        return Err(anyhow::anyhow!("Outlook not installed"));
+    if outlook_is_installed() {
+        Ok(())
+    } else {
+        Err(anyhow::anyhow!("Outlook not installed"))
     }
-
-    run_apple_script(
-        r#"
-tell application "Microsoft Outlook"
-  if (count of exchange accounts) is 0 then error "Outlook not signed in"
-  if not (exists default calendar) then error "Outlook default calendar unavailable"
-  set defaultCalendar to default calendar
-  set _ to count of calendar events of defaultCalendar
-end tell
-return "ok"
-"#,
-    )
-    .map(|_| ())
-    .map_err(|err| anyhow::anyhow!("Outlook AppleScript access failed: {err}"))
 }

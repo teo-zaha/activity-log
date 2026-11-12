@@ -4,8 +4,8 @@ use std::{
 };
 
 use activity_log_core::model::{
-    ActivityLog, ActivityLogMeta, CollectOptions, CollectedActivitySummary, ProviderInfo,
-    ProviderStatus, Source, SupportedOs,
+    ActivityLog, ActivityLogMeta, CollectOptions, CollectedActivitySummary, LogsResponse,
+    ProviderInfo, ProviderStatus, Source, SupportedOs,
 };
 use activity_log_core::runtime::{CollectionRuntime, Collector, CollectorFuture};
 use rocket::{http::Status, local::asynchronous::Client};
@@ -181,4 +181,33 @@ async fn returns_provider_statuses() {
     assert!(body.contains("\"id\":\"git\""));
     assert!(body.contains("\"id\":\"outlook\""));
     assert!(body.contains("\"usable\":false"));
+}
+
+#[rocket::async_test]
+async fn logs_can_be_read_and_cleared() {
+    let runtime = CollectionRuntime::new(collector_ok(), fixture_providers());
+    let client = Client::tracked(build_rocket_with(runtime, false))
+        .await
+        .unwrap();
+    activity_log_core::diagnostics::warn("tests", "logs_can_be_read_and_cleared");
+
+    let response = client.get("/api/logs").dispatch().await;
+    assert_eq!(response.status(), Status::Ok);
+    let body: LogsResponse = response.into_json().await.expect("logs json");
+    assert!(
+        body.entries
+            .iter()
+            .any(|entry| entry.message == "logs_can_be_read_and_cleared")
+    );
+
+    let response = client.delete("/api/logs").dispatch().await;
+    assert_eq!(response.status(), Status::NoContent);
+    let body: LogsResponse = client
+        .get("/api/logs")
+        .dispatch()
+        .await
+        .into_json()
+        .await
+        .expect("logs json");
+    assert!(body.entries.is_empty());
 }

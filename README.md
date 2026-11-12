@@ -34,7 +34,7 @@ When a local git commit matches a GitLab push event (same commit SHA), they are 
 ## Requirements
 
 - Rust toolchain (`cargo`, `rustc`)
-- [Node.js](https://nodejs.org) >= 20
+- [Node.js](https://nodejs.org) `^22.22.3`, `^24.15.0` or `>= 26` (Angular 22 requirement)
 - [pnpm](https://pnpm.io) >= 10
 - Windows or macOS for the local Outlook and System collectors
 
@@ -94,6 +94,21 @@ pnpm desktop:dev
 ```bash
 pnpm desktop:build
 ```
+
+### Windows installer from macOS/Linux
+
+Cross-builds the NSIS installer for `x86_64-pc-windows-msvc` with
+[cargo-xwin](https://github.com/rust-cross/cargo-xwin) (Microsoft CRT/SDK are
+downloaded on first run). The `windows` flake shell provides the Rust target,
+cargo-xwin, LLVM (`clang-cl`, `lld-link`, `llvm-rc`) and NSIS:
+
+```bash
+nix develop .#windows -c pnpm desktop:build:windows
+```
+
+The installer lands in
+`target/x86_64-pc-windows-msvc/release/bundle/nsis/`. MSI (WiX) bundles can only
+be produced on Windows; use the `Desktop Build` workflow for those.
 
 ### Regenerate app icons from the Angular favicon
 
@@ -169,6 +184,14 @@ pnpm verify
 
 `verify` is the repo-wide gate. It runs TypeScript generation, formatter checks, Rust checks, clippy, Rust tests, Angular type-checking, and the dashboard build.
 
+For Windows-specific backend coverage that also runs on macOS/Linux, use:
+
+```bash
+pnpm core:test:windows
+```
+
+That script exercises host-runnable Windows logic such as provider metadata, event-log query generation, XML parsing, and event mapping. For a full Windows-target compile (including the desktop crate), run `nix develop .#windows -c pnpm win:check`. See [`docs/testing-windows-on-mac.md`](docs/testing-windows-on-mac.md) for the full Windows testing strategy.
+
 ---
 
 ## Environment variables
@@ -187,7 +210,7 @@ For CLI runs, you can override any provider key dynamically with `--set KEY=VALU
 | `GIT_DIRS`      | Comma-separated repo paths or parent folders (defaults to your OS home dir) |
 | `PORT`          | Server port (default: `3000`, UI mode only)                                 |
 
-Git collection requires no external `git` executable at runtime. Outlook and System collectors require no credentials — they read from the local Outlook app plus the platform's native event and session history APIs.
+Git history is read in-process; the `git` command is only asked for `user.email` when the config files the library reads have none (some Windows setups keep the global config elsewhere). Outlook and System collectors require no credentials — they read from the local Outlook app plus the platform's native event and session history APIs. Outlook is never started by the app: its calendar is collected only while Outlook is already open.
 
 ### Desktop dynamic provider settings
 
@@ -209,7 +232,7 @@ activity-log/
 ├── core/
 │   └── src/
 │       ├── collect/           Git, GitLab, Jira, Outlook, System collectors
-│       ├── cache/             File-based TTL cache for API responses
+│       ├── cache/             Per-day disk cache for API providers (GitLab, Jira)
 │       ├── model/             Shared models grouped by domain/source
 │       ├── runtime/           Shared collection runtime used by Rocket and Tauri
 │       ├── ts.rs              Angular DTO generator
@@ -221,7 +244,7 @@ activity-log/
 │   ├── src/app/
 │   │   ├── components/        header, filters, timeline, calendar views
 │   │   ├── generated/         Rust-generated DTOs
-│   │   ├── services/          ActivityService plus HTTP/Tauri backend transports
+│   │   ├── services/          app state; backend/ holds the operation table and HTTP/Tauri transports
 │   │   ├── models/            Angular-only view models
 │   │   └── utils/             Angular-only helper logic
 ├── logs/                      Generated output (gitignored)

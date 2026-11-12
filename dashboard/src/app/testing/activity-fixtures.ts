@@ -1,11 +1,18 @@
+import { resource, type Provider, type ResourceRef } from '@angular/core'
 import type {
   ActivityLog,
-  CollectRequest,
+  LogEntry,
   ProviderInfo,
   ProvidersResponse,
   Source,
 } from '../generated/activity'
-import { ActivityBackendClient, type ActivityResponse } from '../services/backend/backend-client'
+import {
+  type ActivityResponse,
+  BackendOperations,
+  type BackendOperation,
+  type ReadOperation,
+} from '../services/backend/backend-contract'
+import { BackendTransport } from '../services/backend/backend-transport'
 import type { ExportRequest } from '../services/backend/export-request'
 
 export const providerInfo: ProviderInfo[] = [
@@ -66,36 +73,62 @@ export const activityLog: ActivityLog = {
   ],
 }
 
-export class MockActivityBackendClient implements ActivityBackendClient {
+/**
+ * In-memory stand-in for the transport seam: the real `ActivityBackendClient` runs on top of it.
+ * Tune the public fields per test.
+ */
+export class MockBackendTransport implements BackendTransport {
   activityResponses: ActivityResponse[] = [activityLog]
   providersResponse = providersResponse
   collectResponse: ActivityResponse = activityLog
+  collectError: Error | null = null
   exports: ExportRequest[] = []
+  logs: LogEntry[] = []
+  logsError: Error | null = null
+  clearLogsError: Error | null = null
 
-  getActivity(): Promise<ActivityResponse> {
-    return Promise.resolve(this.activityResponses.shift() ?? activityLog)
+  resource<Res>(read: ReadOperation<Res>): ResourceRef<Res | undefined> {
+    return resource({ loader: () => this.call(read, undefined) })
   }
 
-  getProviders(): Promise<ProvidersResponse> {
-    return Promise.resolve(this.providersResponse)
+  call<Req, Res>(operation: BackendOperation<Req, Res>, _request: NoInfer<Req>): Promise<Res> {
+    // The response type is only a phantom on the operation, so an identity check in `respond`
+    // cannot narrow `Res`; a typed handler map would need the same cast to store its entries.
+    // Each case in `respond` returns the response its operation declares.
+    return this.respond(operation) as Promise<Res>
   }
 
-  collect(_request: CollectRequest): Promise<ActivityResponse> {
-    return Promise.resolve(this.collectResponse)
-  }
-
-  getProviderConfig(): Promise<never> {
-    return Promise.reject(new Error('not implemented'))
-  }
-
-  saveProviderConfig(): Promise<never> {
-    return Promise.reject(new Error('not implemented'))
-  }
-
-  export(request: ExportRequest): Promise<void> {
+  saveExport(request: ExportRequest): Promise<void> {
     this.exports.push(request)
     return Promise.resolve()
   }
+
+  private respond(operation: BackendOperation<unknown, unknown>): Promise<unknown> {
+    switch (operation) {
+      case BackendOperations.activity:
+        return Promise.resolve(this.activityResponses.shift() ?? activityLog)
+      case BackendOperations.providers:
+        return Promise.resolve(this.providersResponse)
+      case BackendOperations.collect:
+        return this.collectError
+          ? Promise.reject(this.collectError)
+          : Promise.resolve(this.collectResponse)
+      case BackendOperations.logs:
+        return this.logsError
+          ? Promise.reject(this.logsError)
+          : Promise.resolve({ entries: [...this.logs] })
+      case BackendOperations.clearLogs:
+        if (this.clearLogsError) return Promise.reject(this.clearLogsError)
+        this.logs = []
+        return Promise.resolve()
+      default:
+        return Promise.reject(new Error(`${operation.label} is not implemented`))
+    }
+  }
+}
+
+export function provideMockBackend(backend: MockBackendTransport): Provider {
+  return { provide: BackendTransport, useValue: backend }
 }
 
 export function sourceSet(...sources: Source[]): Set<Source> {

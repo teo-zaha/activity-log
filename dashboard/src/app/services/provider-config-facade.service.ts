@@ -1,4 +1,4 @@
-import { Injectable, inject } from '@angular/core'
+import { inject, Service } from '@angular/core'
 import type {
   ProviderConfigSaveRequestDto,
   ProviderConfigSaveResponseDto,
@@ -7,7 +7,7 @@ import type {
 import { ActivityBackendClient } from './backend/backend-client'
 import { ActivityDataService } from './activity-data.service'
 
-@Injectable({ providedIn: 'root' })
+@Service()
 export class ProviderConfigFacade {
   private readonly backend = inject(ActivityBackendClient)
   private readonly data = inject(ActivityDataService)

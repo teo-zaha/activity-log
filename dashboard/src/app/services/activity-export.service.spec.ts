@@ -1,15 +1,14 @@
 import { TestBed } from '@angular/core/testing'
 import { describe, expect, it } from 'vitest'
-import { activityLog, MockActivityBackendClient } from '../testing/activity-fixtures'
+import { activityLog, MockBackendTransport, provideMockBackend } from '../testing/activity-fixtures'
 import { createEntryAdapter } from '../providers/provider-adapter'
 import { ActivityExportService } from './activity-export.service'
-import { ActivityBackendClient } from './backend/backend-client'
 
 describe('ActivityExportService', () => {
   it('exports filtered entries as JSON', async () => {
-    const backend = new MockActivityBackendClient()
+    const backend = new MockBackendTransport()
     TestBed.configureTestingModule({
-      providers: [{ provide: ActivityBackendClient, useValue: backend }],
+      providers: [provideMockBackend(backend)],
     })
     const service = TestBed.inject(ActivityExportService)
     const entries = activityLog.entries.map(createEntryAdapter)
@@ -21,9 +20,9 @@ describe('ActivityExportService', () => {
   })
 
   it('exports grouped markdown summaries', async () => {
-    const backend = new MockActivityBackendClient()
+    const backend = new MockBackendTransport()
     TestBed.configureTestingModule({
-      providers: [{ provide: ActivityBackendClient, useValue: backend }],
+      providers: [provideMockBackend(backend)],
     })
     const service = TestBed.inject(ActivityExportService)
     const entries = activityLog.entries.map(createEntryAdapter)

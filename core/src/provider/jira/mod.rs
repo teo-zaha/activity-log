@@ -11,7 +11,7 @@ use anyhow::{Result, anyhow};
 use reqwest::{Client, header};
 
 crate::provider! {
-    JiraProvider(Source::Jira, &[SupportedOs::Windows, SupportedOs::Macos, SupportedOs::Linux], JiraConfig) {
+    JiraProvider(Source::Jira, &[SupportedOs::Windows, SupportedOs::Macos, SupportedOs::Linux], JiraConfig, cache: crate::cache::CachePolicy::api()) {
         async fn startup_check(&self, _current_os, context) {
             let config = match context.config::<JiraConfig>() {
                 Ok(c) => c,
@@ -65,7 +65,7 @@ pub(crate) fn jira_client(config: &JiraConfig) -> Result<Client> {
             .map_err(|_| anyhow!("Jira authentication setup failed"))?,
     );
 
-    Ok(Client::builder()
+    Ok(crate::provider::http_client_builder()
         .default_headers(headers)
         .danger_accept_invalid_certs(config.insecure)
         .build()?)

@@ -1,12 +1,4 @@
-import {
-  AfterViewInit,
-  ChangeDetectionStrategy,
-  Component,
-  ElementRef,
-  ViewChild,
-  computed,
-  inject,
-} from '@angular/core'
+import { Component, ElementRef, afterNextRender, computed, inject, viewChild } from '@angular/core'
 import { ActivityService } from '../../services/activity.service'
 import type { EntryUiAdapter } from '../../providers/types'
 import { calendarEntryKey, layoutEventsWithOverflow } from '../calendar-layout'
@@ -62,24 +54,27 @@ interface PositionedWeekOverflow {
   selector: 'app-week-view',
   templateUrl: './week-view.component.html',
   styleUrl: './week-view.component.scss',
-  changeDetection: ChangeDetectionStrategy.OnPush,
 })
-export class WeekViewComponent implements AfterViewInit {
+export class WeekViewComponent {
   protected readonly activity = inject(ActivityService)
 
-  @ViewChild('scrollEl') private scrollEl!: ElementRef<HTMLElement>
+  private readonly scrollEl = viewChild.required<ElementRef<HTMLElement>>('scrollEl')
 
   protected readonly hours = Array.from(
     { length: HOUR_END - HOUR_START + 1 },
     (_, i) => HOUR_START + i
   )
 
-  protected gridHeight(): number {
-    return (HOUR_END - HOUR_START + 1) * this.activity.hourHeight()
+  constructor() {
+    afterNextRender({
+      write: () => {
+        this.scrollEl().nativeElement.scrollTop = DEFAULT_SCROLL_HOUR * this.activity.hourHeight()
+      },
+    })
   }
 
-  ngAfterViewInit(): void {
-    this.scrollEl.nativeElement.scrollTop = DEFAULT_SCROLL_HOUR * this.activity.hourHeight()
+  protected gridHeight(): number {
+    return (HOUR_END - HOUR_START + 1) * this.activity.hourHeight()
   }
 
   protected formatWeekRange(days: string[]): string {
@@ -109,11 +104,11 @@ export class WeekViewComponent implements AfterViewInit {
     return dateStr === this.activity.selectedDay()
   }
 
-  protected get days(): string[] {
-    return this.activity.currentView() === 'workweek'
+  protected readonly days = computed<string[]>(() =>
+    this.activity.currentView() === 'workweek'
       ? this.activity.workWeekDays()
       : this.activity.weekDays()
-  }
+  )
 
   // ── Multi-day event support ───────────────────────────────────────────────
 
@@ -126,7 +121,7 @@ export class WeekViewComponent implements AfterViewInit {
   }
 
   readonly multiDayLayout = computed<MultiDayBar[]>(() => {
-    const days = this.days
+    const days = this.days()
     if (!days.length) return []
     const weekStart = days[0]
     const weekEnd = days[days.length - 1]
@@ -171,7 +166,7 @@ export class WeekViewComponent implements AfterViewInit {
 
   protected readonly positionedMultiDayLayout = computed<PositionedMultiDayBar[]>(() =>
     this.multiDayLayout().map(bar => {
-      const total = this.days.length
+      const total = this.days().length
       return {
         ...bar,
         key: calendarEntryKey(bar.entry),
@@ -190,8 +185,8 @@ export class WeekViewComponent implements AfterViewInit {
 
   protected dayHasMultiDayEvent(dateStr: string): boolean {
     return this.multiDayLayout().some(bar => {
-      const start = this.days[bar.startCol]
-      const end = this.days[bar.startCol + bar.spanCols - 1]
+      const start = this.days()[bar.startCol]
+      const end = this.days()[bar.startCol + bar.spanCols - 1]
       return dateStr >= start && dateStr <= end
     })
   }
@@ -208,7 +203,7 @@ export class WeekViewComponent implements AfterViewInit {
     const maxVisible = this.activity.currentView() === 'workweek' ? 4 : 3
     const map = new Map<string, (PositionedWeekEvent | PositionedWeekOverflow)[]>()
 
-    for (const day of this.days) {
+    for (const day of this.days()) {
       const entries = this.getEntriesForDay(day).filter(e => !this.isMultiDayEvent(e))
       const layout = layoutEventsWithOverflow(
         entries,
@@ -247,6 +242,12 @@ export class WeekViewComponent implements AfterViewInit {
 
     return map
   })
+
+  protected readonly isEmpty = computed(
+    () =>
+      this.multiDayLayout().length === 0 &&
+      Array.from(this.layoutsByDay().values()).every(layout => layout.length === 0)
+  )
 
   protected getLayoutForDay(dateStr: string): (PositionedWeekEvent | PositionedWeekOverflow)[] {
     return this.layoutsByDay().get(dateStr) ?? []
