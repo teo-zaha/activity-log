@@ -261,3 +261,48 @@ fn snapshot_shows_a_configured_empty_list_as_set_and_empty() {
         }
     );
 }
+
+#[test]
+fn rejects_lists_by_name_for_a_list_key() {
+    let mut store_values = std::collections::BTreeMap::new();
+    let map = [("NixOS".to_string(), vec!["~".to_string()])].into();
+
+    let error = apply_provider_config_updates(
+        &mut store_values,
+        &git_dirs_request(Some(ProviderConfigValueDto::Map(map))),
+    )
+    .expect_err("a map is not a list");
+    assert!(error.contains("not lists by name"), "{error}");
+}
+
+#[cfg(target_os = "windows")]
+#[test]
+fn saves_wsl_folders_by_distribution_and_keeps_an_empty_map() {
+    let mut store_values = std::collections::BTreeMap::new();
+    let request =
+        |map: std::collections::BTreeMap<String, Vec<String>>| ProviderConfigSaveRequestDto {
+            source: Source::Git,
+            values: vec![ProviderConfigSaveValueDto {
+                key: "WSL_GIT_DIRS".to_string(),
+                value: Some(ProviderConfigValueDto::Map(map)),
+            }],
+        };
+
+    let map = [(
+        " NixOS ".to_string(),
+        vec![" ~/work ".to_string(), String::new()],
+    )]
+    .into();
+    apply_provider_config_updates(&mut store_values, &request(map)).expect("valid map");
+    assert_eq!(
+        store_values.get("WSL_GIT_DIRS"),
+        Some(&Some(r#"{"NixOS":["~/work"]}"#.to_string()))
+    );
+
+    apply_provider_config_updates(&mut store_values, &request(Default::default()))
+        .expect("empty map");
+    assert_eq!(
+        store_values.get("WSL_GIT_DIRS"),
+        Some(&Some("{}".to_string()))
+    );
+}

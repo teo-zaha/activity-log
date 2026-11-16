@@ -19,7 +19,7 @@ use crate::{
         provider_check_result::ProviderCheckResult,
         provider_config::{
             ConfigBinding, ConfigSource, ProviderConfig, ProviderConfigKey, ProviderConfigResolve,
-            ProviderConfigShape, ProviderConfigValueType, parse_config_list,
+            ProviderConfigShape, ProviderConfigValueType, parse_config_list, parse_config_map,
             provider_config_key_accepts,
         },
         provider_context::ProviderContext,
@@ -664,5 +664,26 @@ fn list_keys_validate_every_item_against_their_value_type() {
     assert_eq!(
         GIT_DIRS.shape,
         ProviderConfigShape::List(ProviderConfigValueType::String)
+    );
+}
+
+#[test]
+fn map_keys_are_json_objects_of_lists_checked_item_by_item() {
+    let ports = ProviderConfigKey::optional_int("TEST_PORTS").map_of();
+
+    assert_eq!(
+        ports.shape,
+        ProviderConfigShape::Map(ProviderConfigValueType::Int)
+    );
+    assert_eq!(ports.shape.to_string(), "lists of int by name");
+    assert!(provider_config_key_accepts(
+        ports,
+        r#"{"web": ["80", "443"], "db": []}"#
+    ));
+    assert!(!provider_config_key_accepts(ports, r#"{"web": ["https"]}"#));
+    assert!(!provider_config_key_accepts(ports, "80,443"));
+    assert_eq!(
+        parse_config_map(r#"{" web ": [" 80 ", ""], " ": ["1"]}"#),
+        Some([("web".to_string(), vec!["80".to_string()])].into())
     );
 }

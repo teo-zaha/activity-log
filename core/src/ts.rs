@@ -4,10 +4,10 @@ use crate::model::{
     ActivityEntry, ActivityLog, ActivityLogMeta, CollectRequest, CollectedActivitySummary,
     CollectingResponse, ErrorResponse, GitEntry, GitLabEntry, GitLabType, JiraEntry, JiraEntryType,
     LogEntry, LogLevel, LogsResponse, OutlookEntry, ProviderConfigFieldStateDto,
-    ProviderConfigFieldValueDto, ProviderConfigProviderStateDto, ProviderConfigSaveRequestDto,
-    ProviderConfigSaveResponseDto, ProviderConfigSaveValueDto, ProviderConfigSnapshotDto,
-    ProviderConfigValueDto, ProviderConfigValueTypeDto, ProviderInfo, ProviderStatus,
-    ProvidersResponse, Source, SupportedOs, SystemEntry, SystemEntryType,
+    ProviderConfigFieldValueDto, ProviderConfigMapEntryDto, ProviderConfigProviderStateDto,
+    ProviderConfigSaveRequestDto, ProviderConfigSaveResponseDto, ProviderConfigSaveValueDto,
+    ProviderConfigSnapshotDto, ProviderConfigValueDto, ProviderConfigValueTypeDto, ProviderInfo,
+    ProviderStatus, ProvidersResponse, Source, SupportedOs, SystemEntry, SystemEntryType,
 };
 
 pub fn activity_typescript() -> String {
@@ -19,6 +19,7 @@ pub fn activity_typescript() -> String {
         export_decl::<ProviderInfo>(&cfg),
         export_decl::<ProvidersResponse>(&cfg),
         export_decl::<ProviderConfigValueTypeDto>(&cfg),
+        export_decl::<ProviderConfigMapEntryDto>(&cfg),
         export_decl::<ProviderConfigFieldValueDto>(&cfg),
         export_decl::<ProviderConfigFieldStateDto>(&cfg),
         export_decl::<ProviderConfigProviderStateDto>(&cfg),

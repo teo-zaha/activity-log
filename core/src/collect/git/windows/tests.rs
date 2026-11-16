@@ -1,60 +1,59 @@
+use std::collections::BTreeMap;
+
 use super::{
     WslCommit, WslOutput, WslRepoReport, WslScan, WslTarget, parse_output, repo_history, repo_name,
     wsl_targets_with,
 };
 use crate::model::CollectOptions;
-use crate::provider::git::{
-    GitConfig,
-    windows::{WslConfig, WslRepo},
-};
+use crate::provider::git::{GitConfig, windows::WslConfig};
 
-fn config(wsl_distros: Option<Vec<&str>>, wsl_repos: &[(&str, &str)]) -> GitConfig {
+fn dirs(entries: &[(&str, &[&str])]) -> BTreeMap<String, Vec<String>> {
+    entries
+        .iter()
+        .map(|(distro, dirs)| {
+            (
+                distro.to_string(),
+                dirs.iter().map(|dir| dir.to_string()).collect(),
+            )
+        })
+        .collect()
+}
+
+fn config(wsl_dirs: Option<BTreeMap<String, Vec<String>>>) -> GitConfig {
     GitConfig {
         dirs: None,
-        wsl: WslConfig {
-            distros: wsl_distros.map(|names| names.into_iter().map(str::to_string).collect()),
-            repos: wsl_repos
-                .iter()
-                .map(|(distro, path)| WslRepo {
-                    distro: distro.to_string(),
-                    path: path.to_string(),
-                })
-                .collect(),
-        },
+        wsl: WslConfig { dirs: wsl_dirs },
     }
 }
 
 #[test]
-fn unset_distros_fall_back_to_the_default_and_explicit_repos_join_them() {
-    let targets = wsl_targets_with(
-        &config(None, &[("NixOS", "/home/me/api"), ("Debian", "/srv/tool")]),
-        || vec!["NixOS".to_string()],
-    );
+fn unset_folders_fall_back_to_the_default() {
+    let targets = wsl_targets_with(&config(None), || dirs(&[("NixOS", &["~"])]));
 
     assert_eq!(
         targets,
-        vec![
-            WslTarget {
-                distro: "Debian".to_string(),
-                discover: false,
-                repos: vec!["/srv/tool".to_string()],
-            },
-            WslTarget {
-                distro: "NixOS".to_string(),
-                discover: true,
-                repos: vec!["/home/me/api".to_string()],
-            },
-        ]
+        vec![WslTarget {
+            distro: "NixOS".to_string(),
+            dirs: vec!["~".to_string()],
+        }]
     );
 }
 
 #[test]
-fn an_empty_distro_list_searches_nothing() {
-    let targets = wsl_targets_with(&config(Some(Vec::new()), &[]), || {
-        panic!("the default must not be read when distros are configured")
+fn configured_folders_replace_the_default_and_skip_empty_distributions() {
+    let configured = dirs(&[("Debian", &[]), ("NixOS", &["~/api", "/srv/tool"])]);
+    let targets = wsl_targets_with(&config(Some(configured)), || {
+        panic!("the default must not be read when folders are configured")
     });
 
-    assert!(targets.is_empty());
+    assert_eq!(
+        targets,
+        vec![WslTarget {
+            distro: "NixOS".to_string(),
+            dirs: vec!["~/api".to_string(), "/srv/tool".to_string()],
+        }]
+    );
+    assert!(wsl_targets_with(&config(Some(BTreeMap::new())), BTreeMap::new).is_empty());
 }
 
 #[test]
@@ -166,8 +165,11 @@ fn the_script_lists_repos_and_their_history() {
 
     let target = WslTarget {
         distro: "Test".to_string(),
-        discover: true,
-        repos: vec![repo.display().to_string()],
+        dirs: vec![
+            "~".to_string(),
+            "~/work".to_string(),
+            repo.display().to_string(),
+        ],
     };
     let run = |since| {
         let mut command = Command::new("sh");
@@ -186,7 +188,7 @@ fn the_script_lists_repos_and_their_history() {
     assert_eq!(
         listed.repos.len(),
         2,
-        "discovered and explicit paths are merged"
+        "searched folders and the repository itself are merged"
     );
     assert!(listed.repos.iter().all(|repo| repo.commits.is_empty()));
     assert_eq!(listed.global_email, None);

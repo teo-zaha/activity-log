@@ -68,7 +68,7 @@
                   field.label
                 }}</label>
                 <span class="config-badges">
-                  @if (field.shape === 'list' && !field.isSet) {
+                  @if (field.shape !== 'single' && !field.isSet) {
                     <span class="tag">Default</span>
                   }
                   @if (field.required) {
@@ -135,6 +135,110 @@
                       </button>
                       @if (field.isSet) {
                         <button type="button" class="u-btn u-btn-ghost" (click)="resetList(field)">
+                          Use default
+                        </button>
+                      }
+                    </div>
+                  }
+                </div>
+              } @else if (field.shape === 'map') {
+                <div
+                  class="config-list"
+                  role="group"
+                  [attr.aria-labelledby]="fieldId(field) + '-label'"
+                >
+                  @if (isMapReset(field)) {
+                    <p class="config-list-note">The default applies after saving.</p>
+                    <div class="config-list-actions">
+                      <button type="button" class="u-btn u-btn-ghost" (click)="undoMapReset(field)">
+                        Undo
+                      </button>
+                    </div>
+                  } @else {
+                    @for (entry of mapDrafts()[field.key]; track $index; let entryIndex = $index) {
+                      <div class="config-map-entry">
+                        <div class="config-control-row">
+                          <mat-form-field
+                            appearance="outline"
+                            subscriptSizing="dynamic"
+                            class="config-control"
+                          >
+                            <mat-select
+                              [id]="$first ? fieldId(field) : fieldId(field) + '-' + entryIndex"
+                              [formField]="mapForm[field.key][entryIndex].name"
+                              [aria-label]="field.label + ' ' + (entryIndex + 1)"
+                            >
+                              @for (name of mapNameOptions(field, entryIndex); track name) {
+                                <mat-option [value]="name">{{ name }}</mat-option>
+                              }
+                            </mat-select>
+                          </mat-form-field>
+                          <button
+                            type="button"
+                            class="u-btn u-btn-ghost u-btn-icon"
+                            [attr.aria-label]="'Remove ' + entry.name"
+                            (click)="removeMapEntry(field, entryIndex)"
+                          >
+                            <span class="material-icons" aria-hidden="true">delete_outline</span>
+                          </button>
+                        </div>
+                        <div class="config-map-items">
+                          @for (item of entry.items; track $index) {
+                            <div class="config-control-row">
+                              <mat-form-field
+                                appearance="outline"
+                                subscriptSizing="dynamic"
+                                class="config-control"
+                              >
+                                <input
+                                  matInput
+                                  [formField]="mapForm[field.key][entryIndex].items[$index]"
+                                  [attr.aria-label]="entry.name + ' ' + ($index + 1)"
+                                  [attr.aria-invalid]="
+                                    mapItemError(field.key, entryIndex, $index) ? true : null
+                                  "
+                                  autocomplete="off"
+                                />
+                              </mat-form-field>
+                              <button
+                                type="button"
+                                class="u-btn u-btn-ghost u-btn-icon"
+                                [attr.aria-label]="
+                                  'Remove ' + (item || 'empty row') + ' from ' + entry.name
+                                "
+                                (click)="removeMapItem(field, entryIndex, $index)"
+                              >
+                                <span class="material-icons" aria-hidden="true">close</span>
+                              </button>
+                            </div>
+                          } @empty {
+                            <p class="config-list-note">None</p>
+                          }
+                          <div class="config-list-actions">
+                            <button
+                              type="button"
+                              class="u-btn u-btn-ghost"
+                              [attr.aria-label]="'Add to ' + entry.name"
+                              (click)="addMapItem(field, entryIndex)"
+                            >
+                              <span class="material-icons" aria-hidden="true">add</span>
+                              Add
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    } @empty {
+                      <p class="config-list-note">None</p>
+                    }
+                    <div class="config-list-actions">
+                      @if (nextMapName(field); as name) {
+                        <button type="button" class="u-btn" (click)="addMapEntry(field)">
+                          <span class="material-icons" aria-hidden="true">add</span>
+                          Add {{ name }}
+                        </button>
+                      }
+                      @if (field.isSet) {
+                        <button type="button" class="u-btn u-btn-ghost" (click)="resetMap(field)">
                           Use default
                         </button>
                       }

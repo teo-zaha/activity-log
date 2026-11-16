@@ -116,6 +116,7 @@ function saveResponse(fields: ProviderConfigFieldStateDto[]): ProviderConfigSave
 }
 
 type ListField = Extract<ProviderConfigFieldStateDto, { shape: 'list' }>
+type MapField = Extract<ProviderConfigFieldStateDto, { shape: 'map' }>
 
 describe('SettingsSourcePaneComponent', () => {
   it('loads the configuration and fills the fields of the selected provider', async () => {
@@ -417,6 +418,89 @@ describe('SettingsSourcePaneComponent', () => {
       expect(saveProviderConfig).toHaveBeenCalledWith({
         source: 'jira',
         values: [{ key: 'GIT_DIRS', value: null }],
+      })
+    })
+  })
+
+  describe('map fields', () => {
+    const wslDirs = (
+      overrides: Partial<Omit<MapField, 'shape'>> = {}
+    ): ProviderConfigFieldStateDto => ({
+      key: 'WSL_GIT_DIRS',
+      label: 'WSL Git Dirs',
+      required: false,
+      isSet: false,
+      shape: 'map',
+      itemType: 'string',
+      entries: [{ name: 'NixOS', items: ['~'] }],
+      names: ['NixOS', 'Ubuntu'],
+      ...overrides,
+    })
+
+    async function setupMap(field: ProviderConfigFieldStateDto): Promise<Setup> {
+      const result = await setup({ load: () => Promise.resolve(snapshot([field])) })
+      result.saveProviderConfig.mockResolvedValue(saveResponse([field]))
+      await screen.findByLabelText('WSL Git Dirs 1')
+      return result
+    }
+
+    it('shows the default entries with their items, unchanged', async () => {
+      await setupMap(wslDirs())
+
+      expect(screen.getByLabelText('NixOS 1')).toHaveProperty('value', '~')
+      expect(screen.getByText('Default')).toBeTruthy()
+      expect(screen.getByRole('button', { name: 'Save settings' })).toHaveProperty('disabled', true)
+    })
+
+    it('adds folders under a distribution and saves lists by name', async () => {
+      const { saveProviderConfig } = await setupMap(wslDirs())
+
+      await userEvent.click(screen.getByRole('button', { name: 'Add to NixOS' }))
+      await userEvent.type(screen.getByLabelText('NixOS 2'), ' /srv/tool ')
+      await userEvent.click(screen.getByRole('button', { name: 'Add Ubuntu' }))
+      await userEvent.type(screen.getByLabelText('Ubuntu 1'), '~/work')
+      await userEvent.click(screen.getByRole('button', { name: 'Save settings' }))
+
+      expect(saveProviderConfig).toHaveBeenCalledWith({
+        source: 'jira',
+        values: [{ key: 'WSL_GIT_DIRS', value: { NixOS: ['~', '/srv/tool'], Ubuntu: ['~/work'] } }],
+      })
+    })
+
+    it('offers each name once and stops adding when all are used', async () => {
+      await setupMap(wslDirs())
+
+      await userEvent.click(screen.getByRole('button', { name: 'Add Ubuntu' }))
+
+      expect(screen.queryByRole('button', { name: /^Add (NixOS|Ubuntu)$/ })).toBeNull()
+      await userEvent.click(screen.getByLabelText('WSL Git Dirs 2'))
+      const options = await screen.findAllByRole('option')
+      expect(options.map(option => option.textContent?.trim())).toEqual(['Ubuntu'])
+    })
+
+    it('saves an emptied map as none', async () => {
+      const { saveProviderConfig } = await setupMap(wslDirs())
+
+      await userEvent.click(screen.getByRole('button', { name: 'Remove NixOS' }))
+      await userEvent.click(screen.getByRole('button', { name: 'Save settings' }))
+
+      expect(saveProviderConfig).toHaveBeenCalledWith({
+        source: 'jira',
+        values: [{ key: 'WSL_GIT_DIRS', value: {} }],
+      })
+    })
+
+    it('resets a configured map to its default', async () => {
+      const { saveProviderConfig } = await setupMap(
+        wslDirs({ isSet: true, entries: [{ name: 'NixOS', items: ['/work'] }] })
+      )
+
+      await userEvent.click(screen.getByRole('button', { name: 'Use default' }))
+      await userEvent.click(screen.getByRole('button', { name: 'Save settings' }))
+
+      expect(saveProviderConfig).toHaveBeenCalledWith({
+        source: 'jira',
+        values: [{ key: 'WSL_GIT_DIRS', value: null }],
       })
     })
   })

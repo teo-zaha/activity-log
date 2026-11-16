@@ -189,7 +189,7 @@ For each source, this section lists the entries it produces, the line shown unde
 - **Merged entries:** a commit that matches a GitLab push event becomes a [git/lab entry](#gitlab-merge) with an additional GitLab section.
 - **Platforms:** Windows, macOS, Linux
 - **Configuration:** `GIT_DIRS` (optional list). A listed folder that contains `.git` is used as a repository; any other folder is searched for repositories up to four levels deep. Repositories are only skipped when no `user.email` is configured anywhere.
-- **WSL (Windows):** repositories inside WSL are read by running `git` in the distribution (`wsl.exe -d <distro>`), not over `\\wsl.localhost` paths, which is faster and avoids Git's ownership check. By default every registered distribution is searched under its `$HOME`, four levels deep; Docker, Rancher and Podman distributions are skipped. `WSL_DISTROS` picks the distributions to search (an empty list searches none), and `WSL_GIT_DIRS` lists repositories as `Distro:/absolute/linux/path`.
+- **WSL (Windows):** repositories inside WSL are read by running `git` in the distribution (`wsl.exe -d <distro>`), not over `\\wsl.localhost` paths, which is faster and avoids Git's ownership check. By default every registered distribution is searched under its `$HOME`, four levels deep; Docker, Rancher and Podman distributions are skipped. `WSL_GIT_DIRS` replaces that with folders per distribution, read like `GIT_DIRS`; `~` stands for the distribution's home, and an empty map searches none.
 
 </td>
 <td width="44%" valign="top"><img src="pics/source-git.png" alt="Detail panel of a Git commit with the fields Repository, Branch, Commit, Author and Message"></td>
@@ -314,8 +314,7 @@ Copy `.env.example` to `.env` and fill in the sources you want to enable. Any so
 | `JIRA_TOKEN`             | Jira access token                                                                   |
 | `JIRA_INSECURE`          | Set to `true` to skip TLS verification (self-signed certs)                          |
 | `GIT_DIRS`               | Comma-separated repo paths or parent folders (defaults to your OS home dir)         |
-| `WSL_DISTROS`            | Windows: comma-separated WSL distributions to search (defaults to all of them)      |
-| `WSL_GIT_DIRS`           | Windows: comma-separated WSL repos as `Distro:/absolute/linux/path`                 |
+| `WSL_GIT_DIRS`           | Windows: folders per WSL distro as JSON, `{"NixOS":["~/work"]}` (default: each `~`) |
 | `PORT`                   | API server port (default: `3000`; `pnpm dev`/`pnpm api:dev` use `3001`)             |
 | `CACHE_TTL_MINUTES`      | How long today's and other recent cached GitLab/Jira days stay fresh (default: `5`) |
 | `ACTIVITY_LOG_CACHE_DIR` | Override the per-day cache directory (default: the OS cache dir)                    |
@@ -344,7 +343,8 @@ In the desktop app, provider configuration fields are generated from Rust provid
 - Storage: persisted in Tauri Store (`settings.json`).
 - Secret fields: values are write-only in UI/API; the frontend only receives `isSet`.
 - Runtime behavior: save operations rebuild provider runtime config and refresh startup status.
-- Lists: `GIT_DIRS`, `WSL_DISTROS` and `WSL_GIT_DIRS` are edited as rows and stored as JSON arrays. An unset list shows its default (your home directory; on Windows, your WSL distributions); **Use default** returns to it, and removing every row saves an empty list, which means none.
+- Lists: `GIT_DIRS` is edited as rows and stored as a JSON array. An unset list shows its default (your home directory); **Use default** returns to it, and removing every row saves an empty list, which means none.
+- Lists by name: `WSL_GIT_DIRS` (Windows) is edited as one entry per WSL distribution, picked from the installed ones, with its folders as rows beneath; it is stored as a JSON object of arrays. Unset, it shows `~` for every distribution. **Use default** and removing every entry work like lists.
 
 </details>
 

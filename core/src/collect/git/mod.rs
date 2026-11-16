@@ -204,16 +204,7 @@ fn finish(commits: RepoCommits) -> Vec<GitEntry> {
             );
         }
     } else {
-        if !without_email.is_empty() {
-            diagnostics::info(
-                "git",
-                format!(
-                    "Matched {} repositories without user.email by your other emails: {}",
-                    without_email.len(),
-                    without_email.join(", ")
-                ),
-            );
-        }
+        // Repositories without their own user.email are matched by these too.
         let ignored = if ignored > 0 {
             format!("; ignored {ignored} by other authors")
         } else {

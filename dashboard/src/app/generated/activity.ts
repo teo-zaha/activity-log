@@ -12,6 +12,8 @@ export type ProvidersResponse = { currentOs: SupportedOs, providers: Array<Provi
 
 export type ProviderConfigValueTypeDto = "string" | "bool" | "int" | "password" | "email" | "url";
 
+export type ProviderConfigMapEntryDto = { name: string, items: Array<string>, };
+
 export type ProviderConfigFieldValueDto = { "shape": "single", valueType: ProviderConfigValueTypeDto, 
 /**
  * Secrets are write-only: `value` is never sent for them.
@@ -20,7 +22,15 @@ secret: boolean, value?: string, } | { "shape": "list", itemType: ProviderConfig
 /**
  * The configured items, or the default the provider uses while the key is unset.
  */
-items: Array<string>, };
+items: Array<string>, } | { "shape": "map", itemType: ProviderConfigValueTypeDto, 
+/**
+ * The configured lists by name, or the default the provider uses while the key is unset.
+ */
+entries: Array<ProviderConfigMapEntryDto>, 
+/**
+ * Names that can be added, such as the installed WSL distributions.
+ */
+names: Array<string>, };
 
 export type ProviderConfigFieldStateDto = { key: string, label: string, required: boolean, isSet: boolean, } & ({ "shape": "single", valueType: ProviderConfigValueTypeDto, 
 /**
@@ -30,13 +40,21 @@ secret: boolean, value?: string, } | { "shape": "list", itemType: ProviderConfig
 /**
  * The configured items, or the default the provider uses while the key is unset.
  */
-items: Array<string>, });
+items: Array<string>, } | { "shape": "map", itemType: ProviderConfigValueTypeDto, 
+/**
+ * The configured lists by name, or the default the provider uses while the key is unset.
+ */
+entries: Array<ProviderConfigMapEntryDto>, 
+/**
+ * Names that can be added, such as the installed WSL distributions.
+ */
+names: Array<string>, });
 
 export type ProviderConfigProviderStateDto = { source: Source, fields: Array<ProviderConfigFieldStateDto>, };
 
 export type ProviderConfigSnapshotDto = { providers: Array<ProviderConfigProviderStateDto>, };
 
-export type ProviderConfigValueDto = string | Array<string>;
+export type ProviderConfigValueDto = string | Array<string> | { [key in string]: Array<string> };
 
 export type ProviderConfigSaveValueDto = { key: string, 
 /**

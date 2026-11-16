@@ -5,6 +5,7 @@ pub mod error_response;
 pub mod output_format;
 pub mod provider_config_field_state_dto;
 pub mod provider_config_field_value_dto;
+pub mod provider_config_map_entry_dto;
 pub mod provider_config_provider_state_dto;
 pub mod provider_config_save_request_dto;
 pub mod provider_config_save_response_dto;
