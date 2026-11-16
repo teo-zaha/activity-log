@@ -3,7 +3,7 @@ use std::collections::BTreeMap;
 use anyhow::{Result, anyhow};
 use reqwest::Url;
 
-use super::{ConfigSource, ProviderConfigKey, ProviderConfigValueType};
+use super::{ConfigSource, ProviderConfigKey, ProviderConfigShape, ProviderConfigValueType};
 
 #[derive(Debug, Clone, Default)]
 pub struct ProviderConfig {
@@ -36,6 +36,14 @@ impl ProviderConfig {
         self.get(key).and_then(parse_bool).unwrap_or(false)
     }
 
+    /// The items of a list value, or `None` when the key is unset or blank. A stored empty list
+    /// (`[]`) is `Some` and empty, so "none" can be told apart from "use the default".
+    pub fn list(&self, key: ProviderConfigKey) -> Option<Vec<String>> {
+        self.get(key)
+            .filter(|value| !value.trim().is_empty())
+            .map(parse_config_list)
+    }
+
     pub fn missing_required_keys<'a>(&self, requirements: &'a [ProviderConfigKey]) -> Vec<&'a str> {
         requirements
             .iter()
@@ -51,7 +59,7 @@ impl ProviderConfig {
         let mut hash: u64 = 0xcbf2_9ce4_8422_2325;
         for key in requirements
             .iter()
-            .filter(|key| key.value_type != ProviderConfigValueType::Password)
+            .filter(|key| key.value_type() != ProviderConfigValueType::Password)
         {
             let value = self.values.get(key.name).map(String::as_str).unwrap_or("");
             for byte in key
@@ -75,8 +83,20 @@ impl ProviderConfig {
         requirements.iter().find(|key| {
             self.values
                 .get(key.name)
-                .is_some_and(|value| !provider_config_value_matches_type(value, key.value_type))
+                .is_some_and(|value| !provider_config_key_accepts(**key, value))
         })
+    }
+}
+
+/// Whether `value` is valid for `key`: for a list, every item must match the value type.
+pub fn provider_config_key_accepts(key: ProviderConfigKey, value: &str) -> bool {
+    match key.shape {
+        ProviderConfigShape::Single(value_type) => {
+            provider_config_value_matches_type(value, value_type)
+        }
+        ProviderConfigShape::List(item_type) => parse_config_list(value)
+            .iter()
+            .all(|item| provider_config_value_matches_type(item, item_type)),
     }
 }
 
@@ -91,6 +111,29 @@ pub fn provider_config_value_matches_type(
         ProviderConfigValueType::Email => looks_like_email(value),
         ProviderConfigValueType::Url => Url::parse(value).is_ok(),
     }
+}
+
+/// Reads a list value: a JSON array of strings, or else a comma-separated list, cleaned by
+/// [`clean_config_list`] (quotes come from Windows' "Copy as path").
+pub fn parse_config_list(value: &str) -> Vec<String> {
+    let items = serde_json::from_str::<Vec<String>>(value)
+        .unwrap_or_else(|_| value.split(',').map(str::to_string).collect());
+    clean_config_list(&items)
+}
+
+/// Trims items, including surrounding quotes, and drops empty ones.
+pub fn clean_config_list(items: &[String]) -> Vec<String> {
+    items
+        .iter()
+        .map(|item| item.trim().trim_matches('"').trim())
+        .filter(|item| !item.is_empty())
+        .map(str::to_string)
+        .collect()
+}
+
+/// The stored form of a list value, read back by [`parse_config_list`].
+pub fn encode_config_list(items: &[String]) -> String {
+    serde_json::to_string(items).expect("a list of strings always serializes")
 }
 
 fn parse_bool(value: &str) -> Option<bool> {

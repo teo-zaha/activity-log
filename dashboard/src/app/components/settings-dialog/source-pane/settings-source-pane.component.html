@@ -64,12 +64,17 @@
           @for (field of configFields(); track field.key) {
             <div class="config-field" [class.has-error]="fieldError(field.key)">
               <div class="config-field-head">
-                <label [attr.for]="fieldId(field)">{{ field.label }}</label>
+                <label [id]="fieldId(field) + '-label'" [attr.for]="fieldId(field)">{{
+                  field.label
+                }}</label>
                 <span class="config-badges">
+                  @if (field.shape === 'list' && !field.isSet) {
+                    <span class="tag">Default</span>
+                  }
                   @if (field.required) {
                     <span class="tag">Required</span>
                   }
-                  @if (field.secret) {
+                  @if (field.shape === 'single' && field.secret) {
                     <span class="tag" [attr.data-tone]="isSecretFieldSet(field) ? 'ok' : null">
                       {{ isSecretFieldSet(field) ? 'Set' : 'Not set' }}
                     </span>
@@ -77,50 +82,111 @@
                 </span>
               </div>
 
-              <div class="config-control-row">
-                @if (field.valueType === 'bool') {
-                  <mat-form-field
-                    appearance="outline"
-                    subscriptSizing="dynamic"
-                    class="config-control"
-                  >
-                    <mat-select
-                      [id]="fieldId(field)"
-                      [formField]="draftForm[field.key]"
-                      [aria-describedby]="fieldError(field.key) ? fieldId(field) + '-error' : ''"
+              @if (field.shape === 'list') {
+                <div
+                  class="config-list"
+                  role="group"
+                  [attr.aria-labelledby]="fieldId(field) + '-label'"
+                >
+                  @if (isListReset(field)) {
+                    <p class="config-list-note">The default applies after saving.</p>
+                    <div class="config-list-actions">
+                      <button
+                        type="button"
+                        class="u-btn u-btn-ghost"
+                        (click)="undoListReset(field)"
+                      >
+                        Undo
+                      </button>
+                    </div>
+                  } @else {
+                    @for (item of listDrafts()[field.key]; track $index) {
+                      <div class="config-control-row">
+                        <mat-form-field
+                          appearance="outline"
+                          subscriptSizing="dynamic"
+                          class="config-control"
+                        >
+                          <input
+                            matInput
+                            [id]="$first ? fieldId(field) : fieldId(field) + '-' + $index"
+                            [formField]="listForm[field.key][$index]"
+                            [attr.aria-label]="field.label + ' ' + ($index + 1)"
+                            [attr.aria-invalid]="listItemError(field.key, $index) ? true : null"
+                            autocomplete="off"
+                          />
+                        </mat-form-field>
+                        <button
+                          type="button"
+                          class="u-btn u-btn-ghost u-btn-icon"
+                          [attr.aria-label]="'Remove ' + (item || 'empty row')"
+                          (click)="removeListItem(field, $index)"
+                        >
+                          <span class="material-icons" aria-hidden="true">close</span>
+                        </button>
+                      </div>
+                    } @empty {
+                      <p class="config-list-note">None</p>
+                    }
+                    <div class="config-list-actions">
+                      <button type="button" class="u-btn" (click)="addListItem(field)">
+                        <span class="material-icons" aria-hidden="true">add</span>
+                        Add
+                      </button>
+                      @if (field.isSet) {
+                        <button type="button" class="u-btn u-btn-ghost" (click)="resetList(field)">
+                          Use default
+                        </button>
+                      }
+                    </div>
+                  }
+                </div>
+              } @else {
+                <div class="config-control-row">
+                  @if (field.valueType === 'bool') {
+                    <mat-form-field
+                      appearance="outline"
+                      subscriptSizing="dynamic"
+                      class="config-control"
                     >
-                      <mat-option value="">Unset</mat-option>
-                      <mat-option value="true">True</mat-option>
-                      <mat-option value="false">False</mat-option>
-                    </mat-select>
-                  </mat-form-field>
-                } @else {
-                  <mat-form-field
-                    appearance="outline"
-                    subscriptSizing="dynamic"
-                    class="config-control"
-                  >
-                    <input
-                      matInput
-                      [id]="fieldId(field)"
-                      [type]="inputTypeFor(field)"
-                      [placeholder]="field.valueType === 'password' ? 'Enter new secret' : ''"
-                      [formField]="draftForm[field.key]"
-                      [attr.aria-invalid]="fieldError(field.key) ? true : null"
-                      [attr.aria-describedby]="
-                        fieldError(field.key) ? fieldId(field) + '-error' : null
-                      "
-                      autocomplete="off"
-                    />
-                  </mat-form-field>
-                }
+                      <mat-select
+                        [id]="fieldId(field)"
+                        [formField]="draftForm[field.key]"
+                        [aria-describedby]="fieldError(field.key) ? fieldId(field) + '-error' : ''"
+                      >
+                        <mat-option value="">Unset</mat-option>
+                        <mat-option value="true">True</mat-option>
+                        <mat-option value="false">False</mat-option>
+                      </mat-select>
+                    </mat-form-field>
+                  } @else {
+                    <mat-form-field
+                      appearance="outline"
+                      subscriptSizing="dynamic"
+                      class="config-control"
+                    >
+                      <input
+                        matInput
+                        [id]="fieldId(field)"
+                        [type]="inputTypeFor(field)"
+                        [placeholder]="field.valueType === 'password' ? 'Enter new secret' : ''"
+                        [formField]="draftForm[field.key]"
+                        [attr.aria-invalid]="fieldError(field.key) ? true : null"
+                        [attr.aria-describedby]="
+                          fieldError(field.key) ? fieldId(field) + '-error' : null
+                        "
+                        autocomplete="off"
+                      />
+                    </mat-form-field>
+                  }
 
-                @if (field.secret && canClearField(field)) {
-                  <button type="button" class="u-btn u-btn-ghost" (click)="clearField(field)">
-                    Clear
-                  </button>
-                }
-              </div>
+                  @if (field.secret && canClearField(field)) {
+                    <button type="button" class="u-btn u-btn-ghost" (click)="clearField(field)">
+                      Clear
+                    </button>
+                  }
+                </div>
+              }
 
               @if (fieldError(field.key); as error) {
                 <p class="field-error" [id]="fieldId(field) + '-error'">

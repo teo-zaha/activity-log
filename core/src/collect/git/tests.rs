@@ -6,6 +6,12 @@ use tempfile::{TempDir, tempdir};
 use crate::{model::CollectOptions, provider::git::GitConfig};
 
 use super::collect_git;
+use crate::{model::GitEntry, provider::current_os};
+
+/// Collects as the provider does on this machine, so Windows CI goes through its own impl.
+async fn collect(options: &CollectOptions, config: &GitConfig) -> anyhow::Result<Vec<GitEntry>> {
+    collect_git(options, config, current_os()).await
+}
 
 /// Whole UTC days `since..=until`.
 fn options(since: &str, until: &str) -> CollectOptions {
@@ -120,11 +126,9 @@ async fn collects_matching_commits_and_only_sets_branch_on_head_commit() {
         utc_time(2026, 3, 6, 10, 30, 0),
     );
 
-    let entries = collect_git(
+    let entries = collect(
         &options("2026-03-01", "2026-03-31"),
-        &GitConfig {
-            dirs: Some(vec![repo.path().to_path_buf()]),
-        },
+        &GitConfig::local_only(vec![repo.path().to_path_buf()]),
     )
     .await
     .unwrap();
@@ -150,11 +154,9 @@ async fn excludes_commits_with_non_matching_author_email() {
         utc_time(2026, 3, 5, 9, 0, 0),
     );
 
-    let entries = collect_git(
+    let entries = collect(
         &options("2026-03-01", "2026-03-31"),
-        &GitConfig {
-            dirs: Some(vec![repo.path().to_path_buf()]),
-        },
+        &GitConfig::local_only(vec![repo.path().to_path_buf()]),
     )
     .await
     .unwrap();
@@ -175,11 +177,9 @@ async fn skips_repositories_without_user_email() {
         utc_time(2026, 3, 5, 9, 0, 0),
     );
 
-    let entries = collect_git(
+    let entries = collect(
         &options("2026-03-01", "2026-03-31"),
-        &GitConfig {
-            dirs: Some(vec![repo.path().to_path_buf()]),
-        },
+        &GitConfig::local_only(vec![repo.path().to_path_buf()]),
     )
     .await
     .unwrap();
@@ -202,11 +202,9 @@ async fn detached_head_yields_empty_branch() {
     );
     detach_head(repo.path());
 
-    let entries = collect_git(
+    let entries = collect(
         &options("2026-03-01", "2026-03-31"),
-        &GitConfig {
-            dirs: Some(vec![repo.path().to_path_buf()]),
-        },
+        &GitConfig::local_only(vec![repo.path().to_path_buf()]),
     )
     .await
     .unwrap();
@@ -229,11 +227,9 @@ async fn commit_message_uses_subject_only() {
         utc_time(2026, 3, 5, 9, 0, 0),
     );
 
-    let entries = collect_git(
+    let entries = collect(
         &options("2026-03-01", "2026-03-31"),
-        &GitConfig {
-            dirs: Some(vec![repo.path().to_path_buf()]),
-        },
+        &GitConfig::local_only(vec![repo.path().to_path_buf()]),
     )
     .await
     .unwrap();
@@ -258,11 +254,9 @@ async fn deduplicates_commits_reachable_from_multiple_refs() {
     run_git(repo.path(), &["tag", "v1"]);
     run_git(repo.path(), &["branch", "copy"]);
 
-    let entries = collect_git(
+    let entries = collect(
         &options("2026-03-01", "2026-03-31"),
-        &GitConfig {
-            dirs: Some(vec![repo.path().to_path_buf()]),
-        },
+        &GitConfig::local_only(vec![repo.path().to_path_buf()]),
     )
     .await
     .unwrap();
@@ -311,11 +305,9 @@ async fn includes_commits_on_date_window_boundaries_and_excludes_outside() {
         utc_time(2026, 3, 12, 0, 0, 0),
     );
 
-    let entries = collect_git(
+    let entries = collect(
         &options("2026-03-10", "2026-03-11"),
-        &GitConfig {
-            dirs: Some(vec![repo.path().to_path_buf()]),
-        },
+        &GitConfig::local_only(vec![repo.path().to_path_buf()]),
     )
     .await
     .unwrap();
@@ -344,14 +336,12 @@ async fn skips_invalid_repositories_but_keeps_collecting_valid_ones() {
     let invalid_root = tempdir().unwrap();
     fs::create_dir_all(invalid_root.path().join(".git")).unwrap();
 
-    let entries = collect_git(
+    let entries = collect(
         &options("2026-03-01", "2026-03-31"),
-        &GitConfig {
-            dirs: Some(vec![
-                invalid_root.path().to_path_buf(),
-                repo.path().to_path_buf(),
-            ]),
-        },
+        &GitConfig::local_only(vec![
+            invalid_root.path().to_path_buf(),
+            repo.path().to_path_buf(),
+        ]),
     )
     .await
     .unwrap();

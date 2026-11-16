@@ -118,7 +118,7 @@ async fn build_provider_info(
     } else if !context.missing_required_keys(requirements).is_empty() {
         ProviderCheckResult::unavailable(format!("{} not configured", adapter.id()))
     } else if let Some(key) = context.first_invalid_key(requirements) {
-        ProviderCheckResult::unavailable(format!("{} must be a {}", key.name, key.value_type))
+        ProviderCheckResult::unavailable(format!("{} must be a {}", key.name, key.shape))
     } else if let Some(binding) = adapter.config_binding() {
         if let Err(err) = (binding.resolve)(context) {
             ProviderCheckResult::unavailable(format!("Config resolution failed: {err}"))

@@ -1,9 +1,9 @@
 use activity_log_core::{
     model::{
-        ProviderConfigSaveRequestDto, ProviderConfigSaveValueDto, ProviderConfigValueTypeDto,
-        Source,
+        ProviderConfigFieldValueDto, ProviderConfigSaveRequestDto, ProviderConfigSaveValueDto,
+        ProviderConfigValueDto, ProviderConfigValueTypeDto, Source,
     },
-    provider::{git::default_git_dirs_value, provider_config::ProviderConfigValueType},
+    provider::{git::default_git_root, provider_config::ProviderConfigValueType},
 };
 
 use super::{StoreEnvConfigSource, apply_provider_config_updates, build_provider_config_snapshot};
@@ -77,9 +77,15 @@ fn snapshot_masks_password_values() {
         .find(|field| field.key == "JIRA_TOKEN")
         .expect("jira token field");
 
-    assert!(token.secret);
     assert!(token.is_set);
-    assert_eq!(token.value, None);
+    assert_eq!(
+        token.value,
+        ProviderConfigFieldValueDto::Single {
+            value_type: ProviderConfigValueTypeDto::Password,
+            secret: true,
+            value: None,
+        }
+    );
     assert_eq!(token.label, "Jira Token");
 }
 
@@ -124,7 +130,7 @@ fn save_rejects_unknown_legacy_jira_fields() {
         source: Source::Jira,
         values: vec![ProviderConfigSaveValueDto {
             key: "JIRA_AUTH_TYPE".to_string(),
-            value: Some("basic".to_string()),
+            value: Some(ProviderConfigValueDto::Text("basic".to_string())),
         }],
     };
 
@@ -134,7 +140,7 @@ fn save_rejects_unknown_legacy_jira_fields() {
 
 #[test]
 fn snapshot_shows_default_git_dirs_value_when_unset() {
-    let Some(default_value) = default_git_dirs_value() else {
+    let Some(default_root) = default_git_root() else {
         return;
     };
 
@@ -151,5 +157,107 @@ fn snapshot_shows_default_git_dirs_value_when_unset() {
         .expect("git dirs field");
 
     assert!(!dirs.is_set);
-    assert_eq!(dirs.value.as_deref(), Some(default_value.as_str()));
+    assert_eq!(
+        dirs.value,
+        ProviderConfigFieldValueDto::List {
+            item_type: ProviderConfigValueTypeDto::String,
+            items: vec![default_root.display().to_string()],
+        }
+    );
+}
+
+fn git_dirs_request(value: Option<ProviderConfigValueDto>) -> ProviderConfigSaveRequestDto {
+    ProviderConfigSaveRequestDto {
+        source: Source::Git,
+        values: vec![ProviderConfigSaveValueDto {
+            key: "GIT_DIRS".to_string(),
+            value,
+        }],
+    }
+}
+
+#[test]
+fn saves_lists_cleaned_and_keeps_an_empty_list_apart_from_a_cleared_one() {
+    let mut store_values = std::collections::BTreeMap::new();
+
+    let items = vec![
+        " C:\\work ".to_string(),
+        String::new(),
+        "\"D:\\repos\"".to_string(),
+    ];
+    apply_provider_config_updates(
+        &mut store_values,
+        &git_dirs_request(Some(ProviderConfigValueDto::List(items))),
+    )
+    .expect("valid list");
+    assert_eq!(
+        store_values.get("GIT_DIRS"),
+        Some(&Some(r#"["C:\\work","D:\\repos"]"#.to_string()))
+    );
+
+    apply_provider_config_updates(
+        &mut store_values,
+        &git_dirs_request(Some(ProviderConfigValueDto::List(Vec::new()))),
+    )
+    .expect("empty list");
+    assert_eq!(store_values.get("GIT_DIRS"), Some(&Some("[]".to_string())));
+
+    apply_provider_config_updates(&mut store_values, &git_dirs_request(None)).expect("clear");
+    assert_eq!(store_values.get("GIT_DIRS"), Some(&None));
+}
+
+#[test]
+fn snapshot_sends_git_dirs_as_a_list_of_strings() {
+    let snapshot = build_provider_config_snapshot(&StoreEnvConfigSource::default());
+    let dirs = snapshot
+        .providers
+        .iter()
+        .find(|provider| provider.source == Source::Git)
+        .and_then(|git| git.fields.iter().find(|field| field.key == "GIT_DIRS"))
+        .expect("git dirs field");
+
+    assert!(matches!(
+        dirs.value,
+        ProviderConfigFieldValueDto::List {
+            item_type: ProviderConfigValueTypeDto::String,
+            ..
+        }
+    ));
+}
+
+#[test]
+fn rejects_a_list_for_a_single_value_key() {
+    let mut store_values = std::collections::BTreeMap::new();
+    let request = ProviderConfigSaveRequestDto {
+        source: Source::Jira,
+        values: vec![ProviderConfigSaveValueDto {
+            key: "JIRA_URL".to_string(),
+            value: Some(ProviderConfigValueDto::List(vec!["https://a".to_string()])),
+        }],
+    };
+
+    assert!(apply_provider_config_updates(&mut store_values, &request).is_err());
+}
+
+#[test]
+fn snapshot_shows_a_configured_empty_list_as_set_and_empty() {
+    let mut store_values = std::collections::BTreeMap::new();
+    store_values.insert("GIT_DIRS".to_string(), Some("[]".to_string()));
+
+    let snapshot = build_provider_config_snapshot(&StoreEnvConfigSource { store_values });
+    let dirs = snapshot
+        .providers
+        .iter()
+        .find(|provider| provider.source == Source::Git)
+        .and_then(|git| git.fields.iter().find(|field| field.key == "GIT_DIRS"))
+        .expect("git dirs field");
+
+    assert!(dirs.is_set);
+    assert_eq!(
+        dirs.value,
+        ProviderConfigFieldValueDto::List {
+            item_type: ProviderConfigValueTypeDto::String,
+            items: Vec::new(),
+        }
+    );
 }
