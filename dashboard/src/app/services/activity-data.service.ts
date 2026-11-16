@@ -12,6 +12,7 @@ import type { ActivityResponse } from './backend/backend-contract'
 import { ActivityBackendClient } from './backend/backend-client'
 import { extractBackendErrorMessage } from './backend/error-message'
 import { ActivityViewStateService } from './activity-view-state.service'
+import { dayKeyOf, lastDayKeyBefore, localDayRange } from '../utils/local-day'
 import type { CollectionOperation, CollectionStatus, ProviderViewModel } from './types'
 
 export const ACTIVITY_POLL_ATTEMPTS = new InjectionToken<number>('ACTIVITY_POLL_ATTEMPTS', {
@@ -74,8 +75,8 @@ export class ActivityDataService {
     this.viewState.clearSelection()
     this.summary.set(log.summary)
     this.meta.set(log.meta)
-    if (log.meta.since) this.viewState.dateFrom.set(log.meta.since.slice(0, 10))
-    if (log.meta.until) this.viewState.dateTo.set(log.meta.until.slice(0, 10))
+    this.viewState.dateFrom.set(dayKeyOf(log.meta.start))
+    this.viewState.dateTo.set(lastDayKeyBefore(log.meta.end))
   }
 
   async initLoad(): Promise<void> {
@@ -95,10 +96,11 @@ export class ActivityDataService {
     }
   }
 
-  async collect(since: string, until: string): Promise<void> {
+  /** Collects the local days `fromKey` to `toKey`, inclusive, in the browser's time zone. */
+  async collect(fromKey: string, toKey: string): Promise<void> {
     this.begin('collect')
     try {
-      const response = await this.backend.collect({ since, until })
+      const response = await this.backend.collect(localDayRange(fromKey, toKey))
       if (this.isCollectingResponse(response)) {
         const log = await this.waitForActivity()
         if (!log) {

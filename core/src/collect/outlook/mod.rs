@@ -1,5 +1,5 @@
-use anyhow::{Result, anyhow};
-use chrono::{DateTime, TimeZone, Utc};
+use anyhow::Result;
+use chrono::{DateTime, Utc};
 #[cfg(any(target_os = "macos", test))]
 use serde_json::Value;
 
@@ -70,32 +70,6 @@ pub async fn collect_outlook(
     }
 }
 
-pub(crate) fn outlook_range_bounds(
-    since: chrono::NaiveDate,
-    until: chrono::NaiveDate,
-) -> Result<(DateTime<Utc>, DateTime<Utc>)> {
-    let start = chrono::Local
-        .from_local_datetime(
-            &since
-                .and_hms_opt(0, 0, 0)
-                .ok_or_else(|| anyhow!("invalid since date"))?,
-        )
-        .single()
-        .ok_or_else(|| anyhow!("invalid since date"))?
-        .with_timezone(&Utc);
-    let end = chrono::Local
-        .from_local_datetime(
-            &until
-                .and_hms_opt(23, 59, 59)
-                .ok_or_else(|| anyhow!("invalid until date"))?,
-        )
-        .single()
-        .ok_or_else(|| anyhow!("invalid until date"))?
-        .with_timezone(&Utc);
-
-    Ok((start, end))
-}
-
 #[cfg(any(target_os = "macos", test))]
 pub(crate) fn parse_raw_outlook_events(stdout: &str) -> Result<Vec<RawOutlookEvent>> {
     let stdout = stdout.trim();
@@ -120,14 +94,10 @@ pub(crate) fn normalize_outlook_events(
     events: Vec<RawOutlookEvent>,
     options: &CollectOptions,
 ) -> Vec<OutlookEntry> {
-    let Ok((start, end)) = outlook_range_bounds(options.since, options.until) else {
-        return Vec::new();
-    };
-
     events
         .into_iter()
         .filter(default_calendar_event)
-        .filter(|event| event_overlaps_range(event, start, end))
+        .filter(|event| event_overlaps_range(event, options))
         .map(normalize_outlook_event)
         .collect()
 }
@@ -155,16 +125,10 @@ fn default_calendar_event(event: &RawOutlookEvent) -> bool {
     event.is_default_calendar.unwrap_or(true)
 }
 
-fn event_overlaps_range(event: &RawOutlookEvent, start: DateTime<Utc>, end: DateTime<Utc>) -> bool {
-    let Ok(event_start) = chrono::DateTime::parse_from_rfc3339(&event.start) else {
-        return false;
-    };
-    let Ok(event_end) = chrono::DateTime::parse_from_rfc3339(&event.end) else {
-        return false;
-    };
-
-    let event_start = event_start.with_timezone(&Utc);
-    let event_end = event_end.with_timezone(&Utc);
-
-    event_end >= start && event_start <= end
+fn event_overlaps_range(event: &RawOutlookEvent, options: &CollectOptions) -> bool {
+    let instant = |raw: &str| DateTime::parse_from_rfc3339(raw).map(|at| at.with_timezone(&Utc));
+    match (instant(&event.start), instant(&event.end)) {
+        (Ok(start), Ok(end)) => options.overlaps(start, end),
+        _ => false,
+    }
 }

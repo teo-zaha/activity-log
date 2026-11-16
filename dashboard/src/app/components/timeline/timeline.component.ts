@@ -4,7 +4,7 @@ import { ActivityService } from '../../services/activity.service'
 import { ProviderIconComponent } from '../provider-icon/provider-icon.component'
 import { SearchBarComponent } from '../search-bar/search-bar.component'
 import type { EntryUiAdapter } from '../../providers/types'
-import { localDateKey, relativeDayLabel } from '../../utils/date-labels'
+import { dateOfKey, relativeDayLabel, todayKey } from '../../utils/local-day'
 
 interface TimelineEmptyState {
   readonly icon: string
@@ -80,7 +80,7 @@ export class TimelineComponent {
     }
   })
 
-  private readonly todayKey = localDateKey(new Date())
+  private readonly todayKey = todayKey()
 
   protected selectEntry(entry: EntryUiAdapter): void {
     this.activity.selectedEntries.set(null)
@@ -92,7 +92,7 @@ export class TimelineComponent {
   }
 
   protected formatDate(dateStr: string): string {
-    return new Date(dateStr + 'T12:00:00Z').toLocaleDateString('en-GB', {
+    return dateOfKey(dateStr).toLocaleDateString('en-GB', {
       weekday: 'long',
       year: 'numeric',
       month: 'long',

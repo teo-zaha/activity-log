@@ -8,6 +8,7 @@ use std::{
 };
 
 use anyhow::Result as AnyhowResult;
+use chrono::{DateTime, Duration, Utc};
 use tokio::sync::RwLock;
 
 use crate::{
@@ -17,7 +18,6 @@ use crate::{
         ProviderRuntime, current_os, inspect_provider_runtimes_with,
         provider_config::{ConfigSource, EnvConfigSource},
     },
-    utils::{days_ago, parse_date, resolve_range, today},
 };
 
 #[cfg(test)]
@@ -168,29 +168,19 @@ impl CollectionRuntime {
 pub fn resolve_collect_options(
     request: &CollectRequest,
 ) -> std::result::Result<CollectOptions, &'static str> {
-    match (&request.since, &request.until, &request.preset) {
-        (Some(_), Some(_), Some(_)) | (Some(_), None, Some(_)) | (None, Some(_), Some(_)) => {
-            Err("Provide either since/until or preset, not both")
-        }
-        (Some(since), Some(until), None) => {
-            let since = parse_date(since, "since")
-                .map_err(|_| "since and until must be valid dates in YYYY-MM-DD format")?;
-            let until = parse_date(until, "until")
-                .map_err(|_| "since and until must be valid dates in YYYY-MM-DD format")?;
-
-            Ok(CollectOptions { since, until })
-        }
-        (None, None, Some(preset)) => {
-            let (since, until) = resolve_range(preset.clone());
-            let since = parse_date(&since, "since")
-                .map_err(|_| "since and until must be valid dates in YYYY-MM-DD format")?;
-            let until = parse_date(&until, "until")
-                .map_err(|_| "since and until must be valid dates in YYYY-MM-DD format")?;
-
-            Ok(CollectOptions { since, until })
-        }
-        _ => Err("Provide either since/until or preset"),
+    let parse = |value: &str| {
+        DateTime::parse_from_rfc3339(value)
+            .map(|instant| instant.with_timezone(&Utc))
+            .map_err(|_| "start and end must be RFC 3339 timestamps")
+    };
+    let options = CollectOptions {
+        start: parse(&request.start)?,
+        end: parse(&request.end)?,
+    };
+    if options.end <= options.start {
+        return Err("end must be after start");
     }
+    Ok(options)
 }
 
 fn default_collector(provider_runtimes: Vec<ProviderRuntime>) -> Collector {
@@ -203,9 +193,11 @@ fn default_collector(provider_runtimes: Vec<ProviderRuntime>) -> Collector {
     })
 }
 
+/// The last 30 days up to now; the dashboard re-collects whole local days when asked.
 fn default_collect_options() -> CollectOptions {
+    let end = Utc::now();
     CollectOptions {
-        since: parse_date(&days_ago(30), "since").expect("valid default since"),
-        until: parse_date(&today(), "until").expect("valid default until"),
+        start: end - Duration::days(30),
+        end,
     }
 }

@@ -1,9 +1,10 @@
 use serde_json::json;
 
-use super::{MergeResult, format_duration, merge_git_with_gitlab, resolve_range, to_markdown};
+use chrono::FixedOffset;
+
+use super::{MergeResult, format_duration, merge_git_with_gitlab, to_markdown};
 use crate::model::{
     ActivityEntry, ActivityLog, ActivityLogMeta, CollectedActivitySummary, GitEntry, GitLabEntry,
-    RangePreset,
 };
 
 #[test]
@@ -45,8 +46,8 @@ fn markdown_contains_expected_sections() {
     let log = ActivityLog {
         meta: ActivityLogMeta {
             generated: "2026-03-10T10:00:00Z".to_string(),
-            since: "2026-03-01".to_string(),
-            until: "2026-03-10".to_string(),
+            start: "2026-03-01T00:00:00Z".to_string(),
+            end: "2026-03-11T00:00:00Z".to_string(),
         },
         summary: CollectedActivitySummary::default(),
         entries: vec![ActivityEntry::Git(GitEntry::new(
@@ -55,13 +56,15 @@ fn markdown_contains_expected_sections() {
             "message".to_string(),
             "me@example.com".to_string(),
             "main".to_string(),
-            "2026-03-10T10:00:00Z".to_string(),
+            "2026-03-10T23:30:00Z".to_string(),
         ))],
     };
 
-    let markdown = to_markdown(&log);
-    assert!(markdown.contains("# Activity Summary"));
-    assert!(markdown.contains("**[git]** `repo` message"));
+    // Rendered for a reader at UTC+2: the commit lands on the 11th at 01:30.
+    let markdown = to_markdown(&log, &FixedOffset::east_opt(2 * 3600).unwrap());
+    assert!(markdown.contains("# Activity Summary — 2026-03-01 02:00 to 2026-03-11 02:00"));
+    assert!(markdown.contains("## Wednesday, 11 March 2026"));
+    assert!(markdown.contains("**[git]** `repo` message (01:30)"));
 }
 
 #[test]
@@ -69,11 +72,4 @@ fn formats_duration() {
     assert_eq!(format_duration(45), "45m");
     assert_eq!(format_duration(60), "1h");
     assert_eq!(format_duration(90), "1h 30m");
-}
-
-#[test]
-fn resolves_range_variants() {
-    let (since, until) = resolve_range(RangePreset::Today);
-    assert_eq!(since.len(), 10);
-    assert_eq!(until.len(), 10);
 }

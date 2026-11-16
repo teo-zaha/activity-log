@@ -1,13 +1,18 @@
-use chrono::NaiveDate;
+use chrono::{DateTime, Days, Duration, NaiveDate, Utc};
 
 use crate::model::{CollectOptions, outlook::raw_outlook_event::RawOutlookEvent};
 
 use super::{normalize_outlook_events, parse_raw_outlook_events};
 
+/// Whole UTC days `since..=until`.
 fn options(since: &str, until: &str) -> CollectOptions {
+    let day = |value: &str| NaiveDate::parse_from_str(value, "%Y-%m-%d").unwrap();
     CollectOptions {
-        since: NaiveDate::parse_from_str(since, "%Y-%m-%d").unwrap(),
-        until: NaiveDate::parse_from_str(until, "%Y-%m-%d").unwrap(),
+        start: day(since).and_hms_opt(0, 0, 0).unwrap().and_utc(),
+        end: (day(until) + Days::new(1))
+            .and_hms_opt(0, 0, 0)
+            .unwrap()
+            .and_utc(),
     }
 }
 
@@ -85,37 +90,31 @@ fn normalizes_outlook_duration_and_missing_subject() {
 
 #[test]
 fn includes_events_that_overlap_requested_range() {
+    let options = options("2026-03-25", "2026-03-25");
+    let (start, end) = (options.start, options.end);
+    let event = |subject: &str, from: DateTime<Utc>, to: DateTime<Utc>| RawOutlookEvent {
+        subject: Some(subject.to_string()),
+        start: from.to_rfc3339(),
+        end: to.to_rfc3339(),
+        location: None,
+        organizer: None,
+        is_organizer: Some(false),
+        is_default_calendar: Some(true),
+    };
+    let half_hour = Duration::minutes(30);
+
     let normalized = normalize_outlook_events(
         vec![
-            RawOutlookEvent {
-                subject: Some("Starts before".to_string()),
-                start: "2026-03-24T22:30:00Z".to_string(),
-                end: "2026-03-24T23:30:00Z".to_string(),
-                location: None,
-                organizer: None,
-                is_organizer: Some(false),
-                is_default_calendar: Some(true),
-            },
-            RawOutlookEvent {
-                subject: Some("Ends after".to_string()),
-                start: "2026-03-25T22:30:00Z".to_string(),
-                end: "2026-03-25T23:30:00Z".to_string(),
-                location: None,
-                organizer: None,
-                is_organizer: Some(false),
-                is_default_calendar: Some(true),
-            },
-            RawOutlookEvent {
-                subject: Some("Outside".to_string()),
-                start: "2026-03-26T01:00:00Z".to_string(),
-                end: "2026-03-26T02:00:00Z".to_string(),
-                location: None,
-                organizer: None,
-                is_organizer: Some(false),
-                is_default_calendar: Some(true),
-            },
+            event("Starts before", start - half_hour, start + half_hour),
+            event("Ends after", end - half_hour, end + half_hour),
+            event("Ends at the start", start - half_hour, start),
+            event(
+                "Outside",
+                end + Duration::hours(1),
+                end + Duration::hours(2),
+            ),
         ],
-        &options("2026-03-25", "2026-03-25"),
+        &options,
     );
 
     let titles = normalized

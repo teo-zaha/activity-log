@@ -2,6 +2,7 @@ import { Component, ElementRef, afterNextRender, computed, inject, viewChild } f
 import { ActivityService } from '../../services/activity.service'
 import type { EntryUiAdapter } from '../../providers/types'
 import { calendarEntryKey, layoutEventsWithOverflow } from '../calendar-layout'
+import { dateOfKey, dayKeyOf, todayKey } from '../../utils/local-day'
 
 const HOUR_START = 0
 const HOUR_END = 23
@@ -79,8 +80,8 @@ export class WeekViewComponent {
 
   protected formatWeekRange(days: string[]): string {
     if (!days.length) return ''
-    const s = new Date(days[0] + 'T12:00:00')
-    const e = new Date(days[days.length - 1] + 'T12:00:00')
+    const s = dateOfKey(days[0])
+    const e = dateOfKey(days[days.length - 1])
     const month =
       s.getMonth() === e.getMonth()
         ? s.toLocaleDateString('en-GB', { month: 'long', year: 'numeric' })
@@ -89,7 +90,7 @@ export class WeekViewComponent {
   }
 
   protected formatDayCol(dateStr: string): { weekday: string; date: string } {
-    const d = new Date(dateStr + 'T12:00:00')
+    const d = dateOfKey(dateStr)
     return {
       weekday: d.toLocaleDateString('en-GB', { weekday: 'short' }),
       date: String(d.getDate()),
@@ -97,7 +98,7 @@ export class WeekViewComponent {
   }
 
   protected isToday(dateStr: string): boolean {
-    return dateStr === new Date().toISOString().slice(0, 10)
+    return dateStr === todayKey()
   }
 
   protected isSelectedDay(dateStr: string): boolean {
@@ -117,7 +118,7 @@ export class WeekViewComponent {
     const durationMinutes = e.calendarDurationMinutes
     if (durationMinutes == null) return false
     const endMs = new Date(e.timestamp).getTime() + durationMinutes * 60000
-    return new Date(endMs).toISOString().slice(0, 10) > e.timestamp.slice(0, 10)
+    return dayKeyOf(endMs) > e.dayKey
   }
 
   readonly multiDayLayout = computed<MultiDayBar[]>(() => {
@@ -130,21 +131,16 @@ export class WeekViewComponent {
     const events = this.activity.filteredEntries().filter(e => {
       if (!this.isMultiDayEvent(e)) return false
       const endMs = new Date(e.timestamp).getTime() + (e.calendarDurationMinutes ?? 0) * 60000
-      const endDay = new Date(endMs).toISOString().slice(0, 10)
-      const startDay = e.timestamp.slice(0, 10)
-      return startDay <= weekEnd && endDay > weekStart
+      return e.dayKey <= weekEnd && dayKeyOf(endMs) > weekStart
     })
 
     // Determine column span for each event (clipped to visible week)
     const bars: Omit<MultiDayBar, 'row'>[] = events.map(ev => {
       const endMs = new Date(ev.timestamp).getTime() + (ev.calendarDurationMinutes ?? 0) * 60000
-      const endDay = new Date(endMs).toISOString().slice(0, 10)
-      const startDay = ev.timestamp.slice(0, 10)
+      const endDay = dayKeyOf(endMs)
+      const startDay = ev.dayKey
       const clippedStart = startDay < weekStart ? weekStart : startDay
-      const clippedEnd =
-        endDay > weekEnd
-          ? weekEnd
-          : new Date(new Date(endMs).getTime() - 1).toISOString().slice(0, 10)
+      const clippedEnd = endDay > weekEnd ? weekEnd : dayKeyOf(endMs - 1)
       const startCol = days.indexOf(clippedStart)
       const endCol = days.indexOf(clippedEnd)
       return {

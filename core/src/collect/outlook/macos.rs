@@ -5,11 +5,10 @@ use crate::{
     platform::macos::run_apple_script,
 };
 
-use super::{normalize_outlook_events, outlook_range_bounds, parse_raw_outlook_events};
+use super::{normalize_outlook_events, parse_raw_outlook_events};
 
 pub(super) async fn collect_outlook(options: &CollectOptions) -> Result<Vec<OutlookEntry>> {
-    let (start, end) = outlook_range_bounds(options.since, options.until)?;
-    let script = build_collect_script(&start.to_rfc3339(), &end.to_rfc3339());
+    let script = build_collect_script(&options.start.to_rfc3339(), &options.end.to_rfc3339());
     let output = run_apple_script(&script)?;
     let events = parse_raw_outlook_events(&output)?;
     Ok(normalize_outlook_events(events, options))

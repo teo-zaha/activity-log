@@ -1,4 +1,5 @@
 import type { ActivityEntry, ProviderInfo, Source } from '../generated/activity'
+import { dayKeyOf } from '../utils/local-day'
 
 export type EntryBySource<S extends Source> = Extract<ActivityEntry, { source: S }>
 
@@ -55,6 +56,8 @@ export abstract class ProviderUiAdapterDefinition<
 export abstract class EntryUiAdapter<TEntry extends ActivityEntry = ActivityEntry> {
   readonly source: TEntry['source']
   readonly timestamp: string
+  /** The local day the entry falls on, `YYYY-MM-DD`. */
+  readonly dayKey: string
   readonly title: string
   readonly meta: string
   readonly entryIcon: string
@@ -74,6 +77,7 @@ export abstract class EntryUiAdapter<TEntry extends ActivityEntry = ActivityEntr
   ) {
     this.source = entry.source
     this.timestamp = entry.timestamp
+    this.dayKey = dayKeyOf(entry.timestamp)
     this.title = init.title
     this.meta = init.meta
     this.entryIcon = init.entryIcon

@@ -1,5 +1,4 @@
-use anyhow::{Result, anyhow};
-use chrono::{DateTime, TimeZone, Utc};
+use anyhow::Result;
 
 use crate::model::{CollectOptions, SupportedOs, SystemEntry};
 #[cfg(any(target_os = "windows", test))]
@@ -104,30 +103,4 @@ pub(crate) fn map_windows_events(
             }
         })
         .collect()
-}
-
-pub(crate) fn utc_bounds(
-    since: chrono::NaiveDate,
-    until: chrono::NaiveDate,
-) -> Result<(DateTime<Utc>, DateTime<Utc>)> {
-    let start = chrono::Local
-        .from_local_datetime(
-            &since
-                .and_hms_opt(0, 0, 0)
-                .ok_or_else(|| anyhow!("invalid since date"))?,
-        )
-        .single()
-        .ok_or_else(|| anyhow!("invalid since date"))?
-        .with_timezone(&Utc);
-    let end = chrono::Local
-        .from_local_datetime(
-            &until
-                .and_hms_opt(23, 59, 59)
-                .ok_or_else(|| anyhow!("invalid until date"))?,
-        )
-        .single()
-        .ok_or_else(|| anyhow!("invalid until date"))?
-        .with_timezone(&Utc);
-
-    Ok((start, end))
 }

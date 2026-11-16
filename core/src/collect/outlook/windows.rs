@@ -1,14 +1,15 @@
 use anyhow::Result;
+use chrono::{DateTime, Days, Utc};
 
 use crate::{
     model::{CollectOptions, OutlookEntry, outlook::raw_outlook_event::RawOutlookEvent},
-    platform::{ComGuard, local_date_bounds_as_systemtime, running_outlook_application},
+    platform::{ComGuard, running_outlook_application},
 };
 
 use super::normalize_outlook_events;
 
 pub(super) async fn collect_outlook(options: &CollectOptions) -> Result<Vec<OutlookEntry>> {
-    let blocking_options = options.clone();
+    let blocking_options = *options;
     let events = tokio::task::spawn_blocking(move || collect_outlook_blocking(&blocking_options))
         .await
         .map_err(|err| anyhow::anyhow!("Outlook collection task failed: {err}"))??;
@@ -24,11 +25,13 @@ fn collect_outlook_blocking(options: &CollectOptions) -> Result<Vec<RawOutlookEv
     items.set_bool("IncludeRecurrences", true)?;
     items.method_unit_string("Sort", "[Start]")?;
 
-    let (start, end) = local_date_bounds_as_systemtime(options.since, options.until)?;
+    // Restrict compares in Outlook's local time. Rather than converting, pad the UTC range by a
+    // day on each side (more than any UTC offset); `normalize_outlook_events` then applies the
+    // exact range to the UTC start and end read below.
     let filter = format!(
         "[End] >= '{start}' AND [Start] <= '{end}'",
-        start = format_outlook_filter_value(&start),
-        end = format_outlook_filter_value(&end),
+        start = format_outlook_filter_value(options.start - Days::new(1)),
+        end = format_outlook_filter_value(options.end + Days::new(1)),
     );
     let filtered = items.method_dispatch_string("Restrict", &filter)?;
     let count = filtered.property_i32("Count")?;
@@ -39,8 +42,8 @@ fn collect_outlook_blocking(options: &CollectOptions) -> Result<Vec<RawOutlookEv
         let meeting_status = event.property_i32("MeetingStatus").unwrap_or_default();
         events.push(RawOutlookEvent {
             subject: event.property_optional_string("Subject")?,
-            start: event.property_rfc3339("Start")?,
-            end: event.property_rfc3339("End")?,
+            start: event.property_utc_rfc3339("StartUTC")?,
+            end: event.property_utc_rfc3339("EndUTC")?,
             location: event.property_optional_string("Location")?,
             organizer: event.property_optional_string("Organizer")?,
             is_organizer: Some(matches!(meeting_status, 0 | 1)),
@@ -51,16 +54,6 @@ fn collect_outlook_blocking(options: &CollectOptions) -> Result<Vec<RawOutlookEv
     Ok(events)
 }
 
-fn format_outlook_filter_value(value: &windows::Win32::Foundation::SYSTEMTIME) -> String {
-    let hour24 = value.wHour;
-    let hour12 = match hour24 % 12 {
-        0 => 12,
-        other => other,
-    };
-    let am_pm = if hour24 < 12 { "AM" } else { "PM" };
-
-    format!(
-        "{}/{}/{} {}:{:02} {}",
-        value.wMonth, value.wDay, value.wYear, hour12, value.wMinute, am_pm
-    )
+fn format_outlook_filter_value(value: DateTime<Utc>) -> String {
+    value.format("%-m/%-d/%Y %-I:%M %p").to_string()
 }

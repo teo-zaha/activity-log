@@ -2,17 +2,22 @@ use std::{collections::BTreeMap, fs, path::Path};
 
 use activity_log_core::{
     collect_activity_detailed_with_provider_runtimes,
-    model::{CollectOptions, CollectedActivity, OutputFormat, ProviderInfo, RangePreset, Source},
+    model::{CollectOptions, CollectedActivity, OutputFormat, ProviderInfo, Source},
     provider::{
         inspect_provider_runtimes_with,
         provider_config::{ConfigSource, ProviderConfigKey, provider_config_value_matches_type},
         provider_registry,
     },
-    utils::{days_ago, parse_date, to_markdown, today},
+    utils::to_markdown,
 };
 use anyhow::{Result, anyhow};
+use chrono::{Days, Local};
 use clap::Parser;
 use strum::IntoEnumIterator;
+
+mod range;
+
+use range::{RangePreset, day_range, parse_date, resolve_preset, today};
 
 #[derive(Debug, Parser)]
 #[command(author, version, about)]
@@ -74,7 +79,8 @@ async fn collect(cli: Cli) -> Result<()> {
 
     println!(
         "\nCollecting activity from {} to {} ...\n",
-        request.collect_options.since, request.collect_options.until
+        request.collect_options.start.with_timezone(&Local),
+        request.collect_options.end.with_timezone(&Local)
     );
 
     let config_source = CliConfigSource {
@@ -97,7 +103,7 @@ async fn collect(cli: Cli) -> Result<()> {
 
     let content = match format {
         OutputFormat::Json => serde_json::to_string_pretty(&collected.log)?,
-        OutputFormat::Markdown => to_markdown(&collected.log),
+        OutputFormat::Markdown => to_markdown(&collected.log, &Local),
     };
 
     if let Some(output) = &request.output_path {
@@ -133,16 +139,21 @@ fn build_collect_request(cli: &Cli, format: &OutputFormat) -> Result<CliCollecti
         let preset = range
             .parse::<RangePreset>()
             .map_err(|_| anyhow!("Unknown range: \"{range}\". Use {}", valid_range_presets()))?;
-        let (since, until) = activity_log_core::utils::resolve_range(preset);
-        (parse_date(&since, "since")?, parse_date(&until, "until")?)
+        resolve_preset(preset, today())
     } else {
-        let since = cli.since.clone().unwrap_or_else(|| days_ago(30));
-        let until = cli.until.clone().unwrap_or_else(today);
-        (parse_date(&since, "since")?, parse_date(&until, "until")?)
+        let since = match &cli.since {
+            Some(since) => parse_date(since, "since")?,
+            None => today() - Days::new(30),
+        };
+        let until = match &cli.until {
+            Some(until) => parse_date(until, "until")?,
+            None => today(),
+        };
+        (since, until)
     };
 
     Ok(CliCollectionRequest {
-        collect_options: CollectOptions { since, until },
+        collect_options: day_range(&Local, since, until)?,
         output_path: Some(
             cli.output
                 .clone()

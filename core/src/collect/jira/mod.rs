@@ -1,4 +1,5 @@
 use anyhow::{Result, anyhow};
+use chrono::{DateTime, Days, FixedOffset};
 
 use crate::{
     model::{
@@ -16,8 +17,11 @@ pub async fn collect_jira(
     context: &ProviderContext,
 ) -> Result<Vec<JiraEntry>> {
     let config = context.config::<JiraConfig>()?;
-    let since = options.since.format("%Y-%m-%d").to_string();
-    let until = options.until.format("%Y-%m-%d").to_string();
+    // JQL dates are read in the Jira user's timezone, which can be a day behind UTC; the exact
+    // range is applied to every entry in `map_jira_issues`.
+    let since = (options.start.date_naive() - Days::new(1))
+        .format("%Y-%m-%d")
+        .to_string();
 
     let client = jira_client(config)?;
 
@@ -45,7 +49,7 @@ pub async fn collect_jira(
             break;
         }
 
-        entries.extend(map_jira_issues(&data.issues, &since, &until));
+        entries.extend(map_jira_issues(&data.issues, options));
         if data.issues.len() < max_results {
             break;
         }
@@ -57,22 +61,23 @@ pub async fn collect_jira(
 
 /// Issues touched on or after `since`. There is deliberately no upper bound on `updatedDate`:
 /// an issue changed inside the range and again later is still relevant, and the changelog
-/// filter in `map_jira_issues` cuts entries off at `until`.
+/// filter in `map_jira_issues` cuts entries off at the end of the range.
 pub(crate) fn jira_search_jql(since: &str) -> String {
     format!("updatedDate >= \"{since}\" AND (assignee = currentUser() OR reporter = currentUser())")
 }
 
-fn map_jira_issues(issues: &[JiraIssue], since: &str, until: &str) -> Vec<JiraEntry> {
+fn map_jira_issues(issues: &[JiraIssue], options: &CollectOptions) -> Vec<JiraEntry> {
+    let in_range = |raw: &str| parse_jira_timestamp(raw).filter(|at| options.contains(at.to_utc()));
     let mut entries = Vec::new();
 
     for issue in issues {
         let mut emitted_status_change = false;
 
-        if is_timestamp_in_range(&issue.fields.created, since, until) {
+        if let Some(created) = in_range(&issue.fields.created) {
             entries.push(JiraEntry {
                 source: "jira".to_string(),
                 entry_type: JiraEntryType::IssueCreated,
-                timestamp: issue.fields.created.clone(),
+                timestamp: created.to_rfc3339(),
                 key: issue.key.clone(),
                 title: issue.fields.summary.clone(),
                 status: issue.fields.status.name.clone(),
@@ -84,9 +89,9 @@ fn map_jira_issues(issues: &[JiraIssue], since: &str, until: &str) -> Vec<JiraEn
 
         if let Some(changelog) = &issue.changelog {
             for history in &changelog.histories {
-                if !is_timestamp_in_range(&history.created, since, until) {
+                let Some(changed) = in_range(&history.created) else {
                     continue;
-                }
+                };
 
                 for item in &history.items {
                     if !item.field.eq_ignore_ascii_case("status") {
@@ -97,7 +102,7 @@ fn map_jira_issues(issues: &[JiraIssue], since: &str, until: &str) -> Vec<JiraEn
                     entries.push(JiraEntry {
                         source: "jira".to_string(),
                         entry_type: JiraEntryType::StatusChanged,
-                        timestamp: history.created.clone(),
+                        timestamp: changed.to_rfc3339(),
                         key: issue.key.clone(),
                         title: issue.fields.summary.clone(),
                         status: item
@@ -112,14 +117,14 @@ fn map_jira_issues(issues: &[JiraIssue], since: &str, until: &str) -> Vec<JiraEn
             }
         }
 
-        if is_timestamp_in_range(&issue.fields.updated, since, until)
+        if let Some(updated) = in_range(&issue.fields.updated)
             && issue.fields.updated != issue.fields.created
             && !emitted_status_change
         {
             entries.push(JiraEntry {
                 source: "jira".to_string(),
                 entry_type: JiraEntryType::IssueUpdated,
-                timestamp: issue.fields.updated.clone(),
+                timestamp: updated.to_rfc3339(),
                 key: issue.key.clone(),
                 title: issue.fields.summary.clone(),
                 status: issue.fields.status.name.clone(),
@@ -133,11 +138,12 @@ fn map_jira_issues(issues: &[JiraIssue], since: &str, until: &str) -> Vec<JiraEn
     entries
 }
 
-fn is_timestamp_in_range(timestamp: &str, since: &str, until: &str) -> bool {
-    timestamp
-        .get(0..10)
-        .map(|date| date >= since && date <= until)
-        .unwrap_or(false)
+/// Jira writes offsets without a colon (`2026-03-05T08:00:00.000+0100`), which is not RFC 3339;
+/// entries are re-emitted as RFC 3339 so every client can parse them.
+pub(crate) fn parse_jira_timestamp(raw: &str) -> Option<DateTime<FixedOffset>> {
+    DateTime::parse_from_rfc3339(raw)
+        .or_else(|_| DateTime::parse_from_str(raw, "%Y-%m-%dT%H:%M:%S%.f%z"))
+        .ok()
 }
 
 #[cfg(test)]

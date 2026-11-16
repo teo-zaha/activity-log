@@ -1,5 +1,5 @@
 use anyhow::{Result, anyhow};
-use chrono::Days;
+use chrono::{DateTime, Days};
 use serde_json::{Map, Value};
 
 use crate::{
@@ -15,8 +15,11 @@ pub async fn collect_gitlab(
 
     let client = crate::provider::http_client_builder().build()?;
 
-    let after = options.since.checked_sub_days(Days::new(1)).unwrap();
-    let before = options.until.checked_add_days(Days::new(1)).unwrap();
+    // `after` and `before` take dates and exclude them; widen by a day on each side and
+    // keep only the events inside the exact range below.
+    let (first, last) = options.utc_days();
+    let after = first - Days::new(1);
+    let before = last + Days::new(1);
 
     let mut entries = Vec::new();
     let mut page = 1;
@@ -47,11 +50,10 @@ pub async fn collect_gitlab(
             break;
         }
 
-        for event in &events {
-            if let Some(entry) = map_gitlab_event(event) {
-                entries.push(entry);
-            }
-        }
+        entries.extend(events.iter().filter_map(map_gitlab_event).filter(|entry| {
+            DateTime::parse_from_rfc3339(&entry.timestamp)
+                .is_ok_and(|at| options.contains(at.to_utc()))
+        }));
 
         if events.len() < 100 {
             break;

@@ -38,7 +38,7 @@ describe('TauriBackendTransport', () => {
 
   it('passes the request as { request }', async () => {
     const invocations = mockInvoke(() => ({ collecting: true }))
-    const request = { since: '2026-05-17', until: '2026-05-18' }
+    const request = { start: '2026-05-17T00:00:00Z', end: '2026-05-19T00:00:00Z' }
 
     await setup().call(BackendOperations.collect, request)
 

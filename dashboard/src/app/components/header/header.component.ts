@@ -5,6 +5,7 @@ import { MatDatepickerModule } from '@angular/material/datepicker'
 import { MatNativeDateModule } from '@angular/material/core'
 import { ActivityService } from '../../services/activity.service'
 import { RuntimeEnvironmentService } from '../../services/backend/runtime-environment.service'
+import { dateOfKey, localDateKey } from '../../utils/local-day'
 
 interface DateRange {
   readonly from: Date | null
@@ -45,15 +46,11 @@ export class HeaderComponent {
 
   protected parseDateStr(s: string): Date | null {
     if (!s) return null
-    return new Date(s + 'T12:00:00')
+    return dateOfKey(s)
   }
 
   protected fmtDate(d: Date | null): string {
-    if (!d) return ''
-    const y = d.getFullYear()
-    const m = String(d.getMonth() + 1).padStart(2, '0')
-    const day = String(d.getDate()).padStart(2, '0')
-    return `${y}-${m}-${day}`
+    return d ? localDateKey(d) : ''
   }
 
   protected exportMd(): void {

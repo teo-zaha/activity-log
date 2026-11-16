@@ -401,7 +401,7 @@ pnpm dashboard:dev    # dashboard on :4200
 
 - `GET /api/activity`
 - `GET /api/providers`
-- `POST /api/collect`
+- `POST /api/collect` with `{ "start": "<RFC 3339>", "end": "<RFC 3339>" }`, the range `[start, end)`
 - `GET /api/logs`, `DELETE /api/logs`
 
 The last 30 days are collected automatically on startup. Use the date pickers in the header to change the range and re-collect on the fly.
@@ -475,7 +475,7 @@ pnpm cli:collect --range lastmonth
 pnpm cli:collect --since 2026-03-01 --until 2026-03-18
 ```
 
-Without `--range`, `--since` defaults to 30 days ago and `--until` to today.
+Without `--range`, `--since` defaults to 30 days ago and `--until` to today. Dates are whole days in your local time zone.
 
 **Output format**
 

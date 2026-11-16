@@ -18,7 +18,7 @@ pub(super) async fn collect_system(options: &CollectOptions) -> Result<Vec<Syste
         .iter()
         .map(|(id, _, _)| *id)
         .collect::<Vec<_>>();
-    let options = options.clone();
+    let options = *options;
     let system_raw = tokio::task::spawn_blocking(move || query_log("System", &ids, &options))
         .await
         .map_err(|err| anyhow::anyhow!("System collection task failed: {err}"))??;
@@ -28,8 +28,7 @@ pub(super) async fn collect_system(options: &CollectOptions) -> Result<Vec<Syste
 
 #[cfg(target_os = "windows")]
 fn query_log(log_name: &str, ids: &[i32], options: &CollectOptions) -> Result<Vec<RawSystemEvent>> {
-    let (start, end) = super::utc_bounds(options.since, options.until)?;
-    let query = build_event_query(ids, start, end);
+    let query = build_event_query(ids, options.start, options.end);
     let xml_events = query_windows_event_log(log_name, &query)?;
     let mut events = Vec::with_capacity(xml_events.len());
 
@@ -50,7 +49,7 @@ pub(crate) fn build_event_query(ids: &[i32], start: DateTime<Utc>, end: DateTime
         .join(" or ");
 
     format!(
-        "*[System[({ids}) and TimeCreated[@SystemTime >= '{start}' and @SystemTime <= '{end}']]]",
+        "*[System[({ids}) and TimeCreated[@SystemTime >= '{start}' and @SystemTime < '{end}']]]",
         start = start.format("%Y-%m-%dT%H:%M:%SZ"),
         end = end.format("%Y-%m-%dT%H:%M:%SZ")
     )

@@ -40,8 +40,9 @@ export const providersResponse: ProvidersResponse = {
 export const activityLog: ActivityLog = {
   meta: {
     generated: '2026-05-18T08:00:00Z',
-    since: '2026-05-17T00:00:00Z',
-    until: '2026-05-18T23:59:59Z',
+    // Local midnights, so the loaded range reads as 17–18 May in any time zone.
+    start: new Date(2026, 4, 17).toISOString(),
+    end: new Date(2026, 4, 19).toISOString(),
   },
   summary: {
     git_count: 1,
@@ -83,6 +84,8 @@ export class MockBackendTransport implements BackendTransport {
   collectResponse: ActivityResponse = activityLog
   collectError: Error | null = null
   exports: ExportRequest[] = []
+  /** Every request passed to `call`, in order. */
+  requests: unknown[] = []
   logs: LogEntry[] = []
   logsError: Error | null = null
   clearLogsError: Error | null = null
@@ -91,7 +94,8 @@ export class MockBackendTransport implements BackendTransport {
     return resource({ loader: () => this.call(read, undefined) })
   }
 
-  call<Req, Res>(operation: BackendOperation<Req, Res>, _request: NoInfer<Req>): Promise<Res> {
+  call<Req, Res>(operation: BackendOperation<Req, Res>, request: NoInfer<Req>): Promise<Res> {
+    this.requests.push(request)
     // The response type is only a phantom on the operation, so an identity check in `respond`
     // cannot narrow `Res`; a typed handler map would need the same cast to store its entries.
     // Each case in `respond` returns the response its operation declares.

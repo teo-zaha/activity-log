@@ -3,9 +3,9 @@ use chrono::{DateTime, Local, NaiveDateTime, TimeZone, Utc};
 #[cfg(target_os = "macos")]
 use tokio::process::Command;
 
-use crate::model::{SystemEntry, SystemEntryType};
 #[cfg(target_os = "macos")]
-use crate::{collect::system::utc_bounds, model::CollectOptions};
+use crate::model::CollectOptions;
+use crate::model::{SystemEntry, SystemEntryType};
 
 const BOOT_LABEL: &str = "System started";
 const SHUTDOWN_LABEL: &str = "System shutdown";
@@ -15,7 +15,7 @@ pub(super) async fn collect_system(options: &CollectOptions) -> Result<Vec<Syste
     use std::process::Stdio;
     use tokio::io::{AsyncBufReadExt, BufReader};
 
-    let (start, end) = utc_bounds(options.since, options.until)?;
+    let (start, end) = (options.start, options.end);
     // `last` prints newest first and covers the whole wtmp history. Stream it and stop at the
     // first entry older than the range instead of reading everything; dropping the child
     // (kill_on_drop) ends the process early.
@@ -75,7 +75,7 @@ pub(crate) fn classify_last_line(
     if timestamp < start {
         return Ok(LastLine::BeforeRange);
     }
-    if timestamp > end {
+    if timestamp >= end {
         return Ok(LastLine::Skip);
     }
     Ok(LastLine::Entry(SystemEntry {
@@ -116,6 +116,8 @@ fn parse_last_line(line: &str) -> Option<(SystemEntryType, &'static str, &str)> 
     None
 }
 
+/// `last` prints the machine's local wall-clock time without an offset, so this is the one
+/// place the backend reads the local timezone: only the machine knows what it meant.
 fn parse_last_timestamp(raw: &str) -> Result<DateTime<Utc>> {
     let timestamp = NaiveDateTime::parse_from_str(raw, "%a %b %e %Y %H:%M")?;
     Ok(Local

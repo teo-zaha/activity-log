@@ -24,8 +24,6 @@ export type ProviderConfigSaveRequestDto = { source: Source, values: Array<Provi
 
 export type ProviderConfigSaveResponseDto = { snapshot: ProviderConfigSnapshotDto, providersResponse: ProvidersResponse, };
 
-export type RangePreset = "today" | "yesterday" | "week" | "lastWeek" | "month" | "lastMonth";
-
 export type GitLabType = "pushedTo" | "created" | "opened" | "closed" | "reopened" | "updated" | "merged" | "accepted" | "commentedOn" | "approved" | "joined" | "destroyed" | "expired" | "unknown";
 
 export type JiraEntryType = "issueCreated" | "issueUpdated" | "statusChanged";
@@ -44,13 +42,13 @@ export type SystemEntry = { source: "system", type: SystemEntryType, timestamp: 
 
 export type ActivityEntry = GitEntry | GitLabEntry | JiraEntry | OutlookEntry | SystemEntry;
 
-export type ActivityLogMeta = { generated: string, since: string, until: string, };
+export type ActivityLogMeta = { generated: string, start: string, end: string, };
 
 export type CollectedActivitySummary = { git_count: number, gitlab_count: number, jira_count: number, outlook_count: number, system_count: number, merged_count: number, };
 
 export type ActivityLog = { meta: ActivityLogMeta, summary: CollectedActivitySummary, entries: Array<ActivityEntry>, };
 
-export type CollectRequest = { since?: string, until?: string, preset?: RangePreset, };
+export type CollectRequest = { start: string, end: string, };
 
 export type CollectingResponse = { collecting: boolean, };
 

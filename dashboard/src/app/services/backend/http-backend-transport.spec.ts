@@ -47,7 +47,7 @@ describe('HttpBackendTransport', () => {
 
   it('collects over POST /api/collect with the request as body', async () => {
     const { transport, http } = setup()
-    const request = { since: '2026-05-17', until: '2026-05-18' }
+    const request = { start: '2026-05-17T00:00:00Z', end: '2026-05-19T00:00:00Z' }
 
     const result = transport.call(BackendOperations.collect, request)
     const req = http.expectOne('/api/collect')
@@ -128,7 +128,7 @@ describe('HttpBackendTransport', () => {
       // @ts-expect-error the save request is required
       void transport.call(BackendOperations.saveProviderConfig, null)
       // @ts-expect-error reads take no request
-      void transport.call(BackendOperations.activity, { since: 'x' })
+      void transport.call(BackendOperations.activity, { start: 'x' })
     }
 
     expect(mismatches).toBeTypeOf('function')
