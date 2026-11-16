@@ -118,8 +118,8 @@ fn provider_summary_includes_skipped_and_usable_providers() {
         log: ActivityLog {
             meta: ActivityLogMeta {
                 generated: "2026-01-01T00:00:00Z".to_string(),
-                since: "2026-01-01".to_string(),
-                until: "2026-01-01".to_string(),
+                start: "2026-01-01T00:00:00Z".to_string(),
+                end: "2026-01-02T00:00:00Z".to_string(),
             },
             summary: CollectedActivitySummary::default(),
             entries: Vec::new(),

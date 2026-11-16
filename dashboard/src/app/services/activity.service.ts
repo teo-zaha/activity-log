@@ -52,7 +52,7 @@ export class ActivityService {
     const sources = this.activeSources()
 
     return entries.filter(entry => {
-      const day = entry.timestamp.slice(0, 10)
+      const day = entry.dayKey
       if (from && day < from) return false
       if (to && day > to) return false
       if (!entry.sources.some(source => sources.has(source))) return false
@@ -67,7 +67,7 @@ export class ActivityService {
   readonly groupedByDay = computed<DayGroup<EntryUiAdapter>[]>(() => {
     const byDay = new Map<string, EntryUiAdapter[]>()
     for (const entry of this.filteredEntries()) {
-      const day = entry.timestamp.slice(0, 10)
+      const day = entry.dayKey
       if (!byDay.has(day)) byDay.set(day, [])
       byDay.get(day)!.push(entry)
     }
@@ -77,7 +77,7 @@ export class ActivityService {
   })
 
   readonly dayEntries = computed(() =>
-    this.filteredEntries().filter(entry => entry.timestamp.slice(0, 10) === this.selectedDay())
+    this.filteredEntries().filter(entry => entry.dayKey === this.selectedDay())
   )
 
   readonly weekEntriesByDay = computed<Map<string, EntryUiAdapter[]>>(() => {
@@ -85,7 +85,7 @@ export class ActivityService {
     const map = new Map<string, EntryUiAdapter[]>()
     for (const day of days) map.set(day, [])
     for (const entry of this.filteredEntries()) {
-      const day = entry.timestamp.slice(0, 10)
+      const day = entry.dayKey
       if (map.has(day)) map.get(day)!.push(entry)
     }
     return map
@@ -119,8 +119,9 @@ export class ActivityService {
     return this.data.initLoad()
   }
 
-  collect(since: string, until: string): Promise<void> {
-    return this.data.collect(since, until)
+  /** Collects the local days `fromKey` to `toKey`, inclusive. */
+  collect(fromKey: string, toKey: string): Promise<void> {
+    return this.data.collect(fromKey, toKey)
   }
 
   /** Re-runs the last collection: the startup load if no range is known yet, else the range. */

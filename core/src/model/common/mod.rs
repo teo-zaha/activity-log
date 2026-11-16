@@ -13,6 +13,5 @@ pub mod provider_config_value_type_dto;
 pub mod provider_info;
 pub mod provider_status;
 pub mod providers_response;
-pub mod range_preset;
 pub mod source;
 pub mod supported_os;

@@ -1,4 +1,4 @@
-use chrono::{TimeZone, Utc};
+use chrono::{Local, NaiveDate, TimeZone, Utc};
 
 use crate::model::SystemEntryType;
 
@@ -45,7 +45,7 @@ fn builds_windows_event_query_with_ids_and_utc_bounds() {
 
     assert_eq!(
         query,
-        "*[System[(EventID=6005 or EventID=6006 or EventID=6008) and TimeCreated[@SystemTime >= '2026-03-25T08:00:00Z' and @SystemTime <= '2026-03-25T18:00:00Z']]]"
+        "*[System[(EventID=6005 or EventID=6006 or EventID=6008) and TimeCreated[@SystemTime >= '2026-03-25T08:00:00Z' and @SystemTime < '2026-03-25T18:00:00Z']]]"
     );
 }
 
@@ -59,7 +59,7 @@ fn builds_windows_event_query_with_single_id() {
 
     assert_eq!(
         query,
-        "*[System[(EventID=6005) and TimeCreated[@SystemTime >= '2026-03-25T00:00:00Z' and @SystemTime <= '2026-03-25T23:59:59Z']]]"
+        "*[System[(EventID=6005) and TimeCreated[@SystemTime >= '2026-03-25T00:00:00Z' and @SystemTime < '2026-03-25T23:59:59Z']]]"
     );
 }
 
@@ -73,7 +73,7 @@ fn builds_windows_event_query_with_empty_ids() {
 
     assert_eq!(
         query,
-        "*[System[() and TimeCreated[@SystemTime >= '2026-03-25T08:00:00Z' and @SystemTime <= '2026-03-25T18:00:00Z']]]"
+        "*[System[() and TimeCreated[@SystemTime >= '2026-03-25T08:00:00Z' and @SystemTime < '2026-03-25T18:00:00Z']]]"
     );
 }
 
@@ -142,6 +142,20 @@ fn errors_on_windows_event_xml_with_non_numeric_id() {
     assert!(result.is_err());
 }
 
+/// `last` prints local wall-clock times; convert the same way the parser does.
+fn local_rfc3339(year: i32, month: u32, day: u32, hour: u32, minute: u32) -> String {
+    let naive = NaiveDate::from_ymd_opt(year, month, day)
+        .unwrap()
+        .and_hms_opt(hour, minute, 0)
+        .unwrap();
+    Local
+        .from_local_datetime(&naive)
+        .single()
+        .unwrap()
+        .with_timezone(&Utc)
+        .to_rfc3339()
+}
+
 #[test]
 fn parses_macos_last_output() {
     let entries = parse_last_output(
@@ -153,19 +167,9 @@ fn parses_macos_last_output() {
 
     assert_eq!(entries.len(), 2);
     assert_eq!(entries[0].entry_type, SystemEntryType::Boot);
-    assert_eq!(
-        entries[0].timestamp,
-        Utc.with_ymd_and_hms(2026, 5, 15, 12, 23, 0)
-            .unwrap()
-            .to_rfc3339()
-    );
+    assert_eq!(entries[0].timestamp, local_rfc3339(2026, 5, 15, 14, 23));
     assert_eq!(entries[1].entry_type, SystemEntryType::Shutdown);
-    assert_eq!(
-        entries[1].timestamp,
-        Utc.with_ymd_and_hms(2026, 5, 13, 15, 23, 0)
-            .unwrap()
-            .to_rfc3339()
-    );
+    assert_eq!(entries[1].timestamp, local_rfc3339(2026, 5, 13, 17, 23));
 }
 
 #[test]

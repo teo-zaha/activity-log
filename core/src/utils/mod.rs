@@ -1,67 +1,15 @@
-use anyhow::{Result, anyhow};
-use chrono::{Datelike, Duration, NaiveDate, Utc};
+use chrono::{DateTime, TimeZone, Utc};
 
 use crate::{
     collect::gitlab::commit_to_sha,
     model::{
         ActivityEntry, ActivityLog, GitEntry, GitLabEntry, GitLabType, JiraEntry, MergeResult,
-        OutlookEntry, RangePreset, SystemEntry,
+        OutlookEntry, SystemEntry,
     },
 };
 
-pub fn parse_date(value: &str, name: &str) -> Result<NaiveDate> {
-    NaiveDate::parse_from_str(value, "%Y-%m-%d")
-        .map_err(|_| anyhow!("Invalid date for {name}: {value:?} (expected YYYY-MM-DD)"))
-}
-
-pub fn today() -> String {
-    Utc::now().date_naive().format("%Y-%m-%d").to_string()
-}
-
-pub fn days_ago(days: i64) -> String {
-    (Utc::now().date_naive() - Duration::days(days))
-        .format("%Y-%m-%d")
-        .to_string()
-}
-
 pub fn now_iso() -> String {
     Utc::now().to_rfc3339()
-}
-
-pub fn resolve_range(range: RangePreset) -> (String, String) {
-    let now = Utc::now().date_naive();
-    let fmt = |date: NaiveDate| date.format("%Y-%m-%d").to_string();
-
-    match range {
-        RangePreset::Today => (fmt(now), fmt(now)),
-        RangePreset::Yesterday => {
-            let value = now - Duration::days(1);
-            (fmt(value), fmt(value))
-        }
-        RangePreset::Week => {
-            let start = now - Duration::days(now.weekday().num_days_from_sunday() as i64);
-            (fmt(start), fmt(now))
-        }
-        RangePreset::LastWeek => {
-            let end = now - Duration::days(now.weekday().num_days_from_sunday() as i64 + 1);
-            let start = end - Duration::days(6);
-            (fmt(start), fmt(end))
-        }
-        RangePreset::Month => {
-            let start = NaiveDate::from_ymd_opt(now.year(), now.month(), 1).unwrap();
-            (fmt(start), fmt(now))
-        }
-        RangePreset::LastMonth => {
-            let start = if now.month() == 1 {
-                NaiveDate::from_ymd_opt(now.year() - 1, 12, 1).unwrap()
-            } else {
-                NaiveDate::from_ymd_opt(now.year(), now.month() - 1, 1).unwrap()
-            };
-            let end =
-                NaiveDate::from_ymd_opt(now.year(), now.month(), 1).unwrap() - Duration::days(1);
-            (fmt(start), fmt(end))
-        }
-    }
 }
 
 pub fn merge_git_with_gitlab(
@@ -105,32 +53,44 @@ pub fn merge_git_with_gitlab(
     }
 }
 
-pub fn to_markdown(log: &ActivityLog) -> String {
+/// Renders `log` grouped by calendar day in `tz`, the reader's timezone.
+pub fn to_markdown<Tz: TimeZone>(log: &ActivityLog, tz: &Tz) -> String {
+    let local = |timestamp: &str| {
+        DateTime::parse_from_rfc3339(timestamp)
+            .ok()
+            .map(|instant| instant.with_timezone(tz).naive_local())
+    };
+    let range = |timestamp: &str| {
+        local(timestamp)
+            .map(|instant| instant.format("%Y-%m-%d %H:%M").to_string())
+            .unwrap_or_else(|| timestamp.to_string())
+    };
     let mut markdown = format!(
         "# Activity Summary — {} to {}\n\nTotal: {} events\n\n",
-        log.meta.since,
-        log.meta.until,
+        range(&log.meta.start),
+        range(&log.meta.end),
         log.entries.len()
     );
 
-    let mut by_day = std::collections::BTreeMap::<String, Vec<&ActivityEntry>>::new();
+    let mut by_day = std::collections::BTreeMap::<Option<chrono::NaiveDate>, Vec<_>>::new();
     for entry in &log.entries {
-        let day = entry
-            .timestamp()
-            .get(0..10)
-            .unwrap_or("unknown")
-            .to_string();
-        by_day.entry(day).or_default().push(entry);
+        let instant = local(entry.timestamp());
+        by_day
+            .entry(instant.map(|instant| instant.date()))
+            .or_default()
+            .push((instant, entry));
     }
 
     for (day, entries) in by_day.into_iter().rev() {
-        let label = NaiveDate::parse_from_str(&day, "%Y-%m-%d")
+        let label = day
             .map(|date| date.format("%A, %-d %B %Y").to_string())
-            .unwrap_or(day.clone());
+            .unwrap_or_else(|| "Unknown date".to_string());
         markdown.push_str(&format!("## {label}\n\n"));
 
-        for entry in entries {
-            let time = entry.timestamp().get(11..16).unwrap_or_default();
+        for (instant, entry) in entries {
+            let time = instant
+                .map(|instant| instant.format("%H:%M").to_string())
+                .unwrap_or_default();
             match entry {
                 ActivityEntry::Git(GitEntry { repo, message, .. }) => {
                     markdown.push_str(&format!("- **[git]** `{repo}` {message} ({time})\n"));

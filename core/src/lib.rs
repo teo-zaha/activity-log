@@ -50,8 +50,8 @@ pub async fn collect_activity_detailed_with_provider_runtimes(
         "runtime",
         format!(
             "Collecting {} to {}",
-            options.since.format("%Y-%m-%d"),
-            options.until.format("%Y-%m-%d")
+            options.start.to_rfc3339(),
+            options.end.to_rfc3339()
         ),
     );
     let results = futures::future::join_all(
@@ -60,32 +60,29 @@ pub async fn collect_activity_detailed_with_provider_runtimes(
         provider_runtimes
             .iter()
             .filter(|runtime| runtime.usable())
-            .map(|runtime| {
-                let options = options.clone();
-                async move {
-                    let id = runtime.id();
-                    let started = std::time::Instant::now();
-                    let result = tokio::time::timeout(COLLECT_TIMEOUT, runtime.collect(options))
-                        .await
-                        .unwrap_or_else(|_| {
-                            Err(anyhow::anyhow!(
-                                "Collection timed out after {}s",
-                                COLLECT_TIMEOUT.as_secs()
-                            ))
-                        });
-                    let elapsed = started.elapsed().as_millis();
-                    match &result {
-                        Ok(entries) => diagnostics::info(
-                            id.as_ref(),
-                            format!("Collected {} entries in {elapsed} ms", entries.len()),
-                        ),
-                        Err(err) => diagnostics::error(
-                            id.as_ref(),
-                            format!("Collection failed after {elapsed} ms: {err:#}"),
-                        ),
-                    }
-                    (id, result)
+            .map(|runtime| async move {
+                let id = runtime.id();
+                let started = std::time::Instant::now();
+                let result = tokio::time::timeout(COLLECT_TIMEOUT, runtime.collect(options))
+                    .await
+                    .unwrap_or_else(|_| {
+                        Err(anyhow::anyhow!(
+                            "Collection timed out after {}s",
+                            COLLECT_TIMEOUT.as_secs()
+                        ))
+                    });
+                let elapsed = started.elapsed().as_millis();
+                match &result {
+                    Ok(entries) => diagnostics::info(
+                        id.as_ref(),
+                        format!("Collected {} entries in {elapsed} ms", entries.len()),
+                    ),
+                    Err(err) => diagnostics::error(
+                        id.as_ref(),
+                        format!("Collection failed after {elapsed} ms: {err:#}"),
+                    ),
                 }
+                (id, result)
             }),
     )
     .await;

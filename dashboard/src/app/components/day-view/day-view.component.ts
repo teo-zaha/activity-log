@@ -2,6 +2,7 @@ import { Component, ElementRef, afterNextRender, computed, inject, viewChild } f
 import { ActivityService } from '../../services/activity.service'
 import type { EntryUiAdapter } from '../../providers/types'
 import { injectBreakpointDown } from '../../utils/breakpoints'
+import { dateOfKey, dayKeyOf, todayKey } from '../../utils/local-day'
 import { calendarEntryKey, layoutEventsWithOverflow } from '../calendar-layout'
 
 export const HOUR_START = 0
@@ -77,7 +78,7 @@ export class DayViewComponent {
 
   protected formatDayHeader(dateStr: string): string {
     const compact = this.isPhone()
-    return new Date(dateStr + 'T12:00:00').toLocaleDateString('en-GB', {
+    return dateOfKey(dateStr).toLocaleDateString('en-GB', {
       weekday: compact ? 'short' : 'long',
       day: 'numeric',
       month: compact ? 'short' : 'long',
@@ -86,7 +87,7 @@ export class DayViewComponent {
   }
 
   protected isToday(dateStr: string): boolean {
-    return dateStr === new Date().toISOString().slice(0, 10)
+    return dateStr === todayKey()
   }
 
   protected getTop(ts: string): number {
@@ -108,17 +109,15 @@ export class DayViewComponent {
     const durationMinutes = e.calendarDurationMinutes
     if (durationMinutes == null) return false
     const endMs = new Date(e.timestamp).getTime() + durationMinutes * 60000
-    return new Date(endMs).toISOString().slice(0, 10) > e.timestamp.slice(0, 10)
+    return dayKeyOf(endMs) > e.dayKey
   }
 
   readonly multiDayEntries = computed<EntryUiAdapter[]>(() => {
     const day = this.activity.selectedDay()
     return this.activity.filteredEntries().filter(e => {
       if (!this.isMultiDayEvent(e)) return false
-      const startDay = e.timestamp.slice(0, 10)
       const endMs = new Date(e.timestamp).getTime() + (e.calendarDurationMinutes ?? 0) * 60000
-      const endDay = new Date(endMs).toISOString().slice(0, 10)
-      return startDay <= day && endDay > day
+      return e.dayKey <= day && dayKeyOf(endMs) > day
     })
   })
 

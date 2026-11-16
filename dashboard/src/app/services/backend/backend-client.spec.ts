@@ -115,7 +115,7 @@ describe('ActivityBackendClient', () => {
 
   it('collect forwards its request to the collect operation', () => {
     const { client, transport } = setup()
-    const request = { since: '2026-05-17', until: '2026-05-18' }
+    const request = { start: '2026-05-17T00:00:00Z', end: '2026-05-19T00:00:00Z' }
 
     void client.collect(request)
 

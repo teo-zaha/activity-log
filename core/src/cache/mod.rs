@@ -2,6 +2,8 @@
 //!
 //! A provider opts in by declaring a [`CachePolicy`]; the provider runtime then serves days it
 //! already has and asks the provider only for the span of days that are missing or stale.
+//! Days are UTC calendar days, so the cache means the same thing in every timezone; the
+//! requested range is cut out of them exactly.
 //! Days that ended before they were fetched are "settled" and kept much longer than recent
 //! days, so widening the date range or reopening the app costs one small request.
 
@@ -14,7 +16,7 @@ use std::{
 };
 
 use anyhow::Result;
-use chrono::{DateTime, Days, Local, NaiveDate, TimeZone};
+use chrono::{DateTime, NaiveDate, TimeZone, Utc};
 use serde::{Deserialize, Serialize};
 
 use crate::{
@@ -29,7 +31,7 @@ use crate::{
 mod tests;
 
 /// Bump when the file layout changes; older files are then ignored and rewritten.
-const FILE_VERSION: u32 = 1;
+const FILE_VERSION: u32 = 2;
 /// A day counts as settled once it was fetched at least this long after it ended, so late
 /// writes (clock skew, slow API indexing) are not frozen into the cache.
 const SETTLE_GRACE: Duration = Duration::from_secs(60 * 60);
@@ -61,8 +63,7 @@ impl CachePolicy {
 /// Collects `options` for `source`, reusing cached days and fetching only the stale span.
 ///
 /// `scope` separates caches for different configurations of the same provider (for example
-/// two GitLab accounts). `fetch` receives a date range one day wider on each side than the
-/// stale span, because remote APIs filter by their own (often UTC) calendar day.
+/// two GitLab accounts). `fetch` receives the whole UTC days of the stale span.
 pub(crate) async fn collect_with_day_cache<F, Fut>(
     source: &Source,
     scope: u64,
@@ -75,7 +76,7 @@ where
     Fut: Future<Output = Result<Vec<ActivityEntry>>>,
 {
     let path = cache_dir().join(format!("{}-{scope:016x}.json", source.as_ref()));
-    collect_with_day_cache_at(&path, source, options, policy, Local::now(), fetch).await
+    collect_with_day_cache_at(&path, source, options, policy, Utc::now(), fetch).await
 }
 
 pub(crate) async fn collect_with_day_cache_at<F, Fut>(
@@ -83,7 +84,7 @@ pub(crate) async fn collect_with_day_cache_at<F, Fut>(
     source: &Source,
     options: &CollectOptions,
     policy: CachePolicy,
-    now: DateTime<Local>,
+    now: DateTime<Utc>,
     fetch: F,
 ) -> Result<Vec<ActivityEntry>>
 where
@@ -92,7 +93,8 @@ where
 {
     let scope = source.as_ref();
     let mut file = load(path, scope);
-    let requested: Vec<NaiveDate> = days(options.since, options.until).collect();
+    let (first_day, last_day) = options.utc_days();
+    let requested: Vec<NaiveDate> = days(first_day, last_day).collect();
     let stale: Vec<NaiveDate> = requested
         .iter()
         .copied()
@@ -100,11 +102,10 @@ where
         .collect();
 
     if let (Some(first), Some(last)) = (stale.first().copied(), stale.last().copied()) {
-        let widened = CollectOptions {
-            since: first.checked_sub_days(Days::new(1)).unwrap_or(first),
-            until: last.checked_add_days(Days::new(1)).unwrap_or(last),
+        let (Some(start), Some(end)) = (start_of_day(first), end_of_day(last)) else {
+            anyhow::bail!("{first} to {last} is out of range");
         };
-        let fetched = fetch(widened).await?;
+        let fetched = fetch(CollectOptions { start, end }).await?;
         file.replace_span(first, last, fetched, now, scope);
         file.prune(now);
         if let Err(err) = save(path, &file) {
@@ -129,7 +130,7 @@ where
         );
     }
 
-    Ok(file.entries_for(options.since, options.until))
+    Ok(file.entries_for(options))
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -191,11 +192,11 @@ impl Default for CacheFile {
 }
 
 impl CacheFile {
-    fn is_fresh(&self, day: NaiveDate, policy: CachePolicy, now: DateTime<Local>) -> bool {
+    fn is_fresh(&self, day: NaiveDate, policy: CachePolicy, now: DateTime<Utc>) -> bool {
         let Some(cached) = self.days.get(&day) else {
             return false;
         };
-        let Some(fetched_at) = Local.timestamp_millis_opt(cached.fetched_at).single() else {
+        let Some(fetched_at) = Utc.timestamp_millis_opt(cached.fetched_at).single() else {
             return false;
         };
         let settled = end_of_day(day).is_some_and(|end| fetched_at >= end + SETTLE_GRACE);
@@ -214,7 +215,7 @@ impl CacheFile {
         first: NaiveDate,
         last: NaiveDate,
         fetched: Vec<ActivityEntry>,
-        now: DateTime<Local>,
+        now: DateTime<Utc>,
         scope: &str,
     ) {
         let fetched_at = now.timestamp_millis();
@@ -230,7 +231,7 @@ impl CacheFile {
 
         let mut undated = 0;
         for entry in fetched {
-            match local_day(entry.timestamp()) {
+            match utc_day(entry.timestamp()) {
                 Some(day) if (first..=last).contains(&day) => {
                     if let Some(cached) = self.days.get_mut(&day) {
                         cached.entries.push(entry.into());
@@ -250,15 +251,17 @@ impl CacheFile {
         }
     }
 
-    fn prune(&mut self, now: DateTime<Local>) {
+    fn prune(&mut self, now: DateTime<Utc>) {
         let cutoff = now.timestamp_millis() - PRUNE_AFTER.as_millis() as i64;
         self.days.retain(|_, cached| cached.fetched_at >= cutoff);
     }
 
-    fn entries_for(&self, since: NaiveDate, until: NaiveDate) -> Vec<ActivityEntry> {
+    fn entries_for(&self, options: &CollectOptions) -> Vec<ActivityEntry> {
+        let (first, last) = options.utc_days();
         self.days
-            .range(since..=until)
+            .range(first..=last)
             .flat_map(|(_, cached)| cached.entries.iter().cloned().map(ActivityEntry::from))
+            .filter(|entry| instant(entry.timestamp()).is_some_and(|at| options.contains(at)))
             .collect()
     }
 }
@@ -267,17 +270,22 @@ fn days(since: NaiveDate, until: NaiveDate) -> impl Iterator<Item = NaiveDate> {
     since.iter_days().take_while(move |day| *day <= until)
 }
 
-fn end_of_day(day: NaiveDate) -> Option<DateTime<Local>> {
-    let next = day.succ_opt()?.and_hms_opt(0, 0, 0)?;
-    Local.from_local_datetime(&next).earliest()
+fn start_of_day(day: NaiveDate) -> Option<DateTime<Utc>> {
+    Some(day.and_hms_opt(0, 0, 0)?.and_utc())
 }
 
-/// Calendar day in local time, matching how the dashboard groups entries.
-fn local_day(timestamp: &str) -> Option<NaiveDate> {
+fn end_of_day(day: NaiveDate) -> Option<DateTime<Utc>> {
+    start_of_day(day.succ_opt()?)
+}
+
+fn instant(timestamp: &str) -> Option<DateTime<Utc>> {
     DateTime::parse_from_rfc3339(timestamp)
         .ok()
-        .map(|parsed| parsed.with_timezone(&Local).date_naive())
-        .or_else(|| NaiveDate::parse_from_str(timestamp.get(..10)?, "%Y-%m-%d").ok())
+        .map(|parsed| parsed.with_timezone(&Utc))
+}
+
+fn utc_day(timestamp: &str) -> Option<NaiveDate> {
+    instant(timestamp).map(|at| at.date_naive())
 }
 
 fn load(path: &Path, scope: &str) -> CacheFile {

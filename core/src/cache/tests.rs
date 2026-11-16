@@ -5,7 +5,7 @@ use std::{
     time::Duration,
 };
 
-use chrono::{DateTime, Local, NaiveDate, TimeZone};
+use chrono::{DateTime, NaiveDate, Utc};
 
 use super::{CachePolicy, collect_with_day_cache_at};
 use crate::model::{ActivityEntry, CollectOptions, Source, SystemEntry, SystemEntryType};
@@ -19,16 +19,15 @@ fn day(d: u32) -> NaiveDate {
     NaiveDate::from_ymd_opt(2026, 10, d).unwrap()
 }
 
-fn at(d: u32, hour: u32) -> DateTime<Local> {
-    Local
-        .from_local_datetime(&day(d).and_hms_opt(hour, 0, 0).unwrap())
-        .unwrap()
+fn at(d: u32, hour: u32) -> DateTime<Utc> {
+    day(d).and_hms_opt(hour, 0, 0).unwrap().and_utc()
 }
 
+/// Whole UTC days `since..=until`.
 fn range(since: u32, until: u32) -> CollectOptions {
     CollectOptions {
-        since: day(since),
-        until: day(until),
+        start: at(since, 0),
+        end: at(until + 1, 0),
     }
 }
 
@@ -51,12 +50,12 @@ fn labels(entries: &[ActivityEntry]) -> Vec<String> {
         .collect()
 }
 
-/// Runs a cached collect whose fetch returns one entry per day of the widened range and
-/// records which range it was asked for.
+/// Runs a cached collect whose fetch returns one entry at noon per day it was asked for and
+/// records those days, first and last inclusive.
 async fn collect(
     path: &Path,
     options: CollectOptions,
-    now: DateTime<Local>,
+    now: DateTime<Utc>,
     calls: &RefCell<Vec<(NaiveDate, NaiveDate)>>,
 ) -> Vec<ActivityEntry> {
     collect_with_day_cache_at(
@@ -66,8 +65,9 @@ async fn collect(
         POLICY,
         now,
         |span| async move {
-            calls.borrow_mut().push((span.since, span.until));
-            let entries = super::days(span.since, span.until)
+            let (first, last) = span.utc_days();
+            calls.borrow_mut().push((first, last));
+            let entries = super::days(first, last)
                 .map(|d| entry(d.format("%d").to_string().parse().unwrap()))
                 .collect();
             Ok(entries)
@@ -97,7 +97,7 @@ async fn serves_a_repeated_range_from_disk_without_fetching() {
 }
 
 #[tokio::test]
-async fn fetches_only_the_missing_days_widened_by_one_day() {
+async fn fetches_only_the_missing_days() {
     let (_dir, path) = cache_path();
     let calls = RefCell::new(Vec::new());
 
@@ -108,7 +108,7 @@ async fn fetches_only_the_missing_days_widened_by_one_day() {
         labels(&widened),
         ["day 10", "day 11", "day 12", "day 13", "day 14", "day 15"]
     );
-    assert_eq!(calls.borrow()[1], (day(12), day(16)));
+    assert_eq!(calls.borrow()[1], (day(13), day(15)));
 }
 
 #[tokio::test]
@@ -120,7 +120,7 @@ async fn refreshes_recent_days_but_keeps_settled_ones() {
     collect(&path, range(10, 20), at(20, 9), &calls).await;
     collect(&path, range(10, 20), at(20, 10), &calls).await;
 
-    assert_eq!(calls.borrow()[1], (day(19), day(21)));
+    assert_eq!(calls.borrow()[1], (day(20), day(20)));
 }
 
 #[tokio::test]
@@ -136,14 +136,20 @@ async fn a_day_fetched_before_it_ended_is_not_treated_as_settled() {
 }
 
 #[tokio::test]
-async fn drops_entries_outside_the_requested_days() {
+async fn cuts_cached_days_to_the_requested_instants() {
     let (_dir, path) = cache_path();
     let calls = RefCell::new(Vec::new());
 
-    // The fetch is widened to the 9th and 13th; those entries must not leak into the result.
-    let entries = collect(&path, range(10, 12), at(20, 9), &calls).await;
+    // From 13:00 on the 10th to noon on the 12th: the noon entries of the 10th (too early) and
+    // the 12th (the end is exclusive) fall outside, although both days are fetched.
+    let options = CollectOptions {
+        start: at(10, 13),
+        end: at(12, 12),
+    };
+    let entries = collect(&path, options, at(20, 9), &calls).await;
 
-    assert_eq!(labels(&entries), ["day 10", "day 11", "day 12"]);
+    assert_eq!(labels(&entries), ["day 11"]);
+    assert_eq!(calls.borrow()[0], (day(10), day(12)));
 }
 
 #[tokio::test]

@@ -9,7 +9,11 @@ import {
 import { ActivityViewStateService } from './activity-view-state.service'
 
 describe('ActivityDataService', () => {
-  function setup(): { backend: MockBackendTransport; service: ActivityDataService } {
+  function setup(): {
+    backend: MockBackendTransport
+    service: ActivityDataService
+    viewState: ActivityViewStateService
+  } {
     const backend = new MockBackendTransport()
     TestBed.configureTestingModule({
       providers: [
@@ -18,7 +22,11 @@ describe('ActivityDataService', () => {
         { provide: ACTIVITY_POLL_DELAY_MS, useValue: 1 },
       ],
     })
-    return { backend, service: TestBed.inject(ActivityDataService) }
+    return {
+      backend,
+      service: TestBed.inject(ActivityDataService),
+      viewState: TestBed.inject(ActivityViewStateService),
+    }
   }
 
   it('loads providers then activity during initial load', async () => {
@@ -65,6 +73,27 @@ describe('ActivityDataService', () => {
     service.dismissCollectionStatus()
     expect(service.collectionStatus()).toEqual({ kind: 'idle' })
     expect(service.error()).toBeNull()
+  })
+
+  it('collects whole local days as instants and shows the collected days', async () => {
+    const { backend, service, viewState } = setup()
+    backend.collectResponse = {
+      ...activityLog,
+      meta: {
+        ...activityLog.meta,
+        start: new Date(2026, 4, 17).toISOString(),
+        end: new Date(2026, 4, 19).toISOString(),
+      },
+    }
+
+    await service.collect('2026-05-17', '2026-05-18')
+
+    expect(backend.requests.at(-1)).toEqual({
+      start: new Date(2026, 4, 17).toISOString(),
+      end: new Date(2026, 4, 19).toISOString(),
+    })
+    expect(viewState.dateFrom()).toBe('2026-05-17')
+    expect(viewState.dateTo()).toBe('2026-05-18')
   })
 
   it('returns to idle after a successful collection', async () => {

@@ -16,8 +16,8 @@ fn fixture_log() -> ActivityLog {
     ActivityLog {
         meta: ActivityLogMeta {
             generated: "2026-03-25T10:00:00Z".to_string(),
-            since: "2026-03-01".to_string(),
-            until: "2026-03-25".to_string(),
+            start: "2026-03-01T00:00:00Z".to_string(),
+            end: "2026-03-26T00:00:00Z".to_string(),
         },
         summary: CollectedActivitySummary::default(),
         entries: Vec::new(),
@@ -100,14 +100,14 @@ async fn post_collect_returns_log() {
     let response = client
         .post("/api/collect")
         .header(rocket::http::ContentType::JSON)
-        .body(r#"{"since":"2026-03-01","until":"2026-03-05"}"#)
+        .body(r#"{"start":"2026-03-01T00:00:00Z","end":"2026-03-06T00:00:00Z"}"#)
         .dispatch()
         .await;
     assert_eq!(response.status(), Status::Ok);
 }
 
 #[rocket::async_test]
-async fn post_collect_validates_dates() {
+async fn post_collect_rejects_plain_dates() {
     let runtime = CollectionRuntime::new(collector_ok(), fixture_providers());
     let client = Client::tracked(build_rocket_with(runtime, false))
         .await
@@ -116,14 +116,14 @@ async fn post_collect_validates_dates() {
     let response = client
         .post("/api/collect")
         .header(rocket::http::ContentType::JSON)
-        .body(r#"{"since":"bad","until":"2026-03-05"}"#)
+        .body(r#"{"start":"2026-03-01","end":"2026-03-05"}"#)
         .dispatch()
         .await;
     assert_eq!(response.status(), Status::BadRequest);
 }
 
 #[rocket::async_test]
-async fn post_collect_accepts_preset() {
+async fn post_collect_passes_the_exact_range_to_the_collector() {
     let captured = Arc::new(Mutex::new(None));
     let collector_capture = Arc::clone(&captured);
     let collector: Collector = Arc::new(move |options: CollectOptions| -> CollectorFuture {
@@ -141,30 +141,14 @@ async fn post_collect_accepts_preset() {
     let response = client
         .post("/api/collect")
         .header(rocket::http::ContentType::JSON)
-        .body(r#"{"preset":"today"}"#)
+        .body(r#"{"start":"2026-03-01T00:00:00+01:00","end":"2026-03-02T00:00:00+01:00"}"#)
         .dispatch()
         .await;
     assert_eq!(response.status(), Status::Ok);
 
-    let options = captured.lock().unwrap().clone().unwrap();
-    assert_eq!(options.since.to_string().len(), 10);
-    assert_eq!(options.until.to_string().len(), 10);
-}
-
-#[rocket::async_test]
-async fn post_collect_rejects_mixed_request_modes() {
-    let runtime = CollectionRuntime::new(collector_ok(), fixture_providers());
-    let client = Client::tracked(build_rocket_with(runtime, false))
-        .await
-        .unwrap();
-
-    let response = client
-        .post("/api/collect")
-        .header(rocket::http::ContentType::JSON)
-        .body(r#"{"since":"2026-03-01","until":"2026-03-05","preset":"today"}"#)
-        .dispatch()
-        .await;
-    assert_eq!(response.status(), Status::BadRequest);
+    let options = captured.lock().unwrap().unwrap();
+    assert_eq!(options.start.to_rfc3339(), "2026-02-28T23:00:00+00:00");
+    assert_eq!(options.end.to_rfc3339(), "2026-03-01T23:00:00+00:00");
 }
 
 #[rocket::async_test]

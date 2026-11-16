@@ -6,7 +6,7 @@ use crate::model::{
     LogEntry, LogLevel, LogsResponse, OutlookEntry, ProviderConfigFieldStateDto,
     ProviderConfigProviderStateDto, ProviderConfigSaveRequestDto, ProviderConfigSaveResponseDto,
     ProviderConfigSaveValueDto, ProviderConfigSnapshotDto, ProviderConfigValueTypeDto,
-    ProviderInfo, ProviderStatus, ProvidersResponse, RangePreset, Source, SupportedOs, SystemEntry,
+    ProviderInfo, ProviderStatus, ProvidersResponse, Source, SupportedOs, SystemEntry,
     SystemEntryType,
 };
 
@@ -25,7 +25,6 @@ pub fn activity_typescript() -> String {
         export_decl::<ProviderConfigSaveValueDto>(&cfg),
         export_decl::<ProviderConfigSaveRequestDto>(&cfg),
         export_decl::<ProviderConfigSaveResponseDto>(&cfg),
-        export_decl::<RangePreset>(&cfg),
         export_decl::<GitLabType>(&cfg),
         export_decl::<JiraEntryType>(&cfg),
         export_decl::<SystemEntryType>(&cfg),

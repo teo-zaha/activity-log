@@ -23,8 +23,8 @@ fn fixture_log() -> ActivityLog {
     ActivityLog {
         meta: ActivityLogMeta {
             generated: "2026-03-25T10:00:00Z".to_string(),
-            since: "2026-03-01".to_string(),
-            until: "2026-03-25".to_string(),
+            start: "2026-03-01T00:00:00+00:00".to_string(),
+            end: "2026-03-26T00:00:00+00:00".to_string(),
         },
         summary: CollectedActivitySummary::default(),
         entries: Vec::new(),
@@ -32,9 +32,10 @@ fn fixture_log() -> ActivityLog {
 }
 
 fn fixture_options() -> CollectOptions {
+    use chrono::TimeZone;
     CollectOptions {
-        since: chrono::NaiveDate::from_ymd_opt(2026, 3, 1).unwrap(),
-        until: chrono::NaiveDate::from_ymd_opt(2026, 3, 25).unwrap(),
+        start: chrono::Utc.with_ymd_and_hms(2026, 3, 1, 0, 0, 0).unwrap(),
+        end: chrono::Utc.with_ymd_and_hms(2026, 3, 26, 0, 0, 0).unwrap(),
     }
 }
 
@@ -136,29 +137,33 @@ async fn spawn_initial_collection_populates_cache() {
     panic!("expected initial collection to populate the cache");
 }
 
-#[test]
-fn resolve_collect_options_rejects_mixed_modes() {
-    let request = CollectRequest {
-        since: Some("2026-03-01".to_string()),
-        until: Some("2026-03-05".to_string()),
-        preset: Some(crate::model::RangePreset::Today),
-    };
-
-    let result = resolve_collect_options(&request);
-    assert!(matches!(
-        result,
-        Err("Provide either since/until or preset, not both")
-    ));
+fn request(start: &str, end: &str) -> CollectRequest {
+    CollectRequest {
+        start: start.to_string(),
+        end: end.to_string(),
+    }
 }
 
 #[test]
-fn resolve_collect_options_accepts_preset() {
-    let request = CollectRequest {
-        since: None,
-        until: None,
-        preset: Some(crate::model::RangePreset::Today),
-    };
+fn resolve_collect_options_reads_instants_with_any_offset() {
+    let options = resolve_collect_options(&request(
+        "2026-03-01T00:00:00+01:00",
+        "2026-03-02T00:00:00Z",
+    ))
+    .unwrap();
 
-    let options = resolve_collect_options(&request).unwrap();
-    assert!(options.since <= options.until);
+    assert_eq!(options.start.to_rfc3339(), "2026-02-28T23:00:00+00:00");
+    assert_eq!(options.end.to_rfc3339(), "2026-03-02T00:00:00+00:00");
+}
+
+#[test]
+fn resolve_collect_options_rejects_dates_and_empty_ranges() {
+    assert_eq!(
+        resolve_collect_options(&request("2026-03-01", "2026-03-02")),
+        Err("start and end must be RFC 3339 timestamps")
+    );
+    assert_eq!(
+        resolve_collect_options(&request("2026-03-02T00:00:00Z", "2026-03-02T00:00:00Z")),
+        Err("end must be after start")
+    );
 }

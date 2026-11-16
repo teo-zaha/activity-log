@@ -1,7 +1,7 @@
 use std::mem::{ManuallyDrop, size_of};
 
 use anyhow::{Result, anyhow};
-use chrono::{Datelike, Local, NaiveDate, TimeZone, Utc};
+use chrono::NaiveDate;
 use windows::{
     Win32::{
         Foundation::{
@@ -149,9 +149,10 @@ impl DispatchObject {
         result.into_i32(name)
     }
 
-    pub fn property_rfc3339(&self, name: &str) -> Result<String> {
+    /// Reads a COM date that holds UTC wall-clock time, such as Outlook's `StartUTC`.
+    pub fn property_utc_rfc3339(&self, name: &str) -> Result<String> {
         let result = invoke_zero(&self.dispatch, name, DISPATCH_PROPERTYGET)?;
-        result.into_rfc3339(name)
+        result.into_utc_rfc3339(name)
     }
 
     pub fn method_dispatch_i32(&self, name: &str, value: i32) -> Result<Self> {
@@ -320,7 +321,7 @@ impl OwnedVariant {
         Ok(value)
     }
 
-    fn into_rfc3339(self, name: &str) -> Result<String> {
+    fn into_utc_rfc3339(self, name: &str) -> Result<String> {
         let converted = convert_variant(&self.raw, VT_DATE)?;
         let date = unsafe { converted.raw.Anonymous.Anonymous.Anonymous.date };
         let mut system_time = SYSTEMTIME::default();
@@ -343,12 +344,7 @@ impl OwnedVariant {
                 system_time.wMilliseconds as u32,
             )
             .ok_or_else(|| anyhow!("Invalid Outlook time components for {name}"))?;
-        let local = Local
-            .from_local_datetime(&naive)
-            .single()
-            .ok_or_else(|| anyhow!("Ambiguous Outlook local time for {name}"))?;
-
-        Ok(local.with_timezone(&Utc).to_rfc3339())
+        Ok(naive.and_utc().to_rfc3339())
     }
 }
 
@@ -503,38 +499,4 @@ fn render_event_xml(event: EVT_HANDLE) -> Result<String> {
     Ok(String::from_utf16_lossy(
         &buffer[..used_utf16.saturating_sub(1)],
     ))
-}
-
-pub fn local_date_bounds_as_systemtime(
-    since: chrono::NaiveDate,
-    until: chrono::NaiveDate,
-) -> Result<(SYSTEMTIME, SYSTEMTIME)> {
-    Ok((
-        date_to_systemtime(since, 0, 0, 0)?,
-        date_to_systemtime(until, 23, 59, 59)?,
-    ))
-}
-
-fn date_to_systemtime(
-    date: chrono::NaiveDate,
-    hour: u16,
-    minute: u16,
-    second: u16,
-) -> Result<SYSTEMTIME> {
-    Ok(SYSTEMTIME {
-        wYear: date
-            .year()
-            .try_into()
-            .map_err(|_| anyhow!("invalid year"))?,
-        wMonth: date
-            .month()
-            .try_into()
-            .map_err(|_| anyhow!("invalid month"))?,
-        wDayOfWeek: 0,
-        wDay: date.day().try_into().map_err(|_| anyhow!("invalid day"))?,
-        wHour: hour,
-        wMinute: minute,
-        wSecond: second,
-        wMilliseconds: 0,
-    })
 }

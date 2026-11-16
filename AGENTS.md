@@ -63,6 +63,7 @@ Important behavior:
 - Do not keep Rust code in `foo.rs` while its tests live in `foo/tests.rs`; move the implementation into `foo/mod.rs` instead
 - Prefer moving reusable logic into `core` instead of duplicating behavior in `api` or `cli`
 - Preserve wire compatibility for public API fields unless the task explicitly changes the contract
+- The backend deals in instants only: requests carry a `[start, end)` range of RFC 3339 instants and entries carry RFC 3339 timestamps. Never resolve calendar days or read the local time zone in `core` or `api`; the dashboard (browser time zone) and the CLI (terminal time zone) turn local days into instants. The one exception is a source that reports local wall-clock time without an offset (macOS `last`), converted where it is parsed
 - Use comments sparingly and only where behavior is not obvious
 - Keep PowerShell and subprocess integrations parity-focused unless the task explicitly replaces them
 - For OS-specific Rust implementations, gate child modules at the parent boundary with `#[cfg(target_os = "...")]`

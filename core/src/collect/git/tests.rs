@@ -1,29 +1,26 @@
 use std::{fs, path::Path, process::Command};
 
-use chrono::{DateTime, Local, NaiveDate, TimeZone};
+use chrono::{DateTime, Days, NaiveDate, TimeZone, Utc};
 use tempfile::{TempDir, tempdir};
 
 use crate::{model::CollectOptions, provider::git::GitConfig};
 
 use super::collect_git;
 
+/// Whole UTC days `since..=until`.
 fn options(since: &str, until: &str) -> CollectOptions {
+    let day = |value: &str| NaiveDate::parse_from_str(value, "%Y-%m-%d").unwrap();
     CollectOptions {
-        since: NaiveDate::parse_from_str(since, "%Y-%m-%d").unwrap(),
-        until: NaiveDate::parse_from_str(until, "%Y-%m-%d").unwrap(),
+        start: day(since).and_hms_opt(0, 0, 0).unwrap().and_utc(),
+        end: (day(until) + Days::new(1))
+            .and_hms_opt(0, 0, 0)
+            .unwrap()
+            .and_utc(),
     }
 }
 
-fn local_time(
-    year: i32,
-    month: u32,
-    day: u32,
-    hour: u32,
-    minute: u32,
-    second: u32,
-) -> DateTime<Local> {
-    Local
-        .with_ymd_and_hms(year, month, day, hour, minute, second)
+fn utc_time(year: i32, month: u32, day: u32, hour: u32, minute: u32, second: u32) -> DateTime<Utc> {
+    Utc.with_ymd_and_hms(year, month, day, hour, minute, second)
         .single()
         .unwrap()
 }
@@ -47,7 +44,7 @@ fn commit_file(
     subject: &str,
     body: Option<&str>,
     author_email: &str,
-    when: DateTime<Local>,
+    when: DateTime<Utc>,
 ) {
     fs::write(repo.join(file_name), contents).expect("write file");
     run_git(repo, &["add", "."]);
@@ -76,7 +73,7 @@ fn detach_head(repo: &Path) {
     run_git(repo, &["checkout", "--detach", "HEAD"]);
 }
 
-fn git_time(value: DateTime<Local>) -> String {
+fn git_time(value: DateTime<Utc>) -> String {
     value.format("%Y-%m-%dT%H:%M:%S%:z").to_string()
 }
 
@@ -111,7 +108,7 @@ async fn collects_matching_commits_and_only_sets_branch_on_head_commit() {
         "First subject",
         Some("First body"),
         "me@example.com",
-        local_time(2026, 3, 5, 9, 0, 0),
+        utc_time(2026, 3, 5, 9, 0, 0),
     );
     commit_file(
         repo.path(),
@@ -120,7 +117,7 @@ async fn collects_matching_commits_and_only_sets_branch_on_head_commit() {
         "Second subject",
         None,
         "me@example.com",
-        local_time(2026, 3, 6, 10, 30, 0),
+        utc_time(2026, 3, 6, 10, 30, 0),
     );
 
     let entries = collect_git(
@@ -150,7 +147,7 @@ async fn excludes_commits_with_non_matching_author_email() {
         "Other author",
         None,
         "other@example.com",
-        local_time(2026, 3, 5, 9, 0, 0),
+        utc_time(2026, 3, 5, 9, 0, 0),
     );
 
     let entries = collect_git(
@@ -175,7 +172,7 @@ async fn skips_repositories_without_user_email() {
         "No config email",
         None,
         "me@example.com",
-        local_time(2026, 3, 5, 9, 0, 0),
+        utc_time(2026, 3, 5, 9, 0, 0),
     );
 
     let entries = collect_git(
@@ -201,7 +198,7 @@ async fn detached_head_yields_empty_branch() {
         "Detached commit",
         None,
         "me@example.com",
-        local_time(2026, 3, 5, 9, 0, 0),
+        utc_time(2026, 3, 5, 9, 0, 0),
     );
     detach_head(repo.path());
 
@@ -229,7 +226,7 @@ async fn commit_message_uses_subject_only() {
         "Subject line",
         Some("Body paragraph"),
         "me@example.com",
-        local_time(2026, 3, 5, 9, 0, 0),
+        utc_time(2026, 3, 5, 9, 0, 0),
     );
 
     let entries = collect_git(
@@ -256,7 +253,7 @@ async fn deduplicates_commits_reachable_from_multiple_refs() {
         "Tagged commit",
         None,
         "me@example.com",
-        local_time(2026, 3, 5, 9, 0, 0),
+        utc_time(2026, 3, 5, 9, 0, 0),
     );
     run_git(repo.path(), &["tag", "v1"]);
     run_git(repo.path(), &["branch", "copy"]);
@@ -284,7 +281,7 @@ async fn includes_commits_on_date_window_boundaries_and_excludes_outside() {
         "Before window",
         None,
         "me@example.com",
-        local_time(2026, 3, 9, 23, 59, 59),
+        utc_time(2026, 3, 9, 23, 59, 59),
     );
     commit_file(
         repo.path(),
@@ -293,7 +290,7 @@ async fn includes_commits_on_date_window_boundaries_and_excludes_outside() {
         "At start",
         None,
         "me@example.com",
-        local_time(2026, 3, 10, 0, 0, 0),
+        utc_time(2026, 3, 10, 0, 0, 0),
     );
     commit_file(
         repo.path(),
@@ -302,7 +299,7 @@ async fn includes_commits_on_date_window_boundaries_and_excludes_outside() {
         "At end",
         None,
         "me@example.com",
-        local_time(2026, 3, 11, 23, 59, 59),
+        utc_time(2026, 3, 11, 23, 59, 59),
     );
     commit_file(
         repo.path(),
@@ -311,7 +308,7 @@ async fn includes_commits_on_date_window_boundaries_and_excludes_outside() {
         "After window",
         None,
         "me@example.com",
-        local_time(2026, 3, 12, 0, 0, 0),
+        utc_time(2026, 3, 12, 0, 0, 0),
     );
 
     let entries = collect_git(
@@ -341,7 +338,7 @@ async fn skips_invalid_repositories_but_keeps_collecting_valid_ones() {
         "Valid repo",
         None,
         "me@example.com",
-        local_time(2026, 3, 5, 9, 0, 0),
+        utc_time(2026, 3, 5, 9, 0, 0),
     );
 
     let invalid_root = tempdir().unwrap();

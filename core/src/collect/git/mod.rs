@@ -5,7 +5,7 @@ use std::{
 };
 
 use anyhow::{Result, anyhow};
-use chrono::{DateTime, FixedOffset, Local, NaiveDate, TimeZone, Utc};
+use chrono::{DateTime, FixedOffset, Utc};
 use gix::{
     ObjectId, Repository,
     bstr::{BStr, ByteSlice},
@@ -27,7 +27,7 @@ mod tests;
 const SKIPPED_DIR_NAMES: &[&str] = &["node_modules", "AppData", ".direnv"];
 
 pub async fn collect_git(options: &CollectOptions, config: &GitConfig) -> Result<Vec<GitEntry>> {
-    let options = options.clone();
+    let options = *options;
     let config = config.clone();
     tokio::task::spawn_blocking(move || collect_git_blocking(&options, &config))
         .await
@@ -36,7 +36,6 @@ pub async fn collect_git(options: &CollectOptions, config: &GitConfig) -> Result
 
 fn collect_git_blocking(options: &CollectOptions, config: &GitConfig) -> Result<Vec<GitEntry>> {
     let dirs = resolve_git_repos(config)?;
-    let (start, end) = utc_bounds(options.since, options.until)?;
     let mut entries = Vec::new();
     let mut without_email = Vec::new();
     let mut via_cli = 0;
@@ -66,7 +65,7 @@ fn collect_git_blocking(options: &CollectOptions, config: &GitConfig) -> Result<
             without_email.push(repo_name);
             continue;
         };
-        match collect_repo_entries(&repo, &repo_name, &author_email, start, end) {
+        match collect_repo_entries(&repo, &repo_name, &author_email, options) {
             Ok(mut repo_entries) => entries.append(&mut repo_entries),
             Err(err) => diagnostics::warn(
                 "git",
@@ -170,8 +169,7 @@ fn collect_repo_entries(
     repo: &Repository,
     repo_name: &str,
     author_email: &str,
-    start: DateTime<Utc>,
-    end: DateTime<Utc>,
+    options: &CollectOptions,
 ) -> Result<Vec<GitEntry>> {
     let head = head_target(repo);
     let tips = reachable_ref_tips(repo)?;
@@ -183,7 +181,7 @@ fn collect_repo_entries(
         .rev_walk(tips)
         .sorting(Sorting::ByCommitTimeCutoff {
             order: Default::default(),
-            seconds: start.timestamp(),
+            seconds: options.start.timestamp(),
         })
         .all()?;
 
@@ -199,7 +197,7 @@ fn collect_repo_entries(
 
         let timestamp = gix_time_to_rfc3339(author_signature.time()?)?;
         let timestamp_utc = DateTime::parse_from_rfc3339(&timestamp)?.with_timezone(&Utc);
-        if timestamp_utc < start || timestamp_utc > end {
+        if !options.contains(timestamp_utc) {
             continue;
         }
 
@@ -302,29 +300,6 @@ fn is_skipped_dir(path: &Path) -> bool {
     path.file_name()
         .and_then(|name| name.to_str())
         .is_some_and(|name| SKIPPED_DIR_NAMES.contains(&name))
-}
-
-fn utc_bounds(since: NaiveDate, until: NaiveDate) -> Result<(DateTime<Utc>, DateTime<Utc>)> {
-    let start = Local
-        .from_local_datetime(
-            &since
-                .and_hms_opt(0, 0, 0)
-                .ok_or_else(|| anyhow!("invalid since date"))?,
-        )
-        .single()
-        .ok_or_else(|| anyhow!("invalid since date"))?
-        .with_timezone(&Utc);
-    let end = Local
-        .from_local_datetime(
-            &until
-                .and_hms_opt(23, 59, 59)
-                .ok_or_else(|| anyhow!("invalid until date"))?,
-        )
-        .single()
-        .ok_or_else(|| anyhow!("invalid until date"))?
-        .with_timezone(&Utc);
-
-    Ok((start, end))
 }
 
 fn gix_time_to_rfc3339(time: gix::date::Time) -> Result<String> {
