@@ -5,7 +5,7 @@ use activity_log_core::{
     model::{CollectOptions, CollectedActivity, OutputFormat, ProviderInfo, Source},
     provider::{
         inspect_provider_runtimes_with,
-        provider_config::{ConfigSource, ProviderConfigKey, provider_config_value_matches_type},
+        provider_config::{ConfigSource, ProviderConfigKey, provider_config_key_accepts},
         provider_registry,
     },
     utils::to_markdown,
@@ -188,10 +188,10 @@ fn parse_provider_config_overrides(entries: &[String]) -> Result<BTreeMap<String
             anyhow!("Unknown provider config key \"{key}\". Allowed keys: {allowed}")
         })?;
 
-        if !provider_config_value_matches_type(value, requirement.value_type) {
+        if !provider_config_key_accepts(*requirement, value) {
             return Err(anyhow!(
                 "Invalid value for \"{key}\": expected {}",
-                requirement.value_type
+                requirement.shape
             ));
         }
 

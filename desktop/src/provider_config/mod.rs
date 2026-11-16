@@ -1,12 +1,13 @@
 use activity_log_core::{
     model::{
-        ProviderConfigFieldStateDto, ProviderConfigProviderStateDto, ProviderConfigSaveRequestDto,
-        ProviderConfigSnapshotDto, Source,
+        ProviderConfigFieldStateDto, ProviderConfigFieldValueDto, ProviderConfigProviderStateDto,
+        ProviderConfigSaveRequestDto, ProviderConfigSnapshotDto, ProviderConfigValueDto, Source,
     },
     provider::{
-        git::{GIT_DIRS, default_git_dirs_value},
+        git::{GIT_DIRS, default_git_root},
         provider_config::{
-            ConfigSource, ProviderConfigKey, ProviderConfigValueType,
+            ConfigSource, ProviderConfigKey, ProviderConfigShape, ProviderConfigValueType,
+            clean_config_list, encode_config_list, parse_config_list, provider_config_key_accepts,
             provider_config_value_matches_type,
         },
         provider_registry,
@@ -65,6 +66,16 @@ pub(crate) fn read_store_provider_config(
             JsonValue::String(string) => Some(string.clone()),
             JsonValue::Bool(boolean) => Some(boolean.to_string()),
             JsonValue::Number(number) => Some(number.to_string()),
+            JsonValue::Array(items) => {
+                let items = items
+                    .iter()
+                    .map(|item| item.as_str().map(str::to_string))
+                    .collect::<Option<Vec<_>>>()
+                    .ok_or_else(|| {
+                        format!("Stored provider config key '{key}' must be a list of strings")
+                    })?;
+                Some(encode_config_list(&items))
+            }
             _ => {
                 return Err(format!(
                     "Stored provider config key '{key}' has unsupported JSON type"
@@ -90,6 +101,13 @@ pub(crate) fn write_store_provider_config(
         .iter()
         .map(|(key, value)| {
             let serialized = match value {
+                // Lists are kept as JSON arrays, so the file stays readable and editable.
+                Some(raw) if is_list_key(key) => JsonValue::Array(
+                    parse_config_list(raw)
+                        .into_iter()
+                        .map(JsonValue::String)
+                        .collect(),
+                ),
                 Some(string) => JsonValue::String(string.clone()),
                 None => JsonValue::Null,
             };
@@ -121,25 +139,53 @@ pub(crate) fn apply_provider_config_updates(
             )
         })?;
 
-        let next_value = value.value.as_ref().map(|raw| raw.trim().to_string());
-        let is_clear = next_value
-            .as_ref()
-            .is_none_or(|candidate| candidate.is_empty());
+        let next = match (&value.value, requirement.shape) {
+            (None, _) => None,
+            // An empty list is kept: it means "none", while clearing means "use the default".
+            (Some(ProviderConfigValueDto::List(items)), ProviderConfigShape::List(value_type)) => {
+                let items = clean_config_list(items);
+                if let Some(bad) = items
+                    .iter()
+                    .find(|item| !provider_config_value_matches_type(item, value_type))
+                {
+                    return Err(format!(
+                        "Invalid item \"{bad}\" for '{}': expected {value_type}",
+                        value.key
+                    ));
+                }
+                Some(encode_config_list(&items))
+            }
+            (Some(ProviderConfigValueDto::Text(raw)), ProviderConfigShape::List(value_type)) => {
+                if !provider_config_key_accepts(**requirement, raw) {
+                    return Err(format!(
+                        "Invalid value for '{}': expected a list of {value_type}",
+                        value.key
+                    ));
+                }
+                Some(encode_config_list(&parse_config_list(raw)))
+            }
+            (Some(ProviderConfigValueDto::List(_)), ProviderConfigShape::Single(value_type)) => {
+                return Err(format!(
+                    "Invalid value for '{}': expected {value_type}, not a list",
+                    value.key
+                ));
+            }
+            (Some(ProviderConfigValueDto::Text(raw)), ProviderConfigShape::Single(value_type)) => {
+                let candidate = raw.trim();
+                if candidate.is_empty() {
+                    None
+                } else if provider_config_value_matches_type(candidate, value_type) {
+                    Some(candidate.to_string())
+                } else {
+                    return Err(format!(
+                        "Invalid value for '{}': expected {value_type}",
+                        value.key
+                    ));
+                }
+            }
+        };
 
-        if is_clear {
-            store_values.insert(value.key.clone(), None);
-            continue;
-        }
-
-        let candidate = next_value.expect("checked clear branch");
-        if !provider_config_value_matches_type(&candidate, requirement.value_type) {
-            return Err(format!(
-                "Invalid value for '{}': expected {}",
-                value.key, requirement.value_type
-            ));
-        }
-
-        store_values.insert(value.key.clone(), Some(candidate));
+        store_values.insert(value.key.clone(), next);
     }
 
     Ok(())
@@ -154,19 +200,55 @@ fn exposed_provider_requirements_for(source: Source) -> Result<Vec<ProviderConfi
     Ok(adapter.config_requirements().to_vec())
 }
 
-fn display_provider_config_value(
+fn is_list_key(key: &str) -> bool {
+    provider_registry().into_iter().any(|provider| {
+        provider.config_requirements().iter().any(|requirement| {
+            requirement.name == key && matches!(requirement.shape, ProviderConfigShape::List(_))
+        })
+    })
+}
+
+/// The configured value with its type. An unset list shows the default the provider falls back
+/// to, so the settings show what is actually used; a secret is never sent.
+fn field_value(
     config_source: &dyn ConfigSource,
     source: &Source,
     requirement: ProviderConfigKey,
-) -> Option<String> {
-    let resolved = config_source.get(requirement.name);
-    if resolved.is_some() {
-        return resolved;
+) -> ProviderConfigFieldValueDto {
+    let configured = config_source
+        .get(requirement.name)
+        .filter(|raw| !raw.trim().is_empty());
+    match requirement.shape {
+        ProviderConfigShape::Single(value_type) => {
+            let secret = value_type == ProviderConfigValueType::Password;
+            ProviderConfigFieldValueDto::Single {
+                value_type: value_type.into(),
+                secret,
+                value: configured.filter(|_| !secret),
+            }
+        }
+        ProviderConfigShape::List(item_type) => ProviderConfigFieldValueDto::List {
+            item_type: item_type.into(),
+            items: match configured {
+                Some(raw) => parse_config_list(&raw),
+                None => default_list(source, requirement.name),
+            },
+        },
     }
+}
 
-    match (source, requirement.name) {
-        (Source::Git, key) if key == GIT_DIRS.name() => default_git_dirs_value(),
-        _ => None,
+fn default_list(source: &Source, key: &str) -> Vec<String> {
+    match (source, key) {
+        (Source::Git, key) if key == GIT_DIRS.name() => default_git_root()
+            .map(|root| vec![root.display().to_string()])
+            .unwrap_or_default(),
+        #[cfg(target_os = "windows")]
+        (Source::Git, key)
+            if key == activity_log_core::provider::git::windows::WSL_DISTROS.name() =>
+        {
+            activity_log_core::provider::git::windows::default_wsl_distros()
+        }
+        _ => Vec::new(),
     }
 }
 
@@ -180,20 +262,12 @@ pub(crate) fn build_provider_config_snapshot(
             let fields = adapter
                 .config_requirements()
                 .iter()
-                .map(|requirement| {
-                    let configured = config_source.get(requirement.name);
-                    let resolved =
-                        display_provider_config_value(config_source, &source, *requirement);
-                    let secret = requirement.value_type == ProviderConfigValueType::Password;
-                    ProviderConfigFieldStateDto {
-                        key: requirement.name.to_string(),
-                        label: provider_config_key_label(requirement.name),
-                        required: requirement.required,
-                        value_type: requirement.value_type.into(),
-                        secret,
-                        is_set: configured.is_some(),
-                        value: if secret { None } else { resolved },
-                    }
+                .map(|requirement| ProviderConfigFieldStateDto {
+                    key: requirement.name.to_string(),
+                    label: provider_config_key_label(requirement.name),
+                    required: requirement.required,
+                    is_set: config_source.get(requirement.name).is_some(),
+                    value: field_value(config_source, &source, *requirement),
                 })
                 .collect();
 

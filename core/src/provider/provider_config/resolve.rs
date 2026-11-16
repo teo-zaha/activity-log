@@ -53,7 +53,9 @@ macro_rules! provider_config {
                 $crate::provider::provider_config::ProviderConfigKey {
                     name: stringify!($key),
                     required: $crate::provider_config!(@required $vtype $( , $default )? ),
-                    value_type: $crate::provider_config!(@value_type $vtype),
+                    shape: $crate::provider::provider_config::ProviderConfigShape::Single(
+                        $crate::provider_config!(@value_type $vtype),
+                    ),
                 };
         )*
 

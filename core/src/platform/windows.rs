@@ -101,6 +101,126 @@ pub fn hide_console_window(command: &mut std::process::Command) {
     command.creation_flags(CREATE_NO_WINDOW);
 }
 
+/// Names of the WSL distributions registered for the current user, read from the registry so
+/// that listing them never starts WSL.
+pub fn wsl_distribution_names() -> Vec<String> {
+    use windows::{
+        Win32::{
+            Foundation::ERROR_SUCCESS,
+            System::Registry::{
+                HKEY, HKEY_CURRENT_USER, KEY_READ, RRF_RT_REG_SZ, RegCloseKey, RegEnumKeyExW,
+                RegGetValueW, RegOpenKeyExW,
+            },
+        },
+        core::{PWSTR, w},
+    };
+
+    let mut lxss = HKEY::default();
+    let opened = unsafe {
+        RegOpenKeyExW(
+            HKEY_CURRENT_USER,
+            w!(r"Software\Microsoft\Windows\CurrentVersion\Lxss"),
+            Some(0),
+            KEY_READ,
+            &mut lxss,
+        )
+    };
+    if opened != ERROR_SUCCESS {
+        return Vec::new();
+    }
+
+    let mut names = Vec::new();
+    for index in 0.. {
+        // Subkeys are distribution GUIDs such as `{0a1b…}`; 256 UTF-16 units is ample.
+        let mut subkey = [0u16; 256];
+        let mut subkey_len = subkey.len() as u32;
+        let listed = unsafe {
+            RegEnumKeyExW(
+                lxss,
+                index,
+                Some(PWSTR(subkey.as_mut_ptr())),
+                &mut subkey_len,
+                None,
+                None,
+                None,
+                None,
+            )
+        };
+        if listed != ERROR_SUCCESS {
+            break;
+        }
+
+        let mut name = [0u16; 256];
+        let mut name_bytes = (name.len() * size_of::<u16>()) as u32;
+        let read = unsafe {
+            RegGetValueW(
+                lxss,
+                PCWSTR(subkey.as_ptr()),
+                w!("DistributionName"),
+                RRF_RT_REG_SZ,
+                None,
+                Some(name.as_mut_ptr().cast()),
+                Some(&mut name_bytes),
+            )
+        };
+        if read == ERROR_SUCCESS {
+            let units = (name_bytes as usize / size_of::<u16>()).saturating_sub(1);
+            names.push(String::from_utf16_lossy(&name[..units]));
+        }
+    }
+
+    unsafe {
+        let _ = RegCloseKey(lxss);
+    }
+    names
+}
+
+/// Runs a POSIX shell script in a WSL distribution as a login shell, so `PATH` matches an
+/// interactive terminal (NixOS keeps git outside `/usr/bin`). The script goes in on stdin, so
+/// no value in it passes through Windows command-line quoting.
+pub fn run_wsl_script(distro: &str, script: &str) -> Result<String> {
+    use std::{io::Write, process::Stdio};
+
+    let mut command = std::process::Command::new("wsl.exe");
+    hide_console_window(&mut command);
+    let mut child = command
+        .args(["-d", distro, "--exec", "/bin/sh", "-l", "-s"])
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .map_err(|err| anyhow!("Cannot start wsl.exe: {err}"))?;
+    child
+        .stdin
+        .take()
+        .ok_or_else(|| anyhow!("wsl.exe has no stdin"))?
+        .write_all(script.as_bytes())?;
+    let output = child.wait_with_output()?;
+    if !output.status.success() {
+        return Err(anyhow!(
+            "wsl.exe exited with {}: {}",
+            output.status,
+            wsl_message(&output.stderr).trim()
+        ));
+    }
+    Ok(String::from_utf8_lossy(&output.stdout).into_owned())
+}
+
+/// wsl.exe writes its own messages as UTF-16LE, while Linux programs write UTF-8.
+fn wsl_message(bytes: &[u8]) -> String {
+    let looks_utf16 = bytes.len() >= 2 && bytes.iter().skip(1).step_by(2).all(|byte| *byte == 0);
+    if looks_utf16 {
+        let (pairs, _) = bytes.as_chunks::<2>();
+        let units = pairs
+            .iter()
+            .map(|pair| u16::from_le_bytes(*pair))
+            .collect::<Vec<_>>();
+        String::from_utf16_lossy(&units)
+    } else {
+        String::from_utf8_lossy(bytes).into_owned()
+    }
+}
+
 pub fn system_log_access(log_name: &str) -> Result<()> {
     let query = EventHandle::query(log_name, "*")?;
     drop(query);

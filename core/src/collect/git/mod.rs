@@ -15,26 +15,65 @@ use gix::{
 
 use crate::{
     diagnostics,
-    model::{CollectOptions, GitEntry},
+    model::{CollectOptions, GitEntry, SupportedOs},
     platform::background_command,
     provider::git::{GitConfig, default_git_root},
 };
 
 #[cfg(test)]
 mod tests;
+#[cfg(any(target_os = "windows", test))]
+pub(crate) mod windows;
+
+#[cfg(target_os = "windows")]
+use self::windows as windows_impl;
+#[cfg(not(target_os = "windows"))]
+mod windows_impl {
+    use anyhow::Result;
+
+    use super::RepoCommits;
+    use crate::{model::CollectOptions, provider::git::GitConfig};
+
+    /// WSL needs Windows; elsewhere only the local repositories exist.
+    pub(super) fn collect_repos(
+        options: &CollectOptions,
+        config: &GitConfig,
+    ) -> Result<RepoCommits> {
+        super::collect_local_repos(options, config)
+    }
+}
+
+/// Commits found so far, and the repositories skipped for having no `user.email`.
+#[derive(Debug, Default)]
+pub(crate) struct RepoCommits {
+    pub entries: Vec<GitEntry>,
+    pub without_email: Vec<String>,
+}
 
 // Directories that never hold a user's own repositories but are expensive to walk.
 const SKIPPED_DIR_NAMES: &[&str] = &["node_modules", "AppData", ".direnv"];
 
-pub async fn collect_git(options: &CollectOptions, config: &GitConfig) -> Result<Vec<GitEntry>> {
+pub async fn collect_git(
+    options: &CollectOptions,
+    config: &GitConfig,
+    current_os: SupportedOs,
+) -> Result<Vec<GitEntry>> {
     let options = *options;
     let config = config.clone();
-    tokio::task::spawn_blocking(move || collect_git_blocking(&options, &config))
-        .await
-        .map_err(|err| anyhow!("Git collection task failed: {err}"))?
+    let commits = tokio::task::spawn_blocking(move || match current_os {
+        SupportedOs::Windows => windows_impl::collect_repos(&options, &config),
+        SupportedOs::Macos | SupportedOs::Linux => collect_local_repos(&options, &config),
+    })
+    .await
+    .map_err(|err| anyhow!("Git collection task failed: {err}"))??;
+    Ok(finish(commits))
 }
 
-fn collect_git_blocking(options: &CollectOptions, config: &GitConfig) -> Result<Vec<GitEntry>> {
+/// The basic implementation: repositories on this machine's file system, read with gix.
+pub(crate) fn collect_local_repos(
+    options: &CollectOptions,
+    config: &GitConfig,
+) -> Result<RepoCommits> {
     let dirs = resolve_git_repos(config)?;
     let mut entries = Vec::new();
     let mut without_email = Vec::new();
@@ -83,6 +122,18 @@ fn collect_git_blocking(options: &CollectOptions, config: &GitConfig) -> Result<
             format!("Read user.email from the git command for {via_cli} repositories"),
         );
     }
+    Ok(RepoCommits {
+        entries,
+        without_email,
+    })
+}
+
+/// Reports skipped repositories and orders the commits newest first.
+fn finish(commits: RepoCommits) -> Vec<GitEntry> {
+    let RepoCommits {
+        mut entries,
+        without_email,
+    } = commits;
     if !without_email.is_empty() {
         diagnostics::warn(
             "git",
@@ -111,7 +162,7 @@ fn collect_git_blocking(options: &CollectOptions, config: &GitConfig) -> Result<
         }
     });
 
-    Ok(entries)
+    entries
 }
 
 pub(crate) fn open_repo_strict(path: &Path) -> Result<Repository> {
@@ -141,6 +192,8 @@ fn git_cli_user_email(repo_path: &Path) -> Option<String> {
     (!email.is_empty()).then_some(email)
 }
 
+/// Local repositories: the configured folders (an empty list means none), or else the home
+/// folder.
 pub(crate) fn resolve_git_repos(config: &GitConfig) -> Result<Vec<PathBuf>> {
     resolve_git_repos_with_home_root(config, default_git_root())
 }
@@ -150,8 +203,11 @@ pub(crate) fn resolve_git_repos_with_home_root(
     home_root: Option<PathBuf>,
 ) -> Result<Vec<PathBuf>> {
     match &config.dirs {
-        Some(dirs) if !dirs.is_empty() => Ok(resolve_git_repos_from_roots(dirs)),
-        _ => discover_home_repos_with_root(home_root),
+        Some(dirs) => Ok(resolve_git_repos_from_roots(dirs)),
+        None => {
+            let home_root = home_root.ok_or_else(|| anyhow!("Git home directory unavailable"))?;
+            Ok(expand_git_dir_input(&home_root))
+        }
     }
 }
 
@@ -250,11 +306,6 @@ fn head_target(repo: &Repository) -> Option<(ObjectId, String)> {
         .map(|name| name.shorten().to_string())?;
     let commit = repo.head_commit().ok()?;
     Some((commit.id, branch))
-}
-
-fn discover_home_repos_with_root(home_root: Option<PathBuf>) -> Result<Vec<PathBuf>> {
-    let home_root = home_root.ok_or_else(|| anyhow!("Git home directory unavailable"))?;
-    Ok(expand_git_dir_input(&home_root))
 }
 
 fn expand_git_dir_input(path: &Path) -> Vec<PathBuf> {

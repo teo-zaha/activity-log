@@ -12,13 +12,37 @@ export type ProvidersResponse = { currentOs: SupportedOs, providers: Array<Provi
 
 export type ProviderConfigValueTypeDto = "string" | "bool" | "int" | "password" | "email" | "url";
 
-export type ProviderConfigFieldStateDto = { key: string, label: string, required: boolean, valueType: ProviderConfigValueTypeDto, secret: boolean, isSet: boolean, value?: string, };
+export type ProviderConfigFieldValueDto = { "shape": "single", valueType: ProviderConfigValueTypeDto, 
+/**
+ * Secrets are write-only: `value` is never sent for them.
+ */
+secret: boolean, value?: string, } | { "shape": "list", itemType: ProviderConfigValueTypeDto, 
+/**
+ * The configured items, or the default the provider uses while the key is unset.
+ */
+items: Array<string>, };
+
+export type ProviderConfigFieldStateDto = { key: string, label: string, required: boolean, isSet: boolean, } & ({ "shape": "single", valueType: ProviderConfigValueTypeDto, 
+/**
+ * Secrets are write-only: `value` is never sent for them.
+ */
+secret: boolean, value?: string, } | { "shape": "list", itemType: ProviderConfigValueTypeDto, 
+/**
+ * The configured items, or the default the provider uses while the key is unset.
+ */
+items: Array<string>, });
 
 export type ProviderConfigProviderStateDto = { source: Source, fields: Array<ProviderConfigFieldStateDto>, };
 
 export type ProviderConfigSnapshotDto = { providers: Array<ProviderConfigProviderStateDto>, };
 
-export type ProviderConfigSaveValueDto = { key: string, value: string | null, };
+export type ProviderConfigValueDto = string | Array<string>;
+
+export type ProviderConfigSaveValueDto = { key: string, 
+/**
+ * `None` clears the key, so its default applies again.
+ */
+value: ProviderConfigValueDto | null, };
 
 export type ProviderConfigSaveRequestDto = { source: Source, values: Array<ProviderConfigSaveValueDto>, };
 

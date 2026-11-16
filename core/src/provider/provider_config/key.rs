@@ -11,11 +11,38 @@ pub enum ProviderConfigValueType {
     Url,
 }
 
+/// What a key holds: one value, or a list of values of one type.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ProviderConfigShape {
+    Single(ProviderConfigValueType),
+    /// Several values, such as folders. Stored as a JSON array of strings; a plain value is read
+    /// as a comma-separated list, so `GIT_DIRS=a,b` works from the environment.
+    List(ProviderConfigValueType),
+}
+
+impl ProviderConfigShape {
+    /// The type of the value, or of every item of a list.
+    pub const fn value_type(self) -> ProviderConfigValueType {
+        match self {
+            Self::Single(value_type) | Self::List(value_type) => value_type,
+        }
+    }
+}
+
+impl std::fmt::Display for ProviderConfigShape {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Single(value_type) => write!(f, "{value_type}"),
+            Self::List(value_type) => write!(f, "list of {value_type}"),
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ProviderConfigKey {
     pub name: &'static str,
     pub required: bool,
-    pub value_type: ProviderConfigValueType,
+    pub shape: ProviderConfigShape,
 }
 
 impl ProviderConfigKey {
@@ -23,11 +50,16 @@ impl ProviderConfigKey {
         self.name
     }
 
+    /// The type of the value, or of every item of a list.
+    pub const fn value_type(self) -> ProviderConfigValueType {
+        self.shape.value_type()
+    }
+
     pub const fn required(name: &'static str, value_type: ProviderConfigValueType) -> Self {
         Self {
             name,
             required: true,
-            value_type,
+            shape: ProviderConfigShape::Single(value_type),
         }
     }
 
@@ -35,7 +67,7 @@ impl ProviderConfigKey {
         Self {
             name,
             required: false,
-            value_type,
+            shape: ProviderConfigShape::Single(value_type),
         }
     }
 
@@ -85,5 +117,13 @@ impl ProviderConfigKey {
 
     pub const fn optional_url(name: &'static str) -> Self {
         Self::optional(name, ProviderConfigValueType::Url)
+    }
+
+    /// This key as a list of its value type: `optional_string("GIT_DIRS").list_of()`.
+    pub const fn list_of(self) -> Self {
+        Self {
+            shape: ProviderConfigShape::List(self.value_type()),
+            ..self
+        }
     }
 }

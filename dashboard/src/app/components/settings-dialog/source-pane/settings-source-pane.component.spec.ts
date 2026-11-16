@@ -25,6 +25,7 @@ const jiraFields: ProviderConfigFieldStateDto[] = [
     key: 'baseUrl',
     label: 'Base URL',
     required: true,
+    shape: 'single',
     valueType: 'url',
     secret: false,
     isSet: true,
@@ -34,6 +35,7 @@ const jiraFields: ProviderConfigFieldStateDto[] = [
     key: 'maxResults',
     label: 'Max results',
     required: false,
+    shape: 'single',
     valueType: 'int',
     secret: false,
     isSet: true,
@@ -43,6 +45,7 @@ const jiraFields: ProviderConfigFieldStateDto[] = [
     key: 'apiToken',
     label: 'API token',
     required: true,
+    shape: 'single',
     valueType: 'password',
     secret: true,
     isSet: true,
@@ -51,6 +54,7 @@ const jiraFields: ProviderConfigFieldStateDto[] = [
     key: 'verifyTls',
     label: 'Verify TLS',
     required: false,
+    shape: 'single',
     valueType: 'bool',
     secret: false,
     isSet: true,
@@ -110,6 +114,8 @@ function saveResponse(fields: ProviderConfigFieldStateDto[]): ProviderConfigSave
     providersResponse: { currentOs: 'linux', providers: providerInfo },
   }
 }
+
+type ListField = Extract<ProviderConfigFieldStateDto, { shape: 'list' }>
 
 describe('SettingsSourcePaneComponent', () => {
   it('loads the configuration and fills the fields of the selected provider', async () => {
@@ -266,6 +272,7 @@ describe('SettingsSourcePaneComponent', () => {
               key: 'webhook',
               label: 'Webhook',
               required: false,
+              shape: 'single',
               valueType: 'string',
               secret: true,
               isSet: true,
@@ -293,6 +300,7 @@ describe('SettingsSourcePaneComponent', () => {
         key: 'gitRoot',
         label: 'Git root',
         required: false,
+        shape: 'single',
         valueType: 'string',
         secret: false,
         isSet: true,
@@ -330,5 +338,86 @@ describe('SettingsSourcePaneComponent', () => {
     )
     expect(screen.queryByRole('alert')).toBeNull()
     expect(screen.queryByText('Unsaved changes')).toBeNull()
+  })
+
+  describe('list fields', () => {
+    const gitDirs = (
+      overrides: Partial<Omit<ListField, 'shape'>> = {}
+    ): ProviderConfigFieldStateDto => ({
+      key: 'GIT_DIRS',
+      label: 'Git Dirs',
+      required: false,
+      isSet: false,
+      shape: 'list',
+      itemType: 'string',
+      items: ['/home/me'],
+      ...overrides,
+    })
+
+    async function setupList(field: ProviderConfigFieldStateDto): Promise<Setup> {
+      const result = await setup({ load: () => Promise.resolve(snapshot([field])) })
+      result.saveProviderConfig.mockResolvedValue(saveResponse([field]))
+      await screen.findByLabelText('Git Dirs 1')
+      return result
+    }
+
+    it('shows the default items and treats them as unchanged', async () => {
+      await setupList(gitDirs())
+
+      expect(screen.getByLabelText('Git Dirs 1')).toHaveProperty('value', '/home/me')
+      expect(screen.getByText('Default')).toBeTruthy()
+      expect(screen.queryByRole('button', { name: 'Use default' })).toBeNull()
+      expect(screen.getByRole('button', { name: 'Save settings' })).toHaveProperty('disabled', true)
+    })
+
+    it('adds rows and saves the list without blank ones', async () => {
+      const { saveProviderConfig } = await setupList(gitDirs())
+
+      await userEvent.click(screen.getByRole('button', { name: 'Add' }))
+      await userEvent.type(screen.getByLabelText('Git Dirs 2'), ' /srv/repos ')
+      await userEvent.click(screen.getByRole('button', { name: 'Add' }))
+      await userEvent.click(screen.getByRole('button', { name: 'Save settings' }))
+
+      expect(saveProviderConfig).toHaveBeenCalledWith({
+        source: 'jira',
+        values: [{ key: 'GIT_DIRS', value: ['/home/me', '/srv/repos'] }],
+      })
+    })
+
+    it('saves an emptied list as none', async () => {
+      const { saveProviderConfig } = await setupList(gitDirs())
+
+      await userEvent.click(screen.getByRole('button', { name: 'Remove /home/me' }))
+      expect(screen.getByText('None')).toBeTruthy()
+      await userEvent.click(screen.getByRole('button', { name: 'Save settings' }))
+
+      expect(saveProviderConfig).toHaveBeenCalledWith({
+        source: 'jira',
+        values: [{ key: 'GIT_DIRS', value: [] }],
+      })
+    })
+
+    it('checks every item against the value type', async () => {
+      await setupList(gitDirs({ itemType: 'url', items: ['https://a.example'] }))
+
+      await userEvent.click(screen.getByRole('button', { name: 'Add' }))
+      await userEvent.type(screen.getByLabelText('Git Dirs 2'), 'not a url')
+
+      expect(await screen.findByText('Enter a valid URL.')).toBeTruthy()
+      expect(screen.getByRole('button', { name: 'Save settings' })).toHaveProperty('disabled', true)
+    })
+
+    it('resets a configured list to its default', async () => {
+      const { saveProviderConfig } = await setupList(gitDirs({ isSet: true, items: ['/work'] }))
+
+      await userEvent.click(screen.getByRole('button', { name: 'Use default' }))
+      expect(screen.getByText('The default applies after saving.')).toBeTruthy()
+      await userEvent.click(screen.getByRole('button', { name: 'Save settings' }))
+
+      expect(saveProviderConfig).toHaveBeenCalledWith({
+        source: 'jira',
+        values: [{ key: 'GIT_DIRS', value: null }],
+      })
+    })
   })
 })

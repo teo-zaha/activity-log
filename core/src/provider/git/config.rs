@@ -7,17 +7,38 @@ use crate::provider::provider_config::{
 };
 use crate::{model::SupportedOs, provider::current_os};
 
-pub const GIT_DIRS: ProviderConfigKey = ProviderConfigKey::optional_string("GIT_DIRS");
+/// Local repositories, or folders to search for them. Unset means the home folder.
+pub const GIT_DIRS: ProviderConfigKey = ProviderConfigKey::optional_string("GIT_DIRS").list_of();
+#[cfg(target_os = "windows")]
+const CONFIG_KEYS: &[ProviderConfigKey] = &[
+    GIT_DIRS,
+    super::windows::WSL_DISTROS,
+    super::windows::WSL_GIT_DIRS,
+];
+#[cfg(not(target_os = "windows"))]
 const CONFIG_KEYS: &[ProviderConfigKey] = &[GIT_DIRS];
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct GitConfig {
+    /// Local repositories or search folders; `None` means [`default_git_root`].
     pub dirs: Option<Vec<PathBuf>>,
+    /// Repositories inside WSL; Windows only.
+    #[cfg(any(target_os = "windows", test))]
+    pub wsl: super::windows::WslConfig,
 }
 
 impl GitConfig {
     pub fn binding() -> ConfigBinding {
         ConfigBinding::of::<Self>()
+    }
+
+    /// Exactly these local folders, and nothing in WSL.
+    pub fn local_only(dirs: Vec<PathBuf>) -> Self {
+        Self {
+            dirs: Some(dirs),
+            #[cfg(any(target_os = "windows", test))]
+            wsl: super::windows::WslConfig::none(),
+        }
     }
 }
 
@@ -27,25 +48,18 @@ impl ProviderConfigResolve for GitConfig {
     }
 
     fn from_config(config: &ProviderConfig) -> Result<Self> {
-        let dirs = config.get(GIT_DIRS).and_then(|value| {
-            let paths: Vec<PathBuf> = value
-                .split(',')
-                .map(|v| v.trim().trim_matches('"').trim())
-                .filter(|v| !v.is_empty())
-                .map(PathBuf::from)
-                .collect();
-            (!paths.is_empty()).then_some(paths)
-        });
-        Ok(Self { dirs })
+        Ok(Self {
+            dirs: config
+                .list(GIT_DIRS)
+                .map(|dirs| dirs.into_iter().map(PathBuf::from).collect()),
+            #[cfg(any(target_os = "windows", test))]
+            wsl: super::windows::WslConfig::from_config(config)?,
+        })
     }
 }
 
 pub fn default_git_root() -> Option<PathBuf> {
     default_git_root_with_lookup(current_os(), |key| env::var_os(key))
-}
-
-pub fn default_git_dirs_value() -> Option<String> {
-    default_git_root().map(|path| path.display().to_string())
 }
 
 pub(crate) fn default_git_root_with_lookup<F>(os: SupportedOs, lookup: F) -> Option<PathBuf>

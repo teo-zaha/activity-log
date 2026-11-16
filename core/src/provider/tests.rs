@@ -14,12 +14,13 @@ use crate::{
     model::{ActivityEntry, CollectOptions, Source, SupportedOs},
     provider::{
         current_os,
-        git::{GitConfig, GitProvider, default_git_root_with_lookup},
+        git::{GIT_DIRS, GitConfig, GitProvider, default_git_root_with_lookup},
         provider_adapter::ProviderAdapter,
         provider_check_result::ProviderCheckResult,
         provider_config::{
             ConfigBinding, ConfigSource, ProviderConfig, ProviderConfigKey, ProviderConfigResolve,
-            ProviderConfigValueType,
+            ProviderConfigShape, ProviderConfigValueType, parse_config_list,
+            provider_config_key_accepts,
         },
         provider_context::ProviderContext,
         provider_registry,
@@ -373,14 +374,14 @@ fn provider_config_macro_generates_expected_key_metadata() {
     assert_eq!(TEST_MACRO_BOOL_FLAG.name, "TEST_MACRO_BOOL_FLAG");
     assert!(!std::hint::black_box(TEST_MACRO_BOOL_FLAG.required));
     assert_eq!(
-        TEST_MACRO_BOOL_FLAG.value_type,
+        TEST_MACRO_BOOL_FLAG.value_type(),
         ProviderConfigValueType::Bool
     );
 
     assert_eq!(TEST_MACRO_DEFAULT_VALUE.name, "TEST_MACRO_DEFAULT_VALUE");
     assert!(!std::hint::black_box(TEST_MACRO_DEFAULT_VALUE.required));
     assert_eq!(
-        TEST_MACRO_DEFAULT_VALUE.value_type,
+        TEST_MACRO_DEFAULT_VALUE.value_type(),
         ProviderConfigValueType::String
     );
 }
@@ -424,8 +425,14 @@ fn git_resolution_uses_home_discovery_when_dirs_are_unset() {
 
     std::fs::create_dir_all(nested_repo.join(".git")).expect("nested repo");
 
-    let repos = resolve_git_repos_with_home_root(&GitConfig { dirs: None }, Some(home_root))
-        .expect("home discovery should succeed");
+    let repos = resolve_git_repos_with_home_root(
+        &GitConfig {
+            dirs: None,
+            ..GitConfig::local_only(Vec::new())
+        },
+        Some(home_root),
+    )
+    .expect("home discovery should succeed");
 
     assert_eq!(repos, vec![nested_repo]);
 }
@@ -604,4 +611,58 @@ fn cache_fingerprint_separates_accounts_but_ignores_secrets() {
 
     assert_eq!(fingerprint("alice", "one"), fingerprint("alice", "two"));
     assert_ne!(fingerprint("alice", "one"), fingerprint("bob", "one"));
+}
+
+#[test]
+fn config_lists_read_json_arrays_and_comma_lists() {
+    assert_eq!(
+        parse_config_list(r#"["C:\\a, b", " D:\\c "]"#),
+        ["C:\\a, b", "D:\\c"]
+    );
+    assert_eq!(parse_config_list(r#" "C:\a" , ,D:\b"#), ["C:\\a", "D:\\b"]);
+    assert!(parse_config_list("[]").is_empty());
+}
+
+struct MapSource(Vec<(&'static str, &'static str)>);
+
+impl ConfigSource for MapSource {
+    fn get(&self, key: &str) -> Option<String> {
+        self.0
+            .iter()
+            .find(|(name, _)| *name == key)
+            .map(|(_, value)| value.to_string())
+    }
+}
+
+fn git_config(values: Vec<(&'static str, &'static str)>) -> anyhow::Result<GitConfig> {
+    GitConfig::from_config(&ProviderConfig::resolve(&MapSource(values), &[GIT_DIRS]))
+}
+
+#[test]
+fn git_config_tells_unset_lists_from_empty_ones() {
+    // `GIT_DIRS=` in a .env file is unset, so the default applies.
+    assert_eq!(git_config(vec![("GIT_DIRS", "")]).unwrap().dirs, None);
+    // A saved empty list means none.
+    assert_eq!(
+        git_config(vec![("GIT_DIRS", "[]")]).unwrap().dirs,
+        Some(Vec::new())
+    );
+}
+
+#[test]
+fn list_keys_validate_every_item_against_their_value_type() {
+    let ports = ProviderConfigKey::optional_int("TEST_PORTS").list_of();
+
+    assert_eq!(
+        ports.shape,
+        ProviderConfigShape::List(ProviderConfigValueType::Int)
+    );
+    assert_eq!(ports.shape.to_string(), "list of int");
+    assert!(provider_config_key_accepts(ports, "80, 443"));
+    assert!(provider_config_key_accepts(ports, r#"["80","443"]"#));
+    assert!(!provider_config_key_accepts(ports, "80,https"));
+    assert_eq!(
+        GIT_DIRS.shape,
+        ProviderConfigShape::List(ProviderConfigValueType::String)
+    );
 }

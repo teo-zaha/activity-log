@@ -22,6 +22,28 @@ interface ProviderHealthVm {
 
 /** Field values by key. A secret is `null` once the user chose to clear it, `''` while untouched. */
 type DraftValues = Record<string, string | null>
+/** Items of `list` fields by key; blank rows are dropped on save. */
+type ListDrafts = Record<string, string[]>
+
+type SingleField = Extract<ProviderConfigFieldStateDto, { shape: 'single' }>
+type ListField = Extract<ProviderConfigFieldStateDto, { shape: 'list' }>
+
+function isSingleField(field: ProviderConfigFieldStateDto): field is SingleField {
+  return field.shape === 'single'
+}
+
+function isListField(field: ProviderConfigFieldStateDto): field is ListField {
+  return field.shape === 'list'
+}
+
+/** Trimmed, without blank rows: what the backend would store. */
+function cleanItems(items: readonly string[]): string[] {
+  return items.map(item => item.trim()).filter(item => item !== '')
+}
+
+function sameItems(a: readonly string[], b: readonly string[]): boolean {
+  return a.length === b.length && a.every((item, index) => item === b[index])
+}
 
 const TIMEOUT_REASON = /timed? ?out/i
 
@@ -88,17 +110,55 @@ export class SettingsSourcePaneComponent {
   )
 
   private readonly initialValues = computed<DraftValues>(() =>
-    Object.fromEntries(this.configFields().map(field => [field.key, this.initialValueFor(field)]))
+    Object.fromEntries(
+      this.configFields()
+        .filter(isSingleField)
+        .map(field => [field.key, this.initialValueFor(field)])
+    )
   )
   private readonly draftValues = linkedSignal<DraftValues>(() => ({ ...this.initialValues() }))
+
+  /** The configured items, or the default the provider uses while the key is unset. */
+  private readonly initialLists = computed<ListDrafts>(() =>
+    Object.fromEntries(
+      this.configFields()
+        .filter(isListField)
+        .map(field => [field.key, [...field.items]])
+    )
+  )
+  protected readonly listDrafts = linkedSignal<ListDrafts>(() =>
+    Object.fromEntries(Object.entries(this.initialLists()).map(([key, items]) => [key, [...items]]))
+  )
+  /** List keys the user reset, so their default applies again after saving. */
+  private readonly resetLists = linkedSignal<ListDrafts, ReadonlySet<string>>({
+    source: this.initialLists,
+    computation: () => new Set(),
+  })
+
+  /** Every item is checked against the field's value type, like a single value. */
+  protected readonly listForm = form(this.listDrafts, path => {
+    applyEach(path, list => {
+      applyEach(list, item => {
+        disabled(item, { when: () => this.savingConfig() })
+        // `pathKeys` is `[fieldKey, index]`.
+        validate(item, ({ value, pathKeys }) => {
+          const field = this.fieldByKey().get(pathKeys()[0] ?? '')
+          const text = value().trim()
+          if (!field || !isListField(field) || text === '') return undefined
+          const message = validateProviderConfigValue(text, field.itemType)
+          return message ? { kind: 'providerConfigValue', message } : undefined
+        })
+      })
+    })
+  })
 
   private readonly saveError = linkedSignal<string, string | null>({
     source: this.selectionKey,
     computation: () => null,
   })
   /** Hidden again by any edit, and by switching source. */
-  protected readonly configMessage = linkedSignal<DraftValues, string | null>({
-    source: this.draftValues,
+  protected readonly configMessage = linkedSignal<unknown, string | null>({
+    source: () => [this.draftValues(), this.listDrafts(), this.resetLists()],
     computation: () => null,
   })
   protected readonly configError = computed(
@@ -131,6 +191,12 @@ export class SettingsSourcePaneComponent {
     const initial = this.initialValues()
 
     for (const field of this.configFields()) {
+      if (isListField(field)) {
+        const change = this.pendingListValue(field)
+        if (change !== undefined) values.push({ key: field.key, value: change })
+        continue
+      }
+
       const value = draft[field.key] ?? null
 
       if (field.secret) {
@@ -163,7 +229,12 @@ export class SettingsSourcePaneComponent {
 
   /** Only changed values are checked, so a stored value that no longer validates never blocks saving. */
   private readonly pendingValues = computed(
-    () => new Map(this.pendingRequest()?.values.map(({ key, value }) => [key, value]))
+    () =>
+      new Map(
+        this.pendingRequest()?.values.flatMap(({ key, value }) =>
+          Array.isArray(value) ? [] : [[key, value] as const]
+        )
+      )
   )
 
   protected readonly draftForm = form(
@@ -174,7 +245,7 @@ export class SettingsSourcePaneComponent {
         validate(item, ({ key }) => {
           const field = this.fieldByKey().get(key())
           const value = this.pendingValues().get(key())
-          if (!field || value === null || value === undefined) {
+          if (!field || !isSingleField(field) || value === null || value === undefined) {
             return undefined
           }
 
@@ -198,7 +269,8 @@ export class SettingsSourcePaneComponent {
       !this.loadingConfig() &&
       !this.savingConfig() &&
       this.pendingRequest() !== null &&
-      this.draftForm().valid()
+      this.draftForm().valid() &&
+      this.listForm().valid()
   )
 
   protected supportedOsLabel(os: SupportedOs): string {
@@ -212,6 +284,45 @@ export class SettingsSourcePaneComponent {
     }
   }
 
+  protected listItemError(key: string, index: number): string | null {
+    const [error] = this.listForm[key][index]().errors()
+    return error?.message ?? null
+  }
+
+  private listItemErrors(key: string): string[] {
+    return (this.listDrafts()[key] ?? []).flatMap(
+      (_, index) => this.listItemError(key, index) ?? []
+    )
+  }
+
+  protected isListReset(field: ListField): boolean {
+    return this.resetLists().has(field.key)
+  }
+
+  protected addListItem(field: ListField): void {
+    this.listDrafts.update(lists => ({ ...lists, [field.key]: [...(lists[field.key] ?? []), ''] }))
+  }
+
+  protected removeListItem(field: ListField, index: number): void {
+    this.listDrafts.update(lists => ({
+      ...lists,
+      [field.key]: (lists[field.key] ?? []).filter((_, i) => i !== index),
+    }))
+  }
+
+  /** Drops the configured list so the provider's default applies again. */
+  protected resetList(field: ListField): void {
+    this.resetLists.update(keys => new Set(keys).add(field.key))
+  }
+
+  protected undoListReset(field: ListField): void {
+    this.resetLists.update(keys => {
+      const next = new Set(keys)
+      next.delete(field.key)
+      return next
+    })
+  }
+
   protected fieldId(field: ProviderConfigFieldStateDto): string {
     return `provider-config-${this.provider().info.id}-${field.key}`
   }
@@ -220,11 +331,11 @@ export class SettingsSourcePaneComponent {
     this.config.reload()
   }
 
-  protected clearField(field: ProviderConfigFieldStateDto): void {
+  protected clearField(field: SingleField): void {
     this.draftValues.update(values => ({ ...values, [field.key]: field.secret ? null : '' }))
   }
 
-  protected canClearField(field: ProviderConfigFieldStateDto): boolean {
+  protected canClearField(field: SingleField): boolean {
     if (field.secret) {
       return (this.draftValues()[field.key] ?? '').trim().length > 0 || this.isSecretFieldSet(field)
     }
@@ -233,6 +344,10 @@ export class SettingsSourcePaneComponent {
   }
 
   protected fieldError(key: string): string | null {
+    if (!(key in this.draftValues())) {
+      return this.listItemErrors(key)[0] ?? null
+    }
+
     const [error] = this.draftForm[key]().errors()
     if (!error) {
       return null
@@ -242,11 +357,11 @@ export class SettingsSourcePaneComponent {
     return error.kind === 'parse' ? 'Enter a whole number.' : (error.message ?? null)
   }
 
-  protected isSecretFieldSet(field: ProviderConfigFieldStateDto): boolean {
+  protected isSecretFieldSet(field: SingleField): boolean {
     return field.isSet && this.draftValues()[field.key] !== null
   }
 
-  protected inputTypeFor(field: ProviderConfigFieldStateDto): string {
+  protected inputTypeFor(field: SingleField): string {
     // Signal Forms parses a `null` model as a number in a text input, and a cleared secret is `null`.
     if (field.secret) {
       return 'password'
@@ -287,7 +402,20 @@ export class SettingsSourcePaneComponent {
     }
   }
 
-  private initialValueFor(field: ProviderConfigFieldStateDto): string {
+  /**
+   * `null` resets a configured list to its default, an array replaces it (empty means none), and
+   * `undefined` means unchanged.
+   */
+  private pendingListValue(field: ListField): string[] | null | undefined {
+    if (this.resetLists().has(field.key)) {
+      return field.isSet ? null : undefined
+    }
+
+    const items = cleanItems(this.listDrafts()[field.key] ?? [])
+    return sameItems(items, this.initialLists()[field.key] ?? []) ? undefined : items
+  }
+
+  private initialValueFor(field: SingleField): string {
     const value = field.secret ? '' : (field.value ?? '')
     if (field.valueType !== 'bool') {
       return value
