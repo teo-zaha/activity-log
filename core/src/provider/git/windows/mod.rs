@@ -1,5 +1,7 @@
 //! Windows-only Git settings: repositories inside WSL distributions.
 
+use std::collections::BTreeMap;
+
 use anyhow::{Result, anyhow};
 
 use crate::provider::provider_config::{ProviderConfig, ProviderConfigKey};
@@ -7,62 +9,58 @@ use crate::provider::provider_config::{ProviderConfig, ProviderConfigKey};
 #[cfg(test)]
 mod tests;
 
-/// WSL distributions whose `$HOME` is searched. Unset means every user distribution.
-pub const WSL_DISTROS: ProviderConfigKey =
-    ProviderConfigKey::optional_string("WSL_DISTROS").list_of();
-/// WSL repositories as `Distro:/absolute/linux/path`, collected without searching.
+/// Folders per WSL distribution, read like `GIT_DIRS`: a repository, or a folder searched for
+/// them. Unset means the home folder of every user distribution.
 pub const WSL_GIT_DIRS: ProviderConfigKey =
-    ProviderConfigKey::optional_string("WSL_GIT_DIRS").list_of();
+    ProviderConfigKey::optional_string("WSL_GIT_DIRS").map_of();
+
+/// A distribution's home folder, as a WSL folder or the start of one (`~/work`).
+pub const WSL_HOME: &str = "~";
 
 /// Tool-managed distributions hold no user repositories.
 const NON_USER_WSL_PREFIXES: &[&str] = &["docker-desktop", "rancher-desktop", "podman-machine"];
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct WslConfig {
-    /// Distributions to search; `None` means [`default_wsl_distros`], an empty list none.
-    pub distros: Option<Vec<String>>,
-    pub repos: Vec<WslRepo>,
-}
-
-/// A repository inside a WSL distribution, at a Linux path.
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
-pub struct WslRepo {
-    pub distro: String,
-    pub path: String,
+    /// Folders by distribution; `None` means [`default_wsl_dirs`], an empty map nothing.
+    pub dirs: Option<BTreeMap<String, Vec<String>>>,
 }
 
 impl WslConfig {
     /// Searches nothing in WSL.
     pub fn none() -> Self {
         Self {
-            distros: Some(Vec::new()),
-            repos: Vec::new(),
+            dirs: Some(BTreeMap::new()),
         }
     }
 
     pub(crate) fn from_config(config: &ProviderConfig) -> Result<Self> {
-        Ok(Self {
-            distros: config.list(WSL_DISTROS),
-            repos: config
-                .list(WSL_GIT_DIRS)
-                .unwrap_or_default()
-                .iter()
-                .map(|spec| parse_wsl_repo(spec))
-                .collect::<Result<_>>()?,
-        })
+        let Some(map) = config.map(WSL_GIT_DIRS) else {
+            return Ok(Self { dirs: None });
+        };
+        let dirs = map
+            .into_iter()
+            .map(|(distro, dirs)| {
+                let dirs = dirs
+                    .iter()
+                    .map(|dir| parse_wsl_dir(&distro, dir))
+                    .collect::<Result<_>>()?;
+                Ok((distro, dirs))
+            })
+            .collect::<Result<_>>()?;
+        Ok(Self { dirs: Some(dirs) })
     }
 }
 
-/// `Distro:/absolute/linux/path`; a one-letter "distro" is a Windows drive, not WSL.
-pub(crate) fn parse_wsl_repo(spec: &str) -> Result<WslRepo> {
-    match spec.split_once(':') {
-        Some((distro, path)) if distro.len() > 1 && path.starts_with('/') => Ok(WslRepo {
-            distro: distro.to_string(),
-            path: path.trim_end_matches('/').to_string(),
-        }),
-        _ => Err(anyhow!(
-            "Invalid WSL repository \"{spec}\": expected Distro:/absolute/linux/path"
-        )),
+/// An absolute Linux path, `~` or `~/path`, without a trailing slash.
+pub(crate) fn parse_wsl_dir(distro: &str, dir: &str) -> Result<String> {
+    if dir == WSL_HOME || dir.starts_with("~/") || dir.starts_with('/') {
+        let trimmed = dir.trim_end_matches('/');
+        Ok(if trimmed.is_empty() { "/" } else { trimmed }.to_string())
+    } else {
+        Err(anyhow!(
+            "Invalid WSL folder \"{dir}\" in {distro}: expected an absolute Linux path or ~"
+        ))
     }
 }
 
@@ -88,6 +86,19 @@ pub(super) fn check_git_ready(
 #[cfg(target_os = "windows")]
 pub fn default_wsl_distros() -> Vec<String> {
     user_wsl_distros(crate::platform::wsl_distribution_names())
+}
+
+/// The home folder of every user distribution, used while `WSL_GIT_DIRS` is unset.
+#[cfg(target_os = "windows")]
+pub fn default_wsl_dirs() -> BTreeMap<String, Vec<String>> {
+    home_dirs(default_wsl_distros())
+}
+
+pub(crate) fn home_dirs(distros: Vec<String>) -> BTreeMap<String, Vec<String>> {
+    distros
+        .into_iter()
+        .map(|distro| (distro, vec![WSL_HOME.to_string()]))
+        .collect()
 }
 
 pub(crate) fn user_wsl_distros(names: Vec<String>) -> Vec<String> {

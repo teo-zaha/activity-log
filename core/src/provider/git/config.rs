@@ -10,11 +10,7 @@ use crate::{model::SupportedOs, provider::current_os};
 /// Local repositories, or folders to search for them. Unset means the home folder.
 pub const GIT_DIRS: ProviderConfigKey = ProviderConfigKey::optional_string("GIT_DIRS").list_of();
 #[cfg(target_os = "windows")]
-const CONFIG_KEYS: &[ProviderConfigKey] = &[
-    GIT_DIRS,
-    super::windows::WSL_DISTROS,
-    super::windows::WSL_GIT_DIRS,
-];
+const CONFIG_KEYS: &[ProviderConfigKey] = &[GIT_DIRS, super::windows::WSL_GIT_DIRS];
 #[cfg(not(target_os = "windows"))]
 const CONFIG_KEYS: &[ProviderConfigKey] = &[GIT_DIRS];
 

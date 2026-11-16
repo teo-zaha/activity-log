@@ -13,7 +13,7 @@ use chrono::{DateTime, Utc};
 use super::RepoCommits;
 use super::RepoHistory;
 #[cfg(target_os = "windows")]
-use crate::{diagnostics, platform::run_wsl_script, provider::git::windows::default_wsl_distros};
+use crate::{diagnostics, platform::run_wsl_script, provider::git::windows::default_wsl_dirs};
 use crate::{
     model::{CollectOptions, GitEntry},
     provider::git::GitConfig,
@@ -29,9 +29,8 @@ const FIELD: char = '\u{1f}';
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct WslTarget {
     pub distro: String,
-    /// Search `$HOME` for repositories, besides the explicit ones.
-    pub discover: bool,
-    pub repos: Vec<String>,
+    /// Repositories, or folders searched for them; `~` is the distribution's home.
+    pub dirs: Vec<String>,
 }
 
 /// One repository as the script reported it.
@@ -67,41 +66,26 @@ pub(crate) enum WslOutput {
     Failed(String),
 }
 
-/// Distributions to read: those configured (or, unset, every user distribution) searched under
-/// `$HOME`, plus the distributions of explicit repositories.
+/// Distributions to read with their folders: those configured or, unset, the home of every
+/// user distribution. A distribution without folders is not started.
 #[cfg(target_os = "windows")]
 fn wsl_targets(config: &GitConfig) -> Vec<WslTarget> {
-    wsl_targets_with(config, default_wsl_distros)
+    wsl_targets_with(config, default_wsl_dirs)
 }
 
 pub(crate) fn wsl_targets_with(
     config: &GitConfig,
-    default_distros: impl FnOnce() -> Vec<String>,
+    default_dirs: impl FnOnce() -> BTreeMap<String, Vec<String>>,
 ) -> Vec<WslTarget> {
-    let mut targets = BTreeMap::<String, WslTarget>::new();
-    let discovered = config.wsl.distros.clone().unwrap_or_else(default_distros);
-    for distro in discovered {
-        targets
-            .entry(distro.clone())
-            .or_insert_with(|| WslTarget {
-                distro,
-                discover: false,
-                repos: Vec::new(),
-            })
-            .discover = true;
-    }
-    for repo in &config.wsl.repos {
-        targets
-            .entry(repo.distro.clone())
-            .or_insert_with(|| WslTarget {
-                distro: repo.distro.clone(),
-                discover: false,
-                repos: Vec::new(),
-            })
-            .repos
-            .push(repo.path.clone());
-    }
-    targets.into_values().collect()
+    config
+        .wsl
+        .dirs
+        .clone()
+        .unwrap_or_else(default_dirs)
+        .into_iter()
+        .filter(|(_, dirs)| !dirs.is_empty())
+        .map(|(distro, dirs)| WslTarget { distro, dirs })
+        .collect()
 }
 
 /// The local repositories, as everywhere, plus those inside WSL.
@@ -208,22 +192,12 @@ fn run(target: &WslTarget, since: Option<DateTime<Utc>>) -> Result<WslScan, Stri
 /// repository's `user.email` and its commits since then by every author (the collector decides
 /// which are the user's); without, it only lists the repositories.
 pub(crate) fn build_script(target: &WslTarget, since: Option<DateTime<Utc>>) -> String {
-    let explicit = if target.repos.is_empty() {
-        String::new()
-    } else {
-        let quoted = target
-            .repos
-            .iter()
-            .map(|repo| sh_quote(repo))
-            .collect::<Vec<_>>()
-            .join(" ");
-        format!("  printf '%s\\n' {quoted}\n")
-    };
-    let discover = if target.discover {
-        "  find \"$HOME\" -maxdepth 4 -name .git -prune -print 2>/dev/null | sed 's|/\\.git$||'\n"
-    } else {
-        ""
-    };
+    let dirs = target
+        .dirs
+        .iter()
+        .map(|dir| sh_quote(dir))
+        .collect::<Vec<_>>()
+        .join(" ");
     let since = since.map(|since| since.to_rfc3339()).unwrap_or_default();
 
     format!(
@@ -231,8 +205,18 @@ pub(crate) fn build_script(target: &WslTarget, since: Option<DateTime<Utc>>) -> 
 since={since}
 [ -z "$since" ] || printf '\036G\037%s\n' "$(git config --global --get user.email 2>/dev/null)"
 repos() {{
-  :
-{explicit}{discover}}}
+  for dir in {dirs}; do
+    case $dir in
+      "~") dir=$HOME ;;
+      "~/"*) dir=$HOME/${{dir#"~/"}} ;;
+    esac
+    if [ -e "$dir/.git" ]; then
+      printf '%s\n' "$dir"
+    else
+      find "$dir" -maxdepth 4 -name .git -prune -print 2>/dev/null | sed 's|/\.git$||'
+    fi
+  done
+}}
 repos | sort -u | while IFS= read -r repo; do
   [ -n "$repo" ] && [ -e "$repo/.git" ] || continue
   if [ -z "$since" ]; then

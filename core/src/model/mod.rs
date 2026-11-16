@@ -20,6 +20,7 @@ pub use common::{
     collecting_response::CollectingResponse, error_response::ErrorResponse,
     output_format::OutputFormat, provider_config_field_state_dto::ProviderConfigFieldStateDto,
     provider_config_field_value_dto::ProviderConfigFieldValueDto,
+    provider_config_map_entry_dto::ProviderConfigMapEntryDto,
     provider_config_provider_state_dto::ProviderConfigProviderStateDto,
     provider_config_save_request_dto::ProviderConfigSaveRequestDto,
     provider_config_save_response_dto::ProviderConfigSaveResponseDto,

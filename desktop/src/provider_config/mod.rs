@@ -1,13 +1,15 @@
 use activity_log_core::{
     model::{
-        ProviderConfigFieldStateDto, ProviderConfigFieldValueDto, ProviderConfigProviderStateDto,
-        ProviderConfigSaveRequestDto, ProviderConfigSnapshotDto, ProviderConfigValueDto, Source,
+        ProviderConfigFieldStateDto, ProviderConfigFieldValueDto, ProviderConfigMapEntryDto,
+        ProviderConfigProviderStateDto, ProviderConfigSaveRequestDto, ProviderConfigSnapshotDto,
+        ProviderConfigValueDto, Source,
     },
     provider::{
         git::{GIT_DIRS, default_git_root},
         provider_config::{
-            ConfigSource, ProviderConfigKey, ProviderConfigShape, ProviderConfigValueType,
-            clean_config_list, encode_config_list, parse_config_list, provider_config_key_accepts,
+            ConfigMap, ConfigSource, ProviderConfigKey, ProviderConfigShape,
+            ProviderConfigValueType, clean_config_list, clean_config_map, encode_config_list,
+            encode_config_map, parse_config_list, parse_config_map, provider_config_key_accepts,
             provider_config_value_matches_type,
         },
         provider_registry,
@@ -66,20 +68,23 @@ pub(crate) fn read_store_provider_config(
             JsonValue::String(string) => Some(string.clone()),
             JsonValue::Bool(boolean) => Some(boolean.to_string()),
             JsonValue::Number(number) => Some(number.to_string()),
-            JsonValue::Array(items) => {
-                let items = items
+            JsonValue::Array(items) => Some(encode_config_list(&string_items(items).ok_or_else(
+                || format!("Stored provider config key '{key}' must be a list of strings"),
+            )?)),
+            JsonValue::Object(entries) => {
+                let map = entries
                     .iter()
-                    .map(|item| item.as_str().map(str::to_string))
-                    .collect::<Option<Vec<_>>>()
+                    .map(|(name, items)| {
+                        let items = items.as_array().and_then(|items| string_items(items))?;
+                        Some((name.clone(), items))
+                    })
+                    .collect::<Option<ConfigMap>>()
                     .ok_or_else(|| {
-                        format!("Stored provider config key '{key}' must be a list of strings")
+                        format!(
+                            "Stored provider config key '{key}' must map names to lists of strings"
+                        )
                     })?;
-                Some(encode_config_list(&items))
-            }
-            _ => {
-                return Err(format!(
-                    "Stored provider config key '{key}' has unsupported JSON type"
-                ));
+                Some(encode_config_map(&map))
             }
         };
 
@@ -87,6 +92,13 @@ pub(crate) fn read_store_provider_config(
     }
 
     Ok(values)
+}
+
+fn string_items(items: &[JsonValue]) -> Option<Vec<String>> {
+    items
+        .iter()
+        .map(|item| item.as_str().map(str::to_string))
+        .collect()
 }
 
 pub(crate) fn write_store_provider_config(
@@ -100,16 +112,15 @@ pub(crate) fn write_store_provider_config(
     let json_values = values
         .iter()
         .map(|(key, value)| {
-            let serialized = match value {
-                // Lists are kept as JSON arrays, so the file stays readable and editable.
-                Some(raw) if is_list_key(key) => JsonValue::Array(
-                    parse_config_list(raw)
-                        .into_iter()
-                        .map(JsonValue::String)
-                        .collect(),
-                ),
-                Some(string) => JsonValue::String(string.clone()),
-                None => JsonValue::Null,
+            // Lists and maps are kept as JSON, so the file stays readable and editable.
+            let serialized = match (value, shape_of(key)) {
+                (None, _) => JsonValue::Null,
+                (Some(raw), Some(ProviderConfigShape::List(_))) => {
+                    JsonValue::from(parse_config_list(raw))
+                }
+                (Some(raw), Some(ProviderConfigShape::Map(_))) => parse_config_map(raw)
+                    .map_or_else(|| JsonValue::String(raw.clone()), JsonValue::from_iter),
+                (Some(string), _) => JsonValue::String(string.clone()),
             };
             (key.clone(), serialized)
         })
@@ -139,36 +150,34 @@ pub(crate) fn apply_provider_config_updates(
             )
         })?;
 
+        let invalid = |expected: String| format!("Invalid value for '{}': {expected}", value.key);
         let next = match (&value.value, requirement.shape) {
             (None, _) => None,
-            // An empty list is kept: it means "none", while clearing means "use the default".
+            // An empty list or map is kept: it means "none", while clearing means "use the
+            // default".
             (Some(ProviderConfigValueDto::List(items)), ProviderConfigShape::List(value_type)) => {
                 let items = clean_config_list(items);
-                if let Some(bad) = items
-                    .iter()
-                    .find(|item| !provider_config_value_matches_type(item, value_type))
-                {
-                    return Err(format!(
-                        "Invalid item \"{bad}\" for '{}': expected {value_type}",
-                        value.key
-                    ));
-                }
+                check_items(&value.key, &items, value_type)?;
                 Some(encode_config_list(&items))
+            }
+            (Some(ProviderConfigValueDto::Map(map)), ProviderConfigShape::Map(value_type)) => {
+                let map = clean_config_map(map);
+                check_items(&value.key, map.values().flatten(), value_type)?;
+                Some(encode_config_map(&map))
             }
             (Some(ProviderConfigValueDto::Text(raw)), ProviderConfigShape::List(value_type)) => {
                 if !provider_config_key_accepts(**requirement, raw) {
-                    return Err(format!(
-                        "Invalid value for '{}': expected a list of {value_type}",
-                        value.key
-                    ));
+                    return Err(invalid(format!("expected a list of {value_type}")));
                 }
                 Some(encode_config_list(&parse_config_list(raw)))
             }
-            (Some(ProviderConfigValueDto::List(_)), ProviderConfigShape::Single(value_type)) => {
-                return Err(format!(
-                    "Invalid value for '{}': expected {value_type}, not a list",
-                    value.key
-                ));
+            (Some(ProviderConfigValueDto::Text(raw)), ProviderConfigShape::Map(_)) => {
+                match parse_config_map(raw) {
+                    Some(map) if provider_config_key_accepts(**requirement, raw) => {
+                        Some(encode_config_map(&map))
+                    }
+                    _ => return Err(invalid(format!("expected {}", requirement.shape))),
+                }
             }
             (Some(ProviderConfigValueDto::Text(raw)), ProviderConfigShape::Single(value_type)) => {
                 let candidate = raw.trim();
@@ -177,11 +186,14 @@ pub(crate) fn apply_provider_config_updates(
                 } else if provider_config_value_matches_type(candidate, value_type) {
                     Some(candidate.to_string())
                 } else {
-                    return Err(format!(
-                        "Invalid value for '{}': expected {value_type}",
-                        value.key
-                    ));
+                    return Err(invalid(format!("expected {value_type}")));
                 }
+            }
+            (Some(ProviderConfigValueDto::List(_)), shape) => {
+                return Err(invalid(format!("expected {shape}, not a list")));
+            }
+            (Some(ProviderConfigValueDto::Map(_)), shape) => {
+                return Err(invalid(format!("expected {shape}, not lists by name")));
             }
         };
 
@@ -189,6 +201,22 @@ pub(crate) fn apply_provider_config_updates(
     }
 
     Ok(())
+}
+
+fn check_items<'a>(
+    key: &str,
+    items: impl IntoIterator<Item = &'a String>,
+    value_type: ProviderConfigValueType,
+) -> Result<(), String> {
+    match items
+        .into_iter()
+        .find(|item| !provider_config_value_matches_type(item, value_type))
+    {
+        Some(bad) => Err(format!(
+            "Invalid item \"{bad}\" for '{key}': expected {value_type}"
+        )),
+        None => Ok(()),
+    }
 }
 
 fn exposed_provider_requirements_for(source: Source) -> Result<Vec<ProviderConfigKey>, String> {
@@ -200,16 +228,18 @@ fn exposed_provider_requirements_for(source: Source) -> Result<Vec<ProviderConfi
     Ok(adapter.config_requirements().to_vec())
 }
 
-fn is_list_key(key: &str) -> bool {
-    provider_registry().into_iter().any(|provider| {
-        provider.config_requirements().iter().any(|requirement| {
-            requirement.name == key && matches!(requirement.shape, ProviderConfigShape::List(_))
-        })
+fn shape_of(key: &str) -> Option<ProviderConfigShape> {
+    provider_registry().into_iter().find_map(|provider| {
+        provider
+            .config_requirements()
+            .iter()
+            .find(|requirement| requirement.name == key)
+            .map(|requirement| requirement.shape)
     })
 }
 
-/// The configured value with its type. An unset list shows the default the provider falls back
-/// to, so the settings show what is actually used; a secret is never sent.
+/// The configured value with its type. An unset list or map shows the default the provider falls
+/// back to, so the settings show what is actually used; a secret is never sent.
 fn field_value(
     config_source: &dyn ConfigSource,
     source: &Source,
@@ -234,6 +264,16 @@ fn field_value(
                 None => default_list(source, requirement.name),
             },
         },
+        ProviderConfigShape::Map(item_type) => ProviderConfigFieldValueDto::Map {
+            item_type: item_type.into(),
+            entries: configured
+                .and_then(|raw| parse_config_map(&raw))
+                .unwrap_or_else(|| default_map(source, requirement.name))
+                .into_iter()
+                .map(|(name, items)| ProviderConfigMapEntryDto { name, items })
+                .collect(),
+            names: map_names(source, requirement.name),
+        },
     }
 }
 
@@ -242,9 +282,30 @@ fn default_list(source: &Source, key: &str) -> Vec<String> {
         (Source::Git, key) if key == GIT_DIRS.name() => default_git_root()
             .map(|root| vec![root.display().to_string()])
             .unwrap_or_default(),
+        _ => Vec::new(),
+    }
+}
+
+#[cfg_attr(not(target_os = "windows"), allow(unused_variables))]
+fn default_map(source: &Source, key: &str) -> ConfigMap {
+    match (source, key) {
         #[cfg(target_os = "windows")]
         (Source::Git, key)
-            if key == activity_log_core::provider::git::windows::WSL_DISTROS.name() =>
+            if key == activity_log_core::provider::git::windows::WSL_GIT_DIRS.name() =>
+        {
+            activity_log_core::provider::git::windows::default_wsl_dirs()
+        }
+        _ => ConfigMap::new(),
+    }
+}
+
+/// The names a map field can hold, offered when adding one.
+#[cfg_attr(not(target_os = "windows"), allow(unused_variables))]
+fn map_names(source: &Source, key: &str) -> Vec<String> {
+    match (source, key) {
+        #[cfg(target_os = "windows")]
+        (Source::Git, key)
+            if key == activity_log_core::provider::git::windows::WSL_GIT_DIRS.name() =>
         {
             activity_log_core::provider::git::windows::default_wsl_distros()
         }

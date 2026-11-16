@@ -1,4 +1,6 @@
-use super::{WSL_DISTROS, WSL_GIT_DIRS, WslConfig, WslRepo, parse_wsl_repo, user_wsl_distros};
+use std::collections::BTreeMap;
+
+use super::{WSL_GIT_DIRS, WslConfig, home_dirs, parse_wsl_dir, user_wsl_distros};
 use crate::provider::provider_config::{ConfigSource, ProviderConfig};
 
 struct MapSource(Vec<(&'static str, &'static str)>);
@@ -12,52 +14,56 @@ impl ConfigSource for MapSource {
     }
 }
 
-fn wsl_config(values: Vec<(&'static str, &'static str)>) -> anyhow::Result<WslConfig> {
+fn wsl_config(value: &'static str) -> anyhow::Result<WslConfig> {
     WslConfig::from_config(&ProviderConfig::resolve(
-        &MapSource(values),
-        &[WSL_DISTROS, WSL_GIT_DIRS],
+        &MapSource(vec![("WSL_GIT_DIRS", value)]),
+        &[WSL_GIT_DIRS],
     ))
 }
 
+fn dirs(entries: &[(&str, &[&str])]) -> BTreeMap<String, Vec<String>> {
+    entries
+        .iter()
+        .map(|(distro, dirs)| {
+            (
+                distro.to_string(),
+                dirs.iter().map(|dir| dir.to_string()).collect(),
+            )
+        })
+        .collect()
+}
+
 #[test]
-fn tells_unset_distros_from_an_empty_list() {
+fn tells_unset_folders_from_an_empty_map() {
+    assert_eq!(wsl_config(" ").unwrap().dirs, None);
+    assert_eq!(wsl_config("{}").unwrap().dirs, Some(BTreeMap::new()));
+}
+
+#[test]
+fn reads_folders_per_distribution() {
+    let config =
+        wsl_config(r#"{"NixOS": ["~", "/home/nixos/trn/atlas/", " ~/projects "], "Debian": []}"#)
+            .unwrap();
+
     assert_eq!(
-        wsl_config(vec![("WSL_DISTROS", " ")]).unwrap().distros,
-        None
-    );
-    assert_eq!(
-        wsl_config(vec![("WSL_DISTROS", "[]")]).unwrap().distros,
-        Some(Vec::new())
+        config.dirs,
+        Some(dirs(&[
+            ("Debian", &[]),
+            ("NixOS", &["~", "/home/nixos/trn/atlas", "~/projects"]),
+        ]))
     );
 }
 
 #[test]
-fn reads_wsl_repositories() {
-    let config = wsl_config(vec![(
-        "WSL_GIT_DIRS",
-        "NixOS:/home/nixos/trn/atlas, NixOS:/home/nixos/projects/stitch-lab/",
-    )])
-    .unwrap();
-
-    assert_eq!(
-        config.repos,
-        vec![
-            WslRepo {
-                distro: "NixOS".to_string(),
-                path: "/home/nixos/trn/atlas".to_string(),
-            },
-            WslRepo {
-                distro: "NixOS".to_string(),
-                path: "/home/nixos/projects/stitch-lab".to_string(),
-            },
-        ]
-    );
-    assert!(wsl_config(vec![("WSL_GIT_DIRS", "C:/work/repo")]).is_err());
-    assert!(parse_wsl_repo("NixOS:relative/path").is_err());
+fn rejects_folders_that_are_not_linux_paths() {
+    assert!(wsl_config(r#"{"NixOS": ["C:/work/repo"]}"#).is_err());
+    assert!(parse_wsl_dir("NixOS", "relative/path").is_err());
+    assert!(parse_wsl_dir("NixOS", "~user").is_err());
+    assert_eq!(parse_wsl_dir("NixOS", "/").unwrap(), "/");
 }
 
 #[test]
-fn default_distros_skip_tool_managed_ones() {
+fn default_folders_are_the_home_of_every_user_distribution() {
     let names = [
         "Ubuntu",
         "docker-desktop",
@@ -68,5 +74,8 @@ fn default_distros_skip_tool_managed_ones() {
     .map(str::to_string)
     .to_vec();
 
-    assert_eq!(user_wsl_distros(names), ["Ubuntu", "NixOS"]);
+    assert_eq!(
+        home_dirs(user_wsl_distros(names)),
+        dirs(&[("NixOS", &["~"]), ("Ubuntu", &["~"])])
+    );
 }

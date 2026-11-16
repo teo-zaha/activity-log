@@ -44,6 +44,14 @@ impl ProviderConfig {
             .map(parse_config_list)
     }
 
+    /// The lists of a map value by name, or `None` when the key is unset, blank or not a map.
+    /// A stored empty map (`{}`) is `Some` and empty, like an empty list.
+    pub fn map(&self, key: ProviderConfigKey) -> Option<ConfigMap> {
+        self.get(key)
+            .filter(|value| !value.trim().is_empty())
+            .and_then(parse_config_map)
+    }
+
     pub fn missing_required_keys<'a>(&self, requirements: &'a [ProviderConfigKey]) -> Vec<&'a str> {
         requirements
             .iter()
@@ -97,6 +105,11 @@ pub fn provider_config_key_accepts(key: ProviderConfigKey, value: &str) -> bool 
         ProviderConfigShape::List(item_type) => parse_config_list(value)
             .iter()
             .all(|item| provider_config_value_matches_type(item, item_type)),
+        ProviderConfigShape::Map(item_type) => parse_config_map(value).is_some_and(|map| {
+            map.values()
+                .flatten()
+                .all(|item| provider_config_value_matches_type(item, item_type))
+        }),
     }
 }
 
@@ -134,6 +147,30 @@ pub fn clean_config_list(items: &[String]) -> Vec<String> {
 /// The stored form of a list value, read back by [`parse_config_list`].
 pub fn encode_config_list(items: &[String]) -> String {
     serde_json::to_string(items).expect("a list of strings always serializes")
+}
+
+/// Lists by name, the value of a [`ProviderConfigShape::Map`] key.
+pub type ConfigMap = BTreeMap<String, Vec<String>>;
+
+/// Reads a map value, a JSON object of string arrays, cleaned by [`clean_config_map`]. There
+/// is no plain-text form: `None` means it is not such an object.
+pub fn parse_config_map(value: &str) -> Option<ConfigMap> {
+    serde_json::from_str::<ConfigMap>(value)
+        .ok()
+        .map(|map| clean_config_map(&map))
+}
+
+/// Trims names and items like [`clean_config_list`]; entries without a name are dropped.
+pub fn clean_config_map(map: &ConfigMap) -> ConfigMap {
+    map.iter()
+        .map(|(name, items)| (name.trim().to_string(), clean_config_list(items)))
+        .filter(|(name, _)| !name.is_empty())
+        .collect()
+}
+
+/// The stored form of a map value, read back by [`parse_config_map`].
+pub fn encode_config_map(map: &ConfigMap) -> String {
+    serde_json::to_string(map).expect("lists of strings by name always serialize")
 }
 
 fn parse_bool(value: &str) -> Option<bool> {

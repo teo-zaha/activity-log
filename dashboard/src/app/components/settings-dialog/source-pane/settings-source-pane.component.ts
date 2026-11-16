@@ -24,9 +24,17 @@ interface ProviderHealthVm {
 type DraftValues = Record<string, string | null>
 /** Items of `list` fields by key; blank rows are dropped on save. */
 type ListDrafts = Record<string, string[]>
+/** One name of a `map` field with its items, such as a WSL distribution and its folders. */
+interface MapEntryDraft {
+  name: string
+  items: string[]
+}
+/** Entries of `map` fields by key; blank item rows are dropped on save. */
+type MapDrafts = Record<string, MapEntryDraft[]>
 
 type SingleField = Extract<ProviderConfigFieldStateDto, { shape: 'single' }>
 type ListField = Extract<ProviderConfigFieldStateDto, { shape: 'list' }>
+type MapField = Extract<ProviderConfigFieldStateDto, { shape: 'map' }>
 
 function isSingleField(field: ProviderConfigFieldStateDto): field is SingleField {
   return field.shape === 'single'
@@ -34,6 +42,24 @@ function isSingleField(field: ProviderConfigFieldStateDto): field is SingleField
 
 function isListField(field: ProviderConfigFieldStateDto): field is ListField {
   return field.shape === 'list'
+}
+
+function isMapField(field: ProviderConfigFieldStateDto): field is MapField {
+  return field.shape === 'map'
+}
+
+function copyEntries(entries: readonly MapEntryDraft[]): MapEntryDraft[] {
+  return entries.map(entry => ({ name: entry.name, items: [...entry.items] }))
+}
+
+function sameEntries(a: readonly MapEntryDraft[], b: readonly MapEntryDraft[]): boolean {
+  return (
+    a.length === b.length &&
+    a.every((entry, index) => {
+      const other = b[index]
+      return other !== undefined && entry.name === other.name && sameItems(entry.items, other.items)
+    })
+  )
 }
 
 /** Trimmed, without blank rows: what the backend would store. */
@@ -152,13 +178,57 @@ export class SettingsSourcePaneComponent {
     })
   })
 
+  /** The configured entries, or the default the provider uses while the key is unset. */
+  private readonly initialMaps = computed<MapDrafts>(() =>
+    Object.fromEntries(
+      this.configFields()
+        .filter(isMapField)
+        .map(field => [field.key, copyEntries(field.entries)])
+    )
+  )
+  protected readonly mapDrafts = linkedSignal<MapDrafts>(() =>
+    Object.fromEntries(
+      Object.entries(this.initialMaps()).map(([key, entries]) => [key, copyEntries(entries)])
+    )
+  )
+  /** Map keys the user reset, so their default applies again after saving. */
+  private readonly resetMaps = linkedSignal<MapDrafts, ReadonlySet<string>>({
+    source: this.initialMaps,
+    computation: () => new Set(),
+  })
+
+  /** Like a list, every item is checked against the field's value type. */
+  protected readonly mapForm = form(this.mapDrafts, path => {
+    applyEach(path, entries => {
+      applyEach(entries, entry => {
+        disabled(entry, { when: () => this.savingConfig() })
+        applyEach(entry.items, item => {
+          // `pathKeys` is `[fieldKey, entryIndex, 'items', itemIndex]`.
+          validate(item, ({ value, pathKeys }) => {
+            const field = this.fieldByKey().get(pathKeys()[0] ?? '')
+            const text = value().trim()
+            if (!field || !isMapField(field) || text === '') return undefined
+            const message = validateProviderConfigValue(text, field.itemType)
+            return message ? { kind: 'providerConfigValue', message } : undefined
+          })
+        })
+      })
+    })
+  })
+
   private readonly saveError = linkedSignal<string, string | null>({
     source: this.selectionKey,
     computation: () => null,
   })
   /** Hidden again by any edit, and by switching source. */
   protected readonly configMessage = linkedSignal<unknown, string | null>({
-    source: () => [this.draftValues(), this.listDrafts(), this.resetLists()],
+    source: () => [
+      this.draftValues(),
+      this.listDrafts(),
+      this.resetLists(),
+      this.mapDrafts(),
+      this.resetMaps(),
+    ],
     computation: () => null,
   })
   protected readonly configError = computed(
@@ -193,6 +263,12 @@ export class SettingsSourcePaneComponent {
     for (const field of this.configFields()) {
       if (isListField(field)) {
         const change = this.pendingListValue(field)
+        if (change !== undefined) values.push({ key: field.key, value: change })
+        continue
+      }
+
+      if (isMapField(field)) {
+        const change = this.pendingMapValue(field)
         if (change !== undefined) values.push({ key: field.key, value: change })
         continue
       }
@@ -232,7 +308,7 @@ export class SettingsSourcePaneComponent {
     () =>
       new Map(
         this.pendingRequest()?.values.flatMap(({ key, value }) =>
-          Array.isArray(value) ? [] : [[key, value] as const]
+          typeof value === 'string' || value === null ? [[key, value] as const] : []
         )
       )
   )
@@ -270,7 +346,8 @@ export class SettingsSourcePaneComponent {
       !this.savingConfig() &&
       this.pendingRequest() !== null &&
       this.draftForm().valid() &&
-      this.listForm().valid()
+      this.listForm().valid() &&
+      this.mapForm().valid()
   )
 
   protected supportedOsLabel(os: SupportedOs): string {
@@ -323,6 +400,74 @@ export class SettingsSourcePaneComponent {
     })
   }
 
+  protected mapItemError(key: string, entryIndex: number, itemIndex: number): string | null {
+    const [error] = this.mapForm[key][entryIndex].items[itemIndex]().errors()
+    return error?.message ?? null
+  }
+
+  private mapItemErrors(key: string): string[] {
+    return (this.mapDrafts()[key] ?? []).flatMap((entry, entryIndex) =>
+      entry.items.flatMap((_, itemIndex) => this.mapItemError(key, entryIndex, itemIndex) ?? [])
+    )
+  }
+
+  protected isMapReset(field: MapField): boolean {
+    return this.resetMaps().has(field.key)
+  }
+
+  /** Names entry `index` can switch to: its own and every name no other entry holds. */
+  protected mapNameOptions(field: MapField, index: number): string[] {
+    const entries = this.mapDrafts()[field.key] ?? []
+    const own = entries[index]?.name
+    const taken = new Set(entries.filter((_, i) => i !== index).map(entry => entry.name))
+    const names =
+      own !== undefined && !field.names.includes(own) ? [own, ...field.names] : field.names
+    return names.filter(name => !taken.has(name))
+  }
+
+  /** The name the next added entry gets, or `null` once every name is in use. */
+  protected nextMapName(field: MapField): string | null {
+    const taken = new Set((this.mapDrafts()[field.key] ?? []).map(entry => entry.name))
+    return field.names.find(name => !taken.has(name)) ?? null
+  }
+
+  protected addMapEntry(field: MapField): void {
+    const name = this.nextMapName(field)
+    if (name === null) return
+    this.updateMapEntries(field, entries => [...entries, { name, items: [''] }])
+  }
+
+  protected removeMapEntry(field: MapField, index: number): void {
+    this.updateMapEntries(field, entries => entries.filter((_, i) => i !== index))
+  }
+
+  protected addMapItem(field: MapField, index: number): void {
+    this.updateMapEntries(field, entries =>
+      entries.map((entry, i) => (i === index ? { ...entry, items: [...entry.items, ''] } : entry))
+    )
+  }
+
+  protected removeMapItem(field: MapField, index: number, itemIndex: number): void {
+    this.updateMapEntries(field, entries =>
+      entries.map((entry, i) =>
+        i === index ? { ...entry, items: entry.items.filter((_, j) => j !== itemIndex) } : entry
+      )
+    )
+  }
+
+  /** Drops the configured map so the provider's default applies again. */
+  protected resetMap(field: MapField): void {
+    this.resetMaps.update(keys => new Set(keys).add(field.key))
+  }
+
+  protected undoMapReset(field: MapField): void {
+    this.resetMaps.update(keys => {
+      const next = new Set(keys)
+      next.delete(field.key)
+      return next
+    })
+  }
+
   protected fieldId(field: ProviderConfigFieldStateDto): string {
     return `provider-config-${this.provider().info.id}-${field.key}`
   }
@@ -345,7 +490,7 @@ export class SettingsSourcePaneComponent {
 
   protected fieldError(key: string): string | null {
     if (!(key in this.draftValues())) {
-      return this.listItemErrors(key)[0] ?? null
+      return [...this.listItemErrors(key), ...this.mapItemErrors(key)][0] ?? null
     }
 
     const [error] = this.draftForm[key]().errors()
@@ -413,6 +558,30 @@ export class SettingsSourcePaneComponent {
 
     const items = cleanItems(this.listDrafts()[field.key] ?? [])
     return sameItems(items, this.initialLists()[field.key] ?? []) ? undefined : items
+  }
+
+  /**
+   * Like {@link pendingListValue}: `null` resets, an object of lists by name replaces the map
+   * (empty means none), and `undefined` means unchanged.
+   */
+  private pendingMapValue(field: MapField): Record<string, string[]> | null | undefined {
+    if (this.resetMaps().has(field.key)) {
+      return field.isSet ? null : undefined
+    }
+
+    const entries = (this.mapDrafts()[field.key] ?? []).map(entry => ({
+      name: entry.name,
+      items: cleanItems(entry.items),
+    }))
+    if (sameEntries(entries, this.initialMaps()[field.key] ?? [])) return undefined
+    return Object.fromEntries(entries.map(entry => [entry.name, entry.items]))
+  }
+
+  private updateMapEntries(
+    field: MapField,
+    change: (entries: MapEntryDraft[]) => MapEntryDraft[]
+  ): void {
+    this.mapDrafts.update(maps => ({ ...maps, [field.key]: change(maps[field.key] ?? []) }))
   }
 
   private initialValueFor(field: SingleField): string {
