@@ -10,8 +10,9 @@ pub mod macos;
 mod windows;
 #[cfg(target_os = "windows")]
 pub use windows::{
-    ComGuard, outlook_is_installed, query_windows_event_log, run_wsl_script,
-    running_outlook_application, system_log_access, wsl_distribution_names,
+    ComGuard, DispatchObject, active_outlook_application, connect_outlook_application,
+    outlook_is_installed, process_is_elevated, query_windows_event_log, run_wsl_script,
+    running_process_names, system_log_access, wsl_distribution_names,
 };
 
 /// A `Command` that never opens a console window, for subprocesses run by the GUI app.

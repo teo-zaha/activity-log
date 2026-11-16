@@ -3,10 +3,13 @@ use chrono::{DateTime, Days, Utc};
 
 use crate::{
     model::{CollectOptions, OutlookEntry, outlook::raw_outlook_event::RawOutlookEvent},
-    platform::{ComGuard, running_outlook_application},
+    platform::{
+        ComGuard, DispatchObject, active_outlook_application, connect_outlook_application,
+        process_is_elevated, running_process_names,
+    },
 };
 
-use super::normalize_outlook_events;
+use super::{OutlookFallback, normalize_outlook_events};
 
 pub(super) async fn collect_outlook(options: &CollectOptions) -> Result<Vec<OutlookEntry>> {
     let blocking_options = *options;
@@ -18,7 +21,7 @@ pub(super) async fn collect_outlook(options: &CollectOptions) -> Result<Vec<Outl
 
 fn collect_outlook_blocking(options: &CollectOptions) -> Result<Vec<RawOutlookEvent>> {
     let _com = ComGuard::new()?;
-    let outlook = running_outlook_application()?;
+    let outlook = attach_to_outlook()?;
     let namespace = outlook.method_dispatch_string("GetNamespace", "MAPI")?;
     let calendar = namespace.method_dispatch_i32("GetDefaultFolder", 9)?;
     let items = calendar.property_dispatch("Items")?;
@@ -52,6 +55,24 @@ fn collect_outlook_blocking(options: &CollectOptions) -> Result<Vec<RawOutlookEv
     }
 
     Ok(events)
+}
+
+/// Attaches to the Outlook the user has open. Never starts Outlook: a headless instance often has
+/// no connection, and starting one would open a full Outlook window.
+fn attach_to_outlook() -> Result<DispatchObject> {
+    if let Some(outlook) = active_outlook_application()? {
+        return Ok(outlook);
+    }
+    let names = running_process_names();
+    match OutlookFallback::decide(names.iter().map(String::as_str), process_is_elevated()) {
+        OutlookFallback::Connect => connect_outlook_application().map_err(|err| {
+            anyhow::anyhow!(
+                "{}: {err:#}. If Outlook runs as administrator, start it normally.",
+                OutlookFallback::Connect.message()
+            )
+        }),
+        other => Err(anyhow::anyhow!(other.message())),
+    }
 }
 
 fn format_outlook_filter_value(value: DateTime<Utc>) -> String {

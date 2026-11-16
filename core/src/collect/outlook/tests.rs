@@ -2,7 +2,7 @@ use chrono::{DateTime, Days, Duration, NaiveDate, Utc};
 
 use crate::model::{CollectOptions, outlook::raw_outlook_event::RawOutlookEvent};
 
-use super::{normalize_outlook_events, parse_raw_outlook_events};
+use super::{OutlookFallback, normalize_outlook_events, parse_raw_outlook_events};
 
 /// Whole UTC days `since..=until`.
 fn options(since: &str, until: &str) -> CollectOptions {
@@ -152,4 +152,43 @@ fn excludes_non_default_calendar_events() {
 
     assert_eq!(normalized.len(), 1);
     assert_eq!(normalized[0].title, "Default");
+}
+
+#[test]
+fn running_classic_outlook_is_connected_even_without_a_registered_object() {
+    let processes = ["System", "explorer.exe", "OUTLOOK.EXE"];
+
+    assert_eq!(
+        OutlookFallback::decide(processes, false),
+        OutlookFallback::Connect
+    );
+    assert_eq!(
+        OutlookFallback::decide(processes, true),
+        OutlookFallback::Elevated
+    );
+}
+
+#[test]
+fn classic_outlook_wins_over_the_new_one() {
+    assert_eq!(
+        OutlookFallback::decide(["olk.exe", "outlook.exe"], false),
+        OutlookFallback::Connect
+    );
+}
+
+#[test]
+fn reports_new_outlook_and_a_closed_outlook() {
+    assert_eq!(
+        OutlookFallback::decide(["explorer.exe", "olk.exe"], false),
+        OutlookFallback::NewOutlookOnly
+    );
+    assert_eq!(
+        OutlookFallback::decide(["explorer.exe"], true),
+        OutlookFallback::NotRunning
+    );
+    assert!(
+        OutlookFallback::NewOutlookOnly
+            .message()
+            .contains("classic Outlook")
+    );
 }
