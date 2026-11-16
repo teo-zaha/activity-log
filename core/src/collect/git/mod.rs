@@ -43,11 +43,33 @@ mod windows_impl {
     }
 }
 
-/// Commits found so far, and the repositories skipped for having no `user.email`.
+/// Everything read from the repositories, before keeping the user's own commits.
 #[derive(Debug, Default)]
 pub(crate) struct RepoCommits {
+    pub repos: Vec<RepoHistory>,
+    /// Emails configured outside any repository, such as a WSL distribution's global config.
+    pub identities: Vec<String>,
+}
+
+/// One repository's commits in the range, by every author.
+#[derive(Debug)]
+pub(crate) struct RepoHistory {
+    /// The name used in messages, such as `api` or `NixOS:api`.
+    pub label: String,
+    /// The repository's effective `user.email`.
+    pub email: Option<String>,
+    pub commits: Vec<GitEntry>,
+}
+
+/// The user's commits: those authored with any email the user configured anywhere.
+#[derive(Debug, Default)]
+pub(crate) struct OwnCommits {
     pub entries: Vec<GitEntry>,
+    /// The emails matched, lowercased and sorted. Empty when no email is configured at all.
+    pub identities: Vec<String>,
     pub without_email: Vec<String>,
+    /// Commits in the range by other authors.
+    pub ignored: usize,
 }
 
 // Directories that never hold a user's own repositories but are expensive to walk.
@@ -75,8 +97,7 @@ pub(crate) fn collect_local_repos(
     config: &GitConfig,
 ) -> Result<RepoCommits> {
     let dirs = resolve_git_repos(config)?;
-    let mut entries = Vec::new();
-    let mut without_email = Vec::new();
+    let mut repos = Vec::new();
     let mut via_cli = 0;
     diagnostics::info("git", format!("Scanning {} repositories", dirs.len()));
 
@@ -96,24 +117,26 @@ pub(crate) fn collect_local_repos(
                 continue;
             }
         };
-        let Some(author_email) = repo_user_email(&repo).or_else(|| {
+        let email = repo_user_email(&repo).or_else(|| {
             let email = git_cli_user_email(&repo_path)?;
             via_cli += 1;
             Some(email)
-        }) else {
-            without_email.push(repo_name);
-            continue;
-        };
-        match collect_repo_entries(&repo, &repo_name, &author_email, options) {
-            Ok(mut repo_entries) => entries.append(&mut repo_entries),
-            Err(err) => diagnostics::warn(
+        });
+        let commits = collect_repo_entries(&repo, &repo_name, options).unwrap_or_else(|err| {
+            diagnostics::warn(
                 "git",
                 format!(
                     "Skipped {}: reading history failed: {err}",
                     repo_path.display()
                 ),
-            ),
-        }
+            );
+            Vec::new()
+        });
+        repos.push(RepoHistory {
+            label: repo_name,
+            email,
+            commits,
+        });
     }
 
     if via_cli > 0 {
@@ -123,25 +146,82 @@ pub(crate) fn collect_local_repos(
         );
     }
     Ok(RepoCommits {
-        entries,
-        without_email,
+        repos,
+        identities: Vec::new(),
     })
 }
 
-/// Reports skipped repositories and orders the commits newest first.
+/// Keeps the commits authored with any of the user's emails. A repository without `user.email`
+/// is matched against the emails of the others, so one configured identity covers them all.
+/// Emails compare case-insensitively, as git hosts do.
+pub(crate) fn own_commits(commits: RepoCommits) -> OwnCommits {
+    let normalize = |email: &str| email.trim().to_lowercase();
+    let identities = commits
+        .repos
+        .iter()
+        .filter_map(|repo| repo.email.as_deref())
+        .chain(commits.identities.iter().map(String::as_str))
+        .map(normalize)
+        .filter(|email| !email.is_empty())
+        .collect::<BTreeSet<_>>();
+    let mut own = OwnCommits::default();
+    for repo in commits.repos {
+        if repo.email.is_none() {
+            own.without_email.push(repo.label);
+        }
+        if identities.is_empty() {
+            continue;
+        }
+        for commit in repo.commits {
+            if identities.contains(&normalize(&commit.author)) {
+                own.entries.push(commit);
+            } else {
+                own.ignored += 1;
+            }
+        }
+    }
+    own.identities = identities.into_iter().collect();
+    own
+}
+
+/// Reports how commits were matched and orders them newest first.
 fn finish(commits: RepoCommits) -> Vec<GitEntry> {
-    let RepoCommits {
+    let OwnCommits {
         mut entries,
+        identities,
         without_email,
-    } = commits;
-    if !without_email.is_empty() {
-        diagnostics::warn(
+        ignored,
+    } = own_commits(commits);
+    if identities.is_empty() {
+        if !without_email.is_empty() {
+            diagnostics::warn(
+                "git",
+                format!(
+                    "Skipped {} repositories: no user.email is set in any of them, so your commits cannot be told apart (set it with `git config --global user.email`): {}",
+                    without_email.len(),
+                    without_email.join(", ")
+                ),
+            );
+        }
+    } else {
+        if !without_email.is_empty() {
+            diagnostics::info(
+                "git",
+                format!(
+                    "Matched {} repositories without user.email by your other emails: {}",
+                    without_email.len(),
+                    without_email.join(", ")
+                ),
+            );
+        }
+        let ignored = if ignored > 0 {
+            format!("; ignored {ignored} by other authors")
+        } else {
+            String::new()
+        };
+        diagnostics::info(
             "git",
-            format!(
-                "Skipped {} repositories without user.email (set it with `git config --global user.email`): {}",
-                without_email.len(),
-                without_email.join(", ")
-            ),
+            format!("Keeping commits by {}{ignored}", identities.join(", ")),
         );
     }
 
@@ -221,10 +301,10 @@ pub(crate) fn resolve_git_repos_from_roots(roots: &[PathBuf]) -> Vec<PathBuf> {
     repos.into_iter().collect()
 }
 
+/// Every commit in the range reachable from any ref, by any author.
 fn collect_repo_entries(
     repo: &Repository,
     repo_name: &str,
-    author_email: &str,
     options: &CollectOptions,
 ) -> Result<Vec<GitEntry>> {
     let head = head_target(repo);
@@ -247,10 +327,6 @@ fn collect_repo_entries(
         let decoded = commit.decode()?;
         let author_signature = commit.author()?;
         let author = bstr_to_string(author_signature.email);
-        if author != author_email {
-            continue;
-        }
-
         let timestamp = gix_time_to_rfc3339(author_signature.time()?)?;
         let timestamp_utc = DateTime::parse_from_rfc3339(&timestamp)?.with_timezone(&Utc);
         if !options.contains(timestamp_utc) {

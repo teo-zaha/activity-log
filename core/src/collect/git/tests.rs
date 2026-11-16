@@ -5,7 +5,7 @@ use tempfile::{TempDir, tempdir};
 
 use crate::{model::CollectOptions, provider::git::GitConfig};
 
-use super::collect_git;
+use super::{OwnCommits, RepoCommits, RepoHistory, collect_git, own_commits};
 use crate::{model::GitEntry, provider::current_os};
 
 /// Collects as the provider does on this machine, so Windows CI goes through its own impl.
@@ -165,26 +165,121 @@ async fn excludes_commits_with_non_matching_author_email() {
 }
 
 #[tokio::test]
-async fn skips_repositories_without_user_email() {
-    let repo = init_repo();
+async fn repositories_without_user_email_match_the_emails_of_the_others() {
+    let configured = init_repo();
+    set_repo_email(configured.path(), "me@example.com");
+    let unconfigured = init_repo();
     commit_file(
-        repo.path(),
+        unconfigured.path(),
         "note.txt",
         "note",
         "No config email",
         None,
-        "me@example.com",
+        "Me@Example.com",
         utc_time(2026, 3, 5, 9, 0, 0),
+    );
+    commit_file(
+        unconfigured.path(),
+        "other.txt",
+        "other",
+        "Someone else",
+        None,
+        "other@example.com",
+        utc_time(2026, 3, 5, 10, 0, 0),
     );
 
     let entries = collect(
         &options("2026-03-01", "2026-03-31"),
-        &GitConfig::local_only(vec![repo.path().to_path_buf()]),
+        &GitConfig::local_only(vec![
+            configured.path().to_path_buf(),
+            unconfigured.path().to_path_buf(),
+        ]),
     )
     .await
     .unwrap();
 
+    assert_eq!(
+        entries
+            .iter()
+            .map(|entry| entry.message.as_str())
+            .collect::<Vec<_>>(),
+        vec!["No config email"]
+    );
+}
+
+fn entry(repo: &str, hash: &str, author: &str) -> GitEntry {
+    GitEntry::new(
+        repo.to_string(),
+        hash.to_string(),
+        hash.to_string(),
+        author.to_string(),
+        String::new(),
+        "2026-03-05T09:00:00+01:00".to_string(),
+    )
+}
+
+fn history(label: &str, email: Option<&str>, commits: Vec<GitEntry>) -> RepoHistory {
+    RepoHistory {
+        label: label.to_string(),
+        email: email.map(str::to_string),
+        commits,
+    }
+}
+
+#[test]
+fn own_commits_match_every_known_email_case_insensitively() {
+    let own = own_commits(RepoCommits {
+        repos: vec![
+            history(
+                "api",
+                Some("Work@Example.com"),
+                vec![
+                    entry("api", "work", "work@example.com"),
+                    entry("api", "private", "me@example.org"),
+                    entry("api", "colleague", "colleague@example.com"),
+                ],
+            ),
+            history(
+                "NixOS:dotfiles",
+                None,
+                vec![entry("dotfiles", "dots", "ME@example.org")],
+            ),
+        ],
+        identities: vec![" me@example.org ".to_string(), String::new()],
+    });
+
+    assert_eq!(
+        own.entries
+            .iter()
+            .map(|entry| entry.hash.as_str())
+            .collect::<Vec<_>>(),
+        vec!["work", "private", "dots"]
+    );
+    assert_eq!(own.identities, vec!["me@example.org", "work@example.com"]);
+    assert_eq!(own.without_email, vec!["NixOS:dotfiles"]);
+    assert_eq!(own.ignored, 1);
+}
+
+#[test]
+fn own_commits_keep_nothing_without_any_identity() {
+    let own = own_commits(RepoCommits {
+        repos: vec![
+            history("api", None, vec![entry("api", "a", "me@example.com")]),
+            history("web", None, Vec::new()),
+        ],
+        identities: Vec::new(),
+    });
+
+    let OwnCommits {
+        entries,
+        identities,
+        without_email,
+        ignored,
+    } = own;
     assert!(entries.is_empty());
+    assert!(identities.is_empty());
+    assert_eq!(without_email, vec!["api", "web"]);
+    assert_eq!(ignored, 0);
 }
 
 #[tokio::test]

@@ -11,13 +11,12 @@ use chrono::{DateTime, Utc};
 
 #[cfg(target_os = "windows")]
 use super::RepoCommits;
-use crate::provider::git::GitConfig;
+use super::RepoHistory;
 #[cfg(target_os = "windows")]
+use crate::{diagnostics, platform::run_wsl_script, provider::git::windows::default_wsl_distros};
 use crate::{
-    diagnostics,
     model::{CollectOptions, GitEntry},
-    platform::run_wsl_script,
-    provider::git::windows::default_wsl_distros,
+    provider::git::GitConfig,
 };
 
 #[cfg(test)]
@@ -53,9 +52,17 @@ pub(crate) struct WslCommit {
     pub branch: String,
 }
 
+/// What the script found in one distribution.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub(crate) struct WslScan {
+    /// The distribution's global `user.email`, an identity even where repositories lack one.
+    pub global_email: Option<String>,
+    pub repos: Vec<WslRepoReport>,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum WslOutput {
-    Repos(Vec<WslRepoReport>),
+    Scanned(WslScan),
     /// The script could not run git at all, for example because it is not installed.
     Failed(String),
 }
@@ -108,13 +115,13 @@ pub(super) fn collect_repos(
     Ok(commits)
 }
 
-/// Adds the WSL commits in `options`; repositories without `user.email` are recorded as
-/// `distro:name`. A distribution that fails is logged and skipped.
+/// Adds the WSL repositories, labelled `distro:name`, with their commits in `options`. A
+/// distribution that fails is logged and skipped.
 #[cfg(target_os = "windows")]
 fn collect_wsl(config: &GitConfig, options: &CollectOptions, commits: &mut RepoCommits) {
     for target in wsl_targets(config) {
-        let repos = match run(&target, Some(options.start)) {
-            Ok(repos) => repos,
+        let scan = match run(&target, Some(options.start)) {
+            Ok(scan) => scan,
             Err(reason) => {
                 diagnostics::warn(
                     "git",
@@ -127,38 +134,49 @@ fn collect_wsl(config: &GitConfig, options: &CollectOptions, commits: &mut RepoC
             "git",
             format!(
                 "Scanning {} repositories in WSL {}",
-                repos.len(),
+                scan.repos.len(),
                 target.distro
             ),
         );
-        for repo in repos {
-            let name = repo_name(&repo.path).to_string();
-            let Some(email) = repo.email else {
-                commits
-                    .without_email
-                    .push(format!("{}:{name}", target.distro));
-                continue;
-            };
-            commits.entries.extend(
-                repo.commits
-                    .into_iter()
-                    .filter(|commit| commit.author_email == email)
-                    .filter(|commit| {
-                        DateTime::parse_from_rfc3339(&commit.author_time)
-                            .is_ok_and(|at| options.contains(at.to_utc()))
-                    })
-                    .map(|commit| {
-                        GitEntry::new(
-                            name.clone(),
-                            commit.hash,
-                            commit.subject,
-                            commit.author_email,
-                            commit.branch,
-                            commit.author_time,
-                        )
-                    }),
-            );
-        }
+        commits.identities.extend(scan.global_email);
+        commits.repos.extend(
+            scan.repos
+                .into_iter()
+                .map(|repo| repo_history(&target.distro, repo, options)),
+        );
+    }
+}
+
+/// One reported repository, with the commits whose author time is in the range (`--since`
+/// selects by commit time).
+pub(crate) fn repo_history(
+    distro: &str,
+    repo: WslRepoReport,
+    options: &CollectOptions,
+) -> RepoHistory {
+    let name = repo_name(&repo.path).to_string();
+    let commits = repo
+        .commits
+        .into_iter()
+        .filter(|commit| {
+            DateTime::parse_from_rfc3339(&commit.author_time)
+                .is_ok_and(|at| options.contains(at.to_utc()))
+        })
+        .map(|commit| {
+            GitEntry::new(
+                name.clone(),
+                commit.hash,
+                commit.subject,
+                commit.author_email,
+                commit.branch,
+                commit.author_time,
+            )
+        })
+        .collect();
+    RepoHistory {
+        label: format!("{distro}:{name}"),
+        email: repo.email,
+        commits,
     }
 }
 
@@ -168,7 +186,7 @@ pub(crate) fn count_wsl_repos(config: &GitConfig) -> Result<usize, String> {
     let mut last_error = None;
     for target in wsl_targets(config) {
         match run(&target, None) {
-            Ok(repos) if !repos.is_empty() => return Ok(repos.len()),
+            Ok(scan) if !scan.repos.is_empty() => return Ok(scan.repos.len()),
             Ok(_) => {}
             Err(reason) => last_error = Some(format!("{}: {reason}", target.distro)),
         }
@@ -177,17 +195,18 @@ pub(crate) fn count_wsl_repos(config: &GitConfig) -> Result<usize, String> {
 }
 
 #[cfg(target_os = "windows")]
-fn run(target: &WslTarget, since: Option<DateTime<Utc>>) -> Result<Vec<WslRepoReport>, String> {
+fn run(target: &WslTarget, since: Option<DateTime<Utc>>) -> Result<WslScan, String> {
     let stdout = run_wsl_script(&target.distro, &build_script(target, since))
         .map_err(|err| format!("{err:#}"))?;
     match parse_output(&stdout) {
-        WslOutput::Repos(repos) => Ok(repos),
+        WslOutput::Scanned(scan) => Ok(scan),
         WslOutput::Failed(reason) => Err(reason),
     }
 }
 
-/// The script for one distribution. With `since`, it prints each repository's `user.email`
-/// and the commits since then; without, it only lists the repositories.
+/// The script for one distribution. With `since`, it prints the global `user.email`, then each
+/// repository's `user.email` and its commits since then by every author (the collector decides
+/// which are the user's); without, it only lists the repositories.
 pub(crate) fn build_script(target: &WslTarget, since: Option<DateTime<Utc>>) -> String {
     let explicit = if target.repos.is_empty() {
         String::new()
@@ -210,6 +229,7 @@ pub(crate) fn build_script(target: &WslTarget, since: Option<DateTime<Utc>>) -> 
     format!(
         r#"command -v git >/dev/null 2>&1 || {{ printf '\036E\037git is not installed in this distribution\n'; exit 0; }}
 since={since}
+[ -z "$since" ] || printf '\036G\037%s\n' "$(git config --global --get user.email 2>/dev/null)"
 repos() {{
   :
 {explicit}{discover}}}
@@ -221,7 +241,6 @@ repos | sort -u | while IFS= read -r repo; do
   fi
   email=$(git -C "$repo" config --get user.email 2>/dev/null)
   printf '\036R\037%s\037%s\n' "$repo" "$email"
-  [ -n "$email" ] || continue
   git -C "$repo" log --all --since="$since" --format='%x1eC%x1f%H%x1f%aI%x1f%ae%x1f%s%x1f%D' 2>/dev/null
 done
 "#,
@@ -232,7 +251,7 @@ done
 /// Reads the script's output. Lines that do not start with the record marker, such as
 /// messages from login scripts, are ignored.
 pub(crate) fn parse_output(stdout: &str) -> WslOutput {
-    let mut repos: Vec<WslRepoReport> = Vec::new();
+    let mut scan = WslScan::default();
     for line in stdout.lines() {
         let Some(record) = line.strip_prefix(RECORD) else {
             continue;
@@ -240,14 +259,11 @@ pub(crate) fn parse_output(stdout: &str) -> WslOutput {
         let mut fields = record.split(FIELD);
         match fields.next() {
             Some("E") => return WslOutput::Failed(fields.next().unwrap_or_default().to_string()),
+            Some("G") => scan.global_email = non_empty(fields.next()),
             Some("R") => {
                 let path = fields.next().unwrap_or_default().to_string();
-                let email = fields
-                    .next()
-                    .map(str::trim)
-                    .filter(|email| !email.is_empty())
-                    .map(str::to_string);
-                repos.push(WslRepoReport {
+                let email = non_empty(fields.next());
+                scan.repos.push(WslRepoReport {
                     path,
                     email,
                     commits: Vec::new(),
@@ -255,7 +271,7 @@ pub(crate) fn parse_output(stdout: &str) -> WslOutput {
             }
             Some("C") => {
                 let (Some(repo), [Some(hash), Some(time), Some(email), Some(subject)]) = (
-                    repos.last_mut(),
+                    scan.repos.last_mut(),
                     [fields.next(), fields.next(), fields.next(), fields.next()],
                 ) else {
                     continue;
@@ -272,7 +288,14 @@ pub(crate) fn parse_output(stdout: &str) -> WslOutput {
             _ => {}
         }
     }
-    WslOutput::Repos(repos)
+    WslOutput::Scanned(scan)
+}
+
+fn non_empty(field: Option<&str>) -> Option<String> {
+    field
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(str::to_string)
 }
 
 /// `main` from `%D` output such as `HEAD -> main, origin/main`.
