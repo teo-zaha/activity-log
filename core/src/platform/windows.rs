@@ -5,14 +5,14 @@ use chrono::NaiveDate;
 use windows::{
     Win32::{
         Foundation::{
-            DISP_E_EXCEPTION, ERROR_INSUFFICIENT_BUFFER, ERROR_NO_MORE_ITEMS, MK_E_UNAVAILABLE,
-            SYSTEMTIME, VARIANT_FALSE, VARIANT_TRUE,
+            CloseHandle, DISP_E_EXCEPTION, ERROR_INSUFFICIENT_BUFFER, ERROR_NO_MORE_ITEMS,
+            MK_E_UNAVAILABLE, SYSTEMTIME, VARIANT_FALSE, VARIANT_TRUE,
         },
         System::{
             Com::{
-                CLSIDFromProgID, COINIT_APARTMENTTHREADED, CoInitializeEx, CoUninitialize,
-                DISPATCH_FLAGS, DISPATCH_METHOD, DISPATCH_PROPERTYGET, DISPATCH_PROPERTYPUT,
-                DISPPARAMS, EXCEPINFO, IDispatch,
+                CLSCTX_LOCAL_SERVER, CLSIDFromProgID, COINIT_APARTMENTTHREADED, CoCreateInstance,
+                CoInitializeEx, CoUninitialize, DISPATCH_FLAGS, DISPATCH_METHOD,
+                DISPATCH_PROPERTYGET, DISPATCH_PROPERTYPUT, DISPPARAMS, EXCEPINFO, IDispatch,
             },
             EventLog::{
                 EVT_HANDLE, EvtClose, EvtNext, EvtQuery, EvtQueryChannelPath,
@@ -73,24 +73,87 @@ pub fn outlook_is_installed() -> bool {
     outlook_clsid().is_ok()
 }
 
-/// Attaches to the Outlook the user already has open. Never starts Outlook: creating the COM
-/// server launches a full Outlook window, and a headless instance often has no connection.
-pub fn running_outlook_application() -> Result<DispatchObject> {
+/// The Outlook registered as running, if any. Outlook registers late after starting and only
+/// for callers at its own integrity level, so `None` does not prove it is closed.
+pub fn active_outlook_application() -> Result<Option<DispatchObject>> {
     let clsid = outlook_clsid()?;
     let mut unknown: Option<IUnknown> = None;
-    unsafe { GetActiveObject(&clsid, None, &mut unknown) }.map_err(|err| {
-        if err.code() == MK_E_UNAVAILABLE {
-            anyhow!("Outlook is not running. Open Outlook to include its calendar.")
-        } else {
-            anyhow!("Could not attach to Outlook: {err}")
-        }
-    })?;
-    let dispatch = unknown
-        .ok_or_else(|| anyhow!("Outlook returned no COM object"))?
-        .cast::<IDispatch>()
-        .map_err(|err| anyhow!("Outlook COM object has no dispatch interface: {err}"))?;
+    match unsafe { GetActiveObject(&clsid, None, &mut unknown) } {
+        Ok(()) => {}
+        Err(err) if err.code() == MK_E_UNAVAILABLE => return Ok(None),
+        Err(err) => return Err(anyhow!("Could not attach to Outlook: {err}")),
+    }
+    let unknown = unknown.ok_or_else(|| anyhow!("Outlook returned no COM object"))?;
+    DispatchObject::from_unknown(&unknown).map(Some)
+}
 
-    Ok(DispatchObject { dispatch })
+/// Asks COM for Outlook's application object. Outlook is single-instance, so while it runs this
+/// returns the open instance; call it only then, as it would otherwise start Outlook.
+pub fn connect_outlook_application() -> Result<DispatchObject> {
+    let clsid = outlook_clsid()?;
+    let unknown: IUnknown = unsafe { CoCreateInstance(&clsid, None, CLSCTX_LOCAL_SERVER) }
+        .map_err(|err| anyhow!("{err}"))?;
+    DispatchObject::from_unknown(&unknown)
+}
+
+/// Executable names of the running processes, such as `OUTLOOK.EXE`.
+pub fn running_process_names() -> Vec<String> {
+    use windows::Win32::System::Diagnostics::ToolHelp::{
+        CreateToolhelp32Snapshot, PROCESSENTRY32W, Process32FirstW, Process32NextW,
+        TH32CS_SNAPPROCESS,
+    };
+
+    let Ok(snapshot) = (unsafe { CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0) }) else {
+        return Vec::new();
+    };
+    let mut entry = PROCESSENTRY32W {
+        dwSize: size_of::<PROCESSENTRY32W>() as u32,
+        ..Default::default()
+    };
+    let mut names = Vec::new();
+    let mut next = unsafe { Process32FirstW(snapshot, &mut entry) };
+    while next.is_ok() {
+        let len = entry
+            .szExeFile
+            .iter()
+            .position(|unit| *unit == 0)
+            .unwrap_or(entry.szExeFile.len());
+        names.push(String::from_utf16_lossy(&entry.szExeFile[..len]));
+        next = unsafe { Process32NextW(snapshot, &mut entry) };
+    }
+    unsafe {
+        let _ = CloseHandle(snapshot);
+    }
+    names
+}
+
+/// Whether this process runs elevated (as administrator).
+pub fn process_is_elevated() -> bool {
+    use windows::Win32::{
+        Foundation::HANDLE,
+        Security::{GetTokenInformation, TOKEN_ELEVATION, TOKEN_QUERY, TokenElevation},
+        System::Threading::{GetCurrentProcess, OpenProcessToken},
+    };
+
+    let mut token = HANDLE::default();
+    if unsafe { OpenProcessToken(GetCurrentProcess(), TOKEN_QUERY, &mut token) }.is_err() {
+        return false;
+    }
+    let mut elevation = TOKEN_ELEVATION::default();
+    let mut returned = 0;
+    let read = unsafe {
+        GetTokenInformation(
+            token,
+            TokenElevation,
+            Some((&mut elevation as *mut TOKEN_ELEVATION).cast()),
+            size_of::<TOKEN_ELEVATION>() as u32,
+            &mut returned,
+        )
+    };
+    unsafe {
+        let _ = CloseHandle(token);
+    }
+    read.is_ok() && elevation.TokenIsElevated != 0
 }
 
 /// Keeps subprocesses from flashing a console window in the GUI app.
@@ -252,6 +315,13 @@ pub fn query_windows_event_log(log_name: &str, query: &str) -> Result<Vec<String
 }
 
 impl DispatchObject {
+    fn from_unknown(unknown: &IUnknown) -> Result<Self> {
+        let dispatch = unknown
+            .cast::<IDispatch>()
+            .map_err(|err| anyhow!("Outlook COM object has no dispatch interface: {err}"))?;
+        Ok(Self { dispatch })
+    }
+
     pub fn property_dispatch(&self, name: &str) -> Result<Self> {
         let result = invoke_zero(&self.dispatch, name, DISPATCH_PROPERTYGET)?;
         Ok(Self {
