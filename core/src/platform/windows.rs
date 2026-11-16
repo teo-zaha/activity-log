@@ -345,6 +345,15 @@ impl DispatchObject {
         result.into_utc_rfc3339(name)
     }
 
+    /// Calls a method without arguments that returns an object or `Nothing`, such as
+    /// `Items.GetNext` at the end of a collection.
+    pub fn method_optional_dispatch(&self, name: &str) -> Result<Option<Self>> {
+        let result = invoke_zero(&self.dispatch, name, DISPATCH_METHOD)?;
+        Ok(result
+            .into_optional_dispatch()
+            .map(|dispatch| Self { dispatch }))
+    }
+
     pub fn method_dispatch_i32(&self, name: &str, value: i32) -> Result<Self> {
         let mut value = OwnedVariant::from_i32(value);
         let result = invoke_one(&self.dispatch, name, DISPATCH_METHOD, &mut value, false)?;
@@ -483,6 +492,18 @@ impl OwnedVariant {
         };
 
         Ok(dispatch)
+    }
+
+    fn into_optional_dispatch(self) -> Option<IDispatch> {
+        unsafe {
+            if self.raw.Anonymous.Anonymous.vt != VT_DISPATCH {
+                return None;
+            }
+            let raw = &self.raw.Anonymous.Anonymous.Anonymous.pdispVal
+                as *const ManuallyDrop<Option<IDispatch>>
+                as *const Option<IDispatch>;
+            (*raw).clone()
+        }
     }
 
     fn into_optional_string(self) -> Result<Option<String>> {

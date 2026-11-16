@@ -11,6 +11,9 @@ use crate::{
 
 use super::{OutlookFallback, normalize_outlook_events};
 
+/// Guards against a collection that never ends, such as an unbounded recurrence.
+const MAX_EVENTS: usize = 10_000;
+
 pub(super) async fn collect_outlook(options: &CollectOptions) -> Result<Vec<OutlookEntry>> {
     let blocking_options = *options;
     let events = tokio::task::spawn_blocking(move || collect_outlook_blocking(&blocking_options))
@@ -25,6 +28,8 @@ fn collect_outlook_blocking(options: &CollectOptions) -> Result<Vec<RawOutlookEv
     let namespace = outlook.method_dispatch_string("GetNamespace", "MAPI")?;
     let calendar = namespace.method_dispatch_i32("GetDefaultFolder", 9)?;
     let items = calendar.property_dispatch("Items")?;
+    // Expanding recurring meetings needs a collection sorted by start, and leaves it without a
+    // usable `Count` (Outlook can report `i32::MAX`), so it is walked with `GetFirst`/`GetNext`.
     items.set_bool("IncludeRecurrences", true)?;
     items.method_unit_string("Sort", "[Start]")?;
 
@@ -37,11 +42,15 @@ fn collect_outlook_blocking(options: &CollectOptions) -> Result<Vec<RawOutlookEv
         end = format_outlook_filter_value(options.end + Days::new(1)),
     );
     let filtered = items.method_dispatch_string("Restrict", &filter)?;
-    let count = filtered.property_i32("Count")?;
-    let mut events = Vec::with_capacity(count.max(0) as usize);
+    let mut events = Vec::new();
+    let mut next = filtered.method_optional_dispatch("GetFirst")?;
 
-    for index in 1..=count {
-        let event = filtered.method_dispatch_i32("Item", index)?;
+    while let Some(event) = next {
+        if events.len() >= MAX_EVENTS {
+            return Err(anyhow::anyhow!(
+                "Outlook returned more than {MAX_EVENTS} events for the range; stopped reading"
+            ));
+        }
         let meeting_status = event.property_i32("MeetingStatus").unwrap_or_default();
         events.push(RawOutlookEvent {
             subject: event.property_optional_string("Subject")?,
@@ -52,6 +61,7 @@ fn collect_outlook_blocking(options: &CollectOptions) -> Result<Vec<RawOutlookEv
             is_organizer: Some(matches!(meeting_status, 0 | 1)),
             is_default_calendar: Some(true),
         });
+        next = filtered.method_optional_dispatch("GetNext")?;
     }
 
     Ok(events)
