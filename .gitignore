@@ -11,3 +11,6 @@ desktop/gen/
 
 # Playwright MCP browser logs and screenshots
 .playwright-mcp/
+
+# Local registry credentials (a symlink to a private .npmrc)
+.npmrc
