@@ -1,60 +1,5 @@
-use std::collections::BTreeMap;
-
-use super::{
-    WslCommit, WslOutput, WslRepoReport, WslScan, WslTarget, parse_output, repo_history, repo_name,
-    wsl_targets_with,
-};
+use super::{WslCommit, WslOutput, WslRepoReport, WslScan, parse_output, repo_history, repo_name};
 use crate::model::CollectOptions;
-use crate::provider::git::{GitConfig, windows::WslConfig};
-
-fn dirs(entries: &[(&str, &[&str])]) -> BTreeMap<String, Vec<String>> {
-    entries
-        .iter()
-        .map(|(distro, dirs)| {
-            (
-                distro.to_string(),
-                dirs.iter().map(|dir| dir.to_string()).collect(),
-            )
-        })
-        .collect()
-}
-
-fn config(wsl_dirs: Option<BTreeMap<String, Vec<String>>>) -> GitConfig {
-    GitConfig {
-        dirs: None,
-        wsl: WslConfig { dirs: wsl_dirs },
-    }
-}
-
-#[test]
-fn unset_folders_fall_back_to_the_default() {
-    let targets = wsl_targets_with(&config(None), || dirs(&[("NixOS", &["~"])]));
-
-    assert_eq!(
-        targets,
-        vec![WslTarget {
-            distro: "NixOS".to_string(),
-            dirs: vec!["~".to_string()],
-        }]
-    );
-}
-
-#[test]
-fn configured_folders_replace_the_default_and_skip_empty_distributions() {
-    let configured = dirs(&[("Debian", &[]), ("NixOS", &["~/api", "/srv/tool"])]);
-    let targets = wsl_targets_with(&config(Some(configured)), || {
-        panic!("the default must not be read when folders are configured")
-    });
-
-    assert_eq!(
-        targets,
-        vec![WslTarget {
-            distro: "NixOS".to_string(),
-            dirs: vec!["~/api".to_string(), "/srv/tool".to_string()],
-        }]
-    );
-    assert!(wsl_targets_with(&config(Some(BTreeMap::new())), BTreeMap::new).is_empty());
-}
 
 #[test]
 fn parses_repos_commits_and_ignores_other_output() {
@@ -117,7 +62,7 @@ fn the_script_lists_repos_and_their_history() {
 
     use chrono::{TimeZone, Utc};
 
-    use super::build_script;
+    use super::{WslTarget, build_script};
 
     let home = tempfile::tempdir().unwrap();
     let repo = home.path().join("work").join("it's here");
@@ -162,6 +107,11 @@ fn the_script_lists_repos_and_their_history() {
             "Without config",
         ],
     );
+    // A worktree shares the repository's history and must not be read twice.
+    git(
+        &repo,
+        &["worktree", "add", "-q", "../worktree", "-b", "side"],
+    );
 
     let target = WslTarget {
         distro: "Test".to_string(),
@@ -187,8 +137,8 @@ fn the_script_lists_repos_and_their_history() {
     };
     assert_eq!(
         listed.repos.len(),
-        2,
-        "searched folders and the repository itself are merged"
+        1,
+        "the check stops at the first repository"
     );
     assert!(listed.repos.iter().all(|repo| repo.commits.is_empty()));
     assert_eq!(listed.global_email, None);

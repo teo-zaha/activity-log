@@ -657,6 +657,14 @@ body {
   --scrollbar-thumb-active: color-mix(in srgb, var(--accent) 70%, transparent);
 }
 
+// ── Tooltips ─────────────────────────────────────────────────────────────────
+// Inverse of the page in every theme: dark on light themes, light on dark ones.
+
+:root {
+  --tooltip-bg: var(--text-primary);
+  --tooltip-fg: var(--surface);
+}
+
 // WebKit (macOS WKWebView) and Chromium (Windows WebView2): the pill shape needs these.
 ::-webkit-scrollbar {
   width: var(--scrollbar-size);
@@ -837,11 +845,14 @@ mat-card {
   color: var(--text-tertiary) !important;
 }
 
-.settings-dialog-panel .mat-mdc-dialog-container {
-  --mdc-dialog-container-color: transparent;
+// Dialogs that draw their own card: the settings and confirmations.
+.settings-dialog-panel .mat-mdc-dialog-container,
+.app-dialog-panel .mat-mdc-dialog-container {
+  --mat-dialog-container-color: transparent;
 }
 
-.settings-dialog-panel .mat-mdc-dialog-surface {
+.settings-dialog-panel .mat-mdc-dialog-surface,
+.app-dialog-panel .mat-mdc-dialog-surface {
   background: transparent;
   box-shadow: none;
   border-radius: 0;
@@ -863,9 +874,27 @@ mat-card {
   }
 }
 
+// A short confirmation, from `ToastService.success`.
+.success-toast {
+  --mat-snack-bar-container-color: var(--surface);
+  --mat-snack-bar-supporting-text-color: var(--text-primary);
+
+  .mat-mdc-snackbar-surface {
+    min-width: 0;
+    border: 1px solid var(--hairline);
+    border-left: 3px solid var(--status-ok);
+    border-radius: 12px !important;
+    box-shadow: var(--panel-shadow-strong);
+  }
+
+  .mat-mdc-snack-bar-label {
+    font-weight: 600;
+  }
+}
+
 .error-alert-snackbar {
-  --mdc-snackbar-container-color: color-mix(in srgb, var(--error-bg) 90%, var(--surface) 10%);
-  --mdc-snackbar-supporting-text-color: var(--error-fg);
+  --mat-snack-bar-container-color: color-mix(in srgb, var(--error-bg) 90%, var(--surface) 10%);
+  --mat-snack-bar-supporting-text-color: var(--error-fg);
   --mat-snack-bar-button-color: var(--error-fg);
 
   .mat-mdc-snackbar-surface {

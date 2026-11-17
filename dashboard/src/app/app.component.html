@@ -18,20 +18,24 @@
     tabindex="-1"
     [attr.aria-busy]="activity.isLoading()"
   >
-    <app-collection-status />
+    @if (activity.hasNoSources()) {
+      <app-no-sources />
+    } @else {
+      <app-collection-status />
 
-    @switch (activity.currentView()) {
-      @case ('list') {
-        <app-timeline />
-      }
-      @case ('day') {
-        <app-day-view />
-      }
-      @case ('workweek') {
-        <app-week-view />
-      }
-      @case ('week') {
-        <app-week-view />
+      @switch (activity.currentView()) {
+        @case ('list') {
+          <app-timeline />
+        }
+        @case ('day') {
+          <app-day-view />
+        }
+        @case ('workweek') {
+          <app-week-view />
+        }
+        @case ('week') {
+          <app-week-view />
+        }
       }
     }
   </main>

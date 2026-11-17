@@ -1,82 +1,113 @@
 use activity_log_core::{
     model::{
+        AddConnectionRequestDto, ConnectionId, ProviderConfigConnectionStateDto,
         ProviderConfigFieldValueDto, ProviderConfigSaveRequestDto, ProviderConfigSaveValueDto,
-        ProviderConfigValueDto, ProviderConfigValueTypeDto, Source,
+        ProviderConfigValueDto, ProviderConfigValueTypeDto, Source, SupportedOs,
     },
-    provider::{git::default_git_root, provider_config::ProviderConfigValueType},
+    provider::{connection::Connection, git::default_git_root},
+    settings::ConfigFile,
 };
 
-use super::{StoreEnvConfigSource, apply_provider_config_updates, build_provider_config_snapshot};
+use super::{apply_add, apply_save, build_snapshot, provider_config_key_label};
 
-#[test]
-fn maps_provider_config_value_types_to_public_dto() {
-    assert_eq!(
-        ProviderConfigValueTypeDto::from(ProviderConfigValueType::String),
-        ProviderConfigValueTypeDto::String
-    );
-    assert_eq!(
-        ProviderConfigValueTypeDto::from(ProviderConfigValueType::Bool),
-        ProviderConfigValueTypeDto::Bool
-    );
-    assert_eq!(
-        ProviderConfigValueTypeDto::from(ProviderConfigValueType::Int),
-        ProviderConfigValueTypeDto::Int
-    );
-    assert_eq!(
-        ProviderConfigValueTypeDto::from(ProviderConfigValueType::Password),
-        ProviderConfigValueTypeDto::Password
-    );
-    assert_eq!(
-        ProviderConfigValueTypeDto::from(ProviderConfigValueType::Email),
-        ProviderConfigValueTypeDto::Email
-    );
-    assert_eq!(
-        ProviderConfigValueTypeDto::from(ProviderConfigValueType::Url),
-        ProviderConfigValueTypeDto::Url
-    );
+const OS: SupportedOs = SupportedOs::Macos;
+
+fn file(text: &str) -> ConfigFile {
+    ConfigFile::parse("config.toml", text).unwrap()
 }
 
-#[test]
-fn save_updates_clear_values_with_null_tombstone() {
-    let mut store_values = std::collections::BTreeMap::new();
-    store_values.insert(
-        "JIRA_URL".to_string(),
-        Some("https://jira.example".to_string()),
-    );
-
-    let request = ProviderConfigSaveRequestDto {
-        source: Source::Jira,
-        values: vec![ProviderConfigSaveValueDto {
-            key: "JIRA_URL".to_string(),
-            value: None,
-        }],
-    };
-
-    apply_provider_config_updates(&mut store_values, &request).expect("valid request");
-
-    assert_eq!(store_values.get("JIRA_URL"), Some(&None));
+fn connections(file: &ConfigFile) -> Vec<Connection> {
+    file.connections().unwrap().connections
 }
 
-#[test]
-fn snapshot_masks_password_values() {
-    let mut store_values = std::collections::BTreeMap::new();
-    store_values.insert(
-        "JIRA_TOKEN".to_string(),
-        Some("super-secret-token".to_string()),
-    );
+fn connection_state(file: &ConfigFile, id: &str) -> ProviderConfigConnectionStateDto {
+    let id = id.parse::<ConnectionId>().unwrap();
+    build_snapshot(&connections(file), &OS)
+        .connections
+        .into_iter()
+        .find(|state| state.connection == id)
+        .unwrap_or_else(|| panic!("no connection {id}"))
+}
 
-    let snapshot = build_provider_config_snapshot(&StoreEnvConfigSource { store_values });
-    let jira = snapshot
-        .providers
-        .iter()
-        .find(|provider| provider.source == Source::Jira)
-        .expect("jira provider");
-    let token = jira
+fn field(state: &ProviderConfigConnectionStateDto, key: &str) -> ProviderConfigFieldValueDto {
+    state
         .fields
         .iter()
-        .find(|field| field.key == "JIRA_TOKEN")
-        .expect("jira token field");
+        .find(|field| field.key == key)
+        .unwrap_or_else(|| panic!("no field {key}"))
+        .value
+        .clone()
+}
 
+fn save(
+    connection: &str,
+    values: Vec<(&str, Option<ProviderConfigValueDto>)>,
+) -> ProviderConfigSaveRequestDto {
+    ProviderConfigSaveRequestDto {
+        connection: connection.parse().unwrap(),
+        label: None,
+        values: values
+            .into_iter()
+            .map(|(key, value)| ProviderConfigSaveValueDto {
+                key: key.to_string(),
+                value,
+            })
+            .collect(),
+    }
+}
+
+fn text(value: &str) -> Option<ProviderConfigValueDto> {
+    Some(ProviderConfigValueDto::Text(value.to_string()))
+}
+
+#[test]
+fn label_formatter_keeps_common_acronyms_readable() {
+    assert_eq!(provider_config_key_label("GITLAB_URL"), "GitLab URL");
+    assert_eq!(provider_config_key_label("JIRA_INSECURE"), "Jira Insecure");
+    assert_eq!(provider_config_key_label("GIT_DIRS"), "Git Dirs");
+}
+
+#[test]
+fn snapshot_lists_kinds_and_connections() {
+    let empty = build_snapshot(&connections(&file("")), &OS);
+    assert!(empty.connections.is_empty());
+    let gitlab = empty
+        .kinds
+        .iter()
+        .find(|kind| kind.source == Source::Gitlab)
+        .unwrap();
+    assert!(gitlab.multiple && gitlab.supported);
+    let on_linux = build_snapshot(&[], &SupportedOs::Linux);
+    let outlook = on_linux
+        .kinds
+        .iter()
+        .find(|kind| kind.source == Source::Outlook)
+        .unwrap();
+    assert!(!outlook.multiple);
+    assert!(!outlook.supported);
+    assert_eq!(
+        outlook.supported_os,
+        [SupportedOs::Windows, SupportedOs::Macos]
+    );
+
+    let snapshot = build_snapshot(&connections(&file("[[git]]\n")), &OS);
+    assert_eq!(
+        snapshot.connections[0].connection,
+        ConnectionId::new(Source::Git, "this-computer")
+    );
+    assert_eq!(snapshot.connections[0].label, "This computer");
+}
+
+#[test]
+fn snapshot_masks_secrets_and_shows_the_default_git_folder() {
+    let config = file("[[gitlab]]\nlabel = \"Work\"\ntoken = \"secret\"\n\n[[git]]\n");
+
+    let gitlab = connection_state(&config, "gitlab/work");
+    let token = gitlab
+        .fields
+        .iter()
+        .find(|field| field.key == "GITLAB_TOKEN")
+        .unwrap();
     assert!(token.is_set);
     assert_eq!(
         token.value,
@@ -86,79 +117,9 @@ fn snapshot_masks_password_values() {
             value: None,
         }
     );
-    assert_eq!(token.label, "Jira Token");
-}
-
-#[test]
-fn label_formatter_keeps_common_acronyms_readable() {
-    assert_eq!(super::provider_config_key_label("JIRA_URL"), "Jira URL");
+    let default_root = default_git_root().expect("home directory");
     assert_eq!(
-        super::provider_config_key_label("GITLAB_TOKEN"),
-        "GitLab Token"
-    );
-    assert_eq!(
-        super::provider_config_key_label("JIRA_INSECURE"),
-        "Jira Insecure"
-    );
-}
-
-#[test]
-fn snapshot_only_exposes_current_jira_fields() {
-    let snapshot = build_provider_config_snapshot(&StoreEnvConfigSource::default());
-    let jira = snapshot
-        .providers
-        .iter()
-        .find(|provider| provider.source == Source::Jira)
-        .expect("jira provider");
-
-    assert_eq!(jira.fields.len(), 3);
-    assert!(jira.fields.iter().all(|field| field.key != "JIRA_EMAIL"));
-    assert!(
-        jira.fields
-            .iter()
-            .all(|field| field.key != "JIRA_AUTH_TYPE")
-    );
-    assert!(jira.fields.iter().any(|field| field.key == "JIRA_URL"));
-    assert!(jira.fields.iter().any(|field| field.key == "JIRA_TOKEN"));
-    assert!(jira.fields.iter().any(|field| field.key == "JIRA_INSECURE"));
-}
-
-#[test]
-fn save_rejects_unknown_legacy_jira_fields() {
-    let mut store_values = std::collections::BTreeMap::new();
-    let request = ProviderConfigSaveRequestDto {
-        source: Source::Jira,
-        values: vec![ProviderConfigSaveValueDto {
-            key: "JIRA_AUTH_TYPE".to_string(),
-            value: Some(ProviderConfigValueDto::Text("basic".to_string())),
-        }],
-    };
-
-    let result = apply_provider_config_updates(&mut store_values, &request);
-    assert!(result.is_err());
-}
-
-#[test]
-fn snapshot_shows_default_git_dirs_value_when_unset() {
-    let Some(default_root) = default_git_root() else {
-        return;
-    };
-
-    let snapshot = build_provider_config_snapshot(&StoreEnvConfigSource::default());
-    let git = snapshot
-        .providers
-        .iter()
-        .find(|provider| provider.source == Source::Git)
-        .expect("git provider");
-    let dirs = git
-        .fields
-        .iter()
-        .find(|field| field.key == "GIT_DIRS")
-        .expect("git dirs field");
-
-    assert!(!dirs.is_set);
-    assert_eq!(
-        dirs.value,
+        field(&connection_state(&config, "git/this-computer"), "GIT_DIRS"),
         ProviderConfigFieldValueDto::List {
             item_type: ProviderConfigValueTypeDto::String,
             items: vec![default_root.display().to_string()],
@@ -166,143 +127,124 @@ fn snapshot_shows_default_git_dirs_value_when_unset() {
     );
 }
 
-fn git_dirs_request(value: Option<ProviderConfigValueDto>) -> ProviderConfigSaveRequestDto {
-    ProviderConfigSaveRequestDto {
-        source: Source::Git,
-        values: vec![ProviderConfigSaveValueDto {
-            key: "GIT_DIRS".to_string(),
-            value,
-        }],
-    }
+#[test]
+fn saves_values_and_labels_of_one_connection() {
+    let mut config = file("[[gitlab]]\n");
+    let mut request = save(
+        "gitlab/gitlab",
+        vec![
+            ("GITLAB_URL", text(" https://gitlab.example.com ")),
+            ("GITLAB_USER", text("")),
+        ],
+    );
+    request.label = Some("Work".to_string());
+    apply_save(&mut config, &request).unwrap();
+
+    let gitlab = connection_state(&config, "gitlab/gitlab");
+    assert_eq!(gitlab.label, "Work");
+    assert_eq!(
+        field(&gitlab, "GITLAB_URL"),
+        ProviderConfigFieldValueDto::Single {
+            value_type: ProviderConfigValueTypeDto::Url,
+            secret: false,
+            value: Some("https://gitlab.example.com".to_string()),
+        }
+    );
+    assert!(
+        apply_save(
+            &mut config,
+            &save("gitlab/gitlab", vec![("GITLAB_URL", text("nope"))]),
+        )
+        .is_err()
+    );
+    assert!(
+        apply_save(
+            &mut config,
+            &save("gitlab/gitlab", vec![("JIRA_URL", text("x"))]),
+        )
+        .is_err()
+    );
 }
 
 #[test]
 fn saves_lists_cleaned_and_keeps_an_empty_list_apart_from_a_cleared_one() {
-    let mut store_values = std::collections::BTreeMap::new();
-
+    let mut config = file("[[git]]\n");
     let items = vec![
-        " C:\\work ".to_string(),
+        " ~/work ".to_string(),
         String::new(),
-        "\"D:\\repos\"".to_string(),
+        "\"/srv/repos\"".to_string(),
     ];
-    apply_provider_config_updates(
-        &mut store_values,
-        &git_dirs_request(Some(ProviderConfigValueDto::List(items))),
+    apply_save(
+        &mut config,
+        &save(
+            "git/this-computer",
+            vec![("GIT_DIRS", Some(ProviderConfigValueDto::List(items)))],
+        ),
     )
-    .expect("valid list");
+    .unwrap();
     assert_eq!(
-        store_values.get("GIT_DIRS"),
-        Some(&Some(r#"["C:\\work","D:\\repos"]"#.to_string()))
-    );
-
-    apply_provider_config_updates(
-        &mut store_values,
-        &git_dirs_request(Some(ProviderConfigValueDto::List(Vec::new()))),
-    )
-    .expect("empty list");
-    assert_eq!(store_values.get("GIT_DIRS"), Some(&Some("[]".to_string())));
-
-    apply_provider_config_updates(&mut store_values, &git_dirs_request(None)).expect("clear");
-    assert_eq!(store_values.get("GIT_DIRS"), Some(&None));
-}
-
-#[test]
-fn snapshot_sends_git_dirs_as_a_list_of_strings() {
-    let snapshot = build_provider_config_snapshot(&StoreEnvConfigSource::default());
-    let dirs = snapshot
-        .providers
-        .iter()
-        .find(|provider| provider.source == Source::Git)
-        .and_then(|git| git.fields.iter().find(|field| field.key == "GIT_DIRS"))
-        .expect("git dirs field");
-
-    assert!(matches!(
-        dirs.value,
+        field(&connection_state(&config, "git/this-computer"), "GIT_DIRS"),
         ProviderConfigFieldValueDto::List {
             item_type: ProviderConfigValueTypeDto::String,
-            ..
+            items: vec!["~/work".to_string(), "/srv/repos".to_string()],
         }
-    ));
+    );
+
+    apply_save(
+        &mut config,
+        &save(
+            "git/this-computer",
+            vec![("GIT_DIRS", Some(ProviderConfigValueDto::List(Vec::new())))],
+        ),
+    )
+    .unwrap();
+    let git = connection_state(&config, "git/this-computer");
+    assert!(git.fields[0].is_set);
+    assert!(config.to_string().contains("dirs = []"));
+
+    apply_save(
+        &mut config,
+        &save("git/this-computer", vec![("GIT_DIRS", None)]),
+    )
+    .unwrap();
+    assert!(!connection_state(&config, "git/this-computer").fields[0].is_set);
 }
 
 #[test]
 fn rejects_a_list_for_a_single_value_key() {
-    let mut store_values = std::collections::BTreeMap::new();
-    let request = ProviderConfigSaveRequestDto {
-        source: Source::Jira,
-        values: vec![ProviderConfigSaveValueDto {
-            key: "JIRA_URL".to_string(),
-            value: Some(ProviderConfigValueDto::List(vec!["https://a".to_string()])),
-        }],
-    };
+    let mut config = file("[[jira]]\n");
+    let request = save(
+        "jira/jira",
+        vec![(
+            "JIRA_URL",
+            Some(ProviderConfigValueDto::List(vec!["https://a".into()])),
+        )],
+    );
 
-    assert!(apply_provider_config_updates(&mut store_values, &request).is_err());
+    assert!(apply_save(&mut config, &request).is_err());
 }
 
 #[test]
-fn snapshot_shows_a_configured_empty_list_as_set_and_empty() {
-    let mut store_values = std::collections::BTreeMap::new();
-    store_values.insert("GIT_DIRS".to_string(), Some("[]".to_string()));
+fn adds_wsl_git_connections_with_home_as_the_default_folder() {
+    let mut config = file("");
+    let id = apply_add(
+        &mut config,
+        &AddConnectionRequestDto {
+            source: Source::Git,
+            label: None,
+            wsl_distro: Some("Ubuntu".to_string()),
+        },
+    )
+    .unwrap();
 
-    let snapshot = build_provider_config_snapshot(&StoreEnvConfigSource { store_values });
-    let dirs = snapshot
-        .providers
-        .iter()
-        .find(|provider| provider.source == Source::Git)
-        .and_then(|git| git.fields.iter().find(|field| field.key == "GIT_DIRS"))
-        .expect("git dirs field");
-
-    assert!(dirs.is_set);
+    let state = connection_state(&config, &id.to_string());
+    assert_eq!(state.label, "WSL · Ubuntu");
+    assert_eq!(state.wsl_distro.as_deref(), Some("Ubuntu"));
     assert_eq!(
-        dirs.value,
+        field(&state, "GIT_DIRS"),
         ProviderConfigFieldValueDto::List {
             item_type: ProviderConfigValueTypeDto::String,
-            items: Vec::new(),
+            items: vec!["~".to_string()],
         }
-    );
-}
-
-#[test]
-fn rejects_lists_by_name_for_a_list_key() {
-    let mut store_values = std::collections::BTreeMap::new();
-    let map = [("NixOS".to_string(), vec!["~".to_string()])].into();
-
-    let error = apply_provider_config_updates(
-        &mut store_values,
-        &git_dirs_request(Some(ProviderConfigValueDto::Map(map))),
-    )
-    .expect_err("a map is not a list");
-    assert!(error.contains("not lists by name"), "{error}");
-}
-
-#[cfg(target_os = "windows")]
-#[test]
-fn saves_wsl_folders_by_distribution_and_keeps_an_empty_map() {
-    let mut store_values = std::collections::BTreeMap::new();
-    let request =
-        |map: std::collections::BTreeMap<String, Vec<String>>| ProviderConfigSaveRequestDto {
-            source: Source::Git,
-            values: vec![ProviderConfigSaveValueDto {
-                key: "WSL_GIT_DIRS".to_string(),
-                value: Some(ProviderConfigValueDto::Map(map)),
-            }],
-        };
-
-    let map = [(
-        " NixOS ".to_string(),
-        vec![" ~/work ".to_string(), String::new()],
-    )]
-    .into();
-    apply_provider_config_updates(&mut store_values, &request(map)).expect("valid map");
-    assert_eq!(
-        store_values.get("WSL_GIT_DIRS"),
-        Some(&Some(r#"{"NixOS":["~/work"]}"#.to_string()))
-    );
-
-    apply_provider_config_updates(&mut store_values, &request(Default::default()))
-        .expect("empty map");
-    assert_eq!(
-        store_values.get("WSL_GIT_DIRS"),
-        Some(&Some("{}".to_string()))
     );
 }

@@ -34,7 +34,6 @@ class JiraEntryUiAdapter extends EntryUiAdapter<JiraEntry> {
       badges: [badge],
       detailSections: [],
       styleKey: provider.source,
-      sources: [provider.source],
     })
   }
 

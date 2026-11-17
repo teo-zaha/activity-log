@@ -1,4 +1,5 @@
 pub mod activity;
+pub mod calendar;
 pub mod common;
 pub mod diagnostics;
 pub mod git;
@@ -12,24 +13,25 @@ pub use activity::{
     activity_log::ActivityLog,
     activity_log_meta::ActivityLogMeta,
     collected_activity::CollectedActivity,
-    collected_activity_summary::CollectedActivitySummary,
+    collected_activity_summary::{CollectedActivitySummary, ConnectionCount},
     merge_result::MergeResult,
 };
+pub use calendar::calendar_entry::CalendarEntry;
 pub use common::{
-    collect_options::CollectOptions, collect_request::CollectRequest,
-    collecting_response::CollectingResponse, error_response::ErrorResponse,
-    output_format::OutputFormat, provider_config_field_state_dto::ProviderConfigFieldStateDto,
+    add_connection_request_dto::AddConnectionRequestDto, collect_options::CollectOptions,
+    collect_request::CollectRequest, collection_failed_response::CollectionFailedResponse,
+    connection_id::ConnectionId, error_response::ErrorResponse, output_format::OutputFormat,
+    provider_config_connection_state_dto::ProviderConfigConnectionStateDto,
+    provider_config_field_state_dto::ProviderConfigFieldStateDto,
     provider_config_field_value_dto::ProviderConfigFieldValueDto,
-    provider_config_map_entry_dto::ProviderConfigMapEntryDto,
-    provider_config_provider_state_dto::ProviderConfigProviderStateDto,
     provider_config_save_request_dto::ProviderConfigSaveRequestDto,
     provider_config_save_response_dto::ProviderConfigSaveResponseDto,
     provider_config_save_value_dto::ProviderConfigSaveValueDto,
     provider_config_snapshot_dto::ProviderConfigSnapshotDto,
     provider_config_value_dto::ProviderConfigValueDto,
     provider_config_value_type_dto::ProviderConfigValueTypeDto, provider_info::ProviderInfo,
-    provider_status::ProviderStatus, providers_response::ProvidersResponse, source::Source,
-    supported_os::SupportedOs,
+    provider_kind_dto::ProviderKindDto, provider_status::ProviderStatus,
+    providers_response::ProvidersResponse, source::Source, supported_os::SupportedOs,
 };
 pub use diagnostics::{log_entry::LogEntry, log_level::LogLevel, logs_response::LogsResponse};
 pub use git::git_entry::GitEntry;

@@ -36,9 +36,9 @@
   </div>
 
   @if (loadError(); as error) {
-    <p class="logs-error" role="alert">
-      <mat-icon>error_outline</mat-icon>
-      <span>Could not load logs: {{ error }}</span>
+    <p class="u-feedback u-feedback-block" data-tone="error" role="alert">
+      <span class="material-icons" aria-hidden="true">error_outline</span>
+      <span class="u-feedback-text">Could not load logs: {{ error }}</span>
     </p>
   }
 

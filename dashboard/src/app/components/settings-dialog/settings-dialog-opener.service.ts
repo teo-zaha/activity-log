@@ -1,20 +1,17 @@
 import { inject, Service } from '@angular/core'
 import { MatDialog } from '@angular/material/dialog'
-import type { Source } from '../../generated/activity'
 import { BREAKPOINTS } from '../../utils/breakpoints'
 import { SettingsDialogComponent } from './settings-dialog.component'
-import type { SettingsDialogData } from './settings-dialog.types'
+import type { SettingsDialogData, SettingsSelection, SettingsTarget } from './settings-dialog.types'
 
 /** Lives in its own file so the dialog and its panes stay out of the initial bundle. */
 @Service()
 export class SettingsDialogOpener {
   private readonly dialog = inject(MatDialog)
 
-  open(source?: Source): void {
+  open(target?: SettingsTarget): void {
     const fullscreen = window.matchMedia?.(`(max-width: ${BREAKPOINTS.phone}px)`).matches ?? false
-    const data: SettingsDialogData = {
-      initialSelection: source ? `source:${source}` : 'general',
-    }
+    const data: SettingsDialogData = { initialSelection: initialSelection(target) }
 
     this.dialog.open(SettingsDialogComponent, {
       data,
@@ -31,4 +28,9 @@ export class SettingsDialogOpener {
       ariaLabel: 'Settings',
     })
   }
+}
+
+function initialSelection(target: SettingsTarget | undefined): SettingsSelection {
+  if (target === undefined) return 'general'
+  return target === 'add' ? 'add' : `connection:${target}`
 }

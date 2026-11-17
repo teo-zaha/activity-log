@@ -31,7 +31,6 @@ class SystemEntryUiAdapter extends EntryUiAdapter<SystemEntry> {
       badges: [badge],
       detailSections: [],
       styleKey: provider.source,
-      sources: [provider.source],
     })
   }
 

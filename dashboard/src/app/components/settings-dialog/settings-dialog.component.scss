@@ -93,21 +93,6 @@
   }
 }
 
-.provider-heading-icon {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 40px;
-  height: 40px;
-  border-radius: 14px;
-  flex-shrink: 0;
-  @include ui.status-tone($mix: 18%);
-}
-
-.provider-heading-glyph {
-  font-size: 20px;
-}
-
 .close-btn {
   @include ui.chrome-icon-button(
     $size: 38px,
@@ -125,11 +110,18 @@
   }
 }
 
+// Scrolling clips whatever is drawn outside it, so the inset leaves room for focus rings and
+// hover lifts; the negative margin keeps the content where it was.
 .settings-scroll {
+  --scroll-inset: 6px;
+
   flex: 1;
   min-height: 0;
   overflow-y: auto;
   overflow-x: hidden;
+  margin: calc(-1 * var(--scroll-inset));
+  margin-right: 0;
+  padding: var(--scroll-inset);
   padding-right: 12px;
   scrollbar-gutter: stable;
 }
@@ -213,14 +205,9 @@
     gap: 10px;
   }
 
-  .provider-heading-icon {
-    width: 34px;
-    height: 34px;
-    border-radius: 12px;
-  }
-
-  .provider-heading-glyph {
-    font-size: 17px;
+  .provider-heading app-provider-icon {
+    --provider-icon-box: 34px;
+    --provider-icon-glyph: 17px;
   }
 
   .close-btn {

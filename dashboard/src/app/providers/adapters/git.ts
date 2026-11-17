@@ -69,7 +69,6 @@ class GitEntryUiAdapter extends EntryUiAdapter<GitEntry> {
       badges,
       detailSections,
       styleKey: entry.gitlabEvent ? 'gitab' : provider.source,
-      sources: entry.gitlabEvent ? [provider.source, gitlabAdapter.source] : [provider.source],
     })
   }
 

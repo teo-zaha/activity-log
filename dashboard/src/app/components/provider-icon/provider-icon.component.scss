@@ -16,3 +16,54 @@ mat-icon {
   font-size: 1em;
   line-height: 1;
 }
+
+// ── Boxed ────────────────────────────────────────────────────────────────────
+// `--provider-icon-box` and `--provider-icon-glyph` let a context resize the box.
+
+:host([data-size]) {
+  width: var(--provider-icon-box);
+  height: var(--provider-icon-box);
+  border-radius: var(--provider-icon-radius);
+  background: var(--badge-bg, color-mix(in srgb, var(--surface-alt) 80%, transparent));
+  color: var(--badge-accent, var(--text-tertiary));
+  font-size: var(--provider-icon-glyph);
+  transition:
+    filter 0.15s ease,
+    opacity 0.15s ease;
+}
+
+:host([data-size='sm']) {
+  --provider-icon-box: 24px;
+  --provider-icon-glyph: 14px;
+  --provider-icon-radius: 7px;
+}
+
+:host([data-size='md']) {
+  --provider-icon-box: 36px;
+  --provider-icon-glyph: 19px;
+  --provider-icon-radius: var(--radius-sm);
+}
+
+:host([data-size='lg']) {
+  --provider-icon-box: 42px;
+  --provider-icon-glyph: 22px;
+  --provider-icon-radius: 12px;
+}
+
+// The same colours as `provider-source-vars`; ICS calendars share Outlook's.
+$badges: (
+  git: git,
+  gitlab: gitlab,
+  jira: jira,
+  outlook: outlook,
+  calendar: outlook,
+  system: system,
+);
+
+@each $source, $badge in $badges {
+  :host([data-size][data-src='#{$source}']) {
+    --badge-bg: var(--badge-#{$badge}-bg);
+    --badge-fg: var(--badge-#{$badge}-fg);
+    --badge-accent: var(--badge-#{$badge}-accent);
+  }
+}

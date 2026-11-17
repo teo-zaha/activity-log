@@ -9,6 +9,9 @@ use crate::model::jira::jira_entry_type::JiraEntryType;
 pub struct JiraEntry {
     #[ts(type = "\"jira\"")]
     pub source: String,
+    /// The name of the connection within its kind, such as `oss`; set by the runtime.
+    #[serde(default)]
+    pub connection: String,
     #[serde(rename = "type")]
     #[ts(rename = "type")]
     pub entry_type: JiraEntryType,

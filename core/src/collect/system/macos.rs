@@ -80,6 +80,7 @@ pub(crate) fn classify_last_line(
     }
     Ok(LastLine::Entry(SystemEntry {
         source: "system".to_string(),
+        connection: String::new(),
         entry_type,
         timestamp: timestamp.to_rfc3339(),
         label: label.to_string(),

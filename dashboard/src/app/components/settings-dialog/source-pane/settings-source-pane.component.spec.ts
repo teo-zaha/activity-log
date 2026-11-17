@@ -1,7 +1,8 @@
-import { render, screen } from '@testing-library/angular'
+import { render, screen, within } from '@testing-library/angular'
 import userEvent from '@testing-library/user-event'
 import { describe, expect, it, vi } from 'vitest'
 import type {
+  ProviderConfigConnectionStateDto,
   ProviderConfigFieldStateDto,
   ProviderConfigSaveRequestDto,
   ProviderConfigSaveResponseDto,
@@ -15,9 +16,19 @@ import { SettingsSourcePaneComponent } from './settings-source-pane.component'
 
 const row = (index: 0 | 1): SettingsProviderRow => ({
   info: providerInfo[index],
+  key: index === 0 ? 'git/default' : 'jira/default',
   label: index === 0 ? 'Git' : 'Jira',
-  icon: 'commit',
+  kindLabel: index === 0 ? 'Git' : 'Jira',
   tooltip: null,
+})
+
+const state = (
+  source: 'git' | 'jira',
+  fields: ProviderConfigFieldStateDto[]
+): ProviderConfigConnectionStateDto => ({
+  connection: { source, name: 'default' },
+  label: source === 'git' ? 'This computer' : 'Jira',
+  fields,
 })
 
 const jiraFields: ProviderConfigFieldStateDto[] = [
@@ -65,10 +76,8 @@ const jiraFields: ProviderConfigFieldStateDto[] = [
 const snapshot = (
   fields: ProviderConfigFieldStateDto[] = jiraFields
 ): ProviderConfigSnapshotDto => ({
-  providers: [
-    { source: 'git', fields: [] },
-    { source: 'jira', fields },
-  ],
+  kinds: [],
+  connections: [state('git', []), state('jira', fields)],
 })
 
 interface Setup {
@@ -116,7 +125,6 @@ function saveResponse(fields: ProviderConfigFieldStateDto[]): ProviderConfigSave
 }
 
 type ListField = Extract<ProviderConfigFieldStateDto, { shape: 'list' }>
-type MapField = Extract<ProviderConfigFieldStateDto, { shape: 'map' }>
 
 describe('SettingsSourcePaneComponent', () => {
   it('loads the configuration and fills the fields of the selected provider', async () => {
@@ -133,10 +141,12 @@ describe('SettingsSourcePaneComponent', () => {
     expect(loadProviderConfig).toHaveBeenCalledTimes(1)
   })
 
-  it('shows a provider without configurable keys', async () => {
+  it('offers the label and removal for a source without settings of its own', async () => {
     await setup({ provider: row(0) })
 
-    expect(await screen.findByText(/does not expose configurable keys/)).toBeTruthy()
+    expect(await screen.findByText('Git needs no further settings.')).toBeTruthy()
+    expect(screen.getByLabelText('Label')).toHaveProperty('value', 'This computer')
+    expect(screen.getByRole('button', { name: 'Remove source' })).toBeTruthy()
   })
 
   it('shows the load error and retries', async () => {
@@ -166,7 +176,6 @@ describe('SettingsSourcePaneComponent', () => {
     await userEvent.clear(baseUrl)
     await userEvent.type(baseUrl, 'https://jira.internal')
     expect(screen.queryByText('Enter a valid URL.')).toBeNull()
-    expect(screen.getByText('Unsaved changes')).toBeTruthy()
     expect(screen.getByRole('button', { name: 'Save settings' })).toHaveProperty('disabled', false)
   })
 
@@ -184,11 +193,10 @@ describe('SettingsSourcePaneComponent', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Save settings' }))
 
     expect(saveProviderConfig).toHaveBeenCalledWith({
-      source: 'jira',
+      connection: { source: 'jira', name: 'default' },
       values: [{ key: 'maxResults', value: '25' }],
     })
-    expect(await screen.findByText('Settings saved.')).toBeTruthy()
-    expect(screen.queryByText('Unsaved changes')).toBeNull()
+    expect(await screen.findByText('Jira saved')).toBeTruthy()
     expect(screen.getByLabelText('Max results')).toHaveProperty('value', '25')
     expect(screen.getByRole('button', { name: 'Save settings' })).toHaveProperty('disabled', true)
   })
@@ -201,16 +209,19 @@ describe('SettingsSourcePaneComponent', () => {
     await userEvent.type(token, 's3cret')
     await userEvent.click(screen.getByRole('button', { name: 'Save settings' }))
     expect(saveProviderConfig).toHaveBeenLastCalledWith({
-      source: 'jira',
+      connection: { source: 'jira', name: 'default' },
       values: [{ key: 'apiToken', value: 's3cret' }],
     })
-    await screen.findByText('Settings saved.')
+    await screen.findByText('Jira saved')
 
-    await userEvent.click(screen.getByRole('button', { name: 'Clear' }))
+    expect(token).toHaveProperty('placeholder', 'Saved; type to replace')
+    await userEvent.click(screen.getByRole('button', { name: 'Clear saved API token' }))
     expect(screen.getByText('Not set')).toBeTruthy()
+    expect(token).toHaveProperty('placeholder', '')
+    expect(screen.queryByRole('button', { name: 'Clear saved API token' })).toBeNull()
     await userEvent.click(screen.getByRole('button', { name: 'Save settings' }))
     expect(saveProviderConfig).toHaveBeenLastCalledWith({
-      source: 'jira',
+      connection: { source: 'jira', name: 'default' },
       values: [{ key: 'apiToken', value: null }],
     })
   })
@@ -224,7 +235,7 @@ describe('SettingsSourcePaneComponent', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Save settings' }))
 
     expect(saveProviderConfig).toHaveBeenCalledWith({
-      source: 'jira',
+      connection: { source: 'jira', name: 'default' },
       values: [{ key: 'verifyTls', value: 'false' }],
     })
   })
@@ -239,7 +250,7 @@ describe('SettingsSourcePaneComponent', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Save settings' }))
 
     expect((await screen.findByRole('alert')).textContent).toContain('write refused')
-    expect(screen.queryByText('Settings saved.')).toBeNull()
+    expect(screen.queryByText('Jira saved')).toBeNull()
   })
 
   it('does not load anything outside the desktop app', async () => {
@@ -285,12 +296,12 @@ describe('SettingsSourcePaneComponent', () => {
     const webhook = await screen.findByLabelText('Webhook')
     expect(webhook).toHaveProperty('type', 'password')
 
-    await userEvent.click(screen.getByRole('button', { name: 'Clear' }))
+    await userEvent.click(screen.getByRole('button', { name: 'Clear saved Webhook' }))
     await userEvent.type(webhook, 'abc')
     await userEvent.click(screen.getByRole('button', { name: 'Save settings' }))
 
     expect(saveProviderConfig).toHaveBeenCalledWith({
-      source: 'jira',
+      connection: { source: 'jira', name: 'default' },
       values: [{ key: 'webhook', value: 'abc' }],
     })
   })
@@ -310,10 +321,8 @@ describe('SettingsSourcePaneComponent', () => {
     ]
     const both = (): Promise<ProviderConfigSnapshotDto> =>
       Promise.resolve({
-        providers: [
-          { source: 'git', fields: gitFields },
-          { source: 'jira', fields: jiraFields },
-        ],
+        kinds: [],
+        connections: [state('git', gitFields), state('jira', jiraFields)],
       })
     const { saveProviderConfig, switchProvider } = await setup({ load: both })
     saveProviderConfig.mockRejectedValue(new Error('write refused'))
@@ -328,7 +337,7 @@ describe('SettingsSourcePaneComponent', () => {
 
     expect(await screen.findByLabelText('Git root')).toHaveProperty('value', '/code')
     expect(screen.queryByRole('alert')).toBeNull()
-    expect(screen.queryByText('Unsaved changes')).toBeNull()
+    expect(screen.getByRole('button', { name: 'Save settings' })).toHaveProperty('disabled', true)
     expect(screen.queryByLabelText('Base URL')).toBeNull()
 
     await switchProvider(row(1))
@@ -338,7 +347,7 @@ describe('SettingsSourcePaneComponent', () => {
       'https://jira.example.com'
     )
     expect(screen.queryByRole('alert')).toBeNull()
-    expect(screen.queryByText('Unsaved changes')).toBeNull()
+    expect(screen.getByRole('button', { name: 'Save settings' })).toHaveProperty('disabled', true)
   })
 
   describe('list fields', () => {
@@ -380,7 +389,7 @@ describe('SettingsSourcePaneComponent', () => {
       await userEvent.click(screen.getByRole('button', { name: 'Save settings' }))
 
       expect(saveProviderConfig).toHaveBeenCalledWith({
-        source: 'jira',
+        connection: { source: 'jira', name: 'default' },
         values: [{ key: 'GIT_DIRS', value: ['/home/me', '/srv/repos'] }],
       })
     })
@@ -393,7 +402,7 @@ describe('SettingsSourcePaneComponent', () => {
       await userEvent.click(screen.getByRole('button', { name: 'Save settings' }))
 
       expect(saveProviderConfig).toHaveBeenCalledWith({
-        source: 'jira',
+        connection: { source: 'jira', name: 'default' },
         values: [{ key: 'GIT_DIRS', value: [] }],
       })
     })
@@ -416,92 +425,92 @@ describe('SettingsSourcePaneComponent', () => {
       await userEvent.click(screen.getByRole('button', { name: 'Save settings' }))
 
       expect(saveProviderConfig).toHaveBeenCalledWith({
-        source: 'jira',
+        connection: { source: 'jira', name: 'default' },
         values: [{ key: 'GIT_DIRS', value: null }],
       })
     })
   })
+})
 
-  describe('map fields', () => {
-    const wslDirs = (
-      overrides: Partial<Omit<MapField, 'shape'>> = {}
-    ): ProviderConfigFieldStateDto => ({
-      key: 'WSL_GIT_DIRS',
-      label: 'WSL Git Dirs',
-      required: false,
-      isSet: false,
-      shape: 'map',
-      itemType: 'string',
-      entries: [{ name: 'NixOS', items: ['~'] }],
-      names: ['NixOS', 'Ubuntu'],
-      ...overrides,
+describe('SettingsSourcePaneComponent connections', () => {
+  const connectionsSnapshot = (): ProviderConfigSnapshotDto => ({
+    kinds: [],
+    connections: [state('git', []), state('jira', jiraFields)],
+  })
+
+  async function setupConnections(): Promise<{
+    saveProviderConfig: ReturnType<typeof vi.fn>
+    removeConnection: ReturnType<typeof vi.fn>
+    removed: ReturnType<typeof vi.fn>
+  }> {
+    const saveProviderConfig = vi.fn().mockResolvedValue({
+      snapshot: connectionsSnapshot(),
+      providersResponse: { currentOs: 'linux', providers: providerInfo },
     })
-
-    async function setupMap(field: ProviderConfigFieldStateDto): Promise<Setup> {
-      const result = await setup({ load: () => Promise.resolve(snapshot([field])) })
-      result.saveProviderConfig.mockResolvedValue(saveResponse([field]))
-      await screen.findByLabelText('WSL Git Dirs 1')
-      return result
-    }
-
-    it('shows the default entries with their items, unchanged', async () => {
-      await setupMap(wslDirs())
-
-      expect(screen.getByLabelText('NixOS 1')).toHaveProperty('value', '~')
-      expect(screen.getByText('Default')).toBeTruthy()
-      expect(screen.getByRole('button', { name: 'Save settings' })).toHaveProperty('disabled', true)
+    const removeConnection = vi.fn().mockResolvedValue({
+      snapshot: connectionsSnapshot(),
+      providersResponse: { currentOs: 'linux', providers: providerInfo },
     })
-
-    it('adds folders under a distribution and saves lists by name', async () => {
-      const { saveProviderConfig } = await setupMap(wslDirs())
-
-      await userEvent.click(screen.getByRole('button', { name: 'Add to NixOS' }))
-      await userEvent.type(screen.getByLabelText('NixOS 2'), ' /srv/tool ')
-      await userEvent.click(screen.getByRole('button', { name: 'Add Ubuntu' }))
-      await userEvent.type(screen.getByLabelText('Ubuntu 1'), '~/work')
-      await userEvent.click(screen.getByRole('button', { name: 'Save settings' }))
-
-      expect(saveProviderConfig).toHaveBeenCalledWith({
-        source: 'jira',
-        values: [{ key: 'WSL_GIT_DIRS', value: { NixOS: ['~', '/srv/tool'], Ubuntu: ['~/work'] } }],
-      })
+    const removed = vi.fn()
+    await render(SettingsSourcePaneComponent, {
+      inputs: { provider: row(1) },
+      on: { removed },
+      providers: [
+        {
+          provide: ActivityService,
+          useValue: {
+            loadProviderConfig: (): Promise<ProviderConfigSnapshotDto> =>
+              Promise.resolve(connectionsSnapshot()),
+            saveProviderConfig,
+            removeConnection,
+          },
+        },
+        { provide: RuntimeEnvironmentService, useValue: { isTauri: (): boolean => true } },
+      ],
     })
+    await screen.findByLabelText('Label')
+    return { saveProviderConfig, removeConnection, removed }
+  }
 
-    it('offers each name once and stops adding when all are used', async () => {
-      await setupMap(wslDirs())
+  it('renames a connection with its label', async () => {
+    const { saveProviderConfig } = await setupConnections()
 
-      await userEvent.click(screen.getByRole('button', { name: 'Add Ubuntu' }))
+    const label = screen.getByLabelText('Label')
+    await userEvent.clear(label)
+    await userEvent.type(label, 'Company Jira')
+    await userEvent.click(screen.getByRole('button', { name: 'Save settings' }))
 
-      expect(screen.queryByRole('button', { name: /^Add (NixOS|Ubuntu)$/ })).toBeNull()
-      await userEvent.click(screen.getByLabelText('WSL Git Dirs 2'))
-      const options = await screen.findAllByRole('option')
-      expect(options.map(option => option.textContent?.trim())).toEqual(['Ubuntu'])
+    expect(saveProviderConfig).toHaveBeenCalledWith({
+      connection: { source: 'jira', name: 'default' },
+      label: 'Company Jira',
+      values: [],
     })
+  })
 
-    it('saves an emptied map as none', async () => {
-      const { saveProviderConfig } = await setupMap(wslDirs())
+  it('removes a connection after confirming', async () => {
+    const { removeConnection, removed } = await setupConnections()
 
-      await userEvent.click(screen.getByRole('button', { name: 'Remove NixOS' }))
-      await userEvent.click(screen.getByRole('button', { name: 'Save settings' }))
+    await userEvent.click(screen.getByRole('button', { name: 'Remove source' }))
+    const dialog = await screen.findByRole('alertdialog')
+    expect(dialog.textContent).toContain('Remove Jira?')
+    expect(removeConnection).not.toHaveBeenCalled()
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Remove' }))
 
-      expect(saveProviderConfig).toHaveBeenCalledWith({
-        source: 'jira',
-        values: [{ key: 'WSL_GIT_DIRS', value: {} }],
-      })
-    })
+    await vi.waitFor(() =>
+      expect(removeConnection).toHaveBeenCalledWith({ source: 'jira', name: 'default' })
+    )
+    expect(removed).toHaveBeenCalled()
+    expect(await screen.findByText('Jira removed')).toBeTruthy()
+  })
 
-    it('resets a configured map to its default', async () => {
-      const { saveProviderConfig } = await setupMap(
-        wslDirs({ isSet: true, entries: [{ name: 'NixOS', items: ['/work'] }] })
-      )
+  it('keeps a connection when removing is cancelled', async () => {
+    const { removeConnection } = await setupConnections()
 
-      await userEvent.click(screen.getByRole('button', { name: 'Use default' }))
-      await userEvent.click(screen.getByRole('button', { name: 'Save settings' }))
+    await userEvent.click(screen.getByRole('button', { name: 'Remove source' }))
+    const dialog = await screen.findByRole('alertdialog')
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Cancel' }))
 
-      expect(saveProviderConfig).toHaveBeenCalledWith({
-        source: 'jira',
-        values: [{ key: 'WSL_GIT_DIRS', value: null }],
-      })
-    })
+    await vi.waitFor(() => expect(screen.queryByRole('alertdialog')).toBeNull())
+    expect(removeConnection).not.toHaveBeenCalled()
   })
 })

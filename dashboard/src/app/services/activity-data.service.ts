@@ -3,21 +3,22 @@ import type {
   ActivityEntry,
   ActivityLog,
   CollectedActivitySummary,
-  CollectingResponse,
   ProviderInfo,
-  Source,
 } from '../generated/activity'
+import { type ConnectionKey, connectionKey } from '../providers/connection'
 import { createEntryAdapter, getProviderAdapter } from '../providers/provider-adapter'
 import type { ActivityResponse } from './backend/backend-contract'
 import { ActivityBackendClient } from './backend/backend-client'
 import { extractBackendErrorMessage } from './backend/error-message'
 import { ActivityViewStateService } from './activity-view-state.service'
+import { withCarriedEntries } from '../utils/carry-over'
 import { dayKeyOf, lastDayKeyBefore, localDayRange } from '../utils/local-day'
 import type { CollectionOperation, CollectionStatus, ProviderViewModel } from './types'
 
 export const ACTIVITY_POLL_ATTEMPTS = new InjectionToken<number>('ACTIVITY_POLL_ATTEMPTS', {
   providedIn: 'root',
-  factory: (): number => 60,
+  // The backend gives up on a startup check after 15 s and on a collection after 120 s.
+  factory: (): number => 180,
 })
 
 export const ACTIVITY_POLL_DELAY_MS = new InjectionToken<number>('ACTIVITY_POLL_DELAY_MS', {
@@ -35,60 +36,79 @@ export class ActivityDataService {
   readonly allEntries = signal<ActivityEntry[]>([])
   readonly allEntryAdapters = computed(() => this.allEntries().map(createEntryAdapter))
   readonly providerInfo = signal<ProviderInfo[]>([])
+  private readonly providersLoaded = signal(false)
+  private refreshingProviders = false
+  /** Numbers the provider requests, so an answer older than the list on screen is dropped. */
+  private providerRequests = 0
+  private shownProviderRequest = 0
+  /** What was on screen when the running collection began, see `withCarriedEntries`. */
+  private previousEntries: readonly ActivityEntry[] = []
+  /** Nothing is set up yet: the dashboard asks for a first source instead of showing views. */
+  readonly hasNoSources = computed(() => this.providersLoaded() && this.providerInfo().length === 0)
   readonly summary = signal<CollectedActivitySummary | null>(null)
   readonly meta = signal<ActivityLog['meta'] | null>(null)
   readonly isLoading = signal(false)
   readonly error = signal<string | null>(null)
   readonly collectionStatus = signal<CollectionStatus>({ kind: 'idle' })
 
-  readonly sourceCounts = computed<Map<Source, number>>(() => {
-    const summary = this.summary()
-    if (!summary) return new Map()
-    return new Map<Source, number>([
-      ['git', summary.git_count],
-      ['gitlab', summary.gitlab_count],
-      ['jira', summary.jira_count],
-      ['outlook', summary.outlook_count],
-      ['system', summary.system_count],
-    ])
-  })
-
-  private readonly providerViewModels = computed<ProviderViewModel[]>(() =>
-    this.providerInfo().map(info => {
-      const adapter = getProviderAdapter(info.id)
-      return {
-        info,
-        label: adapter.label,
-        icon: adapter.providerIcon,
-        chipKey: info.id,
-        tooltip: adapter.getStatusTooltip(info),
-        count: this.sourceCounts().get(info.id) ?? 0,
-      }
-    })
+  readonly connectionCounts = computed<Map<ConnectionKey, number>>(
+    () =>
+      new Map(
+        (this.summary()?.connections ?? []).map(({ connection, count }) => [
+          connectionKey(connection),
+          count,
+        ])
+      )
   )
 
-  readonly providers = computed(() => this.providerViewModels().filter(p => p.info.usable))
-  readonly unusableProviders = computed(() => this.providerViewModels().filter(p => !p.info.usable))
+  /** The connections the running collection still waits for. */
+  readonly pendingConnections = computed<Set<ConnectionKey>>(
+    () =>
+      new Set(
+        this.collectionStatus().kind === 'collecting'
+          ? (this.meta()?.pending ?? []).map(connectionKey)
+          : []
+      )
+  )
 
+  private readonly providerViewModels = computed<ProviderViewModel[]>(() => {
+    const pending = this.pendingConnections()
+    return this.providerInfo().map(info => {
+      const adapter = getProviderAdapter(info.connection.source)
+      const key = connectionKey(info.connection)
+      return {
+        info,
+        key,
+        label: info.label,
+        chipKey: info.connection.source,
+        tooltip: adapter.getStatusTooltip(info),
+        count: this.connectionCounts().get(key) ?? 0,
+        collecting: pending.has(key),
+      }
+    })
+  })
+
+  /** Usable sources, and those whose startup check is still running. */
+  readonly providers = computed(() =>
+    this.providerViewModels().filter(p => p.info.usable || isChecking(p.info))
+  )
+  readonly unusableProviders = computed(() =>
+    this.providerViewModels().filter(p => !p.info.usable && !isChecking(p.info))
+  )
+
+  /** Shows `log`; a partial one is filled up with what was shown for its pending connections. */
   loadLog(log: ActivityLog): void {
-    this.allEntries.set(log.entries)
-    this.viewState.clearSelection()
+    this.allEntries.set(withCarriedEntries(log, this.previousEntries))
     this.summary.set(log.summary)
     this.meta.set(log.meta)
-    this.viewState.dateFrom.set(dayKeyOf(log.meta.start))
-    this.viewState.dateTo.set(lastDayKeyBefore(log.meta.end))
+    this.showRange(log.meta)
   }
 
   async initLoad(): Promise<void> {
     this.begin('initial')
     try {
       await this.loadProviders()
-      const log = await this.waitForActivity()
-      if (log) {
-        this.loadLog(log)
-        return
-      }
-      this.fail('initial', 'timedOut', 'Timed out waiting for initial collection.')
+      await this.settle('initial', null)
     } catch (error) {
       this.fail('initial', 'failed', extractBackendErrorMessage(error))
     } finally {
@@ -100,18 +120,7 @@ export class ActivityDataService {
   async collect(fromKey: string, toKey: string): Promise<void> {
     this.begin('collect')
     try {
-      const response = await this.backend.collect(localDayRange(fromKey, toKey))
-      if (this.isCollectingResponse(response)) {
-        const log = await this.waitForActivity()
-        if (!log) {
-          this.fail('collect', 'timedOut', 'Timed out waiting for collection.')
-          return
-        }
-        this.loadLog(log)
-        return
-      }
-
-      this.loadLog(response)
+      await this.settle('collect', await this.backend.collect(localDayRange(fromKey, toKey)))
     } catch (error) {
       this.fail('collect', 'failed', extractBackendErrorMessage(error))
     } finally {
@@ -126,9 +135,29 @@ export class ActivityDataService {
     if (this.error() === status.message) this.error.set(null)
   }
 
-  private begin(operation: CollectionOperation): void {
+  /**
+   * Follows the collection the backend starts by itself after a settings change. Quieter than
+   * `collect`: the selection stays, since the entries on screen stay until their source is
+   * collected again, and a backend with nothing to show is not an error.
+   */
+  async followCollection(): Promise<void> {
+    // A collection already being shown reads the same backend state.
+    if (this.isLoading()) return
+    this.begin('collect', true)
+    try {
+      await this.settle('collect', null)
+    } catch {
+      // Nothing was collected before the change, so nothing is collected again.
+    } finally {
+      this.finish()
+    }
+  }
+
+  private begin(operation: CollectionOperation, keepSelection = false): void {
     this.isLoading.set(true)
     this.error.set(null)
+    if (!keepSelection) this.viewState.clearSelection()
+    this.previousEntries = this.allEntries()
     this.collectionStatus.set({ kind: 'collecting', operation, startedAt: Date.now() })
   }
 
@@ -139,40 +168,126 @@ export class ActivityDataService {
 
   private finish(): void {
     this.isLoading.set(false)
+    this.previousEntries = []
     if (this.collectionStatus().kind === 'collecting') {
       this.collectionStatus.set({ kind: 'idle' })
     }
   }
 
-  async loadProviders(): Promise<void> {
-    const response = await this.backend.getProviders()
-    this.applyProviders(response.providers, true)
+  loadProviders(): Promise<void> {
+    return this.refreshProviders(true)
   }
 
+  /**
+   * Shows `providers`, a list newer than any request still on its way, such as the one a
+   * settings change answers with.
+   */
   applyProviders(providers: ProviderInfo[], activateAllUsable: boolean): void {
+    this.shownProviderRequest = this.providerRequests
+    this.showProviders(providers, activateAllUsable)
+  }
+
+  /** Asks for the sources and shows the answer, unless a newer list is on screen by then. */
+  private async refreshProviders(activateAllUsable: boolean): Promise<void> {
+    const request = ++this.providerRequests
+    const { providers } = await this.backend.getProviders()
+    if (request <= this.shownProviderRequest) return
+    this.shownProviderRequest = request
+    this.showProviders(providers, activateAllUsable)
+  }
+
+  private showProviders(providers: ProviderInfo[], activateAllUsable: boolean): void {
+    const previous = this.providerInfo()
     this.providerInfo.set(providers)
+    this.providersLoaded.set(true)
     if (activateAllUsable) {
       this.viewState.activateAllUsable(providers)
+    } else {
+      this.viewState.followProviders(providers, previous)
+    }
+    if (providers.some(isChecking)) void this.refreshWhileChecking()
+  }
+
+  /**
+   * The backend runs the startup checks in the background and lists a source as checking until
+   * its own check ends, so every answer is applied. Sources stay as the user switched them.
+   */
+  private async refreshWhileChecking(): Promise<void> {
+    if (this.refreshingProviders) return
+    this.refreshingProviders = true
+    try {
+      while (this.providerInfo().some(isChecking)) {
+        await this.wait()
+        await this.refreshProviders(false)
+      }
+    } catch {
+      // A later save or reload asks again.
+    } finally {
+      this.refreshingProviders = false
+    }
+  }
+
+  private wait(): Promise<void> {
+    return new Promise(resolve => setTimeout(resolve, this.pollDelayMs))
+  }
+
+  /**
+   * Shows a collection until it ends (`null` asks the backend right away). While it runs, each
+   * answer is a partial log: it is shown when it brings something new, and the backend is asked
+   * again. A failed collection keeps its range and reports the backend's error.
+   */
+  private async settle(
+    operation: CollectionOperation,
+    first: ActivityResponse | null
+  ): Promise<void> {
+    let response = first
+    let fetches = 0
+    let shown: string | null = null
+    while (response === null || isRunning(response)) {
+      if (response !== null && progressKey(response) !== shown) {
+        this.loadLog(response)
+        shown = progressKey(response)
+      }
+      if (fetches >= this.pollAttempts) {
+        const message =
+          operation === 'initial'
+            ? 'Timed out waiting for initial collection.'
+            : 'Timed out waiting for collection.'
+        this.fail(operation, 'timedOut', message)
+        return
+      }
+      if (response !== null) await this.wait()
+      response = await this.backend.getActivity()
+      fetches++
+    }
+
+    if ('error' in response) {
+      this.showRange(response)
+      this.fail(operation, 'failed', response.error)
       return
     }
-
-    this.viewState.retainUsableSources(providers)
+    this.loadLog(response)
+    // The log may name sources that are new here: the backend reloads a changed config file, and
+    // the providers poll may be a second behind. The log stays if the sources cannot be read.
+    await this.refreshProviders(false).catch(() => undefined)
   }
 
-  private async waitForActivity(): Promise<ActivityLog | null> {
-    for (let i = 0; i < this.pollAttempts; i++) {
-      const response = await this.backend.getActivity()
-      if (this.isCollectingResponse(response)) {
-        await new Promise(resolve => setTimeout(resolve, this.pollDelayMs))
-        continue
-      }
-      return response
-    }
-
-    return null
+  /** Shows a range of instants as the local days it covers. */
+  private showRange({ start, end }: { start: string; end: string }): void {
+    this.viewState.dateFrom.set(dayKeyOf(start))
+    this.viewState.dateTo.set(lastDayKeyBefore(end))
   }
+}
 
-  private isCollectingResponse(response: ActivityResponse): response is CollectingResponse {
-    return 'collecting' in response
-  }
+function isChecking(info: ProviderInfo): boolean {
+  return info.status === 'checking'
+}
+
+function isRunning(response: ActivityResponse): response is ActivityLog {
+  return !('error' in response) && (response.meta.pending ?? []).length > 0
+}
+
+/** A running collection changes what it shows only when a connection settles. */
+function progressKey({ meta }: ActivityLog): string {
+  return [meta.start, meta.end, ...(meta.pending ?? []).map(connectionKey)].join('\u001f')
 }

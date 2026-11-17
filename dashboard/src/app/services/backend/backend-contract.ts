@@ -1,7 +1,9 @@
 import type {
   ActivityLog,
+  AddConnectionRequestDto,
   CollectRequest,
-  CollectingResponse,
+  ConnectionId,
+  CollectionFailedResponse,
   LogsResponse,
   ProviderConfigSaveRequestDto,
   ProviderConfigSaveResponseDto,
@@ -10,7 +12,11 @@ import type {
 } from '../../generated/activity'
 import type { ExportRequest } from './export-request'
 
-export type ActivityResponse = ActivityLog | CollectingResponse
+/**
+ * The log of the last collection, partial while `meta.pending` names connections it still waits
+ * for, or the range and error of one that failed.
+ */
+export type ActivityResponse = ActivityLog | CollectionFailedResponse
 
 export type HttpMethod = 'GET' | 'POST' | 'DELETE'
 
@@ -82,6 +88,14 @@ export const BackendOperations = {
   saveProviderConfig: command<ProviderConfigSaveRequestDto, ProviderConfigSaveResponseDto>({
     label: 'Provider configuration',
     tauri: 'save_provider_config',
+  }),
+  addConnection: command<AddConnectionRequestDto, ProviderConfigSaveResponseDto>({
+    label: 'Add source',
+    tauri: 'add_connection',
+  }),
+  removeConnection: command<ConnectionId, ProviderConfigSaveResponseDto>({
+    label: 'Remove source',
+    tauri: 'remove_connection',
   }),
   saveExport: command<ExportRequest, void>({ label: 'Export', tauri: 'save_export' }),
   clearLogs: command<void, void>({

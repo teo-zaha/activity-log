@@ -2,10 +2,7 @@
   <app-settings-dialog-nav
     [selection]="selection()"
     [providers]="providerRows()"
-    [futureProviders]="futureProviderRows"
-    (generalSelected)="selectGeneral()"
-    (logsSelected)="selectLogs()"
-    (sourceSelected)="selectSource($event)"
+    (selected)="selection.set($event)"
   />
 
   <section class="settings-content">
@@ -14,15 +11,16 @@
         @if (selectedProvider(); as provider) {
           <span class="content-kicker u-kicker">Sources</span>
           <div class="provider-heading">
-            <span class="provider-heading-icon" [attr.data-status]="provider.info.status">
-              <app-provider-icon
-                class="provider-heading-glyph"
-                [source]="provider.info.id"
-                [fallbackIcon]="provider.icon"
-              />
-            </span>
+            <app-provider-icon [source]="provider.info.connection.source" size="lg" />
             <h2>{{ provider.label }}</h2>
           </div>
+        } @else if (selection() === 'add') {
+          <span class="content-kicker u-kicker">Sources</span>
+          <h2>Add source</h2>
+          <p>
+            Pick what to collect. A source can be added more than once, such as two GitLab accounts,
+            and renamed or removed later.
+          </p>
         } @else if (selection() === 'logs') {
           <span class="content-kicker u-kicker">Diagnostics</span>
           <h2>Logs</h2>
@@ -55,15 +53,14 @@
     <app-settings-dialog-mobile-tabs
       [selection]="selection()"
       [providers]="providerRows()"
-      [futureProviders]="futureProviderRows"
-      (generalSelected)="selectGeneral()"
-      (logsSelected)="selectLogs()"
-      (sourceSelected)="selectSource($event)"
+      (selected)="selection.set($event)"
     />
 
     <div class="settings-scroll">
       @if (selectedProvider(); as provider) {
-        <app-settings-source-pane [provider]="provider" />
+        <app-settings-source-pane [provider]="provider" (removed)="selection.set('general')" />
+      } @else if (selection() === 'add') {
+        <app-settings-add-source-pane (opened)="selection.set(connectionSelection($event))" />
       } @else if (selection() === 'logs') {
         <app-settings-logs-pane />
       } @else {

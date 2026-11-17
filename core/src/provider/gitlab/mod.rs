@@ -49,5 +49,9 @@ crate::provider! {
                 .await
                 .map(|entries| entries.into_activity_entries())
         }
+
+        fn instances(&self) -> crate::provider::connection::Instances {
+            crate::provider::connection::Instances::Multiple
+        }
     }
 }

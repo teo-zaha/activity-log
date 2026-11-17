@@ -25,6 +25,8 @@ The backend contract is owned by Rust. The frontend consumes generated DTOs and 
 - `core/src/utils/`: date utilities, markdown formatting, merge logic
 - `core/src/cache/`: per-day disk cache for remote API providers. A provider opts in with `cache: CachePolicy::api()` in its `provider!` declaration; the runtime then fetches only missing or stale days. Files live in the OS cache dir (`ACTIVITY_LOG_CACHE_DIR` overrides it), never the working directory
 - `core/src/diagnostics/`: in-memory diagnostic log (ring buffer) shown in the settings Logs pane; use `diagnostics::info/warn/error` instead of `eprintln!` so messages are visible in the desktop app
+- `core/src/provider/connection/`: a provider kind can be configured more than once; each setup is a connection (`ConnectionId { source, name }`) with its own values, runtime, status, cache file and log scope. An adapter declares `instances()` (one or several connections) and optionally `collection_state()`/`finish_kind()` for work across its connections (Git matches emails found in all of them). Collectors stay unaware of connections: the runtime stamps `connection` on entries and scopes log lines. Each connection runs its own check → collect pipeline (`collect_progressively` in `core/src/lib.rs`), and the log is rebuilt each time one settles, so `finish_kind()` also runs provisionally (`complete: false`) while connections of its kind are pending and must then return a subset of its complete result
+- `core/src/settings/`: `config.toml`, the connections file shared by the CLI, the API server and the desktop app (`[[gitlab]]` tables, field names without the kind prefix). It is the only list of sources: a kind it does not mention has no connections, and environment variables never configure a source
 
 ### API
 
@@ -33,9 +35,9 @@ The backend contract is owned by Rust. The frontend consumes generated DTOs and 
 
 Routes:
 
-- `GET /api/activity`
+- `GET /api/activity`: `202` with a partial `ActivityLog` while a collection runs (`meta.pending` names the connections still to come), `200` with the complete log, `200` with `CollectionFailedResponse` after a failure, `503` before the first collection
 - `GET /api/providers`
-- `POST /api/collect`
+- `POST /api/collect`: starts the collection and answers `202` at once with its first snapshot, or with the running one
 - `GET /api/logs`, `DELETE /api/logs`
 
 ### CLI

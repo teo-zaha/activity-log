@@ -1,26 +1,21 @@
 use std::{env, ffi::OsString, path::PathBuf};
 
-use anyhow::Result;
+use anyhow::{Result, anyhow};
 
 use crate::provider::provider_config::{
     ConfigBinding, ProviderConfig, ProviderConfigKey, ProviderConfigResolve,
 };
 use crate::{model::SupportedOs, provider::current_os};
 
-/// Local repositories, or folders to search for them. Unset means the home folder.
+/// Repositories, or folders to search for them. Unset means the home folder: this computer's,
+/// or the distribution's (`~`) for a WSL connection.
 pub const GIT_DIRS: ProviderConfigKey = ProviderConfigKey::optional_string("GIT_DIRS").list_of();
-#[cfg(target_os = "windows")]
-const CONFIG_KEYS: &[ProviderConfigKey] = &[GIT_DIRS, super::windows::WSL_GIT_DIRS];
-#[cfg(not(target_os = "windows"))]
 const CONFIG_KEYS: &[ProviderConfigKey] = &[GIT_DIRS];
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct GitConfig {
-    /// Local repositories or search folders; `None` means [`default_git_root`].
+    /// Repositories or search folders; `None` means the home folder.
     pub dirs: Option<Vec<PathBuf>>,
-    /// Repositories inside WSL; Windows only.
-    #[cfg(any(target_os = "windows", test))]
-    pub wsl: super::windows::WslConfig,
 }
 
 impl GitConfig {
@@ -28,13 +23,19 @@ impl GitConfig {
         ConfigBinding::of::<Self>()
     }
 
-    /// Exactly these local folders, and nothing in WSL.
-    pub fn local_only(dirs: Vec<PathBuf>) -> Self {
-        Self {
-            dirs: Some(dirs),
-            #[cfg(any(target_os = "windows", test))]
-            wsl: super::windows::WslConfig::none(),
-        }
+    /// Exactly these folders.
+    pub fn with_dirs(dirs: Vec<PathBuf>) -> Self {
+        Self { dirs: Some(dirs) }
+    }
+
+    /// The folders as Linux paths inside a WSL distribution, `~` while unset.
+    pub fn wsl_dirs(&self) -> Result<Vec<String>> {
+        let Some(dirs) = &self.dirs else {
+            return Ok(vec![WSL_HOME.to_string()]);
+        };
+        dirs.iter()
+            .map(|dir| parse_wsl_dir(&dir.to_string_lossy()))
+            .collect()
     }
 }
 
@@ -48,9 +49,27 @@ impl ProviderConfigResolve for GitConfig {
             dirs: config
                 .list(GIT_DIRS)
                 .map(|dirs| dirs.into_iter().map(PathBuf::from).collect()),
-            #[cfg(any(target_os = "windows", test))]
-            wsl: super::windows::WslConfig::from_config(config)?,
         })
+    }
+}
+
+pub fn wsl_label(distro: &str) -> String {
+    format!("WSL · {distro}")
+}
+
+/// A distribution's home folder, as a WSL folder or the start of one (`~/work`).
+pub const WSL_HOME: &str = "~";
+
+/// An absolute Linux path, `~` or `~/path`, without a trailing slash.
+pub(crate) fn parse_wsl_dir(dir: &str) -> Result<String> {
+    let dir = dir.trim();
+    if dir == WSL_HOME || dir.starts_with("~/") || dir.starts_with('/') {
+        let trimmed = dir.trim_end_matches('/');
+        Ok(if trimmed.is_empty() { "/" } else { trimmed }.to_string())
+    } else {
+        Err(anyhow!(
+            "Invalid WSL folder \"{dir}\": expected an absolute Linux path or ~"
+        ))
     }
 }
 

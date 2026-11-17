@@ -7,18 +7,21 @@ use crate::model::{
     ActivityEntry, ActivityLog, ActivityLogMeta, CollectedActivitySummary, GitEntry, GitLabEntry,
 };
 
-#[test]
-fn merges_git_and_gitlab_push_events() {
-    let git = vec![GitEntry::new(
+fn commit(hash: &str) -> GitEntry {
+    GitEntry::new(
         "repo".to_string(),
-        "abc123".to_string(),
+        hash.to_string(),
         "message".to_string(),
         "me@example.com".to_string(),
         "main".to_string(),
         "2026-03-10T10:00:00Z".to_string(),
-    )];
-    let gitlab = vec![GitLabEntry {
+    )
+}
+
+fn push(commit_to: &str) -> GitLabEntry {
+    GitLabEntry {
         source: "gitlab".to_string(),
+        connection: String::new(),
         entry_type: crate::model::GitLabType::PushedTo,
         timestamp: "2026-03-10T10:05:00Z".to_string(),
         title: "repo".to_string(),
@@ -29,16 +32,39 @@ fn merges_git_and_gitlab_push_events() {
         note_body: None,
         note_file: None,
         note_resolved: None,
-        raw: json!({ "push_data": { "commit_to": "abc123" } }),
-    }];
+        raw: json!({ "push_data": { "commit_to": commit_to } }),
+    }
+}
 
+#[test]
+fn merges_git_and_gitlab_push_events() {
     let MergeResult {
         merged_git,
         remaining_gitlab,
-    } = merge_git_with_gitlab(&git, &gitlab);
+    } = merge_git_with_gitlab(&[commit("abc123")], &[push("abc123")]);
 
     assert!(merged_git[0].gitlab_event.is_some());
     assert!(remaining_gitlab.is_empty());
+}
+
+#[test]
+fn a_push_without_its_git_commit_stays_an_entry() {
+    let MergeResult {
+        merged_git,
+        remaining_gitlab,
+    } = merge_git_with_gitlab(&[commit("abc123")], &[push("abc123"), push("def456")]);
+
+    assert!(merged_git[0].gitlab_event.is_some());
+    let [unmatched] = remaining_gitlab.as_slice() else {
+        panic!("expected the unmatched push, got {remaining_gitlab:?}");
+    };
+    assert_eq!(
+        crate::collect::gitlab::commit_to_sha(unmatched),
+        Some("def456")
+    );
+
+    let alone = merge_git_with_gitlab(&[], &[push("abc123")]);
+    assert_eq!(alone.remaining_gitlab.len(), 1, "nothing to fold into yet");
 }
 
 #[test]
@@ -48,6 +74,7 @@ fn markdown_contains_expected_sections() {
             generated: "2026-03-10T10:00:00Z".to_string(),
             start: "2026-03-01T00:00:00Z".to_string(),
             end: "2026-03-11T00:00:00Z".to_string(),
+            pending: Vec::new(),
         },
         summary: CollectedActivitySummary::default(),
         entries: vec![ActivityEntry::Git(GitEntry::new(

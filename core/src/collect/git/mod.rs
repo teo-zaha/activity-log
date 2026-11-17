@@ -1,7 +1,9 @@
 use std::{
     collections::{BTreeSet, HashSet},
     fs,
+    ops::ControlFlow,
     path::{Path, PathBuf},
+    sync::Mutex,
 };
 
 use anyhow::{Result, anyhow};
@@ -15,9 +17,12 @@ use gix::{
 
 use crate::{
     diagnostics,
-    model::{CollectOptions, GitEntry, SupportedOs},
+    model::{CollectOptions, GitEntry},
     platform::background_command,
-    provider::git::{GitConfig, default_git_root},
+    provider::{
+        connection::ConnectionLocation,
+        git::{GitConfig, default_git_root},
+    },
 };
 
 #[cfg(test)]
@@ -29,18 +34,25 @@ pub(crate) mod windows;
 use self::windows as windows_impl;
 #[cfg(not(target_os = "windows"))]
 mod windows_impl {
-    use anyhow::Result;
+    use anyhow::{Result, bail};
 
-    use super::RepoCommits;
-    use crate::{model::CollectOptions, provider::git::GitConfig};
+    use super::{RepoCommits, WslTarget};
+    use crate::model::CollectOptions;
 
-    /// WSL needs Windows; elsewhere only the local repositories exist.
-    pub(super) fn collect_repos(
-        options: &CollectOptions,
-        config: &GitConfig,
+    pub(crate) fn collect_wsl(
+        target: &WslTarget,
+        _options: &CollectOptions,
     ) -> Result<RepoCommits> {
-        super::collect_local_repos(options, config)
+        bail!("WSL {} needs Windows", target.distro)
     }
+}
+
+/// What to read from one WSL distribution.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct WslTarget {
+    pub distro: String,
+    /// Repositories, or folders searched for them; `~` is the distribution's home.
+    pub dirs: Vec<String>,
 }
 
 /// Everything read from the repositories, before keeping the user's own commits.
@@ -61,34 +73,137 @@ pub(crate) struct RepoHistory {
     pub commits: Vec<GitEntry>,
 }
 
-/// The user's commits: those authored with any email the user configured anywhere.
+/// Emails found while collecting, across every Git connection, so a repository without
+/// `user.email` is matched by the emails of the others, even in another location.
 #[derive(Debug, Default)]
-pub(crate) struct OwnCommits {
-    pub entries: Vec<GitEntry>,
-    /// The emails matched, lowercased and sorted. Empty when no email is configured at all.
-    pub identities: Vec<String>,
+pub struct GitCollection {
+    found: Mutex<FoundIdentities>,
+}
+
+#[derive(Debug, Default, Clone)]
+pub(crate) struct FoundIdentities {
+    /// Lowercased: git hosts compare emails case-insensitively.
+    pub identities: BTreeSet<String>,
     pub without_email: Vec<String>,
-    /// Commits in the range by other authors.
-    pub ignored: usize,
+}
+
+impl GitCollection {
+    pub(crate) fn record(&self, commits: &RepoCommits) {
+        let mut found = self
+            .found
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        found.identities.extend(
+            commits
+                .repos
+                .iter()
+                .filter_map(|repo| repo.email.as_deref())
+                .chain(commits.identities.iter().map(String::as_str))
+                .map(normalize_email)
+                .filter(|email| !email.is_empty()),
+        );
+        found.without_email.extend(
+            commits
+                .repos
+                .iter()
+                .filter(|repo| repo.email.is_none())
+                .map(|repo| repo.label.clone()),
+        );
+    }
+
+    pub(crate) fn found(&self) -> FoundIdentities {
+        self.found
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .clone()
+    }
+}
+
+fn normalize_email(email: &str) -> String {
+    email.trim().to_lowercase()
+}
+
+/// Keeps the commits authored with one of `identities`; returns them and how many were not.
+pub(crate) fn keep_own(
+    identities: &BTreeSet<String>,
+    commits: Vec<GitEntry>,
+) -> (Vec<GitEntry>, usize) {
+    let (own, other): (Vec<_>, Vec<_>) = commits
+        .into_iter()
+        .partition(|commit| identities.contains(&normalize_email(&commit.author)));
+    (own, other.len())
+}
+
+/// Logs how commits were matched across all Git connections.
+pub(crate) fn report_identities(found: &FoundIdentities, ignored: usize) {
+    if found.identities.is_empty() {
+        if !found.without_email.is_empty() {
+            diagnostics::warn(
+                "git",
+                format!(
+                    "Skipped {} repositories: no user.email is set in any of them, so your commits cannot be told apart (set it with `git config --global user.email`): {}",
+                    found.without_email.len(),
+                    found.without_email.join(", ")
+                ),
+            );
+        }
+        return;
+    }
+    // Repositories without their own user.email are matched by these too.
+    let ignored = if ignored > 0 {
+        format!("; ignored {ignored} by other authors")
+    } else {
+        String::new()
+    };
+    let identities = found.identities.iter().cloned().collect::<Vec<_>>();
+    diagnostics::info(
+        "git",
+        format!("Keeping commits by {}{ignored}", identities.join(", ")),
+    );
+}
+
+/// One collection's own commits, as the provider gets them across connections.
+#[cfg(test)]
+pub(crate) fn own_commits(commits: RepoCommits) -> (FoundIdentities, Vec<GitEntry>, usize) {
+    let collection = GitCollection::default();
+    collection.record(&commits);
+    let found = collection.found();
+    let all = commits
+        .repos
+        .into_iter()
+        .flat_map(|repo| repo.commits)
+        .collect();
+    let (own, ignored) = keep_own(&found.identities, all);
+    (found, own, ignored)
 }
 
 // Directories that never hold a user's own repositories but are expensive to walk.
 const SKIPPED_DIR_NAMES: &[&str] = &["node_modules", "AppData", ".direnv"];
 
-pub async fn collect_git(
+/// Reads the repositories of one Git connection, with commits by every author; the provider
+/// keeps the user's own once all connections are read.
+pub(crate) async fn collect_git(
     options: &CollectOptions,
     config: &GitConfig,
-    current_os: SupportedOs,
-) -> Result<Vec<GitEntry>> {
+    location: ConnectionLocation,
+) -> Result<RepoCommits> {
     let options = *options;
     let config = config.clone();
-    let commits = tokio::task::spawn_blocking(move || match current_os {
-        SupportedOs::Windows => windows_impl::collect_repos(&options, &config),
-        SupportedOs::Macos | SupportedOs::Linux => collect_local_repos(&options, &config),
+    let connection = diagnostics::current_connection();
+    tokio::task::spawn_blocking(move || {
+        diagnostics::in_connection_sync(connection, || match location {
+            ConnectionLocation::Local => collect_local_repos(&options, &config),
+            ConnectionLocation::Wsl(distro) => {
+                let target = WslTarget {
+                    distro,
+                    dirs: config.wsl_dirs()?,
+                };
+                windows_impl::collect_wsl(&target, &options)
+            }
+        })
     })
     .await
-    .map_err(|err| anyhow!("Git collection task failed: {err}"))??;
-    Ok(finish(commits))
+    .map_err(|err| anyhow!("Git collection task failed: {err}"))?
 }
 
 /// The basic implementation: repositories on this machine's file system, read with gix.
@@ -99,14 +214,11 @@ pub(crate) fn collect_local_repos(
     let dirs = resolve_git_repos(config)?;
     let mut repos = Vec::new();
     let mut via_cli = 0;
+    let mut seen = HashSet::new();
+    let mut worktrees = 0;
     diagnostics::info("git", format!("Scanning {} repositories", dirs.len()));
 
     for repo_path in dirs {
-        let repo_name = repo_path
-            .file_name()
-            .and_then(|name| name.to_str())
-            .unwrap_or_default()
-            .to_string();
         let repo = match open_repo_strict(&repo_path) {
             Ok(repo) => repo,
             Err(err) => {
@@ -117,6 +229,14 @@ pub(crate) fn collect_local_repos(
                 continue;
             }
         };
+        // Worktrees of one repository share its history; it is read once, under its own name.
+        let common_dir = repo.common_dir();
+        let common_dir = fs::canonicalize(common_dir).unwrap_or_else(|_| common_dir.to_path_buf());
+        if !seen.insert(common_dir.clone()) {
+            worktrees += 1;
+            continue;
+        }
+        let repo_name = repo_label(&common_dir);
         let email = repo_user_email(&repo).or_else(|| {
             let email = git_cli_user_email(&repo_path)?;
             via_cli += 1;
@@ -145,95 +265,31 @@ pub(crate) fn collect_local_repos(
             format!("Read user.email from the git command for {via_cli} repositories"),
         );
     }
+    if worktrees > 0 {
+        diagnostics::info(
+            "git",
+            format!("Read {worktrees} more worktrees through their main repository"),
+        );
+    }
     Ok(RepoCommits {
         repos,
         identities: Vec::new(),
     })
 }
 
-/// Keeps the commits authored with any of the user's emails. A repository without `user.email`
-/// is matched against the emails of the others, so one configured identity covers them all.
-/// Emails compare case-insensitively, as git hosts do.
-pub(crate) fn own_commits(commits: RepoCommits) -> OwnCommits {
-    let normalize = |email: &str| email.trim().to_lowercase();
-    let identities = commits
-        .repos
-        .iter()
-        .filter_map(|repo| repo.email.as_deref())
-        .chain(commits.identities.iter().map(String::as_str))
-        .map(normalize)
-        .filter(|email| !email.is_empty())
-        .collect::<BTreeSet<_>>();
-    let mut own = OwnCommits::default();
-    for repo in commits.repos {
-        if repo.email.is_none() {
-            own.without_email.push(repo.label);
-        }
-        if identities.is_empty() {
-            continue;
-        }
-        for commit in repo.commits {
-            if identities.contains(&normalize(&commit.author)) {
-                own.entries.push(commit);
-            } else {
-                own.ignored += 1;
-            }
-        }
-    }
-    own.identities = identities.into_iter().collect();
-    own
-}
-
-/// Reports how commits were matched and orders them newest first.
-fn finish(commits: RepoCommits) -> Vec<GitEntry> {
-    let OwnCommits {
-        mut entries,
-        identities,
-        without_email,
-        ignored,
-    } = own_commits(commits);
-    if identities.is_empty() {
-        if !without_email.is_empty() {
-            diagnostics::warn(
-                "git",
-                format!(
-                    "Skipped {} repositories: no user.email is set in any of them, so your commits cannot be told apart (set it with `git config --global user.email`): {}",
-                    without_email.len(),
-                    without_email.join(", ")
-                ),
-            );
-        }
+/// A repository's name: the folder of its main worktree (`…/activity-log/.git` →
+/// `activity-log`), or of a bare repository without the `.git` suffix.
+pub(crate) fn repo_label(common_dir: &Path) -> String {
+    let dir = if common_dir.file_name().is_some_and(|name| name == ".git") {
+        common_dir.parent().unwrap_or(common_dir)
     } else {
-        // Repositories without their own user.email are matched by these too.
-        let ignored = if ignored > 0 {
-            format!("; ignored {ignored} by other authors")
-        } else {
-            String::new()
-        };
-        diagnostics::info(
-            "git",
-            format!("Keeping commits by {}{ignored}", identities.join(", ")),
-        );
-    }
-
-    entries.sort_by(|a, b| {
-        match (
-            DateTime::parse_from_rfc3339(&a.timestamp).ok(),
-            DateTime::parse_from_rfc3339(&b.timestamp).ok(),
-        ) {
-            (Some(a_time), Some(b_time)) => b_time
-                .cmp(&a_time)
-                .then_with(|| a.repo.cmp(&b.repo))
-                .then_with(|| a.hash.cmp(&b.hash)),
-            _ => b
-                .timestamp
-                .cmp(&a.timestamp)
-                .then_with(|| a.repo.cmp(&b.repo))
-                .then_with(|| a.hash.cmp(&b.hash)),
-        }
-    });
-
-    entries
+        common_dir
+    };
+    let name = dir
+        .file_name()
+        .and_then(|name| name.to_str())
+        .unwrap_or_default();
+    name.strip_suffix(".git").unwrap_or(name).to_string()
 }
 
 pub(crate) fn open_repo_strict(path: &Path) -> Result<Repository> {
@@ -273,23 +329,41 @@ pub(crate) fn resolve_git_repos_with_home_root(
     config: &GitConfig,
     home_root: Option<PathBuf>,
 ) -> Result<Vec<PathBuf>> {
-    match &config.dirs {
-        Some(dirs) => Ok(resolve_git_repos_from_roots(dirs)),
-        None => {
-            let home_root = home_root.ok_or_else(|| anyhow!("Git home directory unavailable"))?;
-            Ok(expand_git_dir_input(&home_root))
-        }
-    }
+    Ok(resolve_git_repos_from_roots(&git_roots(config, home_root)?))
 }
 
 pub(crate) fn resolve_git_repos_from_roots(roots: &[PathBuf]) -> Vec<PathBuf> {
     let mut repos = BTreeSet::new();
-
     for root in roots {
-        repos.extend(expand_git_dir_input(root));
+        let _ = visit_git_dir_input(root, &mut |repo| {
+            repos.insert(repo);
+            ControlFlow::Continue(())
+        });
     }
-
     repos.into_iter().collect()
+}
+
+/// The folders a connection searches: its configured ones, or the home folder.
+fn git_roots(config: &GitConfig, home_root: Option<PathBuf>) -> Result<Vec<PathBuf>> {
+    match &config.dirs {
+        Some(dirs) => Ok(dirs.clone()),
+        None => home_root
+            .map(|home| vec![home])
+            .ok_or_else(|| anyhow!("Git home directory unavailable")),
+    }
+}
+
+/// Calls `visit` with each repository the connection would read, until it breaks.
+pub(crate) fn visit_git_repos(
+    config: &GitConfig,
+    visit: &mut impl FnMut(PathBuf) -> ControlFlow<()>,
+) -> Result<()> {
+    for root in git_roots(config, default_git_root())? {
+        if visit_git_dir_input(&root, visit).is_break() {
+            break;
+        }
+    }
+    Ok(())
 }
 
 /// Every commit in the range reachable from any ref, by any author.
@@ -375,43 +449,45 @@ fn head_target(repo: &Repository) -> Option<(ObjectId, String)> {
     Some((commit.id, branch))
 }
 
-fn expand_git_dir_input(path: &Path) -> Vec<PathBuf> {
+fn visit_git_dir_input(
+    path: &Path,
+    visit: &mut impl FnMut(PathBuf) -> ControlFlow<()>,
+) -> ControlFlow<()> {
     if path.join(".git").exists() {
-        return vec![path.to_path_buf()];
+        return visit(path.to_path_buf());
     }
-
-    discover_repos(path, 0, 4)
+    visit_repos(path, 0, 4, visit)
 }
 
-fn discover_repos(root: &Path, depth: usize, max_depth: usize) -> Vec<PathBuf> {
+fn visit_repos(
+    root: &Path,
+    depth: usize,
+    max_depth: usize,
+    visit: &mut impl FnMut(PathBuf) -> ControlFlow<()>,
+) -> ControlFlow<()> {
     if depth >= max_depth {
-        return Vec::new();
+        return ControlFlow::Continue(());
     }
-
-    let mut repos = Vec::new();
-    let entries = match fs::read_dir(root) {
-        Ok(entries) => entries,
-        Err(_) => return repos,
+    let Ok(entries) = fs::read_dir(root) else {
+        return ControlFlow::Continue(());
     };
 
     for entry in entries.flatten() {
         let path = entry.path();
-        let metadata = match entry.metadata() {
-            Ok(metadata) => metadata,
-            Err(_) => continue,
+        let Ok(metadata) = entry.metadata() else {
+            continue;
         };
         if !metadata.is_dir() || is_skipped_dir(&path) {
             continue;
         }
 
         if path.join(".git").exists() {
-            repos.push(path);
+            visit(path)?;
         } else {
-            repos.extend(discover_repos(&path, depth + 1, max_depth));
+            visit_repos(&path, depth + 1, max_depth, visit)?;
         }
     }
-
-    repos
+    ControlFlow::Continue(())
 }
 
 fn is_skipped_dir(path: &Path) -> bool {

@@ -2,7 +2,7 @@ import { provideHttpClient } from '@angular/common/http'
 import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing'
 import { TestBed } from '@angular/core/testing'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { activityLog, providersResponse } from '../../testing/activity-fixtures'
+import { activityLog, collectingLog, providersResponse } from '../../testing/activity-fixtures'
 import { BackendOperations, DesktopOnlyBackendError } from './backend-contract'
 import { HttpBackendTransport } from './http-backend-transport'
 
@@ -53,9 +53,9 @@ describe('HttpBackendTransport', () => {
     const req = http.expectOne('/api/collect')
     expect(req.request.method).toBe('POST')
     expect(req.request.body).toEqual(request)
-    req.flush({ collecting: true })
+    req.flush(collectingLog)
 
-    await expect(result).resolves.toEqual({ collecting: true })
+    await expect(result).resolves.toEqual(collectingLog)
   })
 
   it('clears logs over DELETE /api/logs', async () => {
@@ -76,7 +76,10 @@ describe('HttpBackendTransport', () => {
       transport.call(BackendOperations.providerConfig, undefined)
     ).rejects.toBeInstanceOf(DesktopOnlyBackendError)
     await expect(
-      transport.call(BackendOperations.saveProviderConfig, { source: 'git', values: [] })
+      transport.call(BackendOperations.saveProviderConfig, {
+        connection: { source: 'git', name: 'default' },
+        values: [],
+      })
     ).rejects.toThrow('Provider configuration is only available in desktop mode.')
     http.expectNone(() => true)
   })

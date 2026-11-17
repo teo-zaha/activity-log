@@ -1,11 +1,15 @@
 import { describe, expect, it } from 'vitest'
 import {
   addDaysToKey,
+  clockTime,
   dayKeyOf,
   lastDayKeyBefore,
   localDateKey,
   localDayRange,
+  longDayLabel,
+  monthLabel,
   relativeDayLabel,
+  shortDayLabel,
 } from './local-day'
 
 // Expectations are built with local `Date` constructors, so they hold in any time zone.
@@ -39,5 +43,23 @@ describe('local days', () => {
     expect(relativeDayLabel('2026-03-01', '2026-03-01')).toBe('Today')
     expect(relativeDayLabel('2026-02-28', '2026-03-01')).toBe('Yesterday')
     expect(relativeDayLabel('2026-02-27', '2026-03-01')).toBeNull()
+  })
+})
+
+describe('labels', () => {
+  it('shows the local clock time of an instant', () => {
+    const instant = new Date(2026, 10, 16, 9, 5).toISOString()
+
+    expect(clockTime(instant)).toBe('09:05')
+  })
+
+  it('shows a day key as a long date', () => {
+    expect(longDayLabel('2026-11-16')).toBe('Monday, 16 November 2026')
+  })
+
+  it('writes short day and month labels', () => {
+    expect(shortDayLabel('2026-11-16')).toBe('Mon 16 Nov')
+    expect(shortDayLabel('2026-11-16', true)).toBe('Mon 16 Nov 2026')
+    expect(monthLabel('2026-09-01')).toBe('Sep')
   })
 })

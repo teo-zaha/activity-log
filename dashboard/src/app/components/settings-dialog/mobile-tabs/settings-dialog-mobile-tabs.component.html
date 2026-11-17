@@ -1,62 +1,45 @@
 <nav class="mobile-tabs" aria-label="Settings sections">
   <div class="mobile-tab-list">
-    <button
-      type="button"
-      class="mobile-tab"
-      [class.active]="selection() === 'general'"
-      (click)="selectGeneral()"
-    >
-      <span class="mobile-tab-main">
-        <mat-icon>tune</mat-icon>
-        <span>General</span>
-      </span>
-    </button>
-
-    <button
-      type="button"
-      class="mobile-tab"
-      [class.active]="selection() === 'logs'"
-      (click)="selectLogs()"
-    >
-      <span class="mobile-tab-main">
-        <mat-icon>receipt_long</mat-icon>
-        <span>Logs</span>
-      </span>
-    </button>
-
-    @for (provider of providers(); track provider.info.id) {
+    @for (section of sections; track section.id) {
       <button
         type="button"
         class="mobile-tab"
-        [class.active]="selection() === `source:${provider.info.id}`"
-        (click)="selectSource(provider.info.id)"
+        [class.active]="selection() === section.id"
+        (click)="selected.emit(section.id)"
       >
         <span class="mobile-tab-main">
-          <span class="mobile-tab-icon" [attr.data-status]="provider.info.status">
-            <app-provider-icon
-              class="mobile-tab-brand"
-              [source]="provider.info.id"
-              [fallbackIcon]="provider.icon"
-            />
-          </span>
+          <mat-icon>{{ section.icon }}</mat-icon>
+          <span>{{ section.label }}</span>
+        </span>
+      </button>
+    }
+
+    @for (provider of providers(); track provider.key) {
+      @let id = connectionSelection(provider.key);
+      <button
+        type="button"
+        class="mobile-tab"
+        [class.active]="selection() === id"
+        (click)="selected.emit(id)"
+      >
+        <span class="mobile-tab-main">
+          <app-provider-icon [source]="provider.info.connection.source" size="sm" />
           <span>{{ provider.label }}</span>
         </span>
         <app-status-dot [status]="provider.info.status" size="sm" [glow]="false" />
       </button>
     }
 
-    @for (provider of futureProviders(); track provider.id) {
-      <button type="button" class="mobile-tab mobile-tab-upcoming" disabled>
-        <span class="mobile-tab-main">
-          <span class="mobile-tab-icon mobile-tab-icon-upcoming">
-            <img class="mobile-tab-brand" [src]="provider.iconUrl" alt="" aria-hidden="true" />
-          </span>
-          <span class="mobile-tab-copy">
-            <span>{{ provider.label }}</span>
-            <span class="mobile-tab-status">Coming soon</span>
-          </span>
-        </span>
-      </button>
-    }
+    <button
+      type="button"
+      class="mobile-tab"
+      [class.active]="selection() === 'add'"
+      (click)="selected.emit('add')"
+    >
+      <span class="mobile-tab-main">
+        <mat-icon>add</mat-icon>
+        <span>Add source</span>
+      </span>
+    </button>
   </div>
 </nav>

@@ -5,8 +5,44 @@
   flex-direction: column;
   flex: 1;
   min-height: 0;
+  position: relative;
+  // Lets the day index size itself to the visible height (`cqh`) from inside the scroller.
+  container-type: size;
+  --day-header-top: 64px;
+  --day-index-width: 30px;
+  --day-index-gap: 4px;
+}
+
+.timeline-scroll {
+  flex: 1;
+  min-height: 0;
   overflow-y: auto;
-  scroll-padding-top: 88px;
+  // Room for the scrollbar is kept from the start, so the list does not shift sideways when
+  // a long range makes it appear.
+  scrollbar-gutter: stable;
+  // Keyboard focus never ends up under the search bar or a day header.
+  scroll-padding-top: calc(var(--day-header-top) + 56px);
+
+  // The day index lives in this strip; the list centres in what is left.
+  &.has-day-index {
+    padding-right: calc(var(--day-index-width) + var(--day-index-gap));
+  }
+}
+
+// Sticks like the search bar used to on its own, carrying the day index with it.
+.timeline-top {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+}
+
+// From level with the stuck day header to just above the bottom edge, flush against the
+// scrollbar gutter.
+.day-index {
+  position: absolute;
+  top: calc(var(--day-header-top) + 2px);
+  right: calc(-1 * (var(--day-index-width) + var(--day-index-gap)));
+  height: calc(100cqh - var(--day-header-top) - 14px);
 }
 
 .timeline-wrap {
@@ -17,7 +53,7 @@
 }
 
 .timeline-summary {
-  margin: 0 0 18px;
+  margin: 0 0 10px;
   padding-left: 2px;
   color: var(--text-tertiary);
   font-size: 12.5px;
@@ -26,17 +62,28 @@
 
 // ── Day groups ───────────────────────────────────────────────────────────────
 
+// Padding, not margin, and a header without a negative top margin (it would collapse through
+// the section): sections tile the list and each starts at its header, so the day index's
+// tracking line just under the sticky header always crosses exactly one section.
 .day-group {
-  margin-bottom: 26px;
+  padding-bottom: 18px;
   animation: u-rise 0.32s var(--ease-out) both;
 }
 
+// Stays under the sticky search bar while its day scrolls by; the next day's header pushes it
+// out. `--day-header-top` is the bottom of the search field per breakpoint, so the search bar's
+// faded lower edge lies over the header rather than over entries.
 .day-header {
+  position: sticky;
+  top: var(--day-header-top);
+  z-index: 5;
   display: flex;
   align-items: baseline;
   justify-content: space-between;
   gap: 12px;
-  padding: 0 4px 10px;
+  margin: 0 -4px;
+  padding: 8px 8px 10px;
+  background: var(--surface);
 }
 
 .day-label {
@@ -282,20 +329,7 @@
 // ── Empty state ──────────────────────────────────────────────────────────────
 
 .empty-state {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 6px;
   margin-top: 8px;
-  padding: 72px 24px;
-  border: 1px dashed var(--border);
-  border-radius: var(--radius-xl);
-  text-align: center;
-  animation: u-rise 0.3s var(--ease-out);
-
-  .u-btn {
-    margin-top: 12px;
-  }
 }
 
 .empty-icon {
@@ -313,31 +347,25 @@
   }
 }
 
-.empty-title {
-  margin: 0;
-  color: var(--text-primary);
-  font-size: 16px;
-  font-weight: 650;
-  overflow-wrap: anywhere;
-}
-
-.empty-sub {
-  max-width: 380px;
-  margin: 0;
-  color: var(--text-secondary);
-  font-size: 13.5px;
-  line-height: 1.5;
-}
-
 // ── Responsive ───────────────────────────────────────────────────────────────
 
 @include ui.down('tablet') {
+  :host {
+    --day-header-top: 58px;
+    --day-index-width: 28px;
+  }
+
   .timeline-wrap {
     padding: 0 16px 32px;
   }
 }
 
 @include ui.down('phone') {
+  :host {
+    --day-header-top: 48px;
+    --day-index-width: 22px;
+  }
+
   .timeline-wrap {
     padding: 0 10px 24px;
   }

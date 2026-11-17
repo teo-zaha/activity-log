@@ -1,0 +1,32 @@
+@use '../dashboard-shared' as ui;
+
+:host {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  padding: 24px 24px 32px;
+  overflow-y: auto;
+}
+
+.no-sources {
+  flex: 1;
+  justify-content: center;
+  gap: 8px;
+  padding: 48px 24px;
+}
+
+.logos {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 14px;
+}
+
+.title {
+  font-size: 18px;
+}
+
+@include ui.down('phone') {
+  :host {
+    padding: 10px 10px 24px;
+  }
+}

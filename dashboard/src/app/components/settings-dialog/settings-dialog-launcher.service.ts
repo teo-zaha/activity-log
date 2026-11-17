@@ -6,9 +6,9 @@ import {
   injectAsync,
   runInInjectionContext,
 } from '@angular/core'
-import type { Source } from '../../generated/activity'
 import { ActivityService } from '../../services/activity.service'
 import type { SettingsDialogOpener } from './settings-dialog-opener.service'
+import type { SettingsTarget } from './settings-dialog.types'
 
 @Service()
 export class SettingsDialogLauncher {
@@ -18,12 +18,13 @@ export class SettingsDialogLauncher {
   private loadOpener = this.createOpenerLoader()
   private loading = false
 
-  open(source?: Source): void {
-    void this.openWhenLoaded(source)
+  /** Opens on a connection, on "Add source", or on General. */
+  open(target?: SettingsTarget): void {
+    void this.openWhenLoaded(target)
   }
 
   /** Clicks while the dialog code is still loading are ignored rather than queued. */
-  private async openWhenLoaded(source?: Source): Promise<void> {
+  private async openWhenLoaded(target?: SettingsTarget): Promise<void> {
     if (this.loading) return
     this.loading = true
 
@@ -39,7 +40,7 @@ export class SettingsDialogLauncher {
       this.loading = false
     }
 
-    opener.open(source)
+    opener.open(target)
   }
 
   /** The one place that imports the dialog code, so it stays out of the initial bundle. */

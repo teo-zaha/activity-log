@@ -1,0 +1,311 @@
+@use '../../dashboard-shared' as ui;
+
+// The parent places the rail; `--day-index-width` sets its width per breakpoint.
+:host {
+  display: block;
+  width: var(--day-index-width, 30px);
+  border-radius: 999px;
+  outline: none;
+  cursor: pointer;
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+
+  &::before {
+    content: '';
+    position: absolute;
+    inset: 0 3px;
+    border-radius: 999px;
+    transition: background-color 0.15s ease;
+  }
+}
+
+:host(.is-hovering),
+:host(.is-scrubbing),
+:host(:focus-visible) {
+  &::before {
+    background: color-mix(in srgb, var(--surface-hover) 85%, transparent);
+  }
+}
+
+:host(:focus-visible)::before {
+  box-shadow: 0 0 0 2px var(--accent);
+}
+
+// Heights here are mirrored in the component's layout constants.
+.track {
+  position: absolute;
+  inset: 6px 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.month {
+  flex: 0 0 14px;
+  display: grid;
+  place-items: center;
+  color: var(--text-tertiary);
+  font-size: 8.5px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+
+  &:first-child {
+    flex-basis: 12px;
+  }
+}
+
+.day {
+  position: relative;
+  flex: 1 1 0;
+  min-height: 0;
+  display: grid;
+  place-items: center;
+}
+
+// `--f` (0 to 1) magnifies the rows near the pointer; transform only, so nothing reflows.
+.face {
+  display: grid;
+  place-items: center;
+  transform-origin: 70% 50%;
+  transform: translateX(calc(var(--f, 0) * -7px)) scale(calc(1 + var(--f, 0) * 0.7));
+  transition: transform 0.09s ease-out;
+
+  > * {
+    grid-area: 1 / 1;
+  }
+}
+
+.num {
+  color: var(--text-secondary);
+  font-size: 10.5px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+}
+
+.mark {
+  display: none;
+}
+
+@mixin dot($size: 4px) {
+  display: block;
+  width: $size;
+  height: $size;
+  border-radius: 50%;
+}
+
+.day.is-weekend .num {
+  color: var(--text-tertiary);
+  font-weight: 500;
+}
+
+.day.is-empty {
+  .num {
+    display: none;
+  }
+
+  .mark {
+    @include dot(3px);
+    background: var(--text-tertiary);
+    opacity: 0.45;
+  }
+}
+
+.day.is-today {
+  .num {
+    color: var(--accent);
+    font-weight: 750;
+  }
+
+  &::after {
+    content: '';
+    position: absolute;
+    top: 50%;
+    left: 1px;
+    width: 4px;
+    height: 4px;
+    margin-top: -2px;
+    border-radius: 50%;
+    background: var(--accent);
+  }
+}
+
+@mixin entry-dot {
+  .num {
+    display: none;
+  }
+
+  .mark {
+    @include dot;
+    background: var(--text-secondary);
+    opacity: 0.75;
+  }
+}
+
+// Sparse: numbers on Mondays and today only, until the pointer comes near.
+:host([data-density='sparse']) {
+  .day.has-entries:not(.is-keep, .is-near) {
+    @include entry-dot;
+  }
+
+  .day.is-empty .mark {
+    width: 2px;
+    height: 2px;
+  }
+}
+
+// Dense: one bar per day, its length set by the day's share of the busiest day.
+:host([data-density='dense']) {
+  .num,
+  .day.is-empty .mark {
+    display: none;
+  }
+
+  .face {
+    justify-self: end;
+    margin-right: 5px;
+    transform: none;
+  }
+
+  .day.has-entries .mark {
+    display: block;
+    width: calc(2px + var(--w, 0) * 12px);
+    height: max(1px, 60%);
+    border-radius: 1px;
+    background: color-mix(in srgb, var(--text-tertiary) 75%, transparent);
+  }
+
+  .day.is-today::after {
+    width: 3px;
+    height: 3px;
+    margin-top: -1.5px;
+  }
+}
+
+// The active day: one pill that glides with the scroll position.
+.pill {
+  position: absolute;
+  top: 0;
+  right: 3px;
+  display: grid;
+  place-items: center;
+  width: calc(var(--day-index-width, 30px) - 6px);
+  height: 18px;
+  margin-top: -9px;
+  border-radius: 999px;
+  background: var(--accent);
+  box-shadow: 0 2px 8px color-mix(in srgb, var(--accent) 35%, transparent);
+  color: var(--accent-fg);
+  font-size: 10.5px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  pointer-events: none;
+  transform: translateY(var(--y, 0px));
+  transition: transform 0.16s var(--ease-out);
+}
+
+:host(.is-scrubbing) .pill {
+  transition: none;
+}
+
+// The day a press would land on (or the active day while keyboard-focused).
+.bubble {
+  position: absolute;
+  top: 0;
+  right: calc(var(--day-index-width, 30px) + 8px);
+  padding: 7px 11px 8px;
+  border-radius: 10px;
+  background: var(--tooltip-bg);
+  box-shadow: 0 8px 24px rgb(0 0 0 / 22%);
+  color: var(--tooltip-fg);
+  white-space: nowrap;
+  pointer-events: none;
+  opacity: 0;
+  transform: translateY(calc(var(--y, 0px) - 50%));
+  transition: opacity 0.12s ease;
+
+  &::after {
+    content: '';
+    position: absolute;
+    top: 50%;
+    right: -4px;
+    width: 8px;
+    height: 8px;
+    margin-top: -4px;
+    border-radius: 1px;
+    background: var(--tooltip-bg);
+    transform: rotate(45deg);
+  }
+
+  b {
+    display: block;
+    font-size: 12.5px;
+    font-weight: 650;
+    letter-spacing: -0.005em;
+  }
+
+  span {
+    display: block;
+    margin-top: 2px;
+    font-size: 11px;
+    font-variant-numeric: tabular-nums;
+    opacity: 0.72;
+  }
+}
+
+:host(.is-hovering),
+:host(.is-scrubbing),
+:host(:focus-visible) {
+  .bubble {
+    opacity: 1;
+  }
+}
+
+// Phone: no numbers at rest (month labels, dots and the pill only); pressing shows a larger
+// bubble left of the finger.
+@include ui.down('phone') {
+  :host([data-density='full']),
+  :host([data-density='sparse']) {
+    .day.has-entries:not(.is-near) {
+      @include entry-dot;
+    }
+  }
+
+  .month {
+    font-size: 7.5px;
+    letter-spacing: 0.04em;
+  }
+
+  .pill {
+    height: 16px;
+    margin-top: -8px;
+    font-size: 9.5px;
+  }
+
+  .bubble {
+    right: calc(var(--day-index-width, 22px) + 14px);
+    padding: 10px 14px;
+    border-radius: 14px;
+
+    b {
+      font-size: 16px;
+    }
+
+    span {
+      font-size: 12.5px;
+    }
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .face,
+  .pill,
+  .bubble {
+    transition: none;
+  }
+
+  .face {
+    transform: none;
+  }
+}

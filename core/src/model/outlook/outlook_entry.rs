@@ -7,6 +7,9 @@ use ts_rs::TS;
 pub struct OutlookEntry {
     #[ts(type = "\"outlook\"")]
     pub source: String,
+    /// The name of the connection within its kind, such as `oss`; set by the runtime.
+    #[serde(default)]
+    pub connection: String,
     pub timestamp: String,
     pub title: String,
     #[serde(skip_serializing_if = "Option::is_none")]

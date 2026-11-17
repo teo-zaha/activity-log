@@ -1,0 +1,166 @@
+@use '../../dashboard-shared' as ui;
+
+.add-source {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.tile-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(210px, 1fr));
+  gap: 12px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+
+  > li {
+    display: flex;
+  }
+}
+
+@include ui.provider-source-vars('.tile');
+
+.tile {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 12px;
+  min-height: 156px;
+  padding: 16px;
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius-md);
+  background: var(--surface);
+  color: var(--text-secondary);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition:
+    border-color 0.15s ease,
+    box-shadow 0.15s ease,
+    transform 0.15s ease;
+
+  &:hover:not(:disabled):not(.is-upcoming) {
+    border-color: color-mix(in srgb, var(--badge-accent, var(--accent)) 45%, var(--hairline));
+    box-shadow: var(--panel-shadow-strong);
+    transform: translateY(-1px);
+  }
+
+  &:focus-visible {
+    @include ui.focus-ring;
+  }
+
+  &:disabled {
+    cursor: default;
+  }
+
+  // Other tiles wait while one is being added.
+  &:disabled:not(.is-busy) {
+    opacity: 0.72;
+  }
+
+  &[data-state='unsupported'],
+  &.is-upcoming {
+    background: transparent;
+    border-style: dashed;
+
+    app-provider-icon {
+      filter: grayscale(1);
+      opacity: 0.6;
+    }
+  }
+}
+
+.tile-copy {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.tile-name {
+  color: var(--text-primary);
+  font-size: 14.5px;
+  font-weight: 600;
+}
+
+.tile-desc {
+  color: var(--text-tertiary);
+  font-size: 12.5px;
+  line-height: 1.4;
+}
+
+.tile-state {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-top: auto;
+  font-size: 12px;
+  font-weight: 600;
+
+  .material-icons {
+    font-size: 16px;
+  }
+
+  &[data-tone='add'] {
+    color: var(--accent);
+  }
+
+  &[data-tone='added'] {
+    color: var(--status-ok-fg);
+  }
+
+  &[data-tone='unsupported'] {
+    color: var(--text-tertiary);
+    font-weight: 500;
+  }
+}
+
+.group-label {
+  margin: 8px 0 -4px;
+}
+
+.upcoming-grid {
+  grid-template-columns: repeat(auto-fill, minmax(170px, 1fr));
+  gap: 8px;
+
+  .tile {
+    flex-direction: row;
+    align-items: center;
+    gap: 10px;
+    min-height: 0;
+    padding: 10px 12px;
+    cursor: default;
+  }
+
+  .tile-name {
+    color: var(--text-secondary);
+    font-size: 13px;
+    font-weight: 500;
+  }
+}
+
+.tile-skeleton {
+  display: block;
+  flex: 1;
+  border: none;
+  cursor: default;
+}
+
+.step-head {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+}
+
+.back-btn {
+  margin-left: -8px;
+}
+
+.step-title {
+  margin: 0;
+  color: var(--text-primary);
+  font-size: 15px;
+  font-weight: 600;
+}

@@ -1,0 +1,515 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Timeline Day Index</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;650;700&display=swap" rel="stylesheet" />
+<style>
+/* Tokens mirror dashboard/src/styles.scss (light + dark). Mockup only: fake data, no real records. */
+:root {
+  --bg: #edf2f6; --surface: #ffffff; --surface-alt: #f8fafc; --surface-hover: #eef3f8;
+  --border: #b8c0cb; --border-strong: #8792a0;
+  --text-primary: #0f1623; --text-secondary: #3d4756; --text-tertiary: #5c6878;
+  --accent: #3b82f6; --accent-fg: #ffffff;
+  --badge-git-bg: #bfdbfe; --badge-git-fg: #1e3a8a; --badge-git-accent: #1d4ed8;
+  --badge-gitlab-bg: #fecaca; --badge-gitlab-fg: #7f1d1d; --badge-gitlab-accent: #b91c1c;
+  --badge-jira-bg: #c7d2fe; --badge-jira-fg: #312e81; --badge-jira-accent: #4338ca;
+  --badge-outlook-bg: #bae6fd; --badge-outlook-fg: #0c4a6e; --badge-outlook-accent: #0369a1;
+  --badge-system-bg: #e2e8f0; --badge-system-fg: #1e293b; --badge-system-accent: #475569;
+  --tooltip-bg: #0f1623; --tooltip-fg: #f3f6fa;
+}
+:root[data-theme='dark'] {
+  --bg: #0d1117; --surface: #161b22; --surface-alt: #1c2230; --surface-hover: #21262d;
+  --border: #30363d; --border-strong: #484f58;
+  --text-primary: #e6edf3; --text-secondary: #848d97; --text-tertiary: #6e7681;
+  --accent: #58a6ff; --accent-fg: #0d1117;
+  --badge-git-bg: #172554; --badge-git-fg: #93c5fd; --badge-git-accent: #60a5fa;
+  --badge-gitlab-bg: #450a0a; --badge-gitlab-fg: #fca5a5; --badge-gitlab-accent: #f87171;
+  --badge-jira-bg: #1e1b4b; --badge-jira-fg: #c7d2fe; --badge-jira-accent: #818cf8;
+  --badge-outlook-bg: #082f49; --badge-outlook-fg: #7dd3fc; --badge-outlook-accent: #38bdf8;
+  --badge-system-bg: #1e293b; --badge-system-fg: #cbd5e1; --badge-system-accent: #94a3b8;
+  --tooltip-bg: #e6edf3; --tooltip-fg: #0d1117;
+}
+:root {
+  --accent-soft: color-mix(in srgb, var(--accent) 14%, transparent);
+  --hairline: color-mix(in srgb, var(--border) 58%, transparent);
+  --radius-md: 14px; --radius-lg: 20px; --radius-xl: 24px;
+  --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+  --content-max-width: 1120px;
+  --scrollbar-size: 10px;
+  --scrollbar-thumb: color-mix(in srgb, var(--text-tertiary) 32%, transparent);
+}
+*, *::before, *::after { box-sizing: border-box; }
+html, body { margin: 0; background: var(--bg); color: var(--text-primary);
+  font-family: Inter, 'Helvetica Neue', sans-serif; -webkit-font-smoothing: antialiased; }
+::-webkit-scrollbar { width: var(--scrollbar-size); height: var(--scrollbar-size); }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { border: 2px solid transparent; border-radius: 999px;
+  background-color: var(--scrollbar-thumb); background-clip: content-box; min-height: 32px; }
+:where(button, input, [tabindex]):focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+/* ── Mockup chrome (not part of the proposal) ─────────────────────────── */
+.page { max-width: 1400px; margin: 0 auto; padding: 24px 16px 48px; }
+.page h1 { margin: 0 0 4px; font-size: 20px; font-weight: 700; letter-spacing: -0.02em; }
+.page > p { margin: 0 0 16px; color: var(--text-secondary); font-size: 13.5px; max-width: 760px; line-height: 1.5; }
+.controls { display: flex; flex-wrap: wrap; gap: 10px 18px; align-items: center; margin-bottom: 16px; font-size: 12.5px; color: var(--text-tertiary); }
+.seg { display: inline-flex; padding: 3px; gap: 2px; border-radius: 10px; background: var(--surface); border: 1px solid var(--hairline); }
+.seg button { appearance: none; border: 0; background: transparent; color: var(--text-secondary); font: 600 12px Inter, sans-serif; padding: 5px 10px; border-radius: 7px; cursor: pointer; }
+.seg button[aria-pressed='true'] { background: var(--accent-soft); color: var(--accent); }
+.stage { display: flex; gap: 24px; align-items: flex-start; flex-wrap: wrap; }
+.notes { flex: 1 1 260px; max-width: 360px; font-size: 12.5px; line-height: 1.55; color: var(--text-secondary); }
+.notes h2 { font-size: 11px; text-transform: uppercase; letter-spacing: 0.08em; color: var(--text-tertiary); margin: 0 0 6px; }
+.notes ul { margin: 0 0 16px; padding-left: 16px; }
+.notes kbd { font: 600 11px Inter, sans-serif; padding: 1px 5px; border-radius: 5px; border: 1px solid var(--hairline); background: var(--surface); }
+
+/* The device frame emulates the named breakpoints (ui.down('tablet'), ui.down('phone')). */
+.device { width: 1100px; max-width: 100%; height: 700px; flex: 0 0 auto; }
+.device.w-tablet { width: 820px; }
+.device.w-phone { width: 390px; height: 740px; }
+
+/* ── main-content panel (app.component.scss) ──────────────────────────── */
+.main-content { height: 100%; display: flex; flex-direction: column; overflow: hidden;
+  border: 1px solid var(--hairline); border-radius: var(--radius-xl); background: var(--surface); }
+.w-phone .main-content { border-radius: var(--radius-lg) var(--radius-lg) 0 0; }
+
+/* ── app-timeline host: now a positioned box holding the scroller and the rail ─── */
+.timeline-host { position: relative; flex: 1; min-height: 0; display: flex;
+  --day-header-top: 64px; --rail-w: 30px; --rail-gap: 4px; }
+.w-tablet .timeline-host { --day-header-top: 58px; --rail-w: 28px; }
+.w-phone .timeline-host { --day-header-top: 48px; --rail-w: 22px; --rail-gap: 4px; }
+
+.timeline-scroll { flex: 1; min-width: 0; overflow-y: auto; scrollbar-gutter: stable;
+  scroll-padding-top: calc(var(--day-header-top) + 56px);
+  /* The rail lives in this strip; content centres in what is left. */
+  padding-right: calc(var(--rail-w) + var(--rail-gap)); }
+
+.search-dock-wrap { position: sticky; top: 0; z-index: 10; background: linear-gradient(to bottom, var(--surface) 72%, transparent); }
+.search-dock { max-width: var(--content-max-width); margin: 0 auto; padding: 20px 28px 14px; }
+.w-tablet .search-dock { padding: 14px 16px 12px; }
+.w-phone .search-dock { padding: 6px 10px 10px; }
+.search-field { position: relative; display: flex; align-items: center; height: 44px; border: 1px solid var(--border);
+  border-radius: var(--radius-md); background: var(--surface-alt); }
+.w-phone .search-field { height: 42px; }
+.search-field:focus-within { border-color: var(--accent); background: var(--surface); box-shadow: 0 0 0 3px var(--accent-soft); }
+.search-field svg { position: absolute; left: 14px; width: 18px; height: 18px; color: var(--text-tertiary); }
+.search-field input { width: 100%; height: 100%; padding: 0 16px 0 42px; border: 0; background: transparent; color: var(--text-primary); font: 400 14.5px Inter, sans-serif; outline: none; }
+
+.timeline-wrap { max-width: var(--content-max-width); margin: 0 auto; padding: 0 28px 40px; }
+.w-tablet .timeline-wrap { padding: 0 16px 32px; }
+.w-phone .timeline-wrap { padding: 0 6px 24px 10px; }
+.timeline-summary { margin: 0 0 18px; padding-left: 2px; color: var(--text-tertiary); font-size: 12.5px; font-variant-numeric: tabular-nums; }
+/* Padding, not margin: sections tile the list, so the sticky line always crosses exactly one. */
+.day-group { padding-bottom: 26px; }
+.day-header { position: sticky; top: var(--day-header-top); z-index: 5; display: flex; align-items: baseline; justify-content: space-between;
+  gap: 12px; margin: -8px -4px 0; padding: 8px 8px 10px; background: var(--surface); }
+.day-label { display: flex; align-items: baseline; flex-wrap: wrap; gap: 8px; margin: 0; font-size: 14px; font-weight: 650; letter-spacing: -0.01em; }
+.day-relative { padding: 2px 8px; border-radius: 999px; background: var(--accent-soft); color: var(--accent); font-size: 11px; font-weight: 700; }
+.day-count { flex-shrink: 0; color: var(--text-tertiary); font-size: 12px; font-variant-numeric: tabular-nums; }
+.entries { margin: 0; padding: 0; list-style: none; border: 1px solid var(--hairline); border-radius: var(--radius-lg); background: var(--surface); overflow: hidden; }
+.w-phone .entries { border-radius: var(--radius-md); }
+.entries > li + li { border-top: 1px solid var(--hairline); }
+.entry { appearance: none; display: grid; grid-template-columns: 44px 12px minmax(0, 1fr) 20px; align-items: start; column-gap: 14px;
+  width: 100%; padding: 12px 14px 12px 16px; border: 0; background: transparent; color: inherit; font: inherit; text-align: left; cursor: pointer; }
+.entry:hover { background: color-mix(in srgb, var(--surface-hover) 65%, transparent); }
+.entry:focus-visible { outline: none; box-shadow: inset 0 0 0 2px var(--accent); }
+.w-phone .entry { grid-template-columns: 38px 10px minmax(0, 1fr); column-gap: 10px; padding: 12px 10px; }
+.entry-time { padding-top: 1px; color: var(--text-secondary); font-size: 12.5px; font-weight: 600; font-variant-numeric: tabular-nums; line-height: 20px; }
+.entry-dot { display: block; width: 10px; height: 10px; margin-top: 5px; border-radius: 999px; }
+.entry-body { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.entry-title { overflow: hidden; font-size: 14px; font-weight: 600; line-height: 20px; text-overflow: ellipsis; white-space: nowrap; }
+.entry-meta { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.entry-meta-text { overflow: hidden; color: var(--text-tertiary); font-size: 12.5px; text-overflow: ellipsis; white-space: nowrap; }
+.badge { flex-shrink: 0; padding: 1px 7px; border-radius: 999px; font-size: 10px; font-weight: 600; letter-spacing: 0.05em; text-transform: uppercase; line-height: 1.5; }
+.entry-chevron { align-self: center; color: var(--text-tertiary); font-size: 18px; opacity: 0; }
+.entry:hover .entry-chevron { opacity: 1; }
+.w-phone .entry-chevron { display: none; }
+.w-phone .entry-title { white-space: normal; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+.w-phone .badge { font-size: 9px; padding: 1px 5px; }
+.s-git { background: var(--badge-git-bg); color: var(--badge-git-fg); } .d-git { background: var(--badge-git-accent); }
+.s-gitlab { background: var(--badge-gitlab-bg); color: var(--badge-gitlab-fg); } .d-gitlab { background: var(--badge-gitlab-accent); }
+.s-jira { background: var(--badge-jira-bg); color: var(--badge-jira-fg); } .d-jira { background: var(--badge-jira-accent); }
+.s-outlook { background: var(--badge-outlook-bg); color: var(--badge-outlook-fg); } .d-outlook { background: var(--badge-outlook-accent); }
+.s-system { background: var(--badge-system-bg); color: var(--badge-system-fg); } .d-system { background: var(--badge-system-accent); }
+
+/* ══ The proposal: day index rail ═══════════════════════════════════════
+   Overlays the scroller's right strip, just left of the reserved scrollbar gutter.
+   Starts level with the stuck day header so "where am I" reads across one line. */
+.day-index { position: absolute; z-index: 20; right: var(--scrollbar-size);
+  top: calc(var(--day-header-top) + 2px); bottom: 12px; width: var(--rail-w);
+  touch-action: none; user-select: none; -webkit-user-select: none; cursor: pointer; border-radius: 999px; outline: none; }
+.day-index[hidden] { display: none; }
+.day-index::before { content: ''; position: absolute; inset: 0 3px; border-radius: 999px; background: transparent; transition: background-color 0.15s ease; }
+.day-index:hover::before, .day-index.is-scrubbing::before { background: color-mix(in srgb, var(--surface-hover) 85%, transparent); }
+.day-index:focus-visible::before { box-shadow: 0 0 0 2px var(--accent); background: color-mix(in srgb, var(--surface-hover) 85%, transparent); }
+
+.di-track { position: absolute; inset: 6px 0; display: flex; flex-direction: column; }
+.di-month { flex: 0 0 14px; display: grid; place-items: center; font-size: 8.5px; font-weight: 700; letter-spacing: 0.08em;
+  text-transform: uppercase; color: var(--text-tertiary); }
+.di-month:first-child { flex-basis: 12px; }
+.di-day { position: relative; flex: 1 1 0; min-height: 0; display: grid; place-items: center; }
+.di-face { grid-area: 1 / 1; display: grid; place-items: center; transform-origin: 70% 50%;
+  transform: translateX(calc(var(--f, 0) * -7px)) scale(calc(1 + var(--f, 0) * 0.7)); transition: transform 0.09s ease-out; }
+.di-face > * { grid-area: 1 / 1; }
+.di-num { font-size: 10.5px; line-height: 1; font-weight: 600; font-variant-numeric: tabular-nums; color: var(--text-secondary); }
+.di-mark { display: none; }
+.di-day.is-weekend .di-num { color: var(--text-tertiary); font-weight: 500; }
+.di-day.is-empty .di-num { display: none; }
+.di-day.is-empty .di-mark { display: block; width: 3px; height: 3px; border-radius: 50%; background: var(--text-tertiary); opacity: 0.45; }
+.di-day.is-today .di-num { color: var(--accent); font-weight: 750; }
+.di-day.is-today::after { content: ''; position: absolute; left: 1px; top: 50%; width: 4px; height: 4px; margin-top: -2px; border-radius: 50%; background: var(--accent); }
+
+/* sparse: labels for Mondays and today; other days with entries become dots */
+.day-index[data-density='sparse'] .di-day.has-entries:not(.is-keep):not(.is-near) .di-num { display: none; }
+.day-index[data-density='sparse'] .di-day.has-entries:not(.is-keep):not(.is-near) .di-mark { display: block; width: 4px; height: 4px; border-radius: 50%; background: var(--text-secondary); opacity: 0.75; }
+.day-index[data-density='sparse'] .di-day.is-empty .di-mark { width: 2px; height: 2px; }
+
+/* dense (long ranges): each day is a hairline bar whose length follows its event count */
+.day-index[data-density='dense'] .di-num { display: none; }
+.day-index[data-density='dense'] .di-day.is-today::after { width: 3px; height: 3px; margin-top: -1.5px; }
+.day-index[data-density='dense'] .di-day.is-empty .di-mark { display: none; }
+.day-index[data-density='dense'] .di-face { justify-self: end; margin-right: 5px; transform: none; }
+.day-index[data-density='dense'] .di-day.has-entries .di-mark { display: block; height: max(1px, 60%); min-height: 1px;
+  width: calc(2px + var(--w, 0) * 12px); border-radius: 1px; background: color-mix(in srgb, var(--text-tertiary) 75%, transparent); }
+
+/* phone: no labels at rest; months, dots and the active pill only */
+.w-phone .day-index .di-day.has-entries:not(.is-near) .di-num { display: none; }
+.w-phone .day-index[data-density='full'] .di-day.has-entries:not(.is-near) .di-mark,
+.w-phone .day-index[data-density='sparse'] .di-day.has-entries:not(.is-near) .di-mark { display: block; width: 4px; height: 4px; border-radius: 50%; background: var(--text-secondary); opacity: 0.75; }
+.w-phone .di-month { font-size: 7.5px; letter-spacing: 0.04em; }
+
+/* active day: one pill that glides with the scroll position */
+.di-pill { position: absolute; right: 3px; top: 0; width: calc(var(--rail-w) - 6px); height: 18px; margin-top: -9px;
+  display: grid; place-items: center; border-radius: 999px; background: var(--accent); color: var(--accent-fg);
+  font-size: 10.5px; font-weight: 700; font-variant-numeric: tabular-nums; pointer-events: none;
+  box-shadow: 0 2px 8px color-mix(in srgb, var(--accent) 35%, transparent);
+  transform: translateY(var(--y, 0px)); transition: transform 0.16s var(--ease-out); }
+.w-phone .di-pill { height: 16px; margin-top: -8px; font-size: 9.5px; }
+.day-index.is-scrubbing .di-pill { transition: none; }
+
+/* preview bubble: the day a click or drag will land on */
+.di-bubble { position: absolute; right: calc(var(--rail-w) + 8px); top: 0; transform: translateY(calc(var(--y, 0px) - 50%));
+  padding: 7px 11px 8px; border-radius: 10px; background: var(--tooltip-bg); color: var(--tooltip-fg); white-space: nowrap;
+  box-shadow: 0 8px 24px rgb(0 0 0 / 0.22); pointer-events: none; opacity: 0; transition: opacity 0.12s ease; }
+.di-bubble::after { content: ''; position: absolute; right: -4px; top: 50%; width: 8px; height: 8px; margin-top: -4px;
+  background: var(--tooltip-bg); transform: rotate(45deg); border-radius: 1px; }
+.di-bubble b { display: block; font-size: 12.5px; font-weight: 650; letter-spacing: -0.005em; }
+.di-bubble span { display: block; margin-top: 2px; font-size: 11px; opacity: 0.72; font-variant-numeric: tabular-nums; }
+.w-phone .di-bubble { right: calc(var(--rail-w) + 14px); padding: 10px 14px; border-radius: 14px; }
+.w-phone .di-bubble b { font-size: 16px; }
+.w-phone .di-bubble span { font-size: 12.5px; }
+.day-index.is-hovering .di-bubble, .day-index.is-scrubbing .di-bubble, .day-index:focus-visible .di-bubble { opacity: 1; }
+
+.reduce-motion .di-face, .reduce-motion .di-pill, .reduce-motion .di-bubble { transition: none !important; }
+.reduce-motion .di-face { transform: none !important; }
+@media (prefers-reduced-motion: reduce) {
+  .di-face, .di-pill, .di-bubble { transition: none !important; }
+  .di-face { transform: none !important; }
+}
+.sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+</style>
+</head>
+<body>
+<div class="page">
+  <h1>Timeline day index</h1>
+  <p>A day rail beside the timeline: hover to preview, click or drag to jump, and the pill follows the day whose header is stuck at the top. Fake data. Use the controls to switch the range length, the breakpoint and the theme.</p>
+
+  <div class="controls">
+    <span>Range <span class="seg" data-ctl="range"><button data-v="30" aria-pressed="true">30 days</button><button data-v="90">90 days</button><button data-v="365">365 days</button></span></span>
+    <span>Width <span class="seg" data-ctl="width"><button data-v="desktop" aria-pressed="true">Desktop</button><button data-v="tablet">Tablet</button><button data-v="phone">Phone</button></span></span>
+    <span>Theme <span class="seg" data-ctl="theme"><button data-v="light">Light</button><button data-v="dark">Dark</button></span></span>
+    <span>Motion <span class="seg" data-ctl="motion"><button data-v="full" aria-pressed="true">Full</button><button data-v="reduced">Reduced</button></span></span>
+  </div>
+
+  <div class="stage">
+    <div class="device" id="device">
+      <div class="main-content">
+        <div class="timeline-host" id="host">
+          <div class="timeline-scroll" id="scroller">
+            <div class="search-dock-wrap"><div class="search-dock"><label class="search-field">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
+              <input id="search" type="search" placeholder="Search commits, MRs, tickets, meetings…" aria-label="Search activity" />
+            </label></div></div>
+            <div class="timeline-wrap"><p class="timeline-summary" id="summary" aria-live="polite"></p><div id="list"></div></div>
+          </div>
+          <div class="day-index" id="rail" role="slider" tabindex="0" aria-label="Jump to day" aria-orientation="vertical" aria-controls="list" data-density="full">
+            <div class="di-track" id="track"></div>
+            <div class="di-pill" id="pill" aria-hidden="true"></div>
+            <div class="di-bubble" id="bubble" aria-hidden="true"><b></b><span></span></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <aside class="notes">
+      <h2>Try</h2>
+      <ul>
+        <li>Scroll the list: the pill tracks the stuck day header.</li>
+        <li>Hover the rail: neighbours magnify, the bubble previews the target day.</li>
+        <li>Drag on the rail: the list scrubs day by day. Empty days snap to the nearest day with events.</li>
+        <li>Tab to the rail: <kbd>↑</kbd> <kbd>↓</kbd> day, <kbd>PgUp</kbd> <kbd>PgDn</kbd> week, <kbd>Home</kbd> <kbd>End</kbd>, <kbd>Enter</kbd> focuses that day's first event.</li>
+        <li>Search “ACT-” or “sync”: unmatched days dim on the rail, the range stays.</li>
+      </ul>
+      <h2>Density</h2>
+      <ul>
+        <li><b>Full</b> (≥ 17 px per day): a number for every day with events, dots for empty days.</li>
+        <li><b>Sparse</b> (6–17 px): numbers on Mondays and today, dots elsewhere. Hover reveals the numbers near the pointer.</li>
+        <li><b>Dense</b> (&lt; 6 px, long ranges): a bar per day, its length set by the event count. Month labels and the bubble carry the dates.</li>
+      </ul>
+    </aside>
+  </div>
+</div>
+
+<script>
+(() => {
+  // ── fake data ─────────────────────────────────────────────────────────
+  const TODAY = new Date(2026, 10, 17, 12);
+  const pad = n => String(n).padStart(2, '0');
+  const keyOf = d => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+  const dateOf = k => { const [y, m, d] = k.split('-').map(Number); return new Date(y, m - 1, d, 12); };
+  const addDays = (d, n) => { const x = new Date(d); x.setDate(x.getDate() + n); return x; };
+  const LONG = new Intl.DateTimeFormat('en-GB', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
+  const SHORT = new Intl.DateTimeFormat('en-GB', { weekday: 'short', day: 'numeric', month: 'short' });
+  const MONTH = new Intl.DateTimeFormat('en-GB', { month: 'short' });
+  const SHORT_YEAR = new Intl.DateTimeFormat('en-GB', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' });
+  let bubbleFormat = SHORT;
+  const TEMPLATES = {
+    git: [['feat(cache): fetch only stale days', 'activity-log · feat/tauri'], ['fix(outlook): walk items one by one', 'activity-log · main'],
+          ['refactor(provider): split connection runtime', 'activity-log · feat/tauri'], ['test(git): cover WSL distributions', 'activity-log · feat/tauri'],
+          ['docs: describe config.toml connections', 'activity-log · main'], ['chore: bump workspace dependencies', 'activity-log · main']],
+    gitlab: [['MR !214 merged · Per-connection status', 'platform/activity-log'], ['MR !219 opened · Day index rail', 'platform/activity-log'],
+             ['Pipeline passed on main', 'platform/activity-log'], ['Review requested on !221', 'platform/activity-log']],
+    jira: [['ACT-482 moved to In Review', 'Activity Log'], ['ACT-477 Timeline jump navigation', 'Activity Log'],
+           ['ACT-490 commented', 'Activity Log'], ['ACT-455 resolved', 'Activity Log']],
+    outlook: [['Sprint planning', 'Meeting · 60 min'], ['Weekly 1:1', 'Meeting · 30 min'], ['Design review: timeline', 'Meeting · 45 min'], ['Release sync', 'Meeting · 15 min']],
+    system: [['Logged in', 'Laptop'], ['Woke from sleep', 'Laptop'], ['Logged out', 'Laptop']],
+  };
+  const SOURCES = ['git', 'git', 'git', 'gitlab', 'jira', 'outlook', 'system'];
+
+  function makeData(days) {
+    let seed = 20261117;
+    const rand = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
+    const out = [];
+    for (let i = 0; i < days; i++) {
+      const date = addDays(TODAY, -i);
+      const weekend = date.getDay() === 0 || date.getDay() === 6;
+      const count = weekend ? (rand() < 0.7 ? 0 : 1 + Math.floor(rand() * 3)) : (rand() < 0.08 ? 0 : 2 + Math.floor(rand() * 12));
+      const entries = [];
+      for (let j = 0; j < count; j++) {
+        const source = SOURCES[Math.floor(rand() * SOURCES.length)];
+        const [title, meta] = TEMPLATES[source][Math.floor(rand() * TEMPLATES[source].length)];
+        const minutes = 8 * 60 + Math.floor(rand() * 11 * 60);
+        entries.push({ source, title, meta, minutes });
+      }
+      entries.sort((a, b) => b.minutes - a.minutes);
+      out.push({ key: keyOf(date), entries });
+    }
+    return out; // newest first, like groupedByDay()
+  }
+
+  // ── state ─────────────────────────────────────────────────────────────
+  const $ = id => document.getElementById(id);
+  const host = $('host'), scroller = $('scroller'), list = $('list'), rail = $('rail'), track = $('track'), pill = $('pill'), bubble = $('bubble');
+  let rangeDays = 30, allDays = makeData(30), query = '';
+  let days = [];          // rail model: every day in range, newest first
+  let targets = [];       // indexes (into days) of days with entries
+  let sections = new Map(), slotEls = [], activeKey = null, pinned = false, io = null, slotCenters = [];
+  const todayKey = keyOf(TODAY);
+
+  function filtered() {
+    const q = query.trim().toLowerCase();
+    return allDays.map(d => ({ key: d.key, entries: q ? d.entries.filter(e => (e.title + ' ' + e.meta + ' ' + e.source).toLowerCase().includes(q)) : d.entries }));
+  }
+
+  function render() {
+    const daysNow = filtered();
+    const groups = daysNow.filter(d => d.entries.length);
+    const total = groups.reduce((n, g) => n + g.entries.length, 0);
+    $('summary').textContent = `${total} events across ${groups.length} days` + (query ? ` matching “${query}”` : '');
+    list.innerHTML = groups.map(g => `
+      <section class="day-group" data-day="${g.key}" aria-label="${LONG.format(dateOf(g.key))}">
+        <header class="day-header"><h3 class="day-label">${g.key === todayKey ? '<span class="day-relative">Today</span>' : g.key === keyOf(addDays(TODAY, -1)) ? '<span class="day-relative">Yesterday</span>' : ''}${LONG.format(dateOf(g.key))}</h3>
+        <span class="day-count">${g.entries.length} ${g.entries.length === 1 ? 'event' : 'events'}</span></header>
+        <ol class="entries">${g.entries.map(e => `<li><button type="button" class="entry">
+          <time class="entry-time">${pad(Math.floor(e.minutes / 60))}:${pad(e.minutes % 60)}</time>
+          <span aria-hidden="true"><span class="entry-dot d-${e.source}"></span></span>
+          <span class="entry-body"><span class="entry-title">${e.title}</span>
+          <span class="entry-meta"><span class="badge s-${e.source}">${e.source}</span><span class="entry-meta-text">${e.meta}</span></span></span>
+          <span class="entry-chevron" aria-hidden="true">›</span></button></li>`).join('')}</ol>
+      </section>`).join('');
+    sections = new Map([...list.querySelectorAll('.day-group')].map(s => [s.dataset.day, s]));
+
+    // Rail model: the whole range, so gaps and search hits stay visible.
+    const max = Math.max(1, ...daysNow.map(d => d.entries.length));
+    days = daysNow.map(d => { const dt = dateOf(d.key); return { key: d.key, count: d.entries.length, dow: dt.getDay(), dom: dt.getDate(), month: dt.getMonth(), year: dt.getFullYear(), w: d.entries.length / max }; });
+    targets = days.map((d, i) => d.count ? i : -1).filter(i => i >= 0);
+    const multiYear = days.length && days[0].year !== days[days.length - 1].year;
+    bubbleFormat = multiYear ? SHORT_YEAR : SHORT;
+    let html = '', prevMonth = null, prevYear = null;
+    days.forEach((d, i) => {
+      if (d.month !== prevMonth) {
+        // A year boundary shows the year instead of the month: "’25" above December.
+        const label = prevYear !== null && d.year !== prevYear ? `’${String(d.year).slice(2)}` : MONTH.format(dateOf(d.key)).slice(0, 3); // en-GB says "Sept"
+        html += `<div class="di-month" aria-hidden="true">${label}</div>`;
+        prevMonth = d.month; prevYear = d.year;
+      }
+      const cls = ['di-day', d.count ? 'has-entries' : 'is-empty', d.dow === 0 || d.dow === 6 ? 'is-weekend' : '', d.key === todayKey ? 'is-today' : '', d.dow === 1 || d.key === todayKey ? 'is-keep' : ''].join(' ');
+      html += `<div class="${cls}" data-i="${i}" style="--w:${d.w.toFixed(3)}"><span class="di-face"><span class="di-mark"></span><span class="di-num">${d.dom}</span></span></div>`;
+    });
+    track.innerHTML = html;
+    slotEls = [...track.querySelectorAll('.di-day')];
+    if (!activeKey || !sections.has(activeKey)) activeKey = groups[0]?.key ?? null;
+    requestAnimationFrame(() => { layout(); observe(); });
+  }
+
+  // ── layout: density + visibility ───────────────────────────────────────
+  function layout() {
+    rail.hidden = scroller.scrollHeight <= scroller.clientHeight + 1 || targets.length < 2;
+    if (rail.hidden) return;
+    const months = track.querySelectorAll('.di-month').length;
+    const slotH = (track.clientHeight - months * 14) / Math.max(1, days.length);
+    rail.dataset.density = slotH >= 17 ? 'full' : slotH >= 6 ? 'sparse' : 'dense';
+    measure();
+    placeActive();
+  }
+  function measure() {
+    const top = rail.getBoundingClientRect().top;
+    slotCenters = slotEls.map(el => { const r = el.getBoundingClientRect(); return r.top - top + r.height / 2; });
+  }
+  const headerTop = () => parseFloat(getComputedStyle(host).getPropertyValue('--day-header-top'));
+
+  // ── active day: the section crossing the sticky header line ────────────
+  function observe() {
+    io?.disconnect();
+    const line = headerTop() + 2;
+    const h = scroller.clientHeight;
+    io = new IntersectionObserver(records => {
+      if (pinned) return;
+      for (const r of records) if (r.isIntersecting) setActive(r.target.dataset.day);
+    }, { root: scroller, rootMargin: `-${line}px 0px -${Math.max(0, h - line - 1)}px 0px` });
+    sections.forEach(s => io.observe(s));
+  }
+  function setActive(key) {
+    if (!key || key === activeKey && rail.getAttribute('aria-valuetext')) { placeActive(); return; }
+    activeKey = key;
+    placeActive();
+  }
+  function placeActive() {
+    const i = days.findIndex(d => d.key === activeKey);
+    if (i < 0) return;
+    pill.style.setProperty('--y', `${slotCenters[i] ?? 0}px`);
+    pill.textContent = days[i].dom;
+    const t = targets.indexOf(i);
+    rail.setAttribute('aria-valuemin', '0');
+    rail.setAttribute('aria-valuemax', String(targets.length - 1));
+    rail.setAttribute('aria-valuenow', String(targets.length - 1 - t)); // top (newest) is the maximum
+    rail.setAttribute('aria-valuetext', `${LONG.format(dateOf(activeKey))}, ${days[i].count} ${days[i].count === 1 ? 'event' : 'events'}`);
+    if (document.activeElement === rail && !rail.classList.contains('is-hovering')) showBubble(i);
+  }
+
+  // ── jumping ───────────────────────────────────────────────────────────
+  function jump(key) {
+    const section = sections.get(key);
+    if (!section) return;
+    // Land the section's top on the sticky line, so its header sticks exactly there.
+    scroller.scrollTop += section.getBoundingClientRect().top - scroller.getBoundingClientRect().top - headerTop();
+    pinned = true; // the last days may not reach the line: keep the jumped-to day active until the user scrolls
+    activeKey = null; setActive(key);
+  }
+  ['wheel', 'touchstart', 'keydown', 'pointerdown'].forEach(type => scroller.addEventListener(type, () => { pinned = false; }, { passive: true }));
+
+  const nearestTarget = i => {
+    let best = targets[0];
+    for (const t of targets) if (Math.abs(t - i) < Math.abs(best - i)) best = t; // ties keep the newer day
+    return best;
+  };
+  function slotAt(y) {
+    let lo = 0, hi = slotCenters.length - 1;
+    while (lo < hi) { const mid = (lo + hi) >> 1; if (slotCenters[mid] < y) lo = mid + 1; else hi = mid; }
+    if (lo > 0 && Math.abs(slotCenters[lo - 1] - y) < Math.abs(slotCenters[lo] - y)) lo--;
+    return lo;
+  }
+
+  // ── pointer: hover previews, press/drag navigates ──────────────────────
+  let magnified = [], raf = 0, lastY = 0, scrubbing = false;
+  function magnify(y) {
+    magnified.forEach(el => { el.style.removeProperty('--f'); el.classList.remove('is-near'); });
+    magnified = [];
+    if (rail.dataset.density === 'dense' || document.documentElement.classList.contains('reduce-motion')) return;
+    const pitch = slotCenters.length > 1 ? slotCenters[1] - slotCenters[0] : 16;
+    const reach = Math.max(pitch * 3.2, 28);
+    slotEls.forEach((el, i) => {
+      const d = Math.abs(slotCenters[i] - y);
+      if (d > reach) return;
+      const f = Math.cos((d / reach) * Math.PI / 2) ** 2;
+      el.style.setProperty('--f', f.toFixed(3));
+      if (f > 0.45) el.classList.add('is-near');
+      magnified.push(el);
+    });
+  }
+  function showBubble(i, y = slotCenters[i]) {
+    const d = days[i];
+    bubble.querySelector('b').textContent = bubbleFormat.format(dateOf(d.key));
+    bubble.querySelector('span').textContent = `${d.count} ${d.count === 1 ? 'event' : 'events'}`;
+    bubble.style.setProperty('--y', `${y}px`);
+  }
+  function frame() {
+    raf = 0;
+    const i = nearestTarget(slotAt(lastY));
+    magnify(lastY);
+    showBubble(i, lastY);
+    if (scrubbing && days[i].key !== activeKey) jump(days[i].key);
+  }
+  const queue = e => { lastY = e.clientY - rail.getBoundingClientRect().top; if (!raf) raf = requestAnimationFrame(frame); };
+
+  rail.addEventListener('pointerenter', e => { measure(); if (e.pointerType === 'mouse') rail.classList.add('is-hovering'); });
+  rail.addEventListener('pointermove', e => { if (e.pointerType === 'mouse' || scrubbing) queue(e); });
+  rail.addEventListener('pointerleave', () => { if (!scrubbing) { rail.classList.remove('is-hovering'); magnify(-1e4); } });
+  rail.addEventListener('pointerdown', e => {
+    measure(); scrubbing = true; rail.classList.add('is-scrubbing'); rail.setPointerCapture(e.pointerId); queue(e); e.preventDefault();
+  });
+  const endScrub = () => {
+    if (!scrubbing) return;
+    scrubbing = false; rail.classList.remove('is-scrubbing');
+    if (!rail.matches(':hover')) { rail.classList.remove('is-hovering'); magnify(-1e4); }
+  };
+  rail.addEventListener('pointerup', endScrub);
+  rail.addEventListener('pointercancel', endScrub);
+
+  // ── keyboard: a vertical slider over the days that have entries ────────
+  rail.addEventListener('keydown', e => {
+    const at = Math.max(0, targets.indexOf(days.findIndex(d => d.key === activeKey)));
+    const byDays = n => { const i = days.findIndex(d => d.key === activeKey) + n; return targets.indexOf(nearestTarget(Math.min(days.length - 1, Math.max(0, i)))); };
+    const next = { ArrowDown: at + 1, ArrowUp: at - 1, PageDown: byDays(7), PageUp: byDays(-7), Home: 0, End: targets.length - 1 }[e.key];
+    if (e.key === 'Enter') { sections.get(activeKey)?.querySelector('.entry')?.focus(); e.preventDefault(); return; }
+    if (next === undefined) return;
+    e.preventDefault();
+    const t = targets[Math.min(targets.length - 1, Math.max(0, next))];
+    jump(days[t].key);
+  });
+  rail.addEventListener('focus', () => { const i = days.findIndex(d => d.key === activeKey); if (i >= 0) showBubble(i); });
+
+  new ResizeObserver(() => { layout(); observe(); }).observe(scroller);
+  $('search').addEventListener('input', e => { query = e.target.value; render(); });
+
+  // ── mockup controls ───────────────────────────────────────────────────
+  const prefersDark = matchMedia('(prefers-color-scheme: dark)').matches;
+  document.documentElement.dataset.theme = prefersDark ? 'dark' : 'light';
+  document.querySelector(`[data-ctl="theme"] [data-v="${prefersDark ? 'dark' : 'light'}"]`).setAttribute('aria-pressed', 'true');
+  document.querySelectorAll('.seg').forEach(seg => seg.addEventListener('click', e => {
+    const btn = e.target.closest('button'); if (!btn) return;
+    seg.querySelectorAll('button').forEach(b => b.setAttribute('aria-pressed', String(b === btn)));
+    const v = btn.dataset.v;
+    switch (seg.dataset.ctl) {
+      case 'range': rangeDays = Number(v); allDays = makeData(rangeDays); activeKey = null; scroller.scrollTop = 0; render(); break;
+      case 'width': $('device').className = 'device' + (v === 'desktop' ? '' : ' w-' + v); requestAnimationFrame(() => { layout(); observe(); }); break;
+      case 'theme': document.documentElement.dataset.theme = v; break;
+      case 'motion': document.documentElement.classList.toggle('reduce-motion', v === 'reduced'); break;
+    }
+  }));
+  render();
+})();
+</script>
+</body>
+</html>

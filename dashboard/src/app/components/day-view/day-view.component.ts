@@ -105,7 +105,7 @@ export class DayViewComponent {
   }
 
   private isMultiDayEvent(e: EntryUiAdapter): boolean {
-    if (e.source !== 'outlook') return false
+    if (e.source !== 'outlook' && e.source !== 'calendar') return false
     const durationMinutes = e.calendarDurationMinutes
     if (durationMinutes == null) return false
     const endMs = new Date(e.timestamp).getTime() + durationMinutes * 60000

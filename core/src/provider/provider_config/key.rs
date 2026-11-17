@@ -11,23 +11,20 @@ pub enum ProviderConfigValueType {
     Url,
 }
 
-/// What a key holds: one value, a list of values, or lists of values by name, all of one type.
+/// What a key holds: one value, or a list of values of one type.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ProviderConfigShape {
     Single(ProviderConfigValueType),
     /// Several values, such as folders. Stored as a JSON array of strings; a plain value is read
     /// as a comma-separated list, so `GIT_DIRS=a,b` works from the environment.
     List(ProviderConfigValueType),
-    /// A list of values under each name, such as folders per WSL distribution. Stored as a JSON
-    /// object of string arrays: `{"Ubuntu":["~/work"]}`.
-    Map(ProviderConfigValueType),
 }
 
 impl ProviderConfigShape {
-    /// The type of the value, or of every item of a list or map.
+    /// The type of the value, or of every item of a list.
     pub const fn value_type(self) -> ProviderConfigValueType {
         match self {
-            Self::Single(value_type) | Self::List(value_type) | Self::Map(value_type) => value_type,
+            Self::Single(value_type) | Self::List(value_type) => value_type,
         }
     }
 }
@@ -37,7 +34,6 @@ impl std::fmt::Display for ProviderConfigShape {
         match self {
             Self::Single(value_type) => write!(f, "{value_type}"),
             Self::List(value_type) => write!(f, "list of {value_type}"),
-            Self::Map(value_type) => write!(f, "lists of {value_type} by name"),
         }
     }
 }
@@ -54,7 +50,7 @@ impl ProviderConfigKey {
         self.name
     }
 
-    /// The type of the value, or of every item of a list or map.
+    /// The type of the value, or of every item of a list.
     pub const fn value_type(self) -> ProviderConfigValueType {
         self.shape.value_type()
     }
@@ -127,14 +123,6 @@ impl ProviderConfigKey {
     pub const fn list_of(self) -> Self {
         Self {
             shape: ProviderConfigShape::List(self.value_type()),
-            ..self
-        }
-    }
-
-    /// This key as lists of its value type by name: `optional_string("WSL_GIT_DIRS").map_of()`.
-    pub const fn map_of(self) -> Self {
-        Self {
-            shape: ProviderConfigShape::Map(self.value_type()),
             ..self
         }
     }

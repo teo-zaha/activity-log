@@ -101,7 +101,7 @@
       </div>
 
       <div class="flyout-body">
-        @for (entry of entries; track entry.timestamp + entry.title) {
+        @for (entry of entries; track entry.trackKey) {
           <section class="flyout-section">
             <div class="flyout-section-header">
               <span class="flyout-badge" [class]="entry.badge.badgeClass">

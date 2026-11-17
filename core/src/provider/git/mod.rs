@@ -4,11 +4,22 @@ pub mod windows;
 
 pub use config::*;
 
+use std::{collections::HashSet, ops::ControlFlow, sync::Arc};
+
 use crate::{
-    collect::git::{collect_git, open_repo_strict, resolve_git_repos},
-    model::{IntoActivityEntries, Source, SupportedOs},
-    provider::provider_check_result::ProviderCheckResult,
+    collect::git::{
+        GitCollection, collect_git, keep_own, open_repo_strict, report_identities, visit_git_repos,
+    },
+    model::{ActivityEntry, IntoActivityEntries, Source, SupportedOs},
+    provider::{
+        connection::{ConnectionLocation, Instances},
+        provider_adapter::{CollectionState, ConnectionEntries},
+        provider_check_result::ProviderCheckResult,
+    },
 };
+
+/// The label of the Git connection for this computer's own repositories.
+pub const LOCAL_LABEL: &str = "This computer";
 
 #[cfg(target_os = "windows")]
 use self::windows as windows_impl;
@@ -16,15 +27,14 @@ use self::windows as windows_impl;
 mod windows_impl {
     use crate::provider::{git::GitConfig, provider_check_result::ProviderCheckResult};
 
-    /// WSL needs Windows; elsewhere only the local repositories exist.
-    pub(super) fn check_git_ready(config: &GitConfig) -> ProviderCheckResult {
-        super::local_check_result(config)
+    pub(super) fn check_wsl_ready(distro: &str, _config: &GitConfig) -> ProviderCheckResult {
+        ProviderCheckResult::unavailable(format!("WSL {distro} needs Windows"))
     }
 }
 
 crate::provider! {
     GitProvider(Source::Git, &[SupportedOs::Windows, SupportedOs::Macos, SupportedOs::Linux], GitConfig) {
-        async fn startup_check(&self, current_os, context) {
+        async fn startup_check(&self, _current_os, context) {
             let config = match context.config::<GitConfig>() {
                 Ok(c) => c,
                 Err(err) => {
@@ -33,9 +43,10 @@ crate::provider! {
             };
 
             let config = config.clone();
-            tokio::task::spawn_blocking(move || match current_os {
-                SupportedOs::Windows => windows_impl::check_git_ready(&config),
-                SupportedOs::Macos | SupportedOs::Linux => local_check_result(&config),
+            let location = context.location();
+            tokio::task::spawn_blocking(move || match location {
+                ConnectionLocation::Local => local_check_result(&config),
+                ConnectionLocation::Wsl(distro) => windows_impl::check_wsl_ready(&distro, &config),
             })
             .await
             .unwrap_or_else(|err| {
@@ -43,10 +54,74 @@ crate::provider! {
             })
         }
 
-        async fn collect(&self, current_os, options, context) {
+        async fn collect(&self, _current_os, options, context) {
             let config = context.config::<GitConfig>()?.clone();
-            let entries = collect_git(&options, &config, current_os).await?;
-            Ok(entries.into_activity_entries())
+            let commits = collect_git(&options, &config, context.location()).await?;
+            if let Some(collection) = context.collection_state::<GitCollection>() {
+                collection.record(&commits);
+            }
+            Ok(commits
+                .repos
+                .into_iter()
+                .flat_map(|repo| repo.commits)
+                .into_activity_entries())
+        }
+
+        fn instances(&self) -> Instances {
+            Instances::Multiple
+        }
+
+        fn collection_state(&self) -> Option<CollectionState> {
+            Some(Arc::new(GitCollection::default()))
+        }
+
+        /// Keeps the commits authored with any email found in any Git connection. A provisional
+        /// pass knows only the emails found so far, so it keeps a subset of the complete one,
+        /// and a commit two connections hold may move to the earlier one later.
+        fn finish_kind(
+            &self,
+            state: Option<&CollectionState>,
+            results: Vec<ConnectionEntries>,
+            complete: bool,
+        ) -> Vec<ConnectionEntries> {
+            let Some(collection) = state.and_then(|state| state.downcast_ref::<GitCollection>())
+            else {
+                return results;
+            };
+            let found = collection.found();
+            let mut ignored = 0;
+            // A commit is one piece of work, even when two clones or locations hold it.
+            let mut seen = HashSet::new();
+            let mut copies = 0;
+            let results = results
+                .into_iter()
+                .map(|(id, entries)| {
+                    let commits = entries
+                        .into_iter()
+                        .filter_map(|entry| match entry {
+                            ActivityEntry::Git(commit) => Some(commit),
+                            _ => None,
+                        })
+                        .collect();
+                    let (mut own, skipped) = keep_own(&found.identities, commits);
+                    ignored += skipped;
+                    let before = own.len();
+                    own.retain(|commit| seen.insert(commit.hash.clone()));
+                    copies += before - own.len();
+                    (id, own.into_activity_entries())
+                })
+                .collect();
+            if !complete {
+                return results;
+            }
+            report_identities(&found, ignored);
+            if copies > 0 {
+                crate::diagnostics::info(
+                    "git",
+                    format!("Showed {copies} commits once that more than one clone holds"),
+                );
+            }
+            results
         }
     }
 }
@@ -59,22 +134,28 @@ fn local_check_result(config: &GitConfig) -> ProviderCheckResult {
     }
 }
 
+/// Stops at the first repository that opens, so the check does not walk the whole disk.
 pub(crate) fn check_local_repos(config: &GitConfig) -> Result<(), String> {
-    let repos = resolve_git_repos(config).map_err(|err| err.to_string())?;
-    if repos.is_empty() {
-        return Err("No repositories found".to_string());
-    }
-
+    let mut found = false;
     let mut last_error = None;
-    for repo in repos {
+    visit_git_repos(config, &mut |repo| {
+        found = true;
         match open_repo_strict(&repo) {
-            Ok(_) => return Ok(()),
-            Err(err) => last_error = Some(format!("{}: {err}", repo.display())),
+            Ok(_) => {
+                last_error = None;
+                ControlFlow::Break(())
+            }
+            Err(err) => {
+                last_error = Some(format!("{}: {err}", repo.display()));
+                ControlFlow::Continue(())
+            }
         }
-    }
-
-    Err(match last_error {
-        Some(reason) => format!("No readable repositories found: {reason}"),
-        None => "No readable repositories found".to_string(),
     })
+    .map_err(|err| err.to_string())?;
+
+    match (found, last_error) {
+        (false, _) => Err("No repositories found".to_string()),
+        (true, None) => Ok(()),
+        (true, Some(reason)) => Err(format!("No readable repositories found: {reason}")),
+    }
 }

@@ -8,6 +8,9 @@ use crate::model::system::system_entry_type::SystemEntryType;
 pub struct SystemEntry {
     #[ts(type = "\"system\"")]
     pub source: String,
+    /// The name of the connection within its kind, such as `oss`; set by the runtime.
+    #[serde(default)]
+    pub connection: String,
     #[serde(rename = "type")]
     #[ts(rename = "type")]
     pub entry_type: SystemEntryType,

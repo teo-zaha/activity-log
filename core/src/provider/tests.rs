@@ -10,16 +10,21 @@ use std::{
 };
 
 use crate::{
-    collect::git::{resolve_git_repos_from_roots, resolve_git_repos_with_home_root},
-    model::{ActivityEntry, CollectOptions, Source, SupportedOs},
+    collect::git::{
+        GitCollection, RepoCommits, RepoHistory, resolve_git_repos_from_roots,
+        resolve_git_repos_with_home_root,
+    },
+    diagnostics,
+    model::{ActivityEntry, CollectOptions, ConnectionId, GitEntry, Source, SupportedOs},
     provider::{
+        connection::{Connection, ConnectionLocation, ConnectionValues},
         current_os,
         git::{GIT_DIRS, GitConfig, GitProvider, default_git_root_with_lookup},
         provider_adapter::ProviderAdapter,
         provider_check_result::ProviderCheckResult,
         provider_config::{
             ConfigBinding, ConfigSource, ProviderConfig, ProviderConfigKey, ProviderConfigResolve,
-            ProviderConfigShape, ProviderConfigValueType, parse_config_list, parse_config_map,
+            ProviderConfigShape, ProviderConfigValueType, parse_config_list,
             provider_config_key_accepts,
         },
         provider_context::ProviderContext,
@@ -44,6 +49,7 @@ fn registry_includes_all_builtin_providers() {
             Source::Jira,
             Source::Outlook,
             Source::System,
+            Source::Calendar,
         ]
     );
 }
@@ -72,6 +78,22 @@ impl ConfigSource for TestConfigSource {
     fn get(&self, key: &str) -> Option<String> {
         self.values.get(key).cloned()
     }
+}
+
+/// A Git connection with these values.
+fn test_connection(config: TestConfigSource) -> Connection {
+    Connection::new(
+        ConnectionId::new(Source::Git, "default"),
+        "Git",
+        ConnectionLocation::Local,
+        ConnectionValues::new(
+            config
+                .values
+                .into_iter()
+                .map(|(key, value)| (key, Some(value)))
+                .collect(),
+        ),
+    )
 }
 
 struct TestProvider {
@@ -133,13 +155,16 @@ async fn missing_required_config_skips_startup_check() {
             startup_result: ProviderCheckResult::available(),
             calls: Arc::clone(&calls),
         }),
-        &TestConfigSource::default(),
+        &test_connection(TestConfigSource::default()),
     )
     .await;
 
     assert_eq!(calls.load(Ordering::SeqCst), 0);
     assert!(!runtime.info().usable);
-    assert_eq!(runtime.info().reason.as_deref(), Some("git not configured"));
+    assert_eq!(
+        runtime.info().reason.as_deref(),
+        Some("Git is not configured")
+    );
 }
 
 #[tokio::test]
@@ -157,7 +182,7 @@ async fn unsupported_os_is_derived_from_provider_metadata() {
             startup_result: ProviderCheckResult::available(),
             calls: Arc::clone(&calls),
         }),
-        &TestConfigSource::default(),
+        &test_connection(TestConfigSource::default()),
     )
     .await;
 
@@ -182,7 +207,7 @@ async fn startup_check_runs_with_resolved_config() {
             startup_result: ProviderCheckResult::available(),
             calls: Arc::clone(&calls),
         }),
-        &config,
+        &test_connection(config),
     )
     .await;
 
@@ -210,7 +235,7 @@ async fn invalid_typed_config_skips_startup_check() {
             startup_result: ProviderCheckResult::available(),
             calls: Arc::clone(&calls),
         }),
-        &config,
+        &test_connection(config),
     )
     .await;
 
@@ -239,7 +264,7 @@ async fn strict_bool_config_rejects_non_true_false_values() {
             startup_result: ProviderCheckResult::available(),
             calls: Arc::clone(&calls),
         }),
-        &config,
+        &test_connection(config),
     )
     .await;
 
@@ -330,7 +355,7 @@ async fn typed_config_is_available_in_startup_check() {
         Arc::new(TypedTestProvider {
             calls: Arc::clone(&calls),
         }),
-        &config,
+        &test_connection(config),
     )
     .await;
 
@@ -425,14 +450,8 @@ fn git_resolution_uses_home_discovery_when_dirs_are_unset() {
 
     std::fs::create_dir_all(nested_repo.join(".git")).expect("nested repo");
 
-    let repos = resolve_git_repos_with_home_root(
-        &GitConfig {
-            dirs: None,
-            ..GitConfig::local_only(Vec::new())
-        },
-        Some(home_root),
-    )
-    .expect("home discovery should succeed");
+    let repos = resolve_git_repos_with_home_root(&GitConfig { dirs: None }, Some(home_root))
+        .expect("home discovery should succeed");
 
     assert_eq!(repos, vec![nested_repo]);
 }
@@ -488,7 +507,7 @@ async fn git_provider_is_unavailable_when_no_repositories_are_found() {
         empty_root.path().display().to_string(),
     );
 
-    let runtime = ProviderRuntime::inspect(Arc::new(GitProvider), &config).await;
+    let runtime = ProviderRuntime::inspect(Arc::new(GitProvider), &test_connection(config)).await;
 
     assert!(!runtime.info().usable);
     assert_eq!(
@@ -505,7 +524,7 @@ async fn git_provider_is_available_when_a_repository_can_be_opened() {
         .values
         .insert("GIT_DIRS".to_string(), repo.path().display().to_string());
 
-    let runtime = ProviderRuntime::inspect(Arc::new(GitProvider), &config).await;
+    let runtime = ProviderRuntime::inspect(Arc::new(GitProvider), &test_connection(config)).await;
 
     assert!(runtime.info().usable);
 }
@@ -521,7 +540,7 @@ async fn git_provider_is_unavailable_when_discovered_repositories_are_invalid() 
         invalid_root.path().display().to_string(),
     );
 
-    let runtime = ProviderRuntime::inspect(Arc::new(GitProvider), &config).await;
+    let runtime = ProviderRuntime::inspect(Arc::new(GitProvider), &test_connection(config)).await;
 
     assert!(!runtime.info().usable);
     assert!(
@@ -557,7 +576,7 @@ async fn git_provider_accepts_quoted_paths_from_windows_copy_as_path() {
         format!("\"{}\"", repo.path().display()),
     );
 
-    let runtime = ProviderRuntime::inspect(Arc::new(GitProvider), &config).await;
+    let runtime = ProviderRuntime::inspect(Arc::new(GitProvider), &test_connection(config)).await;
 
     assert!(runtime.info().usable, "{:?}", runtime.info().reason);
 }
@@ -668,22 +687,109 @@ fn list_keys_validate_every_item_against_their_value_type() {
 }
 
 #[test]
-fn map_keys_are_json_objects_of_lists_checked_item_by_item() {
-    let ports = ProviderConfigKey::optional_int("TEST_PORTS").map_of();
+fn reads_wsl_folders() {
+    assert_eq!(
+        crate::provider::git::parse_wsl_dir(" ~/projects/ ").unwrap(),
+        "~/projects"
+    );
+    assert_eq!(
+        crate::provider::git::parse_wsl_dir("/home/nixos/trn/atlas/").unwrap(),
+        "/home/nixos/trn/atlas"
+    );
+    assert_eq!(crate::provider::git::parse_wsl_dir("~").unwrap(), "~");
+    assert_eq!(crate::provider::git::parse_wsl_dir("/").unwrap(), "/");
+}
 
-    assert_eq!(
-        ports.shape,
-        ProviderConfigShape::Map(ProviderConfigValueType::Int)
+#[test]
+fn rejects_folders_that_are_not_linux_paths() {
+    assert!(crate::provider::git::parse_wsl_dir("C:/work/repo").is_err());
+    assert!(crate::provider::git::parse_wsl_dir("relative/path").is_err());
+    assert!(crate::provider::git::parse_wsl_dir("~user").is_err());
+}
+
+fn commit(hash: &str, author: &str) -> ActivityEntry {
+    ActivityEntry::Git(GitEntry::new(
+        "repo".to_string(),
+        hash.to_string(),
+        "message".to_string(),
+        author.to_string(),
+        "main".to_string(),
+        "2026-03-05T09:00:00Z".to_string(),
+    ))
+}
+
+fn hashes(results: &[(ConnectionId, Vec<ActivityEntry>)]) -> Vec<Vec<&str>> {
+    results
+        .iter()
+        .map(|(_, entries)| {
+            entries
+                .iter()
+                .map(|entry| match entry {
+                    ActivityEntry::Git(commit) => commit.hash.as_str(),
+                    other => panic!("unexpected entry {other:?}"),
+                })
+                .collect()
+        })
+        .collect()
+}
+
+/// Records what a connection found whose repository has `email` set.
+fn record_email(collection: &GitCollection, email: &str) {
+    collection.record(&RepoCommits {
+        repos: vec![RepoHistory {
+            label: "repo".to_string(),
+            email: Some(email.to_string()),
+            commits: Vec::new(),
+        }],
+        identities: Vec::new(),
+    });
+}
+
+#[tokio::test]
+async fn a_provisional_git_pass_keeps_a_subset_and_logs_nothing() {
+    // Scopes this test's log lines, so other tests' lines do not count.
+    let scope = ConnectionId::new(Source::Git, "provisional-pass");
+    let logged = || {
+        diagnostics::entries()
+            .into_iter()
+            .filter(|entry| entry.scope == "git/provisional-pass")
+            .map(|entry| entry.message)
+            .collect::<Vec<_>>()
+    };
+    let first = (
+        ConnectionId::new(Source::Git, "first"),
+        vec![
+            commit("a1", "me@example.com"),
+            commit("b2", "alias@example.com"),
+        ],
     );
-    assert_eq!(ports.shape.to_string(), "lists of int by name");
-    assert!(provider_config_key_accepts(
-        ports,
-        r#"{"web": ["80", "443"], "db": []}"#
-    ));
-    assert!(!provider_config_key_accepts(ports, r#"{"web": ["https"]}"#));
-    assert!(!provider_config_key_accepts(ports, "80,443"));
-    assert_eq!(
-        parse_config_map(r#"{" web ": [" 80 ", ""], " ": ["1"]}"#),
-        Some([("web".to_string(), vec!["80".to_string()])].into())
+    let second = (
+        ConnectionId::new(Source::Git, "second"),
+        vec![
+            commit("a1", "me@example.com"),
+            commit("c3", "alias@example.com"),
+        ],
     );
+
+    diagnostics::in_connection(scope, async {
+        let state = GitProvider.collection_state();
+        let collection = state.as_ref().unwrap().downcast_ref().unwrap();
+
+        record_email(collection, "me@example.com");
+        let provisional = GitProvider.finish_kind(state.as_ref(), vec![first.clone()], false);
+        assert_eq!(hashes(&provisional), [["a1"]]);
+        assert_eq!(logged(), Vec::<String>::new());
+
+        record_email(collection, "alias@example.com");
+        let complete = GitProvider.finish_kind(state.as_ref(), vec![first, second], true);
+        assert_eq!(hashes(&complete), [vec!["a1", "b2"], vec!["c3"]]);
+        assert_eq!(
+            logged(),
+            [
+                "Keeping commits by alias@example.com, me@example.com",
+                "Showed 1 commits once that more than one clone holds",
+            ]
+        );
+    })
+    .await;
 }

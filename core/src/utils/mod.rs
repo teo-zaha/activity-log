@@ -3,8 +3,8 @@ use chrono::{DateTime, TimeZone, Utc};
 use crate::{
     collect::gitlab::commit_to_sha,
     model::{
-        ActivityEntry, ActivityLog, GitEntry, GitLabEntry, GitLabType, JiraEntry, MergeResult,
-        OutlookEntry, SystemEntry,
+        ActivityEntry, ActivityLog, CalendarEntry, GitEntry, GitLabEntry, GitLabType, JiraEntry,
+        MergeResult, OutlookEntry, SystemEntry,
     },
 };
 
@@ -12,23 +12,26 @@ pub fn now_iso() -> String {
     Utc::now().to_rfc3339()
 }
 
+/// Folds each GitLab push into the git commit it pushed, so the change shows once. A push whose
+/// commit is not among `git_entries` (not collected yet, another author's, no local clone)
+/// stays an entry of its own.
 pub fn merge_git_with_gitlab(
     git_entries: &[GitEntry],
     gitlab_entries: &[GitLabEntry],
 ) -> MergeResult {
-    // Only GitLab push events have a commit SHA we can safely correlate with local git history.
     let gitlab_by_commit = gitlab_entries
         .iter()
-        .filter(|entry| entry.entry_type == GitLabType::PushedTo)
-        .filter_map(|entry| commit_to_sha(entry).map(|sha| (sha.to_string(), entry.clone())))
+        .filter_map(|entry| push_sha(entry).map(|sha| (sha, entry)))
         .collect::<std::collections::HashMap<_, _>>();
 
+    let mut folded = std::collections::HashSet::new();
     let merged_git = git_entries
         .iter()
         .cloned()
         .map(|mut entry| {
-            if let Some(gitlab_event) = gitlab_by_commit.get(&entry.hash) {
-                entry.gitlab_event = Some(gitlab_event.clone());
+            if let Some((sha, gitlab_event)) = gitlab_by_commit.get_key_value(entry.hash.as_str()) {
+                entry.gitlab_event = Some((*gitlab_event).clone());
+                folded.insert(*sha);
             }
             entry
         })
@@ -36,14 +39,7 @@ pub fn merge_git_with_gitlab(
 
     let remaining_gitlab = gitlab_entries
         .iter()
-        .filter(|entry| {
-            if entry.entry_type != GitLabType::PushedTo {
-                return true;
-            }
-            commit_to_sha(entry)
-                .map(|sha| !gitlab_by_commit.contains_key(sha))
-                .unwrap_or(true)
-        })
+        .filter(|entry| !push_sha(entry).is_some_and(|sha| folded.contains(sha)))
         .cloned()
         .collect::<Vec<_>>();
 
@@ -51,6 +47,13 @@ pub fn merge_git_with_gitlab(
         merged_git,
         remaining_gitlab,
     }
+}
+
+/// Only GitLab push events have a commit SHA we can safely correlate with local git history.
+fn push_sha(entry: &GitLabEntry) -> Option<&str> {
+    (entry.entry_type == GitLabType::PushedTo)
+        .then(|| commit_to_sha(entry))
+        .flatten()
 }
 
 /// Renders `log` grouped by calendar day in `tz`, the reader's timezone.
@@ -124,6 +127,21 @@ pub fn to_markdown<Tz: TimeZone>(log: &ActivityLog, tz: &Tz) -> String {
                 }
                 ActivityEntry::System(SystemEntry { label, .. }) => {
                     markdown.push_str(&format!("- **[system]** {label} ({time})\n"));
+                }
+                ActivityEntry::Calendar(CalendarEntry {
+                    title,
+                    location,
+                    duration_minutes,
+                    ..
+                }) => {
+                    markdown.push_str(&format!(
+                        "- **[calendar]** {title}{} ({time}, {})\n",
+                        location
+                            .as_ref()
+                            .map(|location| format!(" @ {location}"))
+                            .unwrap_or_default(),
+                        format_duration(*duration_minutes),
+                    ));
                 }
             }
         }

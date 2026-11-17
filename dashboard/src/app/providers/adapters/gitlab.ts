@@ -41,7 +41,6 @@ class GitLabEntryUiAdapter extends EntryUiAdapter<GitLabEntry> {
       badges: [badge],
       detailSections: [],
       styleKey: provider.source,
-      sources: [provider.source],
     })
   }
 

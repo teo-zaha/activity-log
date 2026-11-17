@@ -1,12 +1,12 @@
 import { Component, input, output } from '@angular/core'
 import { MatIconModule } from '@angular/material/icon'
-import type { Source } from '../../../generated/activity'
 import { ProviderIconComponent } from '../../provider-icon/provider-icon.component'
 import { StatusDotComponent } from '../../ui-status/status-dot.component'
-import type {
-  SettingsFutureProviderRow,
-  SettingsProviderRow,
-  SettingsSelection,
+import {
+  SETTINGS_SECTIONS,
+  connectionSelection,
+  type SettingsProviderRow,
+  type SettingsSelection,
 } from '../settings-dialog.types'
 
 @Component({
@@ -18,21 +18,8 @@ import type {
 export class SettingsDialogMobileTabsComponent {
   readonly selection = input.required<SettingsSelection>()
   readonly providers = input.required<readonly SettingsProviderRow[]>()
-  readonly futureProviders = input.required<readonly SettingsFutureProviderRow[]>()
+  readonly selected = output<SettingsSelection>()
 
-  readonly generalSelected = output<void>()
-  readonly logsSelected = output<void>()
-  readonly sourceSelected = output<Source>()
-
-  protected selectGeneral(): void {
-    this.generalSelected.emit()
-  }
-
-  protected selectLogs(): void {
-    this.logsSelected.emit()
-  }
-
-  protected selectSource(source: Source): void {
-    this.sourceSelected.emit(source)
-  }
+  protected readonly sections = SETTINGS_SECTIONS
+  protected readonly connectionSelection = connectionSelection
 }

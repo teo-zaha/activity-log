@@ -1,0 +1,431 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>C · Workspace with agent</title>
+<style>:root{--bg:#edf2f6;--surface:#fff;--surface-alt:#f8fafc;--surface-hover:#eef3f8;--border:#b8c0cb;--border-subtle:#cdd3db;--border-strong:#8792a0;--text-primary:#0f1623;--text-secondary:#3d4756;--text-tertiary:#5c6878;--accent:#3b82f6;--accent-hover:#2563eb;--accent-soft:color-mix(in srgb,#3b82f6 14%,transparent);--hairline:color-mix(in srgb,#b8c0cb 58%,transparent);--panel-border:color-mix(in srgb,#b8c0cb 78%,transparent);--panel-muted:color-mix(in srgb,#fff 78%,#f8fafc 22%);--panel-shadow:0 1px 2px rgba(15,23,42,.04),0 2px 8px rgba(15,23,42,.03);--panel-shadow-strong:0 1px 3px rgba(15,23,42,.05),0 8px 24px rgba(15,23,42,.06);--git-bg:#bfdbfe;--git-fg:#1e3a8a;--git-ac:#1d4ed8;--gitlab-bg:#fecaca;--gitlab-fg:#7f1d1d;--gitlab-ac:#b91c1c;--jira-bg:#c7d2fe;--jira-fg:#312e81;--jira-ac:#4338ca;--outlook-bg:#bae6fd;--outlook-fg:#0c4a6e;--outlook-ac:#0369a1;--system-bg:#e2e8f0;--system-fg:#1e293b;--system-ac:#475569;--odoo-bg:#ead5e6;--odoo-fg:#4a2342;--odoo-ac:#714b67;--ok:#22c55e;--ok-fg:#15803d;--warn:#f59e0b;--warn-fg:#b45309;--err:#ef4444;--err-fg:#b91c1c;--logged:#0d9488;--logged-fg:#115e59;--agent:#9333ea;--agent-fg:#6b21a8;--radius-sm:10px;--radius-md:14px;--radius-lg:20px;--radius-xl:24px;--pin:#f59e0b}
+*{box-sizing:border-box}
+body{margin:0;font:400 14px/1.45 Inter,-apple-system,"SF Pro Text","Segoe UI",system-ui,sans-serif;color:var(--text-primary);background:#dfe5ec}
+svg.i{width:18px;height:18px;flex-shrink:0;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+svg.i.sm{width:15px;height:15px}svg.i.xs{width:13px;height:13px}
+.page{max-width:1340px;margin:0 auto;padding:28px 30px 60px}
+.page>header.doc{display:flex;align-items:baseline;justify-content:space-between;gap:20px;margin-bottom:6px}
+.doc h1{margin:0;font-size:26px;letter-spacing:-.02em}
+.doc nav a{color:var(--accent-hover);font-weight:600;text-decoration:none;margin-left:14px;font-size:13px}
+.lede{margin:0 0 22px;color:var(--text-secondary);max-width:900px}
+.caption{display:flex;align-items:center;gap:10px;margin:26px 0 10px;font-weight:700;font-size:15px}
+.caption .tag{font:700 11px/1 Inter,system-ui;letter-spacing:.08em;text-transform:uppercase;color:var(--text-tertiary)}
+.screen{position:relative;width:1280px;height:800px;overflow:hidden;border-radius:16px;box-shadow:0 2px 6px rgba(15,23,42,.08),0 20px 50px rgba(15,23,42,.14);background:radial-gradient(1100px 520px at 8% -14%,color-mix(in srgb,#3b82f6 9%,transparent),transparent 70%),var(--bg);display:flex;flex-direction:column}
+@media (max-width:1340px){.screen{zoom:.72}}
+.notes{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px 28px;margin:14px 0 0;padding:0;list-style:none;max-width:1280px}
+.notes li{display:flex;gap:10px;font-size:13px;color:var(--text-secondary)}
+.notes b{color:var(--text-primary)}
+.pin{display:inline-grid;place-items:center;width:20px;height:20px;border-radius:999px;background:var(--pin);color:#fff;font:800 11px/1 Inter,system-ui;flex-shrink:0;box-shadow:0 0 0 3px color-mix(in srgb,var(--pin) 30%,transparent)}
+.screen .pin{position:absolute;z-index:60}
+/* app chrome */
+.hdr{display:flex;align-items:center;gap:14px;height:68px;padding:0 18px 0 22px;flex-shrink:0}
+.brand{display:flex;align-items:center;gap:10px;font-weight:700;font-size:16px;width:220px}
+.brand-mark{display:grid;place-items:center;width:32px;height:32px;border-radius:9px;background:linear-gradient(135deg,#3b82f6,#2563eb);color:#fff;box-shadow:0 2px 6px rgba(37,99,235,.35)}
+.range{display:flex;align-items:center;gap:8px;height:40px;padding:0 12px;border:1px solid var(--border);border-radius:14px;background:color-mix(in srgb,#fff 88%,transparent);font-size:13.5px}
+.range .lbl{font:700 10.5px/1 Inter,system-ui;letter-spacing:.08em;color:var(--text-tertiary)}
+.range .val{font-weight:500;font-variant-numeric:tabular-nums}
+.range svg{color:var(--text-tertiary)}
+.spacer{flex:1}
+.btn{display:inline-flex;align-items:center;gap:7px;height:34px;padding:0 13px;border-radius:11px;border:1px solid var(--border);background:var(--surface);color:var(--text-primary);font:600 13px/1 Inter,system-ui,sans-serif;white-space:nowrap;cursor:default}
+.btn.primary{background:var(--accent);border-color:var(--accent);color:#fff;box-shadow:0 1px 2px rgba(37,99,235,.3)}
+.btn.ghost{background:transparent;border-color:transparent;color:var(--text-secondary)}
+.btn.icon{width:34px;padding:0;justify-content:center;color:var(--text-secondary)}
+.btn.lg{height:40px;padding:0 18px;border-radius:13px}
+.btn.agent{background:var(--agent);border-color:var(--agent);color:#fff}
+.btn[disabled],.btn.dis{opacity:.45}
+.kbd{display:inline-grid;place-items:center;min-width:20px;height:20px;padding:0 5px;border:1px solid var(--border);border-bottom-width:2px;border-radius:6px;background:var(--surface);font:600 11px/1 Inter,system-ui;color:var(--text-tertiary)}
+.shell{flex:1;display:flex;gap:12px;min-height:0;padding:0 16px 16px 12px}
+.side{width:236px;flex-shrink:0;display:flex;flex-direction:column;gap:20px;padding:6px 4px 0 8px}
+.sl{display:block;padding:0 10px 6px;font:700 10.5px/1 Inter,system-ui;letter-spacing:.08em;text-transform:uppercase;color:var(--text-tertiary)}
+.row{display:flex;align-items:center;gap:10px;min-height:36px;padding:6px 10px;border:1px solid transparent;border-radius:10px;color:var(--text-secondary);font-weight:500;font-size:13.5px}
+.row svg{color:var(--text-tertiary)}
+.row.on{background:var(--surface);border-color:var(--hairline);color:var(--text-primary);font-weight:600;box-shadow:0 1px 2px rgba(15,23,42,.06)}
+.row.on svg{color:var(--accent)}
+.row .t{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.cnt{min-width:24px;padding:2px 7px;border-radius:999px;background:var(--b,color-mix(in srgb,#5c6878 12%,transparent));color:var(--f,inherit);font:700 11px/1.3 Inter,system-ui;text-align:center;font-variant-numeric:tabular-nums}
+.side-bottom{margin-top:auto;border-top:1px solid var(--hairline);padding:10px 0 0}
+.pv{display:inline-grid;place-items:center;width:22px;height:22px;border-radius:7px;flex-shrink:0}
+.pv svg{width:14px;height:14px;stroke-width:2.2}
+.pv.git{background:#fde4dc;color:#f05133}.pv.gitlab{background:#fde1d8;color:#e24329}.pv.jira{background:#dce9ff;color:#2684ff}.pv.outlook{background:#d8ebfb;color:#0a64c8}.pv.system{background:#e2e8f0;color:#475569}.pv.odoo{background:#efe3ec;color:#714b67}
+.main{position:relative;flex:1;min-width:0;display:flex;flex-direction:column;overflow:hidden;border-radius:var(--radius-xl);background:var(--surface);border:1px solid var(--panel-border);box-shadow:var(--panel-shadow)}
+.badge{display:inline-flex;align-items:center;gap:5px;padding:3px 8px;border-radius:999px;font:600 10.5px/1.4 Inter,system-ui;letter-spacing:.05em;text-transform:uppercase;white-space:nowrap}
+.badge.git{background:var(--git-bg);color:var(--git-fg)}.badge.gitlab{background:var(--gitlab-bg);color:var(--gitlab-fg)}.badge.jira{background:var(--jira-bg);color:var(--jira-fg)}.badge.outlook{background:var(--outlook-bg);color:var(--outlook-fg)}.badge.system{background:var(--system-bg);color:var(--system-fg)}.badge.odoo{background:var(--odoo-bg);color:var(--odoo-fg)}
+.badge.logged{background:color-mix(in srgb,var(--logged) 16%,#fff);color:var(--logged-fg)}
+.badge.agent{background:color-mix(in srgb,var(--agent) 14%,#fff);color:var(--agent-fg)}
+.pill{display:inline-flex;align-items:center;gap:6px;height:24px;padding:0 9px;border-radius:999px;font:650 11.5px/1 Inter,system-ui;white-space:nowrap;border:1px solid color-mix(in srgb,currentColor 22%,transparent)}
+.pill.ok{color:var(--ok-fg);background:color-mix(in srgb,var(--ok) 12%,#fff)}.pill.warn{color:var(--warn-fg);background:color-mix(in srgb,var(--warn) 12%,#fff)}.pill.err{color:var(--err-fg);background:color-mix(in srgb,var(--err) 12%,#fff)}.pill.info{color:var(--accent-hover);background:color-mix(in srgb,var(--accent) 12%,#fff)}.pill.mute{color:var(--text-secondary);background:var(--surface-alt)}
+.pill.agent{color:var(--agent-fg);background:color-mix(in srgb,var(--agent) 10%,#fff)}
+.st{display:inline-flex;align-items:center;height:22px;padding:0 8px;border-radius:6px;font:700 10.5px/1 Inter,system-ui;letter-spacing:.04em;text-transform:uppercase;white-space:nowrap}
+.st.todo{background:#e7ebf0;color:#3d4756}.st.prog{background:#dbeafe;color:#1e40af}.st.rev{background:#fef3c7;color:#92400e}.st.done{background:#dcfce7;color:#166534}
+.key{white-space:nowrap;font:600 12px/1 "SF Mono",ui-monospace,Menlo,Consolas,monospace;color:var(--text-secondary)}
+.av{display:inline-grid;place-items:center;width:22px;height:22px;border-radius:999px;font:700 9.5px/1 Inter,system-ui;color:#fff;flex-shrink:0}
+.kicker{font:700 10.5px/1 Inter,system-ui;letter-spacing:.08em;text-transform:uppercase;color:var(--text-tertiary)}
+.muted{color:var(--text-tertiary)}
+.search{display:flex;align-items:center;gap:10px;height:44px;padding:0 14px;border:1px solid var(--border);border-radius:14px;background:var(--surface);color:var(--text-tertiary);font-size:14px}
+.chip{display:inline-flex;align-items:center;gap:6px;height:30px;padding:0 12px;border-radius:999px;border:1px solid var(--border-subtle);background:var(--surface);color:var(--text-secondary);font:600 12.5px/1 Inter,system-ui;white-space:nowrap}
+.chip.on{background:color-mix(in srgb,#fff 72%,var(--accent) 28%);border-color:color-mix(in srgb,var(--accent) 42%,var(--border) 58%);color:var(--text-primary)}
+.seg{display:inline-flex;padding:3px;gap:2px;border-radius:12px;background:color-mix(in srgb,var(--surface-alt) 72%,#fff 28%);border:1px solid color-mix(in srgb,var(--border) 74%,transparent)}
+.seg span{padding:6px 11px;border-radius:9px;font:600 12px/1 Inter,system-ui;color:var(--text-tertiary)}
+.seg span.on{background:var(--surface);color:var(--text-primary);box-shadow:0 1px 2px rgba(15,23,42,.08)}
+.panel{display:flex;flex-direction:column;border-radius:var(--radius-xl);background:var(--surface);border:1px solid var(--panel-border);box-shadow:var(--panel-shadow-strong);overflow:hidden}
+.ph{display:flex;align-items:center;gap:10px;padding:12px 12px 12px 20px;border-bottom:1px solid var(--hairline)}
+.pb{padding:18px 20px;overflow:hidden;flex:1}
+.sect{padding:14px;border:1px solid var(--hairline);border-radius:var(--radius-lg);background:var(--panel-muted)}
+.fields{margin:0;border-top:1px solid var(--hairline)}
+.fields div{display:grid;grid-template-columns:110px minmax(0,1fr);gap:12px;padding:8px 2px;border-bottom:1px solid var(--hairline);font-size:13px}
+.fields dt{color:var(--text-tertiary);font-weight:500}.fields dd{margin:0}
+.backdrop{position:absolute;inset:0;background:color-mix(in srgb,#0b1220 32%,transparent);z-index:40}
+.dialog{position:absolute;z-index:50;border-radius:var(--radius-xl);background:var(--surface);border:1px solid var(--panel-border);box-shadow:0 10px 40px rgba(15,23,42,.25);overflow:hidden}
+.warnbox{display:flex;gap:10px;padding:10px 12px;border-radius:12px;font-size:12.5px;line-height:1.4}
+.warnbox.warn{background:color-mix(in srgb,var(--warn) 12%,#fff);color:#7c2d12;border:1px solid color-mix(in srgb,var(--warn) 35%,transparent)}
+.warnbox.info{background:color-mix(in srgb,var(--accent) 8%,#fff);color:#1e3a8a;border:1px solid color-mix(in srgb,var(--accent) 25%,transparent)}
+.warnbox.agent{background:color-mix(in srgb,var(--agent) 7%,#fff);color:var(--agent-fg);border:1px dashed color-mix(in srgb,var(--agent) 45%,transparent)}
+.warnbox.err{background:color-mix(in srgb,var(--err) 9%,#fff);color:#7f1d1d;border:1px solid color-mix(in srgb,var(--err) 30%,transparent)}
+.hatch{background:repeating-linear-gradient(135deg,color-mix(in srgb,var(--logged) 18%,#fff) 0 5px,color-mix(in srgb,var(--logged) 7%,#fff) 5px 10px)}
+.ev{position:absolute;left:4px;right:4px;display:flex;align-items:center;gap:5px;padding:0 7px;border:1.5px solid;border-radius:7px;font:600 11.5px/1.2 Inter,system-ui;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
+.ev.git{background:var(--git-bg);color:var(--git-fg);border-color:var(--git-ac)}.ev.gitlab{background:var(--gitlab-bg);color:var(--gitlab-fg);border-color:var(--gitlab-ac)}.ev.jira{background:var(--jira-bg);color:var(--jira-fg);border-color:var(--jira-ac)}.ev.outlook{background:var(--outlook-bg);color:var(--outlook-fg);border-color:var(--outlook-ac)}.ev.system{background:var(--system-bg);color:var(--system-fg);border-color:var(--system-ac)}
+.ev.logged{color:var(--logged-fg);border-color:var(--logged);border-width:1.5px}
+.ev.draft{background:color-mix(in srgb,var(--agent) 6%,#fff);color:var(--agent-fg);border:1.5px dashed var(--agent)}
+.ev.sel{box-shadow:0 0 0 2px #fff,0 0 0 4px var(--accent)}
+.ev.tall{align-items:flex-start;padding-top:5px;white-space:normal}
+/* phone mini frame */
+.phone{width:300px;height:620px;border-radius:38px;border:10px solid #0f1623;background:var(--bg);overflow:hidden;display:flex;flex-direction:column;position:relative;box-shadow:0 14px 40px rgba(15,23,42,.2);flex-shrink:0}
+.tabs{display:flex;justify-content:space-around;height:58px;border-top:1px solid var(--hairline);background:var(--surface);padding-top:7px;flex-shrink:0}
+.tabs span{display:flex;flex-direction:column;align-items:center;gap:3px;font:600 9.5px/1 Inter,system-ui;color:var(--text-tertiary);position:relative}
+.tabs span.on{color:var(--accent)}
+.tabs .dot{display:block;position:absolute;top:-3px;right:-4px;min-width:15px;height:15px;padding:0 4px;border-radius:999px;background:var(--agent);color:#fff;font:700 9px/15px Inter,system-ui;text-align:center}
+.extras{display:flex;gap:28px;align-items:flex-start;margin-top:30px}
+.extras .txt{font-size:13px;color:var(--text-secondary);max-width:520px}
+.extras h3{margin:0 0 8px;font-size:15px;color:var(--text-primary)}
+.extras ul{margin:0;padding-left:18px}.extras li{margin:3px 0}
+
+.rail{width:60px;flex-shrink:0;display:flex;flex-direction:column;align-items:center;gap:4px;padding-top:4px}
+.rail .ri{display:grid;place-items:center;width:42px;height:38px;border-radius:10px;color:var(--text-tertiary);border:1px solid transparent;position:relative}
+.rail .ri.on{background:var(--surface);border-color:var(--hairline);color:var(--accent);box-shadow:0 1px 2px rgba(15,23,42,.06)}
+.rail .sep{width:28px;height:1px;background:var(--hairline);margin:8px 0}
+.rail .pv{width:26px;height:26px}
+.cal{flex:1;display:flex;flex-direction:column;min-height:0}
+.calh{display:flex;align-items:center;gap:10px;padding:14px 18px 8px}
+.calh h2{margin:0;font-size:19px;letter-spacing:-.015em}
+.dh{display:grid;grid-template-columns:48px repeat(5,1fr);border-bottom:1px solid var(--hairline);margin:0 12px}
+.dh>div{padding:6px 8px 8px;text-align:center}
+.dh .dn{font:700 10.5px/1 Inter,system-ui;letter-spacing:.06em;color:var(--text-tertiary)}
+.dh .dd{font-size:16px;font-weight:650;margin-top:3px}
+.dh .today .dd{display:inline-grid;place-items:center;width:28px;height:28px;border-radius:999px;background:var(--accent);color:#fff}
+.tot{display:flex;flex-direction:column;gap:3px;margin-top:6px;font-size:11px;color:var(--text-tertiary);font-variant-numeric:tabular-nums}
+.bar{height:5px;border-radius:9px;background:color-mix(in srgb,var(--text-tertiary) 16%,transparent);overflow:hidden}
+.bar i{display:block;height:100%;background:var(--logged);border-radius:9px}
+.tot.w b{color:var(--warn-fg)}
+.body{flex:1;display:grid;grid-template-columns:48px repeat(5,1fr);margin:0 12px;position:relative;min-height:0}
+.gut{position:relative}
+.gut span{position:absolute;right:8px;font-size:11px;color:var(--text-tertiary);transform:translateY(-6px);font-variant-numeric:tabular-nums}
+.col{position:relative;border-left:1px solid var(--hairline);background:repeating-linear-gradient(to bottom,var(--hairline) 0 1px,transparent 1px 56px)}
+.col.today{background:repeating-linear-gradient(to bottom,var(--hairline) 0 1px,transparent 1px 56px),color-mix(in srgb,var(--accent) 4%,transparent)}
+.col .ev{left:3px;right:36%;height:17px;font-size:10.5px;padding:0 5px;border-radius:6px}
+.col .lg{position:absolute;left:67%;right:3px;border-radius:6px;border:1.5px solid var(--logged);font:700 9.5px/1.2 Inter,system-ui;color:var(--logged-fg);padding:3px 3px;overflow:hidden;writing-mode:horizontal-tb}
+.col .df{position:absolute;left:67%;right:3px;border-radius:6px;border:1.5px dashed var(--agent);background:color-mix(in srgb,var(--agent) 8%,#fff);font:700 9.5px/1.2 Inter,system-ui;color:var(--agent-fg);padding:3px;box-shadow:0 0 0 3px color-mix(in srgb,var(--agent) 18%,transparent)}
+.now{position:absolute;left:0;right:0;height:2px;background:var(--err)}
+.now:before{content:"";position:absolute;left:-4px;top:-3px;width:8px;height:8px;border-radius:9px;background:var(--err)}
+.tray{width:340px;flex-shrink:0;display:flex;flex-direction:column;border-radius:var(--radius-xl);background:var(--surface);border:1px solid var(--panel-border);box-shadow:var(--panel-shadow);overflow:hidden}
+.ttabs{display:flex;gap:4px;padding:10px 10px 0;border-bottom:1px solid var(--hairline)}
+.ttabs>span{display:flex;align-items:center;gap:6px;padding:8px 12px 10px;font:600 13px/1 Inter,system-ui;color:var(--text-tertiary);border-bottom:2px solid transparent}
+.ttabs>span.on{color:var(--text-primary);border-color:var(--agent)}
+.tb{flex:1;padding:12px;display:flex;flex-direction:column;gap:10px;overflow:hidden;background:linear-gradient(var(--surface),var(--surface-alt))}
+.agent-st{display:flex;align-items:center;gap:8px;font-size:12px;color:var(--text-secondary)}
+.agent-st .d{width:8px;height:8px;border-radius:9px;background:var(--ok);box-shadow:0 0 0 3px color-mix(in srgb,var(--ok) 20%,transparent)}
+.card{border:1.5px dashed color-mix(in srgb,var(--agent) 45%,transparent);border-radius:16px;background:var(--surface);padding:12px;display:flex;flex-direction:column;gap:7px}
+.card.hl{border-style:solid;border-color:var(--agent);box-shadow:0 0 0 3px color-mix(in srgb,var(--agent) 14%,transparent)}
+.card h4{margin:0;font-size:14px;line-height:1.3}
+.card .src{font-size:12px;color:var(--text-secondary)}
+.card .prov{display:flex;align-items:center;gap:6px;font-size:11.5px;color:var(--text-tertiary)}
+.card .btns{display:flex;gap:6px;margin-top:2px}
+.card .btns .btn{height:30px;font-size:12.5px}
+.aud{font-size:11.5px;color:var(--text-secondary);display:flex;flex-direction:column;gap:5px}
+.aud div{display:grid;grid-template-columns:38px 16px 1fr;gap:6px;align-items:start}
+.aud time{color:var(--text-tertiary);font-variant-numeric:tabular-nums}
+.aud svg{margin-top:1px}
+.qs{display:flex;align-items:center;gap:8px;height:40px;padding:0 12px;border:1px solid var(--border);border-radius:13px;background:var(--surface);font-size:13px;color:var(--text-tertiary)}
+.srcl{display:flex;flex-direction:column;gap:5px}
+.srcl div{display:flex;align-items:center;gap:7px;font-size:12px;padding:6px 8px;border:1px solid var(--hairline);border-radius:10px;background:var(--surface)}
+</style></head>
+<body><svg width="0" height="0" style="position:absolute" aria-hidden="true">
+<symbol id="brand" viewBox="0 0 24 24"><path d="M3 16l5-6 4 4 8-9"/></symbol>
+<symbol id="search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></symbol>
+<symbol id="timeline" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="7" rx="1.5"/><rect x="3" y="13" width="18" height="7" rx="1.5"/></symbol>
+<symbol id="day" viewBox="0 0 24 24"><path d="M4 7h16M4 12h16M4 17h16"/></symbol>
+<symbol id="workweek" viewBox="0 0 24 24"><path d="M6 5v14M12 5v14M18 5v14"/></symbol>
+<symbol id="week" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M9 4v16M15 4v16"/></symbol>
+<symbol id="cog" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><circle cx="12" cy="12" r="7.5" stroke-dasharray="3.3 2.6" stroke-width="3"/></symbol>
+<symbol id="plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol>
+<symbol id="x" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></symbol>
+<symbol id="chev" viewBox="0 0 24 24"><path d="M9 6l6 6-6 6"/></symbol>
+<symbol id="chevd" viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></symbol>
+<symbol id="arrow" viewBox="0 0 24 24"><path d="M5 12h14M13 6l6 6-6 6"/></symbol>
+<symbol id="sync" viewBox="0 0 24 24"><path d="M20 11a8 8 0 0 0-14.9-3M4 13a8 8 0 0 0 14.9 3M5 3v5h5M19 21v-5h-5"/></symbol>
+<symbol id="doc" viewBox="0 0 24 24"><path d="M14 3H6v18h12V7zM14 3v4h4M9 13h6M9 17h6"/></symbol>
+<symbol id="braces" viewBox="0 0 24 24"><path d="M8 4c-2 0-2 1.5-2 4s-1 4-2 4c1 0 2 1.5 2 4s0 4 2 4M16 4c2 0 2 1.5 2 4s1 4 2 4c-1 0-2 1.5-2 4s0 4-2 4"/></symbol>
+<symbol id="clock" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></symbol>
+<symbol id="ext" viewBox="0 0 24 24"><path d="M14 4h6v6M20 4l-9 9M18 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h5"/></symbol>
+<symbol id="check" viewBox="0 0 24 24"><path d="M5 12l5 5L20 7"/></symbol>
+<symbol id="lock" viewBox="0 0 24 24"><rect x="5" y="11" width="14" height="9" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/></symbol>
+<symbol id="warn" viewBox="0 0 24 24"><path d="M12 3l10 18H2zM12 10v4M12 17.5v.01"/></symbol>
+<symbol id="spark" viewBox="0 0 24 24"><path d="M12 3l1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8zM19 16l.8 2.2L22 19l-2.2.8L19 22l-.8-2.2L16 19l2.2-.8z"/></symbol>
+<symbol id="inbox" viewBox="0 0 24 24"><path d="M3 13h5l2 3h4l2-3h5M5.5 5h13L21 13v6H3v-6z"/></symbol>
+<symbol id="ticket" viewBox="0 0 24 24"><path d="M4 7h16v3a2 2 0 0 0 0 4v3H4v-3a2 2 0 0 0 0-4z"/></symbol>
+<symbol id="timer" viewBox="0 0 24 24"><circle cx="12" cy="13" r="8"/><path d="M12 9v4l2 2M9 2h6"/></symbol>
+<symbol id="user" viewBox="0 0 24 24"><circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/></symbol>
+<symbol id="comment" viewBox="0 0 24 24"><path d="M4 5h16v11H9l-5 4z"/></symbol>
+<symbol id="filter" viewBox="0 0 24 24"><path d="M3 5h18l-7 8v6l-4-2v-4z"/></symbol>
+<symbol id="login" viewBox="0 0 24 24"><path d="M10 17l5-5-5-5M15 12H3M14 3h5a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-5"/></symbol>
+<symbol id="history" viewBox="0 0 24 24"><path d="M3 12a9 9 0 1 0 3-6.7L3 8M3 3v5h5M12 7v5l4 2"/></symbol>
+<symbol id="cal" viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 10h18M8 3v4M16 3v4"/></symbol>
+<symbol id="eye" viewBox="0 0 24 24"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/></symbol>
+<symbol id="edit" viewBox="0 0 24 24"><path d="M4 20h4L19 9l-4-4L4 16zM14 6l4 4"/></symbol>
+<symbol id="git" viewBox="0 0 24 24"><path d="M12 2.5l9.5 9.5-9.5 9.5L2.5 12z"/><circle cx="12" cy="9" r="1.2"/><circle cx="12" cy="15" r="1.2"/><path d="M12 10v4"/></symbol>
+<symbol id="gitlab" viewBox="0 0 24 24"><path d="M12 21l9-7-2.5-9-2.5 7h-8L5.5 5 3 14z"/></symbol>
+<symbol id="jira" viewBox="0 0 24 24"><path d="M12 3l5 5-5 5-5-5zM12 11l5 5-5 5-5-5z"/></symbol>
+<symbol id="outlook" viewBox="0 0 24 24"><rect x="3" y="6" width="18" height="13" rx="2"/><path d="M3 8l9 6 9-6"/></symbol>
+<symbol id="power" viewBox="0 0 24 24"><path d="M12 3v8M6.5 7a7 7 0 1 0 11 0"/></symbol>
+<symbol id="odoo" viewBox="0 0 24 24"><circle cx="12" cy="12" r="6.5"/></symbol>
+</svg>
+<div class="page">
+<header class="doc"><h1>C · Workspace with agent</h1><nav><a href="index.html">← Overview</a><a href="a-views-grow.html">A</a><a href="b-command.html">B</a><a href="shared-write-flow.html">Shared: access &amp; confirm</a></nav></header>
+<p class="lede">The calendar becomes the place for time: each day column shows what happened (solid), what was booked (hatched) and what is proposed (dashed). A docked <b>tray</b> on the right holds three tabs. <b>Inbox</b> has drafts from the agent and from you, waiting for review. <b>Items</b> is Jira search and the item detail. <b>Time</b> has totals, attendance and timers. While the tray is open the sidebar folds to the rail, so the week keeps its width.</p>
+
+<div class="caption"><span class="tag">Screen 1</span>Work week with logged time per day, and the agent's drafts waiting in the tray</div>
+<div class="screen">
+<div class="hdr">
+  <div class="brand"><span class="brand-mark"><svg class="i"><use href="#brand"/></svg></span>Activity Log</div>
+  <div class="spacer"></div>
+  
+  <div class="range"><span class="lbl">FROM</span><span class="val">16/11/2026</span><svg class="i sm"><use href="#cal"/></svg><svg class="i sm"><use href="#arrow"/></svg><span class="lbl">TO</span><span class="val">20/11/2026</span><svg class="i sm"><use href="#cal"/></svg></div>
+  <span class="btn primary lg"><svg class="i sm"><use href="#sync"/></svg>Collect</span>
+  <span class="btn icon"><svg class="i sm"><use href="#doc"/></svg></span>
+  <span class="btn icon"><svg class="i sm"><use href="#braces"/></svg></span>
+</div>
+
+<div class="shell">
+<nav class="rail">
+ <span class="ri"><svg class="i"><use href="#timeline"/></svg></span><span class="ri"><svg class="i"><use href="#day"/></svg></span><span class="ri on"><svg class="i"><use href="#workweek"/></svg></span><span class="ri"><svg class="i"><use href="#week"/></svg></span>
+ <span class="sep"></span>
+ <span class="ri"><span class="pv git"><svg class="i"><use href="#git"/></svg></span></span><span class="ri"><span class="pv gitlab"><svg class="i"><use href="#gitlab"/></svg></span></span><span class="ri"><span class="pv jira"><svg class="i"><use href="#jira"/></svg></span></span><span class="ri"><span class="pv outlook"><svg class="i"><use href="#outlook"/></svg></span></span><span class="ri"><span class="pv odoo"><svg class="i"><use href="#odoo"/></svg></span></span><span class="ri"><span class="pv system"><svg class="i"><use href="#power"/></svg></span></span>
+ <span class="spacer"></span><span class="ri"><svg class="i"><use href="#cog"/></svg></span>
+</nav>
+<main class="main">
+ <div class="cal">
+  <div class="calh"><h2>November 2026</h2><span class="spacer"></span>
+   <span class="pill" style="color:var(--logged-fg);background:color-mix(in srgb,var(--logged) 10%,#fff)"><span class="hatch" style="width:14px;height:10px;border-radius:3px;border:1px solid var(--logged)"></span>logged</span>
+   <span class="pill agent"><span style="width:14px;height:10px;border-radius:3px;border:1.5px dashed var(--agent)"></span>draft</span>
+   <span class="seg"><span>‹</span><span class="on">Today</span><span>›</span></span></div>
+  <div class="dh">
+   <div></div>
+   <div><div class="dn">MON</div><div class="dd">16</div><div class="tot w"><span><b>5h15</b> of 8h45</span><span class="bar"><i style="width:60%"></i></span></div></div>
+   <div><div class="dn">TUE</div><div class="dd">17</div><div class="tot"><span><b>7h15</b> of 8h50</span><span class="bar"><i style="width:82%"></i></span></div></div>
+   <div><div class="dn">WED</div><div class="dd">18</div><div class="tot"><span><b>7h</b> of 8h30</span><span class="bar"><i style="width:82%"></i></span></div></div>
+   <div><div class="dn">THU</div><div class="dd">19</div><div class="tot"><span><b>7h30</b> of 8h45</span><span class="bar"><i style="width:86%"></i></span></div></div>
+   <div class="today"><div class="dn" style="color:var(--accent)">FRI</div><div class="dd">20</div><div class="tot"><span><b>2h45</b> · in since 08:12</span><span class="bar"><i style="width:38%"></i></span></div></div>
+  </div>
+  <div class="body">
+   <div class="gut"><span style="top:0">08:00</span><span style="top:56px">09:00</span><span style="top:112px">10:00</span><span style="top:168px">11:00</span><span style="top:224px">12:00</span><span style="top:280px">13:00</span><span style="top:336px">14:00</span><span style="top:392px">15:00</span><span style="top:448px">16:00</span><span style="top:504px">17:00</span></div>
+   <div class="col">
+    <div class="ev outlook" style="top:84px">Daily stand-up</div>
+    <div class="ev outlook tall" style="top:112px;height:84px">Pairing: gateway retry</div>
+    <div class="ev git" style="top:345px">fix(payments): retry…</div>
+    <div class="ev git" style="top:366px">fix(payments): backoff…</div>
+    <div class="ev git" style="top:387px">test(payments): capt…</div>
+    <div class="ev gitlab" style="top:452px">Review !412</div>
+    <div class="ev outlook" style="top:476px;height:28px">1:1 Sam / Alex</div>
+    <div class="df" style="top:112px;height:154px">✦ 163<br>2h45</div>
+    <div class="lg hatch" style="top:280px;height:112px">171<br>2h</div>
+   </div>
+   <div class="col">
+    <div class="ev outlook" style="top:84px">Daily stand-up</div>
+    <div class="ev outlook tall" style="top:112px;height:56px">Architecture review</div>
+    <div class="ev git" style="top:186px">refactor(pay): extract…</div>
+    <div class="ev jira" style="top:300px">ACME-171 → In progress</div>
+    <div class="ev git" style="top:360px">feat(orders): retry b…</div>
+    <div class="ev outlook tall" style="top:420px;height:56px">Backlog refinement</div>
+    <div class="lg hatch" style="top:56px;height:28px">171</div>
+    <div class="lg hatch" style="top:168px;height:84px">163 · 1h30</div>
+    <div class="lg hatch" style="top:280px;height:112px">163</div>
+   </div>
+   <div class="col">
+    <div class="ev outlook" style="top:84px">Daily stand-up</div>
+    <div class="ev git" style="top:130px">spike(pay): idempot…</div>
+    <div class="ev git" style="top:200px">spike(pay): key store</div>
+    <div class="ev outlook tall" style="top:280px;height:56px">Lunch &amp; learn</div>
+    <div class="ev gitlab" style="top:380px">!418 opened</div>
+    <div class="ev git" style="top:430px">feat(orders): retry…</div>
+    <div class="lg hatch" style="top:112px;height:112px">PAY-79 · 2h</div>
+    <div class="lg hatch" style="top:336px;height:168px">171 · 3h</div>
+   </div>
+   <div class="col">
+    <div class="ev outlook" style="top:84px">Daily stand-up</div>
+    <div class="ev outlook tall" style="top:112px;height:56px">Support rota</div>
+    <div class="ev outlook tall" style="top:196px;height:56px">Customer demo</div>
+    <div class="ev git" style="top:300px">fix(payments): 504…</div>
+    <div class="ev jira" style="top:350px">PAY-88 commented</div>
+    <div class="ev git" style="top:420px">test(payments): e2e…</div>
+    <div class="lg hatch" style="top:112px;height:112px">Odoo · 2h</div>
+    <div class="lg hatch" style="top:280px;height:140px">163 · 2h30</div>
+   </div>
+   <div class="col today">
+    <div class="ev system" style="top:11px">System started</div>
+    <div class="ev outlook" style="top:84px">Daily stand-up</div>
+    <div class="ev gitlab" style="top:168px">!418 opened</div>
+    <div class="ev jira" style="top:294px">ACME-158 → In prog…</div>
+    <div class="ev outlook" style="top:364px;height:28px">Release 3.9 go/no-go</div>
+    <div class="ev git" style="top:429px">test(payments): cover…</div>
+    <div class="lg hatch" style="top:112px;height:56px">163 · 1h</div>
+    <div class="df" style="top:294px;height:56px;box-shadow:none">✦ 158<br>1h</div>
+    <div class="now" style="top:430px"></div>
+   </div>
+  </div>
+ </div>
+</main>
+<aside class="tray">
+ <div class="ttabs"><span class="on"><svg class="i sm" style="color:var(--agent)"><use href="#inbox"/></svg>Inbox <span class="cnt" style="--b:var(--agent);--f:#fff">2</span></span><span><svg class="i sm"><use href="#ticket"/></svg>Items</span><span><svg class="i sm"><use href="#timer"/></svg>Time</span><span class="spacer"></span><span class="btn icon ghost" style="width:28px;height:28px"><svg class="i sm"><use href="#x"/></svg></span></div>
+ <div class="tb">
+  <div class="agent-st"><span class="d"></span>Agent connected · may search, read and draft<span class="spacer"></span><span style="color:var(--accent-hover);font-weight:600">Pause</span></div>
+  <div class="card hl">
+   <div style="display:flex;gap:6px;align-items:center"><span class="badge agent"><svg class="i xs"><use href="#spark"/></svg>Draft · log time</span><span class="spacer"></span><span class="muted" style="font-size:11px">4 min ago</span></div>
+   <h4>Log 2h45m on ACME-163, Mon 16 Nov from 10:00</h4>
+   <div class="src">From the pairing meeting and 3 commits on branch ACME-163.</div>
+   <div class="prov"><svg class="i xs"><use href="#spark"/></svg>You asked: “fill the gaps in my Monday”</div>
+   <div class="btns"><span class="btn primary"><svg class="i xs"><use href="#eye"/></svg>Review</span><span class="btn ghost">Discard</span></div>
+  </div>
+  <div class="card">
+   <div style="display:flex;gap:6px;align-items:center"><span class="badge agent"><svg class="i xs"><use href="#spark"/></svg>Draft · new ticket</span><span class="spacer"></span><span class="muted" style="font-size:11px">12 min ago</span></div>
+   <h4>Bug in PAY: “Refund webhook retried without backoff”</h4>
+   <div class="src">Based on the discussion in !418 and PAY-88.</div>
+   <div class="btns"><span class="btn"><svg class="i xs"><use href="#eye"/></svg>Review</span><span class="btn ghost">Discard</span></div>
+  </div>
+  <div style="display:flex;align-items:center;gap:6px;margin-top:4px"><span class="kicker">Agent activity</span><span class="spacer"></span><span style="font-size:11.5px;color:var(--accent-hover);font-weight:600">Full log</span></div>
+  <div class="aud">
+   <div><time>14:03</time><svg class="i xs" style="color:var(--agent)"><use href="#spark"/></svg><span>drafted log_time on ACME-163</span></div>
+   <div><time>14:02</time><svg class="i xs muted"><use href="#eye"/></svg><span>read ACME-163 · read Monday's 9 entries</span></div>
+   <div><time>14:02</time><svg class="i xs muted"><use href="#search"/></svg><span>searched Work Jira (query not logged)</span></div>
+   <div><time>13:50</time><svg class="i xs" style="color:var(--ok-fg)"><use href="#check"/></svg><span><b>you confirmed</b> 1h on ACME-158 → worklog 104233</span></div>
+   <div><time>13:41</time><svg class="i xs muted"><use href="#x"/></svg><span><b>you discarded</b> a comment on PAY-88</span></div>
+  </div>
+ </div>
+</aside>
+</div>
+<span class="pin" style="left:420px;top:126px">1</span>
+<span class="pin" style="left:296px;top:316px">2</span>
+<span class="pin" style="left:930px;top:98px">3</span>
+<span class="pin" style="left:930px;top:302px">4</span>
+<span class="pin" style="left:930px;top:540px">5</span>
+<span class="pin" style="left:34px;top:96px">6</span>
+</div>
+<ul class="notes">
+<li><span class="pin">1</span><span><b>Day totals in every column header:</b> logged out of present (Odoo attendance), or out of the span of tracked activity when there is no attendance. The bar turns amber when the gap is large.</span></li>
+<li><span class="pin">2</span><span><b>Three lanes in one column:</b> activity on the left, booked time (hatched) on the right, drafts (dashed, violet) in the booked lane where they would land. Gaps are visible without opening a report.</span></li>
+<li><span class="pin">3</span><span><b>The tray</b> is docked, closable and remembered per window. Items has the Jira search and detail from A. Time has totals per item, check in and out, and later timers.</span></li>
+<li><span class="pin">4</span><span><b>Inbox: one queue for every prepared write,</b> the agent's and your own drafts saved for later. Each card says what, where, why and who asked. Nothing is sent from a card.</span></li>
+<li><span class="pin">5</span><span><b>The agent's activity is visible as it happens:</b> reads, searches, drafts, and your confirms and discards. Metadata only, as in the plan's audit (no query text, no titles).</span></li>
+<li><span class="pin">6</span><span><b>The cost:</b> at 1280 px the tray takes 340 px, so the sidebar folds to the rail while it is open. That is a new layout state on top of the existing phone, tablet and desktop ones.</span></li>
+</ul>
+
+<div class="caption"><span class="tag">Screen 2</span>Reviewing an agent draft: sources highlighted on the calendar, a fresh preview, a named confirm</div>
+<div class="screen">
+<div class="hdr">
+  <div class="brand"><span class="brand-mark"><svg class="i"><use href="#brand"/></svg></span>Activity Log</div>
+  <div class="spacer"></div>
+  
+  <div class="range"><span class="lbl">FROM</span><span class="val">16/11/2026</span><svg class="i sm"><use href="#cal"/></svg><svg class="i sm"><use href="#arrow"/></svg><span class="lbl">TO</span><span class="val">20/11/2026</span><svg class="i sm"><use href="#cal"/></svg></div>
+  <span class="btn primary lg"><svg class="i sm"><use href="#sync"/></svg>Collect</span>
+  <span class="btn icon"><svg class="i sm"><use href="#doc"/></svg></span>
+  <span class="btn icon"><svg class="i sm"><use href="#braces"/></svg></span>
+</div>
+
+<div class="shell">
+<nav class="rail">
+ <span class="ri"><svg class="i"><use href="#timeline"/></svg></span><span class="ri on"><svg class="i"><use href="#day"/></svg></span><span class="ri"><svg class="i"><use href="#workweek"/></svg></span><span class="ri"><svg class="i"><use href="#week"/></svg></span>
+ <span class="sep"></span>
+ <span class="ri"><span class="pv git"><svg class="i"><use href="#git"/></svg></span></span><span class="ri"><span class="pv gitlab"><svg class="i"><use href="#gitlab"/></svg></span></span><span class="ri"><span class="pv jira"><svg class="i"><use href="#jira"/></svg></span></span><span class="ri"><span class="pv outlook"><svg class="i"><use href="#outlook"/></svg></span></span><span class="ri"><span class="pv odoo"><svg class="i"><use href="#odoo"/></svg></span></span><span class="ri"><span class="pv system"><svg class="i"><use href="#power"/></svg></span></span>
+ <span class="spacer"></span><span class="ri"><svg class="i"><use href="#cog"/></svg></span>
+</nav>
+<main class="main">
+ <div class="cal">
+  <div class="calh"><h2>Monday, 16 November</h2><span class="pill warn">5h15 of 8h45 logged</span><span class="spacer"></span><span class="pill agent"><svg class="i xs"><use href="#eye"/></svg>Showing the draft's sources</span></div>
+  <div class="body" style="grid-template-columns:48px 1fr;margin-top:8px">
+   <div class="gut"><span style="top:0">08:00</span><span style="top:56px">09:00</span><span style="top:112px">10:00</span><span style="top:168px">11:00</span><span style="top:224px">12:00</span><span style="top:280px">13:00</span><span style="top:336px">14:00</span><span style="top:392px">15:00</span><span style="top:448px">16:00</span><span style="top:504px">17:00</span></div>
+   <div class="col">
+    <div class="ev outlook" style="top:84px;right:52%;opacity:.45">Daily stand-up</div>
+    <div class="ev outlook tall sel" style="top:112px;height:84px;right:52%">Pairing: gateway retry (ACME-163) · 1h30</div>
+    <div class="ev git sel" style="top:345px;right:52%">fix(payments): retry capture on 504 · 14:10</div>
+    <div class="ev git sel" style="top:366px;right:52%">fix(payments): backoff with jitter · 14:34</div>
+    <div class="ev git sel" style="top:387px;right:52%">test(payments): capture retry happy path · 14:58</div>
+    <div class="ev gitlab" style="top:452px;right:52%;opacity:.45">Review: !412 order page retry banner</div>
+    <div class="ev outlook" style="top:476px;height:28px;right:52%;opacity:.45">1:1 Sam / Alex</div>
+    <div class="df" style="left:51%;top:112px;height:154px;font-size:11.5px;padding:6px 8px">✦ Draft · ACME-163<br>10:00–12:45 · 2h45</div>
+    <div class="lg hatch" style="left:51%;top:280px;height:112px;font-size:11.5px;padding:6px 8px">Logged · ACME-171 · 2h<br><span style="font-weight:500">13:00–15:00</span></div>
+   </div>
+  </div>
+ </div>
+</main>
+<aside class="tray" style="width:400px">
+ <div class="ph" style="padding-left:12px"><span class="btn icon ghost" style="width:30px;height:30px"><svg class="i sm" style="transform:scaleX(-1)"><use href="#chev"/></svg></span><b style="font-size:14px">Review draft</b><span class="spacer"></span><span class="badge agent"><svg class="i xs"><use href="#spark"/></svg>from agent</span></div>
+ <div class="tb" style="gap:12px">
+  <h4 style="margin:0;font-size:16px;line-height:1.3">Log 2h45m on ACME-163</h4>
+  <div class="warnbox agent"><svg class="i sm"><use href="#spark"/></svg><span><b>The agent's reason</b> (model text, check it): “The pairing meeting names ACME-163, and the three commits after it are on branch ACME-163. Monday had 3h30 not logged.”</span></div>
+  <div><span class="kicker">Sources it used</span>
+   <div class="srcl" style="margin-top:6px"><div><span class="badge outlook" style="font-size:9.5px">Outlook</span>Pairing: gateway retry · 10:00–11:30</div><div><span class="badge git" style="font-size:9.5px">Git</span>3 commits · 14:10–15:20 · checkout-service</div></div></div>
+  <div class="sect" style="padding:12px">
+   <div style="display:flex;align-items:center;gap:6px;margin-bottom:6px"><span class="kicker">What will be sent</span><span class="spacer"></span><span class="pill ok" style="height:22px"><svg class="i xs"><use href="#check"/></svg>re-checked 2 s ago</span></div>
+   <dl class="fields">
+    <div><dt>Connection</dt><dd><b>Work Jira</b></dd></div>
+    <div><dt>Item</dt><dd><span class="key">ACME-163</span> Payment capture not retried…</dd></div>
+    <div><dt>Start · length</dt><dd>Mon 16 Nov, 10:00 · <b>2h 45m</b></dd></div>
+    <div><dt>Comment</dt><dd>Pairing: gateway retry; 3 commits</dd></div>
+   </dl>
+  </div>
+  <div class="warnbox info"><svg class="i sm"><use href="#history"/></svg><span>The audit will record: <b>requested by agent, confirmed by you</b> in the desktop app.</span></div>
+  <div style="display:flex;gap:8px;margin-top:auto"><span class="btn ghost">Discard</span><span class="btn"><svg class="i xs"><use href="#edit"/></svg>Edit</span><span class="spacer"></span><span class="btn primary lg">Log 2h45m on ACME-163</span></div>
+ </div>
+</aside>
+</div>
+<span class="pin" style="left:140px;top:226px">7</span>
+<span class="pin" style="left:870px;top:160px">8</span>
+<span class="pin" style="left:870px;top:420px">9</span>
+<span class="pin" style="left:1040px;top:716px">10</span>
+</div>
+<ul class="notes">
+<li><span class="pin">7</span><span><b>Opening a draft highlights its sources</b> on the calendar and dims the rest. A human can see in one glance whether the agent's reasoning holds up.</span></li>
+<li><span class="pin">8</span><span><b>The agent's reason is labelled as model text.</b> It is plain text with no links (ticket text the agent read may contain injected instructions). Only core-rendered fields below it count.</span></li>
+<li><span class="pin">9</span><span><b>Re-checked on open.</b> The desktop re-prepares the draft under its own channel, which gives a fresh preview, a fresh 5-minute confirm id and a current double-booking check. A draft is a saved request, not a pending plan.</span></li>
+<li><span class="pin">10</span><span><b>Confirm names the effect,</b> and Enter doesn't send. Edit opens the normal Log time dialog filled in from the draft. Discard is recorded in the audit too.</span></li>
+</ul>
+
+<div class="extras">
+ <div class="phone">
+  <div style="padding:16px 14px 10px;display:flex;align-items:center;gap:8px"><b style="font-size:15px">Inbox</b><span class="cnt" style="--b:var(--agent);--f:#fff">2</span><span class="spacer"></span><span class="agent-st" style="font-size:11px"><span class="d"></span>Agent on</span></div>
+  <div style="flex:1;padding:0 10px;display:flex;flex-direction:column;gap:8px;overflow:hidden">
+   <div class="card hl" style="padding:10px"><span class="badge agent" style="align-self:flex-start"><svg class="i xs"><use href="#spark"/></svg>Log time</span><h4 style="font-size:13px">Log 2h45m on ACME-163, Mon 10:00</h4><div class="src" style="font-size:11.5px">Pairing meeting + 3 commits</div><div class="btns"><span class="btn primary" style="height:28px">Review</span><span class="btn ghost" style="height:28px">Discard</span></div></div>
+   <div class="card" style="padding:10px"><span class="badge agent" style="align-self:flex-start"><svg class="i xs"><use href="#spark"/></svg>New ticket</span><h4 style="font-size:13px">Bug in PAY: “Refund webhook retried without backoff”</h4><div class="btns"><span class="btn" style="height:28px">Review</span></div></div>
+   <span class="kicker" style="margin-top:6px">Agent activity</span>
+   <div class="aud" style="font-size:11px"><div><time>14:03</time><svg class="i xs" style="color:var(--agent)"><use href="#spark"/></svg><span>drafted log_time ACME-163</span></div><div><time>14:02</time><svg class="i xs muted"><use href="#eye"/></svg><span>read ACME-163</span></div></div>
+  </div>
+  <div class="tabs"><span><svg class="i"><use href="#timeline"/></svg>Timeline</span><span><svg class="i"><use href="#week"/></svg>Calendar</span><span class="on" style="color:var(--agent)"><svg class="i"><use href="#inbox"/></svg>Inbox<span class="dot">2</span></span><span><svg class="i"><use href="#ticket"/></svg>Items</span><span><svg class="i"><use href="#cog"/></svg>More</span></div>
+ </div>
+ <div class="txt">
+  <h3>Tablet and phone</h3>
+  <ul>
+   <li><b>Desktop compact (≤ 1100 px):</b> the tray overlays the calendar instead of docking, and closes after a confirm.</li>
+   <li><b>Tablet rail:</b> one tray toggle with the Inbox count at the top of the rail.</li>
+   <li><b>Phone:</b> the tray's tabs become bottom-bar tabs (Inbox, Items). Review is a full-height sheet with the confirm button pinned at the bottom. In a narrow desktop window, confirming works as usual. In the browser build there is no Inbox, because actions are desktop only.</li>
+   <li><b>Browser build:</b> no tray (actions are desktop only). The time lanes still render if worklogs are collected.</li>
+  </ul>
+  <h3 style="margin-top:14px">States</h3>
+  <ul>
+   <li><b>Agent off or not set up:</b> the Inbox holds only your own saved drafts. The status line reads “No agent connected · Set up”.</li>
+   <li><b>Draft no longer valid</b> (item closed, setting turned off, token lacks the permission): re-checking fails. The card turns grey with the reason and offers only Discard.</li>
+   <li><b>Outcome unknown</b> after confirm: the card stays in the Inbox as a sticky warning (“Check ACME-163's worklogs before trying again”) rather than disappearing.</li>
+  </ul>
+ </div>
+</div>
+</div></body></html>

@@ -9,6 +9,8 @@ use ts_rs::TS;
 #[ts(export, rename_all = "lowercase")]
 #[strum(serialize_all = "lowercase")]
 pub enum ProviderStatus {
+    /// The startup check has not finished yet.
+    Checking,
     Available,
     Unavailable,
     Degraded,

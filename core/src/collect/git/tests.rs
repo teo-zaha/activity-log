@@ -5,12 +5,22 @@ use tempfile::{TempDir, tempdir};
 
 use crate::{model::CollectOptions, provider::git::GitConfig};
 
-use super::{OwnCommits, RepoCommits, RepoHistory, collect_git, own_commits};
-use crate::{model::GitEntry, provider::current_os};
+use super::{RepoCommits, RepoHistory, collect_git, own_commits};
+use crate::{model::GitEntry, provider::connection::ConnectionLocation};
 
-/// Collects as the provider does on this machine, so Windows CI goes through its own impl.
+/// Collects one local connection and keeps the user's commits, newest first, as the provider
+/// does across its connections.
 async fn collect(options: &CollectOptions, config: &GitConfig) -> anyhow::Result<Vec<GitEntry>> {
-    collect_git(options, config, current_os()).await
+    let commits = collect_git(options, config, ConnectionLocation::Local).await?;
+    let (_, mut own, _) = own_commits(commits);
+    own.sort_by(|a, b| {
+        DateTime::parse_from_rfc3339(&b.timestamp)
+            .ok()
+            .cmp(&DateTime::parse_from_rfc3339(&a.timestamp).ok())
+            .then_with(|| a.repo.cmp(&b.repo))
+            .then_with(|| a.hash.cmp(&b.hash))
+    });
+    Ok(own)
 }
 
 /// Whole UTC days `since..=until`.
@@ -128,7 +138,7 @@ async fn collects_matching_commits_and_only_sets_branch_on_head_commit() {
 
     let entries = collect(
         &options("2026-03-01", "2026-03-31"),
-        &GitConfig::local_only(vec![repo.path().to_path_buf()]),
+        &GitConfig::with_dirs(vec![repo.path().to_path_buf()]),
     )
     .await
     .unwrap();
@@ -156,7 +166,7 @@ async fn excludes_commits_with_non_matching_author_email() {
 
     let entries = collect(
         &options("2026-03-01", "2026-03-31"),
-        &GitConfig::local_only(vec![repo.path().to_path_buf()]),
+        &GitConfig::with_dirs(vec![repo.path().to_path_buf()]),
     )
     .await
     .unwrap();
@@ -190,7 +200,7 @@ async fn repositories_without_user_email_match_the_emails_of_the_others() {
 
     let entries = collect(
         &options("2026-03-01", "2026-03-31"),
-        &GitConfig::local_only(vec![
+        &GitConfig::with_dirs(vec![
             configured.path().to_path_buf(),
             unconfigured.path().to_path_buf(),
         ]),
@@ -228,7 +238,7 @@ fn history(label: &str, email: Option<&str>, commits: Vec<GitEntry>) -> RepoHist
 
 #[test]
 fn own_commits_match_every_known_email_case_insensitively() {
-    let own = own_commits(RepoCommits {
+    let (found, own, ignored) = own_commits(RepoCommits {
         repos: vec![
             history(
                 "api",
@@ -249,20 +259,22 @@ fn own_commits_match_every_known_email_case_insensitively() {
     });
 
     assert_eq!(
-        own.entries
-            .iter()
+        own.iter()
             .map(|entry| entry.hash.as_str())
             .collect::<Vec<_>>(),
         vec!["work", "private", "dots"]
     );
-    assert_eq!(own.identities, vec!["me@example.org", "work@example.com"]);
-    assert_eq!(own.without_email, vec!["NixOS:dotfiles"]);
-    assert_eq!(own.ignored, 1);
+    assert_eq!(
+        found.identities.into_iter().collect::<Vec<_>>(),
+        vec!["me@example.org", "work@example.com"]
+    );
+    assert_eq!(found.without_email, vec!["NixOS:dotfiles"]);
+    assert_eq!(ignored, 1);
 }
 
 #[test]
 fn own_commits_keep_nothing_without_any_identity() {
-    let own = own_commits(RepoCommits {
+    let (found, own, ignored) = own_commits(RepoCommits {
         repos: vec![
             history("api", None, vec![entry("api", "a", "me@example.com")]),
             history("web", None, Vec::new()),
@@ -270,16 +282,10 @@ fn own_commits_keep_nothing_without_any_identity() {
         identities: Vec::new(),
     });
 
-    let OwnCommits {
-        entries,
-        identities,
-        without_email,
-        ignored,
-    } = own;
-    assert!(entries.is_empty());
-    assert!(identities.is_empty());
-    assert_eq!(without_email, vec!["api", "web"]);
-    assert_eq!(ignored, 0);
+    assert!(own.is_empty());
+    assert!(found.identities.is_empty());
+    assert_eq!(found.without_email, vec!["api", "web"]);
+    assert_eq!(ignored, 1);
 }
 
 #[tokio::test]
@@ -299,7 +305,7 @@ async fn detached_head_yields_empty_branch() {
 
     let entries = collect(
         &options("2026-03-01", "2026-03-31"),
-        &GitConfig::local_only(vec![repo.path().to_path_buf()]),
+        &GitConfig::with_dirs(vec![repo.path().to_path_buf()]),
     )
     .await
     .unwrap();
@@ -324,7 +330,7 @@ async fn commit_message_uses_subject_only() {
 
     let entries = collect(
         &options("2026-03-01", "2026-03-31"),
-        &GitConfig::local_only(vec![repo.path().to_path_buf()]),
+        &GitConfig::with_dirs(vec![repo.path().to_path_buf()]),
     )
     .await
     .unwrap();
@@ -351,7 +357,7 @@ async fn deduplicates_commits_reachable_from_multiple_refs() {
 
     let entries = collect(
         &options("2026-03-01", "2026-03-31"),
-        &GitConfig::local_only(vec![repo.path().to_path_buf()]),
+        &GitConfig::with_dirs(vec![repo.path().to_path_buf()]),
     )
     .await
     .unwrap();
@@ -402,7 +408,7 @@ async fn includes_commits_on_date_window_boundaries_and_excludes_outside() {
 
     let entries = collect(
         &options("2026-03-10", "2026-03-11"),
-        &GitConfig::local_only(vec![repo.path().to_path_buf()]),
+        &GitConfig::with_dirs(vec![repo.path().to_path_buf()]),
     )
     .await
     .unwrap();
@@ -433,7 +439,7 @@ async fn skips_invalid_repositories_but_keeps_collecting_valid_ones() {
 
     let entries = collect(
         &options("2026-03-01", "2026-03-31"),
-        &GitConfig::local_only(vec![
+        &GitConfig::with_dirs(vec![
             invalid_root.path().to_path_buf(),
             repo.path().to_path_buf(),
         ]),
@@ -443,4 +449,43 @@ async fn skips_invalid_repositories_but_keeps_collecting_valid_ones() {
 
     assert_eq!(entries.len(), 1);
     assert_eq!(entries[0].message, "Valid repo");
+}
+
+#[tokio::test]
+async fn reads_a_repository_once_however_many_worktrees_it_has() {
+    let root = tempdir().unwrap();
+    let main = root.path().join("project");
+    fs::create_dir_all(&main).unwrap();
+    run_git(&main, &["init", "-b", "main"]);
+    set_repo_email(&main, "me@example.com");
+    commit_file(
+        &main,
+        "a.txt",
+        "a",
+        "Shared commit",
+        None,
+        "me@example.com",
+        utc_time(2026, 3, 5, 9, 0, 0),
+    );
+    run_git(
+        &main,
+        &[
+            "worktree",
+            "add",
+            "-q",
+            "../project-feature",
+            "-b",
+            "feature",
+        ],
+    );
+
+    let entries = collect(
+        &options("2026-03-01", "2026-03-31"),
+        &GitConfig::with_dirs(vec![root.path().to_path_buf()]),
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(entries.len(), 1, "{entries:?}");
+    assert_eq!(entries[0].repo, "project");
 }

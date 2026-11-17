@@ -1,10 +1,12 @@
 import { Service, computed, inject } from '@angular/core'
 import type {
+  AddConnectionRequestDto,
+  ConnectionId,
   ProviderConfigSaveRequestDto,
   ProviderConfigSaveResponseDto,
   ProviderConfigSnapshotDto,
-  Source,
 } from '../generated/activity'
+import type { ConnectionKey } from '../providers/connection'
 import type { DayGroup } from '../models/day-group'
 import type { EntryUiAdapter } from '../providers/types'
 import { ActivityDataService } from './activity-data.service'
@@ -25,8 +27,9 @@ export class ActivityService {
   readonly providerInfo = this.data.providerInfo
   readonly providers = this.data.providers
   readonly unusableProviders = this.data.unusableProviders
+  readonly hasNoSources = this.data.hasNoSources
   readonly summary = this.data.summary
-  readonly sourceCounts = this.data.sourceCounts
+  readonly connectionCounts = this.data.connectionCounts
   readonly meta = this.data.meta
   readonly isLoading = this.data.isLoading
   readonly error = this.data.error
@@ -35,7 +38,7 @@ export class ActivityService {
   readonly dateFrom = this.viewState.dateFrom
   readonly dateTo = this.viewState.dateTo
   readonly searchQuery = this.viewState.searchQuery
-  readonly activeSources = this.viewState.activeSources
+  readonly activeConnections = this.viewState.activeConnections
   readonly currentView = this.viewState.currentView
   readonly selectedDay = this.viewState.selectedDay
   readonly selectedEntry = this.viewState.selectedEntry
@@ -49,13 +52,13 @@ export class ActivityService {
     const from = this.dateFrom()
     const to = this.dateTo()
     const query = this.currentView() === 'list' ? this.searchQuery().toLowerCase() : ''
-    const sources = this.activeSources()
+    const active = this.activeConnections()
 
     return entries.filter(entry => {
       const day = entry.dayKey
       if (from && day < from) return false
       if (to && day > to) return false
-      if (!entry.sources.some(source => sources.has(source))) return false
+      if (!entry.connections.some(key => active.has(key))) return false
       if (query) {
         const haystack = entry.searchTerms.join(' ').toLowerCase()
         if (!haystack.includes(query)) return false
@@ -107,12 +110,12 @@ export class ActivityService {
     this.viewState.setView(view)
   }
 
-  toggleSource(source: Source): void {
-    this.viewState.toggleSource(source, this.providerInfo())
+  toggleConnection(key: ConnectionKey): void {
+    this.viewState.toggleConnection(key, this.providerInfo())
   }
 
-  isolateSource(source: Source): void {
-    this.viewState.isolateSource(source, this.providerInfo())
+  isolateConnection(key: ConnectionKey): void {
+    this.viewState.isolateConnection(key, this.providerInfo())
   }
 
   initLoad(): Promise<void> {
@@ -171,5 +174,13 @@ export class ActivityService {
     request: ProviderConfigSaveRequestDto
   ): Promise<ProviderConfigSaveResponseDto> {
     return this.providerConfig.saveProviderConfig(request)
+  }
+
+  addConnection(request: AddConnectionRequestDto): Promise<ProviderConfigSaveResponseDto> {
+    return this.providerConfig.addConnection(request)
+  }
+
+  removeConnection(connection: ConnectionId): Promise<ProviderConfigSaveResponseDto> {
+    return this.providerConfig.removeConnection(connection)
   }
 }

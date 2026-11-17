@@ -52,14 +52,6 @@
   font: inherit;
   cursor: pointer;
   @include ui.interactive-option;
-
-  &.mobile-tab-upcoming {
-    border-style: dashed;
-    background: color-mix(in srgb, var(--surface-alt) 56%, transparent);
-    color: var(--text-secondary);
-    cursor: not-allowed;
-    opacity: 0.68;
-  }
 }
 
 .mobile-tab-main {
@@ -69,49 +61,6 @@
   min-width: 0;
   font-weight: 600;
   white-space: nowrap;
-}
-
-.mobile-tab-copy {
-  display: inline-flex;
-  flex-direction: column;
-  align-items: flex-start;
-  min-width: 0;
-  line-height: 1.1;
-}
-
-.mobile-tab-status {
-  color: var(--text-tertiary);
-  font-size: 10px;
-  font-weight: 600;
-}
-
-.mobile-tab-icon {
-  --mobile-tab-icon-bg: color-mix(in srgb, var(--surface) 82%, var(--accent) 18%);
-  --mobile-tab-icon-fg: var(--accent);
-
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 24px;
-  height: 24px;
-  border-radius: 9px;
-  background: var(--mobile-tab-icon-bg);
-  color: var(--mobile-tab-icon-fg);
-  flex-shrink: 0;
-
-  &.mobile-tab-icon-upcoming {
-    --mobile-tab-icon-bg: color-mix(in srgb, var(--surface-alt) 86%, var(--surface) 14%);
-    --mobile-tab-icon-fg: var(--text-tertiary);
-  }
-}
-
-.mobile-tab-brand {
-  display: block;
-  width: 16px;
-  height: 16px;
-  font-size: 16px;
-  line-height: 1;
-  object-fit: contain;
 }
 
 @include ui.down('tablet') {

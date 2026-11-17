@@ -1,13 +1,14 @@
 import { Component, computed, inject } from '@angular/core'
 import { MatIconModule } from '@angular/material/icon'
 import { MatTooltipModule } from '@angular/material/tooltip'
-import type { Source } from '../../generated/activity'
+import type { ConnectionKey } from '../../providers/connection'
 import { VIEW_OPTIONS } from '../../models/view-option'
 import { ActivityService } from '../../services/activity.service'
 import type { ProviderViewModel } from '../../services/types'
 import { injectBreakpointDown } from '../../utils/breakpoints'
 import { ProviderIconComponent } from '../provider-icon/provider-icon.component'
 import { SettingsDialogLauncher } from '../settings-dialog/settings-dialog-launcher.service'
+import type { SettingsTarget } from '../settings-dialog/settings-dialog.types'
 import { StatusDotComponent } from '../ui-status/status-dot.component'
 
 @Component({
@@ -37,22 +38,26 @@ export class SidebarComponent {
     return `${count} ${count === 1 ? 'source' : 'sources'} unavailable. ${this.issuesTooltip()}. Open settings`
   })
 
-  protected isActive(id: Source): boolean {
-    return this.activity.activeSources().has(id)
+  protected isActive(key: ConnectionKey): boolean {
+    return this.activity.activeConnections().has(key)
   }
 
   protected sourceTooltip(provider: ProviderViewModel): string {
+    if (provider.info.status === 'checking') return `${provider.label}: checking`
+    if (provider.collecting) return `${provider.label}: collecting`
     const parts = this.isRail() ? [`${provider.label} · ${provider.count}`] : []
     if (provider.tooltip) parts.push(provider.tooltip)
     return parts.join('\n')
   }
 
   protected sourceAriaLabel(provider: ProviderViewModel): string {
+    if (provider.info.status === 'checking') return `${provider.label}, checking`
+    if (provider.collecting) return `${provider.label}, collecting`
     const reason = provider.tooltip ? `, ${provider.tooltip}` : ''
     return `${provider.label}, ${provider.count} events${reason}`
   }
 
-  protected openSettings(source?: Source): void {
-    this.settings.open(source)
+  protected openSettings(target?: SettingsTarget): void {
+    this.settings.open(target)
   }
 }

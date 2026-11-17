@@ -29,7 +29,6 @@ class OutlookEntryUiAdapter extends EntryUiAdapter<OutlookEntry> {
       badges: [badge],
       detailSections: [],
       styleKey: provider.source,
-      sources: [provider.source],
     })
   }
 

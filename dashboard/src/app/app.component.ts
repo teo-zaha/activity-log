@@ -15,6 +15,7 @@ import { DayViewComponent } from './components/day-view/day-view.component'
 import { WeekViewComponent } from './components/week-view/week-view.component'
 import { EventDetailComponent } from './components/event-detail/event-detail.component'
 import { CollectionStatusComponent } from './components/collection-status/collection-status.component'
+import { NoSourcesComponent } from './components/no-sources/no-sources.component'
 
 @Component({
   selector: 'app-root',
@@ -28,6 +29,7 @@ import { CollectionStatusComponent } from './components/collection-status/collec
     WeekViewComponent,
     EventDetailComponent,
     CollectionStatusComponent,
+    NoSourcesComponent,
   ],
   templateUrl: './app.component.html',
   styleUrl: './app.component.scss',

@@ -1,14 +1,14 @@
 import { Component, input, output } from '@angular/core'
 import { MatIconModule } from '@angular/material/icon'
 import { MatTooltipModule } from '@angular/material/tooltip'
-import type { Source } from '../../../generated/activity'
 import { ProviderIconComponent } from '../../provider-icon/provider-icon.component'
 import { providerStatusLabel } from '../../ui-status/provider-status-label'
 import { StatusDotComponent } from '../../ui-status/status-dot.component'
-import type {
-  SettingsFutureProviderRow,
-  SettingsProviderRow,
-  SettingsSelection,
+import {
+  SETTINGS_SECTIONS,
+  connectionSelection,
+  type SettingsProviderRow,
+  type SettingsSelection,
 } from '../settings-dialog.types'
 
 @Component({
@@ -20,26 +20,9 @@ import type {
 export class SettingsDialogNavComponent {
   readonly selection = input.required<SettingsSelection>()
   readonly providers = input.required<readonly SettingsProviderRow[]>()
-  readonly futureProviders = input.required<readonly SettingsFutureProviderRow[]>()
+  readonly selected = output<SettingsSelection>()
 
-  readonly generalSelected = output<void>()
-  readonly logsSelected = output<void>()
-  readonly sourceSelected = output<Source>()
-
-  protected selectGeneral(): void {
-    this.generalSelected.emit()
-  }
-
-  protected selectLogs(): void {
-    this.logsSelected.emit()
-  }
-
-  protected selectSource(source: Source): void {
-    this.sourceSelected.emit(source)
-  }
-
-  protected isSourceSelected(source: Source): boolean {
-    return this.selection() === `source:${source}`
-  }
+  protected readonly sections = SETTINGS_SECTIONS
+  protected readonly connectionSelection = connectionSelection
   protected readonly providerStatusLabel = providerStatusLabel
 }

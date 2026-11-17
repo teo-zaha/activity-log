@@ -22,8 +22,8 @@ use serde::{Deserialize, Serialize};
 use crate::{
     diagnostics,
     model::{
-        ActivityEntry, CollectOptions, GitEntry, GitLabEntry, JiraEntry, OutlookEntry, Source,
-        SystemEntry,
+        ActivityEntry, CalendarEntry, CollectOptions, ConnectionId, GitEntry, GitLabEntry,
+        JiraEntry, OutlookEntry, SystemEntry,
     },
 };
 
@@ -31,7 +31,7 @@ use crate::{
 mod tests;
 
 /// Bump when the file layout changes; older files are then ignored and rewritten.
-const FILE_VERSION: u32 = 2;
+const FILE_VERSION: u32 = 3;
 /// A day counts as settled once it was fetched at least this long after it ended, so late
 /// writes (clock skew, slow API indexing) are not frozen into the cache.
 const SETTLE_GRACE: Duration = Duration::from_secs(60 * 60);
@@ -60,12 +60,12 @@ impl CachePolicy {
     }
 }
 
-/// Collects `options` for `source`, reusing cached days and fetching only the stale span.
+/// Collects `options` for a connection, reusing cached days and fetching only the stale span.
 ///
-/// `scope` separates caches for different configurations of the same provider (for example
-/// two GitLab accounts). `fetch` receives the whole UTC days of the stale span.
+/// `scope` separates caches for different values of the same connection (another account
+/// behind the same name). `fetch` receives the whole UTC days of the stale span.
 pub(crate) async fn collect_with_day_cache<F, Fut>(
-    source: &Source,
+    connection: &ConnectionId,
     scope: u64,
     options: &CollectOptions,
     policy: CachePolicy,
@@ -75,13 +75,17 @@ where
     F: FnOnce(CollectOptions) -> Fut,
     Fut: Future<Output = Result<Vec<ActivityEntry>>>,
 {
-    let path = cache_dir().join(format!("{}-{scope:016x}.json", source.as_ref()));
-    collect_with_day_cache_at(&path, source, options, policy, Utc::now(), fetch).await
+    let path = cache_dir().join(format!(
+        "{}-{}-{scope:016x}.json",
+        connection.source.as_ref(),
+        connection.name
+    ));
+    collect_with_day_cache_at(&path, connection, options, policy, Utc::now(), fetch).await
 }
 
 pub(crate) async fn collect_with_day_cache_at<F, Fut>(
     path: &Path,
-    source: &Source,
+    connection: &ConnectionId,
     options: &CollectOptions,
     policy: CachePolicy,
     now: DateTime<Utc>,
@@ -91,7 +95,8 @@ where
     F: FnOnce(CollectOptions) -> Fut,
     Fut: Future<Output = Result<Vec<ActivityEntry>>>,
 {
-    let scope = source.as_ref();
+    let scope = connection.to_string();
+    let scope = scope.as_str();
     let mut file = load(path, scope);
     let (first_day, last_day) = options.utc_days();
     let requested: Vec<NaiveDate> = days(first_day, last_day).collect();
@@ -156,6 +161,7 @@ enum StoredEntry {
     Jira(JiraEntry),
     Outlook(OutlookEntry),
     System(SystemEntry),
+    Calendar(CalendarEntry),
 }
 
 impl From<ActivityEntry> for StoredEntry {
@@ -166,6 +172,7 @@ impl From<ActivityEntry> for StoredEntry {
             ActivityEntry::Jira(entry) => Self::Jira(entry),
             ActivityEntry::Outlook(entry) => Self::Outlook(entry),
             ActivityEntry::System(entry) => Self::System(entry),
+            ActivityEntry::Calendar(entry) => Self::Calendar(entry),
         }
     }
 }
@@ -178,6 +185,7 @@ impl From<StoredEntry> for ActivityEntry {
             StoredEntry::Jira(entry) => Self::Jira(entry),
             StoredEntry::Outlook(entry) => Self::Outlook(entry),
             StoredEntry::System(entry) => Self::System(entry),
+            StoredEntry::Calendar(entry) => Self::Calendar(entry),
         }
     }
 }

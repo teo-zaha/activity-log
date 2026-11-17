@@ -1,0 +1,35 @@
+<div class="track" #track aria-hidden="true">
+  @for (item of items(); track item.key) {
+    @if (item.kind === 'month') {
+      <div class="month">{{ item.label }}</div>
+    } @else {
+      <div
+        class="day"
+        [class.has-entries]="item.count > 0"
+        [class.is-empty]="item.count === 0"
+        [class.is-weekend]="item.isWeekend"
+        [class.is-today]="item.isToday"
+        [class.is-keep]="item.isMonday || item.isToday"
+        [class.is-near]="(magnification().get(item.key) ?? 0) > 0.45"
+        [style.--f]="magnification().get(item.key) ?? null"
+        [style.--w]="item.weight"
+      >
+        <span class="face">
+          <span class="mark"></span>
+          <span class="num">{{ item.dayOfMonth }}</span>
+        </span>
+      </div>
+    }
+  }
+</div>
+
+@if (pill(); as pill) {
+  <div class="pill" [style.--y]="pill.y + 'px'" aria-hidden="true">{{ pill.label }}</div>
+}
+
+@if (bubble(); as bubble) {
+  <div class="bubble" [style.--y]="bubble.y + 'px'" aria-hidden="true">
+    <b>{{ bubble.label }}</b>
+    <span>{{ bubble.count }}</span>
+  </div>
+}

@@ -3,10 +3,12 @@ import { MAT_DATE_LOCALE } from '@angular/material/core'
 import { render, screen } from '@testing-library/angular'
 import userEvent from '@testing-library/user-event'
 import { describe, expect, it, vi } from 'vitest'
+import type { ActivityLog } from '../../generated/activity'
 import { ActivityService } from '../../services/activity.service'
+import { activityLog } from '../../testing/activity-fixtures'
 import { HeaderComponent } from './header.component'
 
-async function setup(): Promise<{
+async function setup(state: { loading?: boolean; meta?: ActivityLog['meta'] } = {}): Promise<{
   dateFrom: ReturnType<typeof signal<string>>
   dateTo: ReturnType<typeof signal<string>>
   collect: ReturnType<typeof vi.fn<(since: string, until: string) => Promise<void>>>
@@ -22,8 +24,8 @@ async function setup(): Promise<{
           dateFrom,
           dateTo,
           collect,
-          isLoading: signal(false),
-          meta: signal(null),
+          isLoading: signal(state.loading ?? false),
+          meta: signal(state.meta ?? null),
           filteredEntries: signal([]),
         },
       },
@@ -80,5 +82,22 @@ describe('HeaderComponent date range', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Collect activity' }))
 
     expect(collect).toHaveBeenCalledWith('2026-05-25', '2026-05-18')
+  })
+})
+
+describe('HeaderComponent export', () => {
+  const exportButtons = (): HTMLElement[] =>
+    ['Export Markdown', 'Export JSON'].map(name => screen.getByRole('button', { name }))
+
+  it('is offered for a collected log', async () => {
+    await setup({ meta: activityLog.meta })
+
+    expect(exportButtons().map(button => button.hasAttribute('disabled'))).toEqual([false, false])
+  })
+
+  it('waits until a running collection is complete', async () => {
+    await setup({ meta: activityLog.meta, loading: true })
+
+    expect(exportButtons().map(button => button.hasAttribute('disabled'))).toEqual([true, true])
   })
 })
