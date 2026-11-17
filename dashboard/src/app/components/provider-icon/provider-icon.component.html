@@ -1,5 +1,5 @@
-@if (brandIconUrl(); as brandIconUrl) {
-  <img [src]="brandIconUrl" alt="" aria-hidden="true" />
+@if (logoUrl(); as url) {
+  <img [src]="url" alt="" aria-hidden="true" />
 } @else {
-  <mat-icon aria-hidden="true">{{ fallbackIcon() }}</mat-icon>
+  <mat-icon aria-hidden="true">{{ icon() }}</mat-icon>
 }

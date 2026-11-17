@@ -4,57 +4,40 @@
     <p>Adjust appearance, configure sources, and read the diagnostic log.</p>
   </div>
 
-  <button
-    class="nav-item nav-item-general"
-    type="button"
-    [class.active]="selection() === 'general'"
-    [attr.aria-current]="selection() === 'general' ? 'page' : null"
-    (click)="selectGeneral()"
-  >
-    <span class="nav-item-main">
-      <mat-icon>tune</mat-icon>
-      <span>General</span>
-    </span>
-    <mat-icon>chevron_right</mat-icon>
-  </button>
-
-  <button
-    class="nav-item nav-item-general"
-    type="button"
-    [class.active]="selection() === 'logs'"
-    [attr.aria-current]="selection() === 'logs' ? 'page' : null"
-    (click)="selectLogs()"
-  >
-    <span class="nav-item-main">
-      <mat-icon>receipt_long</mat-icon>
-      <span>Logs</span>
-    </span>
-    <mat-icon>chevron_right</mat-icon>
-  </button>
+  @for (section of sections; track section.id) {
+    <button
+      class="nav-item nav-item-general"
+      type="button"
+      [class.active]="selection() === section.id"
+      [attr.aria-current]="selection() === section.id ? 'page' : null"
+      (click)="selected.emit(section.id)"
+    >
+      <span class="nav-item-main">
+        <mat-icon>{{ section.icon }}</mat-icon>
+        <span>{{ section.label }}</span>
+      </span>
+      <mat-icon>chevron_right</mat-icon>
+    </button>
+  }
 
   <div class="nav-group">
     <span class="nav-group-label u-kicker">Sources</span>
 
-    @for (provider of providers(); track provider.info.id) {
+    @for (provider of providers(); track provider.key) {
+      @let id = connectionSelection(provider.key);
       <button
         class="nav-item source-item"
         type="button"
-        [class.active]="isSourceSelected(provider.info.id)"
-        [attr.aria-current]="isSourceSelected(provider.info.id) ? 'page' : null"
+        [class.active]="selection() === id"
+        [attr.aria-current]="selection() === id ? 'page' : null"
         [attr.data-status]="provider.info.status"
-        (click)="selectSource(provider.info.id)"
+        (click)="selected.emit(id)"
         [matTooltip]="provider.tooltip ?? ''"
         [matTooltipDisabled]="!provider.tooltip"
         matTooltipPosition="right"
       >
         <span class="nav-item-main">
-          <span class="source-icon">
-            <app-provider-icon
-              class="source-icon-glyph"
-              [source]="provider.info.id"
-              [fallbackIcon]="provider.icon"
-            />
-          </span>
+          <app-provider-icon [source]="provider.info.connection.source" size="md" />
           <span class="source-copy">
             <span class="source-name">{{ provider.label }}</span>
             <span class="source-status">{{ providerStatusLabel(provider.info.status) }}</span>
@@ -67,21 +50,17 @@
       </button>
     }
 
-    @for (provider of futureProviders(); track provider.id) {
-      <span class="source-item-tooltip" [matTooltip]="provider.tooltip" matTooltipPosition="right">
-        <button class="nav-item source-item source-item-upcoming" type="button" disabled>
-          <span class="nav-item-main">
-            <span class="source-icon source-icon-upcoming">
-              <img class="source-icon-brand" [src]="provider.iconUrl" alt="" aria-hidden="true" />
-            </span>
-            <span class="source-copy">
-              <span class="source-name">{{ provider.label }}</span>
-              <span class="source-status">Coming soon</span>
-            </span>
-          </span>
-          <span class="coming-soon-pill">Soon</span>
-        </button>
+    <button
+      class="nav-item nav-item-add"
+      type="button"
+      [class.active]="selection() === 'add'"
+      [attr.aria-current]="selection() === 'add' ? 'page' : null"
+      (click)="selected.emit('add')"
+    >
+      <span class="nav-item-main">
+        <mat-icon>add</mat-icon>
+        <span>Add source</span>
       </span>
-    }
+    </button>
   </div>
 </aside>

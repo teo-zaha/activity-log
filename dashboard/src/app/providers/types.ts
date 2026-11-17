@@ -1,5 +1,6 @@
 import type { ActivityEntry, ProviderInfo, Source } from '../generated/activity'
-import { dayKeyOf } from '../utils/local-day'
+import { clockTime, dayKeyOf } from '../utils/local-day'
+import { type ConnectionKey, entryConnectionKeys } from './connection'
 
 export type EntryBySource<S extends Source> = Extract<ActivityEntry, { source: S }>
 
@@ -34,7 +35,6 @@ interface EntryUiAdapterInit {
   badges: readonly EntryBadgeVm[]
   detailSections: readonly EntryDetailSection[]
   styleKey: string
-  sources: readonly Source[]
 }
 
 export abstract class ProviderUiAdapterDefinition<
@@ -58,6 +58,8 @@ export abstract class EntryUiAdapter<TEntry extends ActivityEntry = ActivityEntr
   readonly timestamp: string
   /** The local day the entry falls on, `YYYY-MM-DD`. */
   readonly dayKey: string
+  /** The local time, `14:05`; worked out once, since lists show it for every entry. */
+  readonly timeLabel: string
   readonly title: string
   readonly meta: string
   readonly entryIcon: string
@@ -68,7 +70,10 @@ export abstract class EntryUiAdapter<TEntry extends ActivityEntry = ActivityEntr
   readonly badges: readonly EntryBadgeVm[]
   readonly detailSections: readonly EntryDetailSection[]
   readonly styleKey: string
-  readonly sources: readonly Source[]
+  /** The connections the entry came from, see `entryConnectionKeys`. */
+  readonly connections: readonly ConnectionKey[]
+  /** Identifies the entry across collections, so lists keep the rows of entries that stay. */
+  readonly trackKey: string
 
   protected constructor(
     readonly provider: ProviderUiAdapterDefinition<Source, TEntry>,
@@ -78,6 +83,7 @@ export abstract class EntryUiAdapter<TEntry extends ActivityEntry = ActivityEntr
     this.source = entry.source
     this.timestamp = entry.timestamp
     this.dayKey = dayKeyOf(entry.timestamp)
+    this.timeLabel = clockTime(entry.timestamp)
     this.title = init.title
     this.meta = init.meta
     this.entryIcon = init.entryIcon
@@ -88,7 +94,10 @@ export abstract class EntryUiAdapter<TEntry extends ActivityEntry = ActivityEntr
     this.badges = init.badges
     this.detailSections = init.detailSections
     this.styleKey = init.styleKey
-    this.sources = init.sources
+    this.connections = entryConnectionKeys(entry)
+    this.trackKey = [entry.source, entry.connection, entry.timestamp, init.title, init.meta].join(
+      '\u001f'
+    )
   }
 
   abstract markdownSummary(): string

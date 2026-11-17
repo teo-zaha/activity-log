@@ -5,12 +5,14 @@
 //! stderr for the CLI and API.
 
 use std::{
+    cell::RefCell,
     collections::VecDeque,
+    future::Future,
     sync::{LazyLock, Mutex},
 };
 
 use crate::{
-    model::{LogEntry, LogLevel},
+    model::{ConnectionId, LogEntry, LogLevel},
     utils::now_iso,
 };
 
@@ -61,6 +63,42 @@ impl LogBuffer {
     }
 }
 
+tokio::task_local! {
+    static CONNECTION: ConnectionId;
+}
+
+thread_local! {
+    static THREAD_CONNECTION: RefCell<Option<ConnectionId>> = const { RefCell::new(None) };
+}
+
+/// Runs `future` for one connection: lines it logs under the connection's kind (`git`) are
+/// shown under the connection (`git/wsl-nixos`), so collectors need not know about connections.
+pub async fn in_connection<F: Future>(connection: ConnectionId, future: F) -> F::Output {
+    CONNECTION.scope(connection, future).await
+}
+
+/// The connection being collected on this task or thread, to hand to blocking work.
+pub fn current_connection() -> Option<ConnectionId> {
+    THREAD_CONNECTION
+        .with(|current| current.borrow().clone())
+        .or_else(|| CONNECTION.try_with(Clone::clone).ok())
+}
+
+/// Like [`in_connection`], for a blocking closure such as one in `spawn_blocking`.
+pub fn in_connection_sync<R>(connection: Option<ConnectionId>, f: impl FnOnce() -> R) -> R {
+    let previous = THREAD_CONNECTION.with(|current| current.replace(connection));
+    let result = f();
+    THREAD_CONNECTION.with(|current| current.replace(previous));
+    result
+}
+
+fn connection_scope(scope: String) -> String {
+    match current_connection() {
+        Some(connection) if scope == connection.source.as_ref() => connection.to_string(),
+        _ => scope,
+    }
+}
+
 fn with_log<R>(f: impl FnOnce(&mut LogBuffer) -> R) -> R {
     // A panic while holding the lock must not take diagnostics down with it.
     let mut guard = LOG.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
@@ -68,7 +106,7 @@ fn with_log<R>(f: impl FnOnce(&mut LogBuffer) -> R) -> R {
 }
 
 pub fn record(level: LogLevel, scope: impl Into<String>, message: impl Into<String>) {
-    let (scope, message) = (scope.into(), message.into());
+    let (scope, message) = (connection_scope(scope.into()), message.into());
     if level >= LogLevel::Warn {
         eprintln!("  [{scope}] {message}");
     }

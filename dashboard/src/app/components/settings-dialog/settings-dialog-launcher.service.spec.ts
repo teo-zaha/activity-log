@@ -40,12 +40,24 @@ describe('SettingsDialogLauncher', () => {
   it('preselects the requested source', async () => {
     const { open, launcher } = setup()
 
-    launcher.open('jira')
+    launcher.open('jira/default')
 
     await vi.waitFor(() => expect(open).toHaveBeenCalledTimes(1))
     expect(open).toHaveBeenCalledWith(
       SettingsDialogComponent,
-      expect.objectContaining({ data: { initialSelection: 'source:jira' } })
+      expect.objectContaining({ data: { initialSelection: 'connection:jira/default' } })
+    )
+  })
+
+  it('opens on Add source', async () => {
+    const { open, launcher } = setup()
+
+    launcher.open('add')
+
+    await vi.waitFor(() => expect(open).toHaveBeenCalledTimes(1))
+    expect(open).toHaveBeenCalledWith(
+      SettingsDialogComponent,
+      expect.objectContaining({ data: { initialSelection: 'add' } })
     )
   })
 

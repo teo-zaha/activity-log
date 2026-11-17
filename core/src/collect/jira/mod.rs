@@ -76,6 +76,7 @@ fn map_jira_issues(issues: &[JiraIssue], options: &CollectOptions) -> Vec<JiraEn
         if let Some(created) = in_range(&issue.fields.created) {
             entries.push(JiraEntry {
                 source: "jira".to_string(),
+                connection: String::new(),
                 entry_type: JiraEntryType::IssueCreated,
                 timestamp: created.to_rfc3339(),
                 key: issue.key.clone(),
@@ -101,6 +102,7 @@ fn map_jira_issues(issues: &[JiraIssue], options: &CollectOptions) -> Vec<JiraEn
                     emitted_status_change = true;
                     entries.push(JiraEntry {
                         source: "jira".to_string(),
+                        connection: String::new(),
                         entry_type: JiraEntryType::StatusChanged,
                         timestamp: changed.to_rfc3339(),
                         key: issue.key.clone(),
@@ -123,6 +125,7 @@ fn map_jira_issues(issues: &[JiraIssue], options: &CollectOptions) -> Vec<JiraEn
         {
             entries.push(JiraEntry {
                 source: "jira".to_string(),
+                connection: String::new(),
                 entry_type: JiraEntryType::IssueUpdated,
                 timestamp: updated.to_rfc3339(),
                 key: issue.key.clone(),

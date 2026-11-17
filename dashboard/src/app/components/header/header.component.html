@@ -73,7 +73,7 @@
         type="button"
         class="u-btn u-btn-icon btn-export"
         (click)="exportMd()"
-        [disabled]="!activity.meta()"
+        [disabled]="!activity.meta() || activity.isLoading()"
         matTooltip="Export Markdown"
         aria-label="Export Markdown"
       >
@@ -84,7 +84,7 @@
         type="button"
         class="u-btn u-btn-icon btn-export"
         (click)="exportJson()"
-        [disabled]="!activity.meta()"
+        [disabled]="!activity.meta() || activity.isLoading()"
         matTooltip="Export JSON"
         aria-label="Export JSON"
       >

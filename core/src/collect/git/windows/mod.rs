@@ -5,33 +5,20 @@
 //! distribution gets one `wsl.exe` call running a POSIX shell script that finds the
 //! repositories and prints their history in a line format parsed here.
 
-use std::collections::BTreeMap;
-
 use chrono::{DateTime, Utc};
 
 #[cfg(target_os = "windows")]
 use super::RepoCommits;
-use super::RepoHistory;
+use super::{RepoHistory, WslTarget};
+use crate::model::{CollectOptions, GitEntry};
 #[cfg(target_os = "windows")]
-use crate::{diagnostics, platform::run_wsl_script, provider::git::windows::default_wsl_dirs};
-use crate::{
-    model::{CollectOptions, GitEntry},
-    provider::git::GitConfig,
-};
+use crate::{diagnostics, platform::run_wsl_script};
 
 #[cfg(test)]
 mod tests;
 
 const RECORD: char = '\u{1e}';
 const FIELD: char = '\u{1f}';
-
-/// What to read from one distribution.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct WslTarget {
-    pub distro: String,
-    /// Repositories, or folders searched for them; `~` is the distribution's home.
-    pub dirs: Vec<String>,
-}
 
 /// One repository as the script reported it.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -66,69 +53,29 @@ pub(crate) enum WslOutput {
     Failed(String),
 }
 
-/// Distributions to read with their folders: those configured or, unset, the home of every
-/// user distribution. A distribution without folders is not started.
+/// One distribution's repositories, with their commits in `options`.
 #[cfg(target_os = "windows")]
-fn wsl_targets(config: &GitConfig) -> Vec<WslTarget> {
-    wsl_targets_with(config, default_wsl_dirs)
-}
-
-pub(crate) fn wsl_targets_with(
-    config: &GitConfig,
-    default_dirs: impl FnOnce() -> BTreeMap<String, Vec<String>>,
-) -> Vec<WslTarget> {
-    config
-        .wsl
-        .dirs
-        .clone()
-        .unwrap_or_else(default_dirs)
-        .into_iter()
-        .filter(|(_, dirs)| !dirs.is_empty())
-        .map(|(distro, dirs)| WslTarget { distro, dirs })
-        .collect()
-}
-
-/// The local repositories, as everywhere, plus those inside WSL.
-#[cfg(target_os = "windows")]
-pub(super) fn collect_repos(
+pub(crate) fn collect_wsl(
+    target: &WslTarget,
     options: &CollectOptions,
-    config: &GitConfig,
 ) -> anyhow::Result<RepoCommits> {
-    let mut commits = super::collect_local_repos(options, config)?;
-    collect_wsl(config, options, &mut commits);
-    Ok(commits)
-}
-
-/// Adds the WSL repositories, labelled `distro:name`, with their commits in `options`. A
-/// distribution that fails is logged and skipped.
-#[cfg(target_os = "windows")]
-fn collect_wsl(config: &GitConfig, options: &CollectOptions, commits: &mut RepoCommits) {
-    for target in wsl_targets(config) {
-        let scan = match run(&target, Some(options.start)) {
-            Ok(scan) => scan,
-            Err(reason) => {
-                diagnostics::warn(
-                    "git",
-                    format!("Skipped WSL distribution {}: {reason}", target.distro),
-                );
-                continue;
-            }
-        };
-        diagnostics::info(
-            "git",
-            format!(
-                "Scanning {} repositories in WSL {}",
-                scan.repos.len(),
-                target.distro
-            ),
-        );
-        commits.identities.extend(scan.global_email);
-        commits.repos.extend(
-            scan.repos
-                .into_iter()
-                .map(|repo| repo_history(&target.distro, repo, options)),
-        );
-    }
+    let scan = run(target, Some(options.start)).map_err(|reason| anyhow::anyhow!(reason))?;
+    diagnostics::info(
+        "git",
+        format!(
+            "Scanning {} repositories in WSL {}",
+            scan.repos.len(),
+            target.distro
+        ),
+    );
+    Ok(RepoCommits {
+        identities: scan.global_email.into_iter().collect(),
+        repos: scan
+            .repos
+            .into_iter()
+            .map(|repo| repo_history(&target.distro, repo, options))
+            .collect(),
+    })
 }
 
 /// One reported repository, with the commits whose author time is in the range (`--since`
@@ -164,18 +111,10 @@ pub(crate) fn repo_history(
     }
 }
 
-/// How many WSL repositories exist, stopping at the first distribution that has any.
+/// Whether the distribution has a repository under the target's folders.
 #[cfg(target_os = "windows")]
-pub(crate) fn count_wsl_repos(config: &GitConfig) -> Result<usize, String> {
-    let mut last_error = None;
-    for target in wsl_targets(config) {
-        match run(&target, None) {
-            Ok(scan) if !scan.repos.is_empty() => return Ok(scan.repos.len()),
-            Ok(_) => {}
-            Err(reason) => last_error = Some(format!("{}: {reason}", target.distro)),
-        }
-    }
-    last_error.map_or(Ok(0), Err)
+pub(crate) fn has_wsl_repos(target: &WslTarget) -> Result<bool, String> {
+    run(target, None).map(|scan| !scan.repos.is_empty())
 }
 
 #[cfg(target_os = "windows")]
@@ -190,7 +129,7 @@ fn run(target: &WslTarget, since: Option<DateTime<Utc>>) -> Result<WslScan, Stri
 
 /// The script for one distribution. With `since`, it prints the global `user.email`, then each
 /// repository's `user.email` and its commits since then by every author (the collector decides
-/// which are the user's); without, it only lists the repositories.
+/// which are the user's); without, it only prints the first repository it finds.
 pub(crate) fn build_script(target: &WslTarget, since: Option<DateTime<Utc>>) -> String {
     let dirs = target
         .dirs
@@ -217,14 +156,20 @@ repos() {{
     fi
   done
 }}
-repos | sort -u | while IFS= read -r repo; do
+seen=' '
+{{ if [ -z "$since" ]; then repos; else repos | sort -u; fi; }} | while IFS= read -r repo; do
   [ -n "$repo" ] && [ -e "$repo/.git" ] || continue
+  # Worktrees of one repository share its history: it is read once, under its main folder.
+  common=$(git -C "$repo" rev-parse --path-format=absolute --git-common-dir 2>/dev/null) || common="$repo/.git"
+  case $seen in *" $common "*) continue ;; esac
+  seen="$seen$common "
+  main=${{common%/.git}}
   if [ -z "$since" ]; then
-    printf '\036R\037%s\037\n' "$repo"
-    continue
+    printf '\036R\037%s\037\n' "$main"
+    exit 0
   fi
   email=$(git -C "$repo" config --get user.email 2>/dev/null)
-  printf '\036R\037%s\037%s\n' "$repo" "$email"
+  printf '\036R\037%s\037%s\n' "$main" "$email"
   git -C "$repo" log --all --since="$since" --format='%x1eC%x1f%H%x1f%aI%x1f%ae%x1f%s%x1f%D' 2>/dev/null
 done
 "#,

@@ -1,68 +1,64 @@
+use std::path::Path;
+
 use activity_log_core::{
     diagnostics,
-    model::{CollectRequest, CollectingResponse, ErrorResponse, LogsResponse},
-    runtime::{ActivitySnapshot, CollectionResult, CollectionRuntime, resolve_collect_options},
+    model::{CollectRequest, CollectionFailedResponse, ErrorResponse, LogsResponse},
+    runtime::{ActivitySnapshot, resolve_collect_options},
+    settings::ConfigFile,
 };
+
+mod reload;
+
+pub use reload::ApiRuntime;
 use rocket::{
     Build, Rocket, State, delete, fairing::AdHoc, get, http::Status, post, response::status,
     serde::json::Json,
 };
 
-#[get("/api/activity")]
-async fn get_activity(
-    runtime: &State<CollectionRuntime>,
-) -> status::Custom<Json<serde_json::Value>> {
-    match runtime.activity_snapshot().await {
-        ActivitySnapshot::Collecting => status::Custom(
-            Status::Accepted,
-            Json(serde_json::to_value(CollectingResponse { collecting: true }).unwrap()),
-        ),
-        ActivitySnapshot::Ready(log) => {
-            status::Custom(Status::Ok, Json(serde_json::to_value(log).unwrap()))
+type JsonResponse = status::Custom<Json<serde_json::Value>>;
+
+fn json(status: Status, body: impl serde::Serialize) -> JsonResponse {
+    status::Custom(status, Json(serde_json::to_value(body).unwrap()))
+}
+
+/// A running collection answers 202 with the log of what is in so far.
+fn activity_response(snapshot: ActivitySnapshot) -> JsonResponse {
+    match snapshot {
+        ActivitySnapshot::Running(log) => json(Status::Accepted, &*log),
+        ActivitySnapshot::Ready(log) => json(Status::Ok, &*log),
+        // The state of the last collection, not a failed request: its range stays readable.
+        ActivitySnapshot::Failed { options, message } => {
+            json(Status::Ok, CollectionFailedResponse::new(&options, message))
         }
-        ActivitySnapshot::Empty => status::Custom(
+        ActivitySnapshot::Empty => json(
             Status::ServiceUnavailable,
-            Json(
-                serde_json::to_value(ErrorResponse {
-                    error: "No data yet".to_string(),
-                })
-                .unwrap(),
-            ),
+            ErrorResponse {
+                error: "No data yet".to_string(),
+            },
         ),
     }
 }
 
-#[get("/api/providers")]
-async fn get_providers(runtime: &State<CollectionRuntime>) -> Json<serde_json::Value> {
-    Json(serde_json::to_value(runtime.providers_response()).unwrap())
+#[get("/api/activity")]
+async fn get_activity(api: &State<ApiRuntime>) -> JsonResponse {
+    activity_response(api.runtime().await.activity_snapshot())
 }
 
-#[post("/api/collect", format = "json", data = "<request>")]
-async fn post_collect(
-    runtime: &State<CollectionRuntime>,
-    request: Json<CollectRequest>,
-) -> status::Custom<Json<serde_json::Value>> {
-    let options = match resolve_collect_options(&request) {
-        Ok(options) => options,
-        Err(message) => return bad_request(message),
-    };
+#[get("/api/providers")]
+async fn get_providers(api: &State<ApiRuntime>) -> Json<serde_json::Value> {
+    Json(serde_json::to_value(api.runtime().await.providers_response()).unwrap())
+}
 
-    match runtime.collect_with_options(options).await {
-        Ok(CollectionResult::Ready(log)) => {
-            status::Custom(Status::Ok, Json(serde_json::to_value(log).unwrap()))
-        }
-        Ok(CollectionResult::Collecting) => status::Custom(
-            Status::Accepted,
-            Json(serde_json::to_value(CollectingResponse { collecting: true }).unwrap()),
-        ),
-        Err(err) => status::Custom(
-            Status::InternalServerError,
-            Json(
-                serde_json::to_value(ErrorResponse {
-                    error: format!("{err:#}"),
-                })
-                .unwrap(),
-            ),
+/// Starts the collection and answers at once; `GET /api/activity` shows it filling up.
+#[post("/api/collect", format = "json", data = "<request>")]
+async fn post_collect(api: &State<ApiRuntime>, request: Json<CollectRequest>) -> JsonResponse {
+    match resolve_collect_options(&request) {
+        Ok(options) => activity_response(api.start_collection(options).await),
+        Err(message) => json(
+            Status::BadRequest,
+            ErrorResponse {
+                error: message.to_string(),
+            },
         ),
     }
 }
@@ -80,28 +76,16 @@ fn delete_logs() -> Status {
     Status::NoContent
 }
 
-fn bad_request(message: &str) -> status::Custom<Json<serde_json::Value>> {
-    status::Custom(
-        Status::BadRequest,
-        Json(
-            serde_json::to_value(ErrorResponse {
-                error: message.to_string(),
-            })
-            .unwrap(),
-        ),
-    )
+/// The server for the connections in `config` (or the default config file).
+pub async fn build_rocket(config: Option<&Path>) -> anyhow::Result<Rocket<Build>> {
+    let path = ConfigFile::resolve_path(config);
+    println!("Reading connections from {}", path.display());
+    let api = ApiRuntime::from_config(path).await?;
+    Ok(build_rocket_with(api, true))
 }
 
-pub async fn build_rocket() -> anyhow::Result<Rocket<Build>> {
-    let runtime = CollectionRuntime::build_default().await?;
-    Ok(build_rocket_with(runtime, true))
-}
-
-pub fn build_rocket_with(
-    runtime: CollectionRuntime,
-    start_initial_collection: bool,
-) -> Rocket<Build> {
-    let rocket = rocket::build().manage(runtime).mount(
+pub fn build_rocket_with(api: ApiRuntime, start_initial_collection: bool) -> Rocket<Build> {
+    let rocket = rocket::build().manage(api).mount(
         "/",
         rocket::routes![
             get_activity,
@@ -115,13 +99,8 @@ pub fn build_rocket_with(
     if start_initial_collection {
         rocket.attach(AdHoc::on_liftoff("initial-collection", |rocket| {
             Box::pin(async move {
-                if let Some(task) = rocket
-                    .state::<CollectionRuntime>()
-                    .expect("collection runtime")
-                    .initial_collection_task()
-                {
-                    tokio::spawn(task);
-                }
+                let api = rocket.state::<ApiRuntime>().expect("API runtime");
+                api.start_initial_collection().await;
             })
         }))
     } else {

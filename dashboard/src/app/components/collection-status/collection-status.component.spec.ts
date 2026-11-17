@@ -7,7 +7,10 @@ import type { CollectionStatus } from '../../services/types'
 import { SettingsDialogLauncher } from '../settings-dialog/settings-dialog-launcher.service'
 import { CollectionStatusComponent } from './collection-status.component'
 
-async function setup(status: CollectionStatus): Promise<{
+async function setup(
+  status: CollectionStatus,
+  collecting: readonly string[] = []
+): Promise<{
   retryCollection: ReturnType<typeof vi.fn>
   dismissCollectionStatus: ReturnType<typeof vi.fn>
   open: ReturnType<typeof vi.fn>
@@ -17,8 +20,10 @@ async function setup(status: CollectionStatus): Promise<{
   const open = vi.fn()
   const activity = {
     collectionStatus: signal(status),
-    providers: signal([{ label: 'Git' }, { label: 'System' }]),
-    unusableProviders: signal([{ info: { id: 'outlook' } }]),
+    providers: signal(
+      ['Git', 'System'].map(label => ({ label, collecting: collecting.includes(label) }))
+    ),
+    unusableProviders: signal([{ key: 'outlook/default' }]),
     retryCollection,
     dismissCollectionStatus,
   }
@@ -49,6 +54,15 @@ describe('CollectionStatusComponent', () => {
     expect(status.textContent).toContain('From Git, System')
   })
 
+  it('names the sources it still waits for once some are in', async () => {
+    await setup({ kind: 'collecting', operation: 'collect', startedAt: Date.now() }, ['System'])
+
+    const status = screen.getByRole('status')
+    expect(status.textContent).toContain('Collecting activity')
+    expect(status.textContent).toContain('Still collecting System')
+    expect(status.textContent).not.toContain('Git')
+  })
+
   it('offers retry and source checks after a timeout', async () => {
     const { retryCollection, open, dismissCollectionStatus } = await setup({
       kind: 'timedOut',
@@ -63,7 +77,7 @@ describe('CollectionStatusComponent', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Dismiss' }))
 
     expect(retryCollection).toHaveBeenCalled()
-    expect(open).toHaveBeenCalledWith('outlook')
+    expect(open).toHaveBeenCalledWith('outlook/default')
     expect(dismissCollectionStatus).toHaveBeenCalled()
   })
 

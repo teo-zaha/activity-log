@@ -1,3 +1,5 @@
+pub mod calendar;
+pub mod connection;
 pub mod git;
 pub mod gitlab;
 pub mod jira;
@@ -14,17 +16,14 @@ mod tests;
 
 use std::{sync::Arc, time::Duration};
 
-use crate::model::{ProvidersResponse, SupportedOs};
+use crate::model::SupportedOs;
 
 use self::{
-    git::GitProvider, gitlab::GitLabProvider, jira::JiraProvider, outlook::OutlookProvider,
-    provider_adapter::ProviderAdapter, provider_runtime::providers_response_from_runtimes,
-    system::SystemProvider,
+    calendar::CalendarProvider, git::GitProvider, gitlab::GitLabProvider, jira::JiraProvider,
+    outlook::OutlookProvider, provider_adapter::ProviderAdapter, system::SystemProvider,
 };
 
-pub use provider_runtime::{
-    ProviderRuntime, inspect_provider_runtimes, inspect_provider_runtimes_with,
-};
+pub use provider_runtime::{ProviderRuntime, inspect_provider_runtimes_with, start_checks};
 
 /// HTTP client defaults for remote providers; reqwest has no timeouts by default.
 pub(crate) fn http_client_builder() -> reqwest::ClientBuilder {
@@ -39,6 +38,7 @@ macro_rules! provider {
         $provider:ident($source:expr, $supported_os:expr, $config:ty $(, cache: $cache:expr)?) {
             async fn startup_check(&self, $startup_os:ident, $startup_ctx:ident) $startup_body:block
             async fn collect(&self, $collect_os:ident, $collect_options:ident, $collect_ctx:ident) $collect_body:block
+            $($rest:tt)*
         }
     ) => {
         pub struct $provider;
@@ -87,12 +87,15 @@ macro_rules! provider {
                 let $collect_ctx = context;
                 Box::pin(async move { $collect_body })
             }
+
+            $($rest)*
         }
     };
     (
         $provider:ident($source:expr, $supported_os:expr) {
             async fn startup_check(&self, $startup_os:ident, $startup_ctx:ident) $startup_body:block
             async fn collect(&self, $collect_os:ident, $collect_options:ident, $collect_ctx:ident) $collect_body:block
+            $($rest:tt)*
         }
     ) => {
         pub struct $provider;
@@ -131,6 +134,8 @@ macro_rules! provider {
                 let $collect_ctx = context;
                 Box::pin(async move { $collect_body })
             }
+
+            $($rest)*
         }
     };
 }
@@ -142,12 +147,8 @@ pub fn provider_registry() -> Vec<Arc<dyn ProviderAdapter>> {
         Arc::new(JiraProvider),
         Arc::new(OutlookProvider),
         Arc::new(SystemProvider),
+        Arc::new(CalendarProvider),
     ]
-}
-
-pub async fn inspect_providers() -> ProvidersResponse {
-    let runtimes = inspect_provider_runtimes().await;
-    providers_response_from_runtimes(&runtimes)
 }
 
 pub fn current_os() -> SupportedOs {

@@ -1,0 +1,130 @@
+<section class="add-source" aria-labelledby="add-source-title">
+  @if (!isDesktop) {
+    <h3 id="add-source-title" class="u-sr-only">Add source</h3>
+    <p class="u-note">
+      <span class="material-icons" aria-hidden="true">desktop_windows</span>
+      Sources are added in the desktop app, or with <code>activity-log sources add</code>.
+    </p>
+  } @else if (loadError(); as message) {
+    <h3 id="add-source-title" class="u-sr-only">Add source</h3>
+    <p class="u-feedback u-feedback-block" data-tone="error" role="alert">
+      <span class="material-icons" aria-hidden="true">error_outline</span>
+      <span class="u-feedback-text">{{ message }}</span>
+    </p>
+  } @else if (locationsFor(); as kind) {
+    <div class="step-head">
+      <button type="button" class="u-btn u-btn-ghost back-btn" (click)="backToSources()">
+        <span class="material-icons" aria-hidden="true">arrow_back</span>
+        All sources
+      </button>
+      <h3 id="add-source-title" class="step-title">Where should {{ kind.label }} look?</h3>
+    </div>
+
+    <ul class="tile-grid">
+      @for (location of locations(); track location.label) {
+        <li>
+          <button
+            type="button"
+            class="tile"
+            data-src="git"
+            [class.is-busy]="adding() === location.label"
+            [disabled]="adding() !== null"
+            [attr.aria-labelledby]="'location-' + $index + '-name'"
+            [attr.aria-describedby]="'location-' + $index + '-desc location-' + $index + '-state'"
+            (click)="chooseLocation(location)"
+          >
+            <app-provider-icon [fallbackIcon]="location.icon" size="lg" />
+            <span class="tile-copy">
+              <span class="tile-name" [id]="'location-' + $index + '-name'">{{
+                location.label
+              }}</span>
+              <span class="tile-desc" [id]="'location-' + $index + '-desc'">{{
+                location.description
+              }}</span>
+            </span>
+            <span class="tile-state" data-tone="add" [id]="'location-' + $index + '-state'">
+              <span
+                class="material-icons"
+                [class.u-spin]="adding() === location.label"
+                aria-hidden="true"
+                >{{ adding() === location.label ? 'autorenew' : 'add' }}</span
+              >
+              {{ adding() === location.label ? 'Adding…' : 'Add' }}
+            </span>
+          </button>
+        </li>
+      }
+    </ul>
+  } @else {
+    <h3 id="add-source-title" class="u-sr-only">Add source</h3>
+    @if (loading()) {
+      <ul class="tile-grid" aria-hidden="true">
+        @for (row of [1, 2, 3, 4, 5, 6]; track row) {
+          <li><span class="tile tile-skeleton u-skeleton"></span></li>
+        }
+      </ul>
+    } @else {
+      <ul class="tile-grid">
+        @for (tile of tiles(); track tile.kind.source) {
+          <li>
+            <button
+              type="button"
+              class="tile"
+              [attr.data-src]="tile.kind.source"
+              [attr.data-state]="tile.state.kind"
+              [class.is-busy]="adding() === tile.kind.source"
+              [disabled]="tile.state.kind === 'unsupported' || adding() !== null"
+              [attr.aria-labelledby]="'tile-' + tile.kind.source + '-name'"
+              [attr.aria-describedby]="
+                'tile-' + tile.kind.source + '-desc tile-' + tile.kind.source + '-state'
+              "
+              (click)="choose(tile)"
+            >
+              <app-provider-icon [source]="tile.kind.source" size="lg" />
+              <span class="tile-copy">
+                <span class="tile-name" [id]="'tile-' + tile.kind.source + '-name'">{{
+                  tile.kind.label
+                }}</span>
+                <span class="tile-desc" [id]="'tile-' + tile.kind.source + '-desc'">{{
+                  tile.description
+                }}</span>
+              </span>
+              <span
+                class="tile-state"
+                [attr.data-tone]="tile.state.kind"
+                [id]="'tile-' + tile.kind.source + '-state'"
+              >
+                @if (adding() === tile.kind.source) {
+                  <span class="material-icons u-spin" aria-hidden="true">autorenew</span>
+                  Adding…
+                } @else {
+                  <span class="material-icons" aria-hidden="true">{{ stateIcon(tile.state) }}</span>
+                  {{ stateLabel(tile.state) }}
+                }
+              </span>
+            </button>
+          </li>
+        }
+      </ul>
+
+      <h4 id="upcoming-title" class="u-kicker group-label">Coming soon</h4>
+      <ul class="tile-grid upcoming-grid" aria-labelledby="upcoming-title">
+        @for (source of upcoming; track source.id) {
+          <li>
+            <div class="tile is-upcoming" aria-disabled="true">
+              <app-provider-icon [iconUrl]="source.iconUrl" size="sm" />
+              <span class="tile-name">{{ source.label }}</span>
+            </div>
+          </li>
+        }
+      </ul>
+    }
+  }
+
+  @if (error(); as message) {
+    <p class="u-feedback u-feedback-block" data-tone="error" role="alert">
+      <span class="material-icons" aria-hidden="true">error_outline</span>
+      <span class="u-feedback-text">{{ message }}</span>
+    </p>
+  }
+</section>

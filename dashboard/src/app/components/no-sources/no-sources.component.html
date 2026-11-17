@@ -1,0 +1,22 @@
+<section class="u-empty-state no-sources" aria-labelledby="no-sources-title">
+  <span class="logos" aria-hidden="true">
+    @for (source of previews; track source) {
+      <app-provider-icon [source]="source" size="lg" />
+    }
+  </span>
+  <h2 id="no-sources-title" class="u-empty-title title">Add your first source</h2>
+  <p class="u-empty-sub">
+    Your timeline is built from the sources you add: Git commits, GitLab and Jira activity, meetings
+    and more.
+  </p>
+  @if (isDesktop) {
+    <button type="button" class="u-btn u-btn-primary" (click)="addSource()">
+      <span class="material-icons" aria-hidden="true">add</span>
+      Add source
+    </button>
+  } @else {
+    <p class="u-empty-sub">
+      Add sources in the desktop app, or with <code>activity-log sources add</code>.
+    </p>
+  }
+</section>

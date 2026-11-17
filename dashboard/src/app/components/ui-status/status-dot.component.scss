@@ -33,3 +33,19 @@
   color: var(--status-error);
   background: var(--status-error);
 }
+
+:host([data-status='checking']) {
+  color: var(--text-tertiary);
+  background: var(--text-tertiary);
+  animation: checking-pulse 1.2s ease-in-out infinite;
+
+  @media (prefers-reduced-motion: reduce) {
+    animation: none;
+  }
+}
+
+@keyframes checking-pulse {
+  50% {
+    opacity: 0.35;
+  }
+}

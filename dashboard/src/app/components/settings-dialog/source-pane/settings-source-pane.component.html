@@ -10,13 +10,9 @@
     <div class="health-copy">
       <span class="u-kicker">Startup check</span>
       <h3 id="source-health-title" class="health-title">{{ health().title }}</h3>
-      <p class="health-reason">
-        {{
-          provider().info.reason ?? 'No issues were reported during the latest provider inspection.'
-        }}
-      </p>
+      <p class="health-reason">{{ health().reason }}</p>
       <div class="health-meta">
-        <span>Checked {{ checkedAtLabel() }}</span>
+        <span>{{ health().checking ? 'Started' : 'Checked' }} {{ checkedAtLabel() }}</span>
         <span class="health-os" role="list" aria-label="Supported operating systems">
           @for (os of provider().info.supportedOs; track os) {
             <span class="os-pill" role="listitem">{{ supportedOsLabel(os) }}</span>
@@ -34,7 +30,7 @@
     </div>
 
     @if (!isDesktop) {
-      <p class="config-note">
+      <p class="u-note">
         <span class="material-icons" aria-hidden="true">desktop_windows</span>
         Authentication and provider-specific connection settings are editable only in the desktop
         app.
@@ -46,21 +42,38 @@
           <span class="u-skeleton config-loading-field"></span>
         }
       </div>
-    } @else if (configFields().length === 0 && configError()) {
-      <div class="feedback feedback-block" data-tone="error" role="alert">
+    } @else if (!hasConnectionState() && configError()) {
+      <div class="u-feedback u-feedback-block" data-tone="error" role="alert">
         <span class="material-icons" aria-hidden="true">error_outline</span>
-        <span class="feedback-text">{{ configError() }}</span>
+        <span class="u-feedback-text">{{ configError() }}</span>
         <button type="button" class="u-btn" (click)="reload()">Retry</button>
       </div>
-    } @else if (configFields().length === 0) {
-      <p class="config-note">
-        <span class="material-icons" aria-hidden="true">check</span>
-        This provider does not expose configurable keys.
-      </p>
     } @else {
       <form class="config-form" [formRoot]="draftForm" [attr.aria-busy]="savingConfig()">
         <fieldset class="config-fields" [disabled]="savingConfig()">
           <legend class="u-sr-only">Provider configuration fields</legend>
+          <div class="config-field">
+            <div class="config-field-head">
+              <label [attr.for]="labelFieldId()">Label</label>
+              <span class="config-badges">
+                <span class="tag">{{ provider().kindLabel }}</span>
+                @if (provider().info.wslDistro; as distro) {
+                  <span class="tag">WSL · {{ distro }}</span>
+                }
+              </span>
+            </div>
+            <div class="config-control-row">
+              <mat-form-field appearance="outline" subscriptSizing="dynamic" class="config-control">
+                <input matInput [id]="labelFieldId()" [formField]="labelForm" autocomplete="off" />
+              </mat-form-field>
+            </div>
+          </div>
+          @if (configFields().length === 0) {
+            <p class="u-note">
+              <span class="material-icons" aria-hidden="true">check</span>
+              {{ provider().kindLabel }} needs no further settings.
+            </p>
+          }
           @for (field of configFields(); track field.key) {
             <div class="config-field" [class.has-error]="fieldError(field.key)">
               <div class="config-field-head">
@@ -68,7 +81,7 @@
                   field.label
                 }}</label>
                 <span class="config-badges">
-                  @if (field.shape !== 'single' && !field.isSet) {
+                  @if (field.shape === 'list' && !field.isSet) {
                     <span class="tag">Default</span>
                   }
                   @if (field.required) {
@@ -141,110 +154,6 @@
                     </div>
                   }
                 </div>
-              } @else if (field.shape === 'map') {
-                <div
-                  class="config-list"
-                  role="group"
-                  [attr.aria-labelledby]="fieldId(field) + '-label'"
-                >
-                  @if (isMapReset(field)) {
-                    <p class="config-list-note">The default applies after saving.</p>
-                    <div class="config-list-actions">
-                      <button type="button" class="u-btn u-btn-ghost" (click)="undoMapReset(field)">
-                        Undo
-                      </button>
-                    </div>
-                  } @else {
-                    @for (entry of mapDrafts()[field.key]; track $index; let entryIndex = $index) {
-                      <div class="config-map-entry">
-                        <div class="config-control-row">
-                          <mat-form-field
-                            appearance="outline"
-                            subscriptSizing="dynamic"
-                            class="config-control"
-                          >
-                            <mat-select
-                              [id]="$first ? fieldId(field) : fieldId(field) + '-' + entryIndex"
-                              [formField]="mapForm[field.key][entryIndex].name"
-                              [aria-label]="field.label + ' ' + (entryIndex + 1)"
-                            >
-                              @for (name of mapNameOptions(field, entryIndex); track name) {
-                                <mat-option [value]="name">{{ name }}</mat-option>
-                              }
-                            </mat-select>
-                          </mat-form-field>
-                          <button
-                            type="button"
-                            class="u-btn u-btn-ghost u-btn-icon"
-                            [attr.aria-label]="'Remove ' + entry.name"
-                            (click)="removeMapEntry(field, entryIndex)"
-                          >
-                            <span class="material-icons" aria-hidden="true">delete_outline</span>
-                          </button>
-                        </div>
-                        <div class="config-map-items">
-                          @for (item of entry.items; track $index) {
-                            <div class="config-control-row">
-                              <mat-form-field
-                                appearance="outline"
-                                subscriptSizing="dynamic"
-                                class="config-control"
-                              >
-                                <input
-                                  matInput
-                                  [formField]="mapForm[field.key][entryIndex].items[$index]"
-                                  [attr.aria-label]="entry.name + ' ' + ($index + 1)"
-                                  [attr.aria-invalid]="
-                                    mapItemError(field.key, entryIndex, $index) ? true : null
-                                  "
-                                  autocomplete="off"
-                                />
-                              </mat-form-field>
-                              <button
-                                type="button"
-                                class="u-btn u-btn-ghost u-btn-icon"
-                                [attr.aria-label]="
-                                  'Remove ' + (item || 'empty row') + ' from ' + entry.name
-                                "
-                                (click)="removeMapItem(field, entryIndex, $index)"
-                              >
-                                <span class="material-icons" aria-hidden="true">close</span>
-                              </button>
-                            </div>
-                          } @empty {
-                            <p class="config-list-note">None</p>
-                          }
-                          <div class="config-list-actions">
-                            <button
-                              type="button"
-                              class="u-btn u-btn-ghost"
-                              [attr.aria-label]="'Add to ' + entry.name"
-                              (click)="addMapItem(field, entryIndex)"
-                            >
-                              <span class="material-icons" aria-hidden="true">add</span>
-                              Add
-                            </button>
-                          </div>
-                        </div>
-                      </div>
-                    } @empty {
-                      <p class="config-list-note">None</p>
-                    }
-                    <div class="config-list-actions">
-                      @if (nextMapName(field); as name) {
-                        <button type="button" class="u-btn" (click)="addMapEntry(field)">
-                          <span class="material-icons" aria-hidden="true">add</span>
-                          Add {{ name }}
-                        </button>
-                      }
-                      @if (field.isSet) {
-                        <button type="button" class="u-btn u-btn-ghost" (click)="resetMap(field)">
-                          Use default
-                        </button>
-                      }
-                    </div>
-                  }
-                </div>
               } @else {
                 <div class="config-control-row">
                   @if (field.valueType === 'bool') {
@@ -273,7 +182,7 @@
                         matInput
                         [id]="fieldId(field)"
                         [type]="inputTypeFor(field)"
-                        [placeholder]="field.valueType === 'password' ? 'Enter new secret' : ''"
+                        [placeholder]="placeholderFor(field)"
                         [formField]="draftForm[field.key]"
                         [attr.aria-invalid]="fieldError(field.key) ? true : null"
                         [attr.aria-describedby]="
@@ -281,13 +190,18 @@
                         "
                         autocomplete="off"
                       />
+                      @if (isSecretFieldSet(field)) {
+                        <button
+                          matSuffix
+                          type="button"
+                          class="u-btn u-btn-ghost field-clear"
+                          [attr.aria-label]="'Clear saved ' + field.label"
+                          (click)="clearSecret(field)"
+                        >
+                          Clear
+                        </button>
+                      }
                     </mat-form-field>
-                  }
-
-                  @if (field.secret && canClearField(field)) {
-                    <button type="button" class="u-btn u-btn-ghost" (click)="clearField(field)">
-                      Clear
-                    </button>
                   }
                 </div>
               }
@@ -303,24 +217,21 @@
         </fieldset>
 
         <div class="config-actions">
-          <div class="config-feedback" aria-live="polite">
-            @if (savingConfig()) {
-              <span class="feedback" data-tone="info">
-                <span class="material-icons u-spin" aria-hidden="true">autorenew</span>
-                Saving and re-checking {{ provider().label }}…
-              </span>
-            } @else if (configError()) {
-              <span class="feedback" data-tone="error" role="alert">
+          <button
+            type="button"
+            class="u-btn u-btn-ghost config-remove"
+            [disabled]="removing()"
+            (click)="removeConnection()"
+          >
+            <span class="material-icons" aria-hidden="true">delete_outline</span>
+            {{ removing() ? 'Removing…' : 'Remove source' }}
+          </button>
+          <div class="config-feedback">
+            @if (configError() && !savingConfig()) {
+              <span class="u-feedback" data-tone="error" role="alert">
                 <span class="material-icons" aria-hidden="true">error_outline</span>
-                <span class="feedback-text">{{ configError() }}</span>
+                <span class="u-feedback-text">{{ configError() }}</span>
               </span>
-            } @else if (configMessage()) {
-              <span class="feedback" data-tone="ok">
-                <span class="material-icons" aria-hidden="true">check_circle</span>
-                {{ configMessage() }}
-              </span>
-            } @else if (pendingRequest()) {
-              <span class="feedback-muted">Unsaved changes</span>
             }
           </div>
           <button

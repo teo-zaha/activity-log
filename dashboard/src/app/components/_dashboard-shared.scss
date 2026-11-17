@@ -148,6 +148,11 @@ $breakpoints: (
     color: var(--status-error);
     background: var(--status-error);
   }
+
+  &[data-status='checking'] {
+    color: var(--text-tertiary);
+    background: var(--text-tertiary);
+  }
 }
 
 @mixin status-pill {
@@ -186,6 +191,11 @@ $breakpoints: (
   &[data-tone='error'] {
     color: var(--status-error-fg);
     background: color-mix(in srgb, var(--status-error) $mix, var(--surface));
+  }
+
+  &[data-status='checking'] {
+    color: var(--text-secondary);
+    background: color-mix(in srgb, var(--text-tertiary) $mix, var(--surface));
   }
 
   &[data-tone='info'] {
@@ -283,6 +293,12 @@ $breakpoints: (
     color: var(--badge-outlook-fg);
   }
 
+  // ICS calendars share Outlook's colours: both are meetings.
+  #{$selector}.badge-calendar {
+    background: var(--badge-outlook-bg);
+    color: var(--badge-outlook-fg);
+  }
+
   #{$selector}.badge-system {
     background: var(--badge-system-bg);
     color: var(--badge-system-fg);
@@ -319,6 +335,13 @@ $breakpoints: (
     border-color: var(--badge-outlook-accent);
   }
 
+  // ICS calendars share Outlook's colours: both are meetings.
+  #{$selector}-calendar {
+    background: var(--badge-outlook-bg);
+    color: var(--badge-outlook-fg);
+    border-color: var(--badge-outlook-accent);
+  }
+
   #{$selector}-system {
     background: var(--badge-system-bg);
     color: var(--badge-system-fg);
@@ -346,6 +369,11 @@ $breakpoints: (
   }
 
   #{$selector}-outlook {
+    background: var(--badge-outlook-accent);
+  }
+
+  // ICS calendars share Outlook's colours: both are meetings.
+  #{$selector}-calendar {
     background: var(--badge-outlook-accent);
   }
 
@@ -382,6 +410,13 @@ $breakpoints: (
   }
 
   #{$selector}[data-src='outlook'] {
+    --badge-bg: var(--badge-outlook-bg);
+    --badge-fg: var(--badge-outlook-fg);
+    --badge-accent: var(--badge-outlook-accent);
+  }
+
+  // ICS calendars share Outlook's colours: both are meetings.
+  #{$selector}[data-src='calendar'] {
     --badge-bg: var(--badge-outlook-bg);
     --badge-fg: var(--badge-outlook-fg);
     --badge-accent: var(--badge-outlook-accent);

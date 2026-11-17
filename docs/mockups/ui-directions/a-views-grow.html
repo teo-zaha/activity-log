@@ -1,0 +1,433 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>A · Views grow</title>
+<style>:root{--bg:#edf2f6;--surface:#fff;--surface-alt:#f8fafc;--surface-hover:#eef3f8;--border:#b8c0cb;--border-subtle:#cdd3db;--border-strong:#8792a0;--text-primary:#0f1623;--text-secondary:#3d4756;--text-tertiary:#5c6878;--accent:#3b82f6;--accent-hover:#2563eb;--accent-soft:color-mix(in srgb,#3b82f6 14%,transparent);--hairline:color-mix(in srgb,#b8c0cb 58%,transparent);--panel-border:color-mix(in srgb,#b8c0cb 78%,transparent);--panel-muted:color-mix(in srgb,#fff 78%,#f8fafc 22%);--panel-shadow:0 1px 2px rgba(15,23,42,.04),0 2px 8px rgba(15,23,42,.03);--panel-shadow-strong:0 1px 3px rgba(15,23,42,.05),0 8px 24px rgba(15,23,42,.06);--git-bg:#bfdbfe;--git-fg:#1e3a8a;--git-ac:#1d4ed8;--gitlab-bg:#fecaca;--gitlab-fg:#7f1d1d;--gitlab-ac:#b91c1c;--jira-bg:#c7d2fe;--jira-fg:#312e81;--jira-ac:#4338ca;--outlook-bg:#bae6fd;--outlook-fg:#0c4a6e;--outlook-ac:#0369a1;--system-bg:#e2e8f0;--system-fg:#1e293b;--system-ac:#475569;--odoo-bg:#ead5e6;--odoo-fg:#4a2342;--odoo-ac:#714b67;--ok:#22c55e;--ok-fg:#15803d;--warn:#f59e0b;--warn-fg:#b45309;--err:#ef4444;--err-fg:#b91c1c;--logged:#0d9488;--logged-fg:#115e59;--agent:#9333ea;--agent-fg:#6b21a8;--radius-sm:10px;--radius-md:14px;--radius-lg:20px;--radius-xl:24px;--pin:#f59e0b}
+*{box-sizing:border-box}
+body{margin:0;font:400 14px/1.45 Inter,-apple-system,"SF Pro Text","Segoe UI",system-ui,sans-serif;color:var(--text-primary);background:#dfe5ec}
+svg.i{width:18px;height:18px;flex-shrink:0;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+svg.i.sm{width:15px;height:15px}svg.i.xs{width:13px;height:13px}
+.page{max-width:1340px;margin:0 auto;padding:28px 30px 60px}
+.page>header.doc{display:flex;align-items:baseline;justify-content:space-between;gap:20px;margin-bottom:6px}
+.doc h1{margin:0;font-size:26px;letter-spacing:-.02em}
+.doc nav a{color:var(--accent-hover);font-weight:600;text-decoration:none;margin-left:14px;font-size:13px}
+.lede{margin:0 0 22px;color:var(--text-secondary);max-width:900px}
+.caption{display:flex;align-items:center;gap:10px;margin:26px 0 10px;font-weight:700;font-size:15px}
+.caption .tag{font:700 11px/1 Inter,system-ui;letter-spacing:.08em;text-transform:uppercase;color:var(--text-tertiary)}
+.screen{position:relative;width:1280px;height:800px;overflow:hidden;border-radius:16px;box-shadow:0 2px 6px rgba(15,23,42,.08),0 20px 50px rgba(15,23,42,.14);background:radial-gradient(1100px 520px at 8% -14%,color-mix(in srgb,#3b82f6 9%,transparent),transparent 70%),var(--bg);display:flex;flex-direction:column}
+@media (max-width:1340px){.screen{zoom:.72}}
+.notes{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px 28px;margin:14px 0 0;padding:0;list-style:none;max-width:1280px}
+.notes li{display:flex;gap:10px;font-size:13px;color:var(--text-secondary)}
+.notes b{color:var(--text-primary)}
+.pin{display:inline-grid;place-items:center;width:20px;height:20px;border-radius:999px;background:var(--pin);color:#fff;font:800 11px/1 Inter,system-ui;flex-shrink:0;box-shadow:0 0 0 3px color-mix(in srgb,var(--pin) 30%,transparent)}
+.screen .pin{position:absolute;z-index:60}
+/* app chrome */
+.hdr{display:flex;align-items:center;gap:14px;height:68px;padding:0 18px 0 22px;flex-shrink:0}
+.brand{display:flex;align-items:center;gap:10px;font-weight:700;font-size:16px;width:220px}
+.brand-mark{display:grid;place-items:center;width:32px;height:32px;border-radius:9px;background:linear-gradient(135deg,#3b82f6,#2563eb);color:#fff;box-shadow:0 2px 6px rgba(37,99,235,.35)}
+.range{display:flex;align-items:center;gap:8px;height:40px;padding:0 12px;border:1px solid var(--border);border-radius:14px;background:color-mix(in srgb,#fff 88%,transparent);font-size:13.5px}
+.range .lbl{font:700 10.5px/1 Inter,system-ui;letter-spacing:.08em;color:var(--text-tertiary)}
+.range .val{font-weight:500;font-variant-numeric:tabular-nums}
+.range svg{color:var(--text-tertiary)}
+.spacer{flex:1}
+.btn{display:inline-flex;align-items:center;gap:7px;height:34px;padding:0 13px;border-radius:11px;border:1px solid var(--border);background:var(--surface);color:var(--text-primary);font:600 13px/1 Inter,system-ui,sans-serif;white-space:nowrap;cursor:default}
+.btn.primary{background:var(--accent);border-color:var(--accent);color:#fff;box-shadow:0 1px 2px rgba(37,99,235,.3)}
+.btn.ghost{background:transparent;border-color:transparent;color:var(--text-secondary)}
+.btn.icon{width:34px;padding:0;justify-content:center;color:var(--text-secondary)}
+.btn.lg{height:40px;padding:0 18px;border-radius:13px}
+.btn.agent{background:var(--agent);border-color:var(--agent);color:#fff}
+.btn[disabled],.btn.dis{opacity:.45}
+.kbd{display:inline-grid;place-items:center;min-width:20px;height:20px;padding:0 5px;border:1px solid var(--border);border-bottom-width:2px;border-radius:6px;background:var(--surface);font:600 11px/1 Inter,system-ui;color:var(--text-tertiary)}
+.shell{flex:1;display:flex;gap:12px;min-height:0;padding:0 16px 16px 12px}
+.side{width:236px;flex-shrink:0;display:flex;flex-direction:column;gap:20px;padding:6px 4px 0 8px}
+.sl{display:block;padding:0 10px 6px;font:700 10.5px/1 Inter,system-ui;letter-spacing:.08em;text-transform:uppercase;color:var(--text-tertiary)}
+.row{display:flex;align-items:center;gap:10px;min-height:36px;padding:6px 10px;border:1px solid transparent;border-radius:10px;color:var(--text-secondary);font-weight:500;font-size:13.5px}
+.row svg{color:var(--text-tertiary)}
+.row.on{background:var(--surface);border-color:var(--hairline);color:var(--text-primary);font-weight:600;box-shadow:0 1px 2px rgba(15,23,42,.06)}
+.row.on svg{color:var(--accent)}
+.row .t{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.cnt{min-width:24px;padding:2px 7px;border-radius:999px;background:var(--b,color-mix(in srgb,#5c6878 12%,transparent));color:var(--f,inherit);font:700 11px/1.3 Inter,system-ui;text-align:center;font-variant-numeric:tabular-nums}
+.side-bottom{margin-top:auto;border-top:1px solid var(--hairline);padding:10px 0 0}
+.pv{display:inline-grid;place-items:center;width:22px;height:22px;border-radius:7px;flex-shrink:0}
+.pv svg{width:14px;height:14px;stroke-width:2.2}
+.pv.git{background:#fde4dc;color:#f05133}.pv.gitlab{background:#fde1d8;color:#e24329}.pv.jira{background:#dce9ff;color:#2684ff}.pv.outlook{background:#d8ebfb;color:#0a64c8}.pv.system{background:#e2e8f0;color:#475569}.pv.odoo{background:#efe3ec;color:#714b67}
+.main{position:relative;flex:1;min-width:0;display:flex;flex-direction:column;overflow:hidden;border-radius:var(--radius-xl);background:var(--surface);border:1px solid var(--panel-border);box-shadow:var(--panel-shadow)}
+.badge{display:inline-flex;align-items:center;gap:5px;padding:3px 8px;border-radius:999px;font:600 10.5px/1.4 Inter,system-ui;letter-spacing:.05em;text-transform:uppercase;white-space:nowrap}
+.badge.git{background:var(--git-bg);color:var(--git-fg)}.badge.gitlab{background:var(--gitlab-bg);color:var(--gitlab-fg)}.badge.jira{background:var(--jira-bg);color:var(--jira-fg)}.badge.outlook{background:var(--outlook-bg);color:var(--outlook-fg)}.badge.system{background:var(--system-bg);color:var(--system-fg)}.badge.odoo{background:var(--odoo-bg);color:var(--odoo-fg)}
+.badge.logged{background:color-mix(in srgb,var(--logged) 16%,#fff);color:var(--logged-fg)}
+.badge.agent{background:color-mix(in srgb,var(--agent) 14%,#fff);color:var(--agent-fg)}
+.pill{display:inline-flex;align-items:center;gap:6px;height:24px;padding:0 9px;border-radius:999px;font:650 11.5px/1 Inter,system-ui;white-space:nowrap;border:1px solid color-mix(in srgb,currentColor 22%,transparent)}
+.pill.ok{color:var(--ok-fg);background:color-mix(in srgb,var(--ok) 12%,#fff)}.pill.warn{color:var(--warn-fg);background:color-mix(in srgb,var(--warn) 12%,#fff)}.pill.err{color:var(--err-fg);background:color-mix(in srgb,var(--err) 12%,#fff)}.pill.info{color:var(--accent-hover);background:color-mix(in srgb,var(--accent) 12%,#fff)}.pill.mute{color:var(--text-secondary);background:var(--surface-alt)}
+.pill.agent{color:var(--agent-fg);background:color-mix(in srgb,var(--agent) 10%,#fff)}
+.st{display:inline-flex;align-items:center;height:22px;padding:0 8px;border-radius:6px;font:700 10.5px/1 Inter,system-ui;letter-spacing:.04em;text-transform:uppercase;white-space:nowrap}
+.st.todo{background:#e7ebf0;color:#3d4756}.st.prog{background:#dbeafe;color:#1e40af}.st.rev{background:#fef3c7;color:#92400e}.st.done{background:#dcfce7;color:#166534}
+.key{white-space:nowrap;font:600 12px/1 "SF Mono",ui-monospace,Menlo,Consolas,monospace;color:var(--text-secondary)}
+.av{display:inline-grid;place-items:center;width:22px;height:22px;border-radius:999px;font:700 9.5px/1 Inter,system-ui;color:#fff;flex-shrink:0}
+.kicker{font:700 10.5px/1 Inter,system-ui;letter-spacing:.08em;text-transform:uppercase;color:var(--text-tertiary)}
+.muted{color:var(--text-tertiary)}
+.search{display:flex;align-items:center;gap:10px;height:44px;padding:0 14px;border:1px solid var(--border);border-radius:14px;background:var(--surface);color:var(--text-tertiary);font-size:14px}
+.chip{display:inline-flex;align-items:center;gap:6px;height:30px;padding:0 12px;border-radius:999px;border:1px solid var(--border-subtle);background:var(--surface);color:var(--text-secondary);font:600 12.5px/1 Inter,system-ui;white-space:nowrap}
+.chip.on{background:color-mix(in srgb,#fff 72%,var(--accent) 28%);border-color:color-mix(in srgb,var(--accent) 42%,var(--border) 58%);color:var(--text-primary)}
+.seg{display:inline-flex;padding:3px;gap:2px;border-radius:12px;background:color-mix(in srgb,var(--surface-alt) 72%,#fff 28%);border:1px solid color-mix(in srgb,var(--border) 74%,transparent)}
+.seg span{padding:6px 11px;border-radius:9px;font:600 12px/1 Inter,system-ui;color:var(--text-tertiary)}
+.seg span.on{background:var(--surface);color:var(--text-primary);box-shadow:0 1px 2px rgba(15,23,42,.08)}
+.panel{display:flex;flex-direction:column;border-radius:var(--radius-xl);background:var(--surface);border:1px solid var(--panel-border);box-shadow:var(--panel-shadow-strong);overflow:hidden}
+.ph{display:flex;align-items:center;gap:10px;padding:12px 12px 12px 20px;border-bottom:1px solid var(--hairline)}
+.pb{padding:18px 20px;overflow:hidden;flex:1}
+.sect{padding:14px;border:1px solid var(--hairline);border-radius:var(--radius-lg);background:var(--panel-muted)}
+.fields{margin:0;border-top:1px solid var(--hairline)}
+.fields div{display:grid;grid-template-columns:110px minmax(0,1fr);gap:12px;padding:8px 2px;border-bottom:1px solid var(--hairline);font-size:13px}
+.fields dt{color:var(--text-tertiary);font-weight:500}.fields dd{margin:0}
+.backdrop{position:absolute;inset:0;background:color-mix(in srgb,#0b1220 32%,transparent);z-index:40}
+.dialog{position:absolute;z-index:50;border-radius:var(--radius-xl);background:var(--surface);border:1px solid var(--panel-border);box-shadow:0 10px 40px rgba(15,23,42,.25);overflow:hidden}
+.warnbox{display:flex;gap:10px;padding:10px 12px;border-radius:12px;font-size:12.5px;line-height:1.4}
+.warnbox.warn{background:color-mix(in srgb,var(--warn) 12%,#fff);color:#7c2d12;border:1px solid color-mix(in srgb,var(--warn) 35%,transparent)}
+.warnbox.info{background:color-mix(in srgb,var(--accent) 8%,#fff);color:#1e3a8a;border:1px solid color-mix(in srgb,var(--accent) 25%,transparent)}
+.warnbox.agent{background:color-mix(in srgb,var(--agent) 7%,#fff);color:var(--agent-fg);border:1px dashed color-mix(in srgb,var(--agent) 45%,transparent)}
+.warnbox.err{background:color-mix(in srgb,var(--err) 9%,#fff);color:#7f1d1d;border:1px solid color-mix(in srgb,var(--err) 30%,transparent)}
+.hatch{background:repeating-linear-gradient(135deg,color-mix(in srgb,var(--logged) 18%,#fff) 0 5px,color-mix(in srgb,var(--logged) 7%,#fff) 5px 10px)}
+.ev{position:absolute;left:4px;right:4px;display:flex;align-items:center;gap:5px;padding:0 7px;border:1.5px solid;border-radius:7px;font:600 11.5px/1.2 Inter,system-ui;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
+.ev.git{background:var(--git-bg);color:var(--git-fg);border-color:var(--git-ac)}.ev.gitlab{background:var(--gitlab-bg);color:var(--gitlab-fg);border-color:var(--gitlab-ac)}.ev.jira{background:var(--jira-bg);color:var(--jira-fg);border-color:var(--jira-ac)}.ev.outlook{background:var(--outlook-bg);color:var(--outlook-fg);border-color:var(--outlook-ac)}.ev.system{background:var(--system-bg);color:var(--system-fg);border-color:var(--system-ac)}
+.ev.logged{color:var(--logged-fg);border-color:var(--logged);border-width:1.5px}
+.ev.draft{background:color-mix(in srgb,var(--agent) 6%,#fff);color:var(--agent-fg);border:1.5px dashed var(--agent)}
+.ev.sel{box-shadow:0 0 0 2px #fff,0 0 0 4px var(--accent)}
+.ev.tall{align-items:flex-start;padding-top:5px;white-space:normal}
+/* phone mini frame */
+.phone{width:300px;height:620px;border-radius:38px;border:10px solid #0f1623;background:var(--bg);overflow:hidden;display:flex;flex-direction:column;position:relative;box-shadow:0 14px 40px rgba(15,23,42,.2);flex-shrink:0}
+.tabs{display:flex;justify-content:space-around;height:58px;border-top:1px solid var(--hairline);background:var(--surface);padding-top:7px;flex-shrink:0}
+.tabs span{display:flex;flex-direction:column;align-items:center;gap:3px;font:600 9.5px/1 Inter,system-ui;color:var(--text-tertiary);position:relative}
+.tabs span.on{color:var(--accent)}
+.tabs .dot{display:block;position:absolute;top:-3px;right:-4px;min-width:15px;height:15px;padding:0 4px;border-radius:999px;background:var(--agent);color:#fff;font:700 9px/15px Inter,system-ui;text-align:center}
+.extras{display:flex;gap:28px;align-items:flex-start;margin-top:30px}
+.extras .txt{font-size:13px;color:var(--text-secondary);max-width:520px}
+.extras h3{margin:0 0 8px;font-size:15px;color:var(--text-primary)}
+.extras ul{margin:0;padding-left:18px}.extras li{margin:3px 0}
+
+.tb{padding:16px 20px 10px;display:flex;flex-direction:column;gap:10px;border-bottom:1px solid var(--hairline)}
+.tb1{display:flex;gap:10px;align-items:center}
+.conn{display:flex;align-items:center;gap:8px;height:44px;padding:0 12px;border:1px solid var(--border);border-radius:14px;font-weight:600;font-size:13.5px;background:var(--surface)}
+.tb2{display:flex;gap:6px;align-items:center}
+.vr{width:1px;height:20px;background:var(--hairline);margin:0 4px}
+.split{flex:1;display:flex;min-height:0}
+.list{flex:1;min-width:0;padding:10px 14px 0 20px;overflow:hidden}
+.sum{font-size:12.5px;color:var(--text-tertiary);margin:2px 2px 8px;display:flex;justify-content:space-between}
+.items{border:1px solid var(--hairline);border-radius:var(--radius-lg);overflow:hidden}
+.it{display:grid;grid-template-columns:16px minmax(0,1fr) auto;gap:4px 10px;padding:10px 14px;border-bottom:1px solid var(--hairline);align-items:center}
+.it:last-child{border-bottom:0}
+.it.sel{background:color-mix(in srgb,var(--accent) 7%,#fff);box-shadow:inset 3px 0 0 var(--accent)}
+.it .ty{width:12px;height:12px;border-radius:3px}
+.ty.bug{background:#e5484d}.ty.story{background:#30a46c}.ty.task{background:#3b82f6}.ty.spike{background:#8e4ec6}
+.it .ti{font-weight:600;font-size:13.5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.it .mt{grid-column:2/4;display:flex;gap:8px;align-items:center;font-size:12px;color:var(--text-tertiary)}
+.dock{width:430px;flex-shrink:0;border-left:1px solid var(--hairline);display:flex;flex-direction:column;background:linear-gradient(var(--surface),var(--surface-alt))}
+.dock h2{margin:0 0 10px;font-size:19px;line-height:1.25;letter-spacing:-.015em}
+.acts{display:flex;flex-wrap:wrap;gap:6px;margin:14px 0 6px}
+.acts .btn{height:30px;padding:0 10px;font-size:12.5px;border-radius:10px}
+.lockline{display:flex;gap:6px;align-items:center;font-size:11.5px;color:var(--text-tertiary);margin-bottom:14px}
+.desc{font-size:13px;color:var(--text-secondary);line-height:1.5;margin:8px 0 0}
+.cm{display:flex;gap:8px;font-size:12.5px;margin-top:8px}.cm b{font-weight:650}
+/* time view */
+.th{display:flex;align-items:center;gap:12px;padding:18px 22px 14px}
+.th h2{margin:0;font-size:20px;letter-spacing:-.015em}
+.strip{display:flex;margin:0 22px 16px;border:1px solid var(--hairline);border-radius:16px;background:var(--panel-muted)}
+.strip>div{flex:1;padding:11px 16px;display:flex;flex-direction:column;gap:5px;min-width:0}
+.strip>div+div{border-left:1px solid var(--hairline)}
+.strip .v{font-size:18px;font-weight:700;letter-spacing:-.02em;font-variant-numeric:tabular-nums;line-height:1.1}
+.strip .v small{font-size:11.5px;font-weight:500;letter-spacing:0;color:var(--text-tertiary);margin-left:6px}
+.strip .w{background:color-mix(in srgb,var(--warn) 8%,transparent)}
+.strip .w .kicker,.strip .w .v{color:var(--warn-fg)}
+.tg{margin:0 22px;border:1px solid var(--hairline);border-radius:16px;overflow:hidden;font-size:13px}
+.tr{display:grid;grid-template-columns:minmax(0,1fr) repeat(5,58px) 66px;align-items:center;border-bottom:1px solid var(--hairline)}
+.tr>div{padding:10px 10px;text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
+.tr>div:first-child{text-align:left;display:flex;gap:9px;align-items:center;min-width:0;padding-left:14px}
+.tr .nm{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.tr.hd{background:var(--surface-alt);font:700 10.5px/1 Inter,system-ui;letter-spacing:.06em;text-transform:uppercase;color:var(--text-tertiary)}
+.tr.hd>div{padding:11px 10px}
+.tr .today{background:color-mix(in srgb,var(--accent) 6%,transparent)}
+.tr.tot{font-weight:700;background:var(--surface-alt)}
+.tr.att{color:var(--odoo-fg)}
+.tr.gap>div{color:var(--warn-fg);font-weight:600}
+.tr.gap .hot{background:color-mix(in srgb,var(--warn) 16%,#fff);box-shadow:inset 0 0 0 2px var(--warn);border-radius:6px}
+.tr:last-child{border-bottom:0}
+.e{color:var(--border)}
+.sug{width:300px;flex-shrink:0;border-left:1px solid var(--hairline);padding:18px 16px;display:flex;flex-direction:column;gap:10px;background:linear-gradient(var(--surface),var(--surface-alt))}
+.ae{display:flex;gap:9px;align-items:flex-start;padding:9px 10px;border:1px solid var(--hairline);border-radius:12px;background:var(--surface);font-size:12.5px}
+.ae.on{border-color:color-mix(in srgb,var(--accent) 45%,transparent);background:color-mix(in srgb,var(--accent) 5%,#fff)}
+.cb{width:16px;height:16px;border-radius:5px;border:1.5px solid var(--border-strong);display:grid;place-items:center;flex-shrink:0;margin-top:1px}
+.ae.on .cb{background:var(--accent);border-color:var(--accent);color:#fff}
+.ae .m{font-size:11.5px;color:var(--text-tertiary)}
+</style></head>
+<body><svg width="0" height="0" style="position:absolute" aria-hidden="true">
+<symbol id="brand" viewBox="0 0 24 24"><path d="M3 16l5-6 4 4 8-9"/></symbol>
+<symbol id="search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></symbol>
+<symbol id="timeline" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="7" rx="1.5"/><rect x="3" y="13" width="18" height="7" rx="1.5"/></symbol>
+<symbol id="day" viewBox="0 0 24 24"><path d="M4 7h16M4 12h16M4 17h16"/></symbol>
+<symbol id="workweek" viewBox="0 0 24 24"><path d="M6 5v14M12 5v14M18 5v14"/></symbol>
+<symbol id="week" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M9 4v16M15 4v16"/></symbol>
+<symbol id="cog" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><circle cx="12" cy="12" r="7.5" stroke-dasharray="3.3 2.6" stroke-width="3"/></symbol>
+<symbol id="plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol>
+<symbol id="x" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></symbol>
+<symbol id="chev" viewBox="0 0 24 24"><path d="M9 6l6 6-6 6"/></symbol>
+<symbol id="chevd" viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></symbol>
+<symbol id="arrow" viewBox="0 0 24 24"><path d="M5 12h14M13 6l6 6-6 6"/></symbol>
+<symbol id="sync" viewBox="0 0 24 24"><path d="M20 11a8 8 0 0 0-14.9-3M4 13a8 8 0 0 0 14.9 3M5 3v5h5M19 21v-5h-5"/></symbol>
+<symbol id="doc" viewBox="0 0 24 24"><path d="M14 3H6v18h12V7zM14 3v4h4M9 13h6M9 17h6"/></symbol>
+<symbol id="braces" viewBox="0 0 24 24"><path d="M8 4c-2 0-2 1.5-2 4s-1 4-2 4c1 0 2 1.5 2 4s0 4 2 4M16 4c2 0 2 1.5 2 4s1 4 2 4c-1 0-2 1.5-2 4s0 4-2 4"/></symbol>
+<symbol id="clock" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></symbol>
+<symbol id="ext" viewBox="0 0 24 24"><path d="M14 4h6v6M20 4l-9 9M18 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h5"/></symbol>
+<symbol id="check" viewBox="0 0 24 24"><path d="M5 12l5 5L20 7"/></symbol>
+<symbol id="lock" viewBox="0 0 24 24"><rect x="5" y="11" width="14" height="9" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/></symbol>
+<symbol id="warn" viewBox="0 0 24 24"><path d="M12 3l10 18H2zM12 10v4M12 17.5v.01"/></symbol>
+<symbol id="spark" viewBox="0 0 24 24"><path d="M12 3l1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8zM19 16l.8 2.2L22 19l-2.2.8L19 22l-.8-2.2L16 19l2.2-.8z"/></symbol>
+<symbol id="inbox" viewBox="0 0 24 24"><path d="M3 13h5l2 3h4l2-3h5M5.5 5h13L21 13v6H3v-6z"/></symbol>
+<symbol id="ticket" viewBox="0 0 24 24"><path d="M4 7h16v3a2 2 0 0 0 0 4v3H4v-3a2 2 0 0 0 0-4z"/></symbol>
+<symbol id="timer" viewBox="0 0 24 24"><circle cx="12" cy="13" r="8"/><path d="M12 9v4l2 2M9 2h6"/></symbol>
+<symbol id="user" viewBox="0 0 24 24"><circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/></symbol>
+<symbol id="comment" viewBox="0 0 24 24"><path d="M4 5h16v11H9l-5 4z"/></symbol>
+<symbol id="filter" viewBox="0 0 24 24"><path d="M3 5h18l-7 8v6l-4-2v-4z"/></symbol>
+<symbol id="login" viewBox="0 0 24 24"><path d="M10 17l5-5-5-5M15 12H3M14 3h5a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-5"/></symbol>
+<symbol id="history" viewBox="0 0 24 24"><path d="M3 12a9 9 0 1 0 3-6.7L3 8M3 3v5h5M12 7v5l4 2"/></symbol>
+<symbol id="cal" viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 10h18M8 3v4M16 3v4"/></symbol>
+<symbol id="eye" viewBox="0 0 24 24"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/></symbol>
+<symbol id="edit" viewBox="0 0 24 24"><path d="M4 20h4L19 9l-4-4L4 16zM14 6l4 4"/></symbol>
+<symbol id="git" viewBox="0 0 24 24"><path d="M12 2.5l9.5 9.5-9.5 9.5L2.5 12z"/><circle cx="12" cy="9" r="1.2"/><circle cx="12" cy="15" r="1.2"/><path d="M12 10v4"/></symbol>
+<symbol id="gitlab" viewBox="0 0 24 24"><path d="M12 21l9-7-2.5-9-2.5 7h-8L5.5 5 3 14z"/></symbol>
+<symbol id="jira" viewBox="0 0 24 24"><path d="M12 3l5 5-5 5-5-5zM12 11l5 5-5 5-5-5z"/></symbol>
+<symbol id="outlook" viewBox="0 0 24 24"><rect x="3" y="6" width="18" height="13" rx="2"/><path d="M3 8l9 6 9-6"/></symbol>
+<symbol id="power" viewBox="0 0 24 24"><path d="M12 3v8M6.5 7a7 7 0 1 0 11 0"/></symbol>
+<symbol id="odoo" viewBox="0 0 24 24"><circle cx="12" cy="12" r="6.5"/></symbol>
+</svg>
+<div class="page">
+<header class="doc"><h1>A · Views grow</h1><nav><a href="index.html">← Overview</a><a href="b-command.html">B</a><a href="c-workspace.html">C</a><a href="shared-write-flow.html">Shared: access &amp; confirm</a></nav></header>
+<p class="lede">The plan's section 7, drawn out. A <b>Work</b> group joins the sidebar under the views: <b>Work items</b> (search, phase 1a), <b>Time</b> (phase 2) and later <b>Review</b> (agent drafts). Every write goes through the detail panel's action bar, or a button in the view, into the shared preview-and-confirm dialog.</p>
+
+<div class="caption"><span class="tag">Screen 1</span>Work items: Jira search with the detail docked beside the list</div>
+<div class="screen">
+<div class="hdr">
+  <div class="brand"><span class="brand-mark"><svg class="i"><use href="#brand"/></svg></span>Activity Log</div>
+  <div class="spacer"></div>
+  
+  <div class="range"><span class="lbl">FROM</span><span class="val">16/11/2026</span><svg class="i sm"><use href="#cal"/></svg><svg class="i sm"><use href="#arrow"/></svg><span class="lbl">TO</span><span class="val">20/11/2026</span><svg class="i sm"><use href="#cal"/></svg></div>
+  <span class="btn primary lg"><svg class="i sm"><use href="#sync"/></svg>Collect</span>
+  <span class="btn icon"><svg class="i sm"><use href="#doc"/></svg></span>
+  <span class="btn icon"><svg class="i sm"><use href="#braces"/></svg></span>
+</div>
+
+<div class="shell">
+<aside class="side">
+ <div><span class="sl">View</span>
+  <div class="row"><svg class="i"><use href="#timeline"/></svg><span class="t">Timeline</span></div>
+  <div class="row"><svg class="i"><use href="#day"/></svg><span class="t">Day</span></div>
+  <div class="row"><svg class="i"><use href="#workweek"/></svg><span class="t">Work week</span></div>
+  <div class="row"><svg class="i"><use href="#week"/></svg><span class="t">Week</span></div>
+ </div>
+ <div><span class="sl">Work</span>
+  <div class="row on"><svg class="i"><use href="#ticket"/></svg><span class="t">Work items</span></div>
+  <div class="row"><svg class="i"><use href="#timer"/></svg><span class="t">Time</span><span class="muted" style="font-size:11.5px;font-weight:600">29h45</span></div>
+  <div class="row"><svg class="i" style="color:var(--agent)"><use href="#spark"/></svg><span class="t">Review</span><span class="cnt" style="--b:var(--agent);--f:#fff">2</span></div>
+ </div>
+ <div><span class="sl">Sources</span>
+  <div class="row on"><span class="pv git"><svg class="i"><use href="#git"/></svg></span><span class="t">Git</span><span class="cnt" style="--b:var(--git-bg);--f:var(--git-fg)">14</span></div>
+  <div class="row on"><span class="pv gitlab"><svg class="i"><use href="#gitlab"/></svg></span><span class="t">GitLab</span><span class="cnt" style="--b:var(--gitlab-bg);--f:var(--gitlab-fg)">7</span></div>
+  <div class="row on"><span class="pv jira"><svg class="i"><use href="#jira"/></svg></span><span class="t">Work Jira</span><span class="cnt" style="--b:var(--jira-bg);--f:var(--jira-fg)">9</span></div>
+  <div class="row on"><span class="pv outlook"><svg class="i"><use href="#outlook"/></svg></span><span class="t">Outlook</span><span class="cnt" style="--b:var(--outlook-bg);--f:var(--outlook-fg)">12</span></div>
+  <div class="row on"><span class="pv odoo"><svg class="i"><use href="#odoo"/></svg></span><span class="t">Odoo</span><span class="cnt" style="--b:var(--odoo-bg);--f:var(--odoo-fg)">6</span></div>
+  <div class="row on"><span class="pv system"><svg class="i"><use href="#power"/></svg></span><span class="t">System</span><span class="cnt">4</span></div>
+  <div class="row muted"><span class="pv" style="border:1px dashed var(--border)"><svg class="i"><use href="#plus"/></svg></span><span class="t">Add source</span></div>
+</div>
+
+ <div class="side-bottom"><div class="row"><svg class="i"><use href="#cog"/></svg><span class="t">Settings</span></div></div>
+</aside>
+<main class="main">
+ <div class="tb">
+  <div class="tb1">
+   <span class="conn"><span class="pv jira"><svg class="i"><use href="#jira"/></svg></span>Work Jira<svg class="i sm muted"><use href="#chevd"/></svg></span>
+   <div class="search" style="flex:1"><svg class="i"><use href="#search"/></svg><span style="color:var(--text-primary)">payment</span><span style="flex:1"></span><span class="kbd">/</span></div>
+   <span class="seg"><span class="on">Text</span><span>JQL</span></span>
+   <span class="btn primary lg"><svg class="i sm"><use href="#plus"/></svg>New ticket</span>
+  </div>
+  <div class="tb2">
+   <span class="chip">Assigned to me</span><span class="chip on"><svg class="i xs"><use href="#check"/></svg>Unassigned</span><span class="chip">Not mine</span><span class="chip">Created by me</span>
+   <span class="vr"></span><span class="chip on"><svg class="i xs"><use href="#check"/></svg>Open</span><span class="chip">Done</span>
+   <span class="vr"></span><span class="chip">Project: ACME, PAY<svg class="i xs"><use href="#chevd"/></svg></span>
+  </div>
+ </div>
+ <div class="split">
+  <div class="list">
+   <div class="sum"><span>8 open, unassigned items matching “payment”</span><span>Updated just now</span></div>
+   <div class="items">
+    <div class="it sel"><span class="ty bug"></span><span class="ti"><span class="key">ACME-163</span>&nbsp; Payment capture not retried after gateway timeout</span><span class="st todo">To do</span><span class="mt">High · Unassigned · updated 2h ago</span></div>
+    <div class="it"><span class="ty story"></span><span class="ti"><span class="key">ACME-171</span>&nbsp; Show payment retry state on the order page</span><span class="st todo">To do</span><span class="mt">Medium · Unassigned · updated yesterday</span></div>
+    <div class="it"><span class="ty bug"></span><span class="ti"><span class="key">PAY-88</span>&nbsp; Refund webhook arrives before capture confirmation</span><span class="st todo">To do</span><span class="mt">High · Unassigned · updated yesterday</span></div>
+    <div class="it"><span class="ty task"></span><span class="ti"><span class="key">ACME-158</span>&nbsp; Rotate payment gateway sandbox credentials</span><span class="st todo">To do</span><span class="mt">Low · Unassigned · updated 3 days ago</span></div>
+    <div class="it"><span class="ty spike"></span><span class="ti"><span class="key">PAY-79</span>&nbsp; Evaluate idempotency keys for gateway calls</span><span class="st todo">To do</span><span class="mt">Medium · Unassigned · updated 4 days ago</span></div>
+    <div class="it"><span class="ty bug"></span><span class="ti"><span class="key">ACME-149</span>&nbsp; Duplicate payment email after 3-D Secure retry</span><span class="st todo">To do</span><span class="mt">Medium · Unassigned · updated 6 days ago</span></div>
+    <div class="it"><span class="ty task"></span><span class="ti"><span class="key">ACME-176</span>&nbsp; Load-test the payment service with a retry storm</span><span class="st todo">To do</span><span class="mt">Low · Unassigned · updated 8 days ago</span></div>
+    <div class="it"><span class="ty story"></span><span class="ti"><span class="key">PAY-91</span>&nbsp; Expose the retry count in payment events</span><span class="st todo">To do</span><span class="mt">Low · Unassigned · updated 9 days ago</span></div>
+   </div>
+  </div>
+  <section class="dock">
+   <div class="ph"><span class="badge jira"><svg class="i xs"><use href="#jira"/></svg>Work Jira</span><span class="key">ACME-163</span><span class="spacer"></span><span class="btn icon ghost"><svg class="i sm"><use href="#x"/></svg></span></div>
+   <div class="pb">
+    <h2>Payment capture not retried after gateway timeout</h2>
+    <div style="display:flex;gap:6px;flex-wrap:wrap"><span class="st todo">To do</span><span class="pill mute">Bug</span><span class="pill warn">High</span><span class="pill mute">Unassigned</span></div>
+    <div class="acts">
+     <span class="btn"><svg class="i xs"><use href="#ext"/></svg>Open in Jira</span>
+     <span class="btn"><svg class="i xs"><use href="#user"/></svg>Assign to me</span>
+     <span class="btn dis">Move to…<svg class="i xs"><use href="#chevd"/></svg></span>
+     <span class="btn"><svg class="i xs"><use href="#timer"/></svg>Log time…</span>
+     <span class="btn dis"><svg class="i xs"><use href="#lock"/></svg>Comment</span>
+    </div>
+    <div class="lockline" style="margin-bottom:2px"><svg class="i xs"><use href="#lock"/></svg>Comment is off for Work Jira · <span style="color:var(--accent-hover);font-weight:600">Access</span></div><div class="lockline"><svg class="i xs"><use href="#warn"/></svg>Move to… needs the Jira permission TRANSITION_ISSUES</div>
+    <div class="sect">
+     <span class="kicker">Description · plain text</span>
+     <p class="desc">When the gateway answers 504 during capture, the order stays in <i>authorised</i> and no retry is scheduled. Seen 14 times in the last 7 days on the EU cluster. Expected: up to 3 retries with backoff, then alert.</p>
+    </div>
+    <dl class="fields" style="margin-top:12px">
+     <div><dt>Reporter</dt><dd>Priya N.</dd></div>
+     <div><dt>Sprint</dt><dd>Sprint 48</dd></div>
+     <div><dt>Labels</dt><dd>payments, gateway</dd></div>
+     <div><dt>Time</dt><dd>2h30m logged of 1d estimate · <b>you: none yet</b></dd></div>
+    </dl>
+    <div style="margin-top:12px"><span class="kicker">Latest comments (2)</span>
+     <div class="cm"><span class="av" style="background:#0891b2">AC</span><span><b>Alex C.</b> <span class="muted">· 2h</span><br>Repro steps added; happens with the sandbox too.</span></div>
+    </div>
+   </div>
+  </section>
+ </div>
+</main>
+</div>
+<span class="pin" style="left:4px;top:250px">1</span>
+<span class="pin" style="left:276px;top:96px">2</span>
+<span class="pin" style="left:262px;top:250px">3</span>
+<span class="pin" style="left:832px;top:356px">4</span>
+<span class="pin" style="left:4px;top:352px">5</span>
+</div>
+<ul class="notes">
+<li><span class="pin">1</span><span><b>Work group in the sidebar.</b> Shown in the desktop app when a connection allows <code>search</code>. The views above stay as they are; the tablet rail gains three icons.</span></li>
+<li><span class="pin">2</span><span><b>Connection picker, text box and JQL toggle.</b> The filter chips build JQL in core. Results are one page (≤ 50) with “Load more”.</span></li>
+<li><span class="pin">3</span><span><b>Search results stay in their own list.</b> They are current state, not events, so they never mix with the timeline, its search or the export.</span></li>
+<li><span class="pin">4</span><span><b>Action bar.</b> It only shows what the connection allows. An action the user turned off is locked and links to Access. If the token lacks a permission, the action is disabled with the reason (see the shared page).</span></li>
+<li><span class="pin">5</span><span><b>Review (phase 6, or sooner if the agent is near-term).</b> Agent drafts wait here as a view with full-width previews (C's cards, placed in A's structure).</span></li>
+<li><span class="pin" style="background:var(--text-tertiary)">i</span><span><b>Docked detail at ≥ 1100 px.</b> The list stays visible while you work an item. Below that width it falls back to today's flyout, and on phones to the bottom sheet.</span></li>
+</ul>
+
+<div class="caption"><span class="tag">Screen 2</span>Time: week totals per item, Odoo attendance, and “not logged yet” turned into suggestions</div>
+<div class="screen">
+<div class="hdr">
+  <div class="brand"><span class="brand-mark"><svg class="i"><use href="#brand"/></svg></span>Activity Log</div>
+  <div class="spacer"></div>
+  
+  <div class="range"><span class="lbl">FROM</span><span class="val">16/11/2026</span><svg class="i sm"><use href="#cal"/></svg><svg class="i sm"><use href="#arrow"/></svg><span class="lbl">TO</span><span class="val">20/11/2026</span><svg class="i sm"><use href="#cal"/></svg></div>
+  <span class="btn primary lg"><svg class="i sm"><use href="#sync"/></svg>Collect</span>
+  <span class="btn icon"><svg class="i sm"><use href="#doc"/></svg></span>
+  <span class="btn icon"><svg class="i sm"><use href="#braces"/></svg></span>
+</div>
+
+<div class="shell">
+<aside class="side">
+ <div><span class="sl">View</span>
+  <div class="row"><svg class="i"><use href="#timeline"/></svg><span class="t">Timeline</span></div>
+  <div class="row"><svg class="i"><use href="#day"/></svg><span class="t">Day</span></div>
+  <div class="row"><svg class="i"><use href="#workweek"/></svg><span class="t">Work week</span></div>
+  <div class="row"><svg class="i"><use href="#week"/></svg><span class="t">Week</span></div>
+ </div>
+ <div><span class="sl">Work</span>
+  <div class="row"><svg class="i"><use href="#ticket"/></svg><span class="t">Work items</span></div>
+  <div class="row on"><svg class="i"><use href="#timer"/></svg><span class="t">Time</span><span class="muted" style="font-size:11.5px;font-weight:600">29h45</span></div>
+  <div class="row"><svg class="i" style="color:var(--agent)"><use href="#spark"/></svg><span class="t">Review</span><span class="cnt" style="--b:var(--agent);--f:#fff">2</span></div>
+ </div>
+ <div><span class="sl">Sources</span>
+  <div class="row on"><span class="pv git"><svg class="i"><use href="#git"/></svg></span><span class="t">Git</span><span class="cnt" style="--b:var(--git-bg);--f:var(--git-fg)">14</span></div>
+  <div class="row on"><span class="pv gitlab"><svg class="i"><use href="#gitlab"/></svg></span><span class="t">GitLab</span><span class="cnt" style="--b:var(--gitlab-bg);--f:var(--gitlab-fg)">7</span></div>
+  <div class="row on"><span class="pv jira"><svg class="i"><use href="#jira"/></svg></span><span class="t">Work Jira</span><span class="cnt" style="--b:var(--jira-bg);--f:var(--jira-fg)">9</span></div>
+  <div class="row on"><span class="pv outlook"><svg class="i"><use href="#outlook"/></svg></span><span class="t">Outlook</span><span class="cnt" style="--b:var(--outlook-bg);--f:var(--outlook-fg)">12</span></div>
+  <div class="row on"><span class="pv odoo"><svg class="i"><use href="#odoo"/></svg></span><span class="t">Odoo</span><span class="cnt" style="--b:var(--odoo-bg);--f:var(--odoo-fg)">6</span></div>
+  <div class="row on"><span class="pv system"><svg class="i"><use href="#power"/></svg></span><span class="t">System</span><span class="cnt">4</span></div>
+  <div class="row muted"><span class="pv" style="border:1px dashed var(--border)"><svg class="i"><use href="#plus"/></svg></span><span class="t">Add source</span></div>
+</div>
+
+ <div class="side-bottom"><div class="row"><svg class="i"><use href="#cog"/></svg><span class="t">Settings</span></div></div>
+</aside>
+<main class="main" style="flex-direction:row">
+ <div style="flex:1;min-width:0;display:flex;flex-direction:column">
+  <div class="th"><h2>Week 47</h2><span class="muted">16–20 Nov 2026</span><span class="spacer"></span>
+   <span class="seg"><span class="on">All</span><span>Work Jira</span><span>Odoo</span></span>
+   <span class="btn primary"><svg class="i sm"><use href="#plus"/></svg>Log time…</span></div>
+  <div class="strip">
+   <div><span class="kicker">Logged</span><span class="v">29h45m</span></div>
+   <div><span class="kicker">Present</span><span class="v">34h50m</span></div>
+   <div class="w"><span class="kicker">Not logged yet</span><span class="v">7h50m</span></div>
+   <div style="flex:1.6"><span class="kicker" style="display:flex;justify-content:space-between">Today<span style="color:var(--accent-hover);letter-spacing:0;text-transform:none;font-size:11.5px">Check out…</span></span><span class="v" style="color:var(--ok-fg)">In since 08:12</span></div>
+  </div>
+  <div class="tg">
+   <div class="tr hd"><div>Item</div><div>Mon 16</div><div>Tue 17</div><div>Wed 18</div><div>Thu 19</div><div class="today">Fri 20</div><div>Total</div></div>
+   <div class="tr"><div><span class="pv jira" style="width:18px;height:18px"><svg class="i"><use href="#jira"/></svg></span><span class="key">ACME-163</span><span class="nm">Payment capture retry</span></div><div>1h30</div><div>2h</div><div class="e">–</div><div>2h30</div><div class="today">1h</div><div><b>7h</b></div></div>
+   <div class="tr"><div><span class="pv jira" style="width:18px;height:18px"><svg class="i"><use href="#jira"/></svg></span><span class="key">ACME-171</span><span class="nm">Retry state on order page</span></div><div>2h</div><div>1h30</div><div>3h</div><div class="e">–</div><div class="today e">–</div><div><b>6h30</b></div></div>
+   <div class="tr"><div><span class="pv jira" style="width:18px;height:18px"><svg class="i"><use href="#jira"/></svg></span><span class="key">PAY-79</span><span class="nm">Idempotency keys spike</span></div><div class="e">–</div><div>1h</div><div>2h</div><div>1h30</div><div class="today e">–</div><div><b>4h30</b></div></div>
+   <div class="tr"><div><span class="pv jira" style="width:18px;height:18px"><svg class="i"><use href="#jira"/></svg></span><span class="key">ACME-158</span><span class="nm">Rotate sandbox credentials</span></div><div class="e">–</div><div class="e">–</div><div class="e">–</div><div class="e">–</div><div class="today">30m</div><div><b>30m</b></div></div>
+   <div class="tr"><div><span class="pv odoo" style="width:18px;height:18px"><svg class="i"><use href="#odoo"/></svg></span><span class="nm">Internal · Meetings <span class="muted">· day only</span></span></div><div>1h45</div><div>1h15</div><div>2h</div><div>1h30</div><div class="today">1h15</div><div><b>7h45</b></div></div>
+   <div class="tr"><div><span class="pv odoo" style="width:18px;height:18px"><svg class="i"><use href="#odoo"/></svg></span><span class="nm">Support rota <span class="muted">· task</span></span></div><div class="e">–</div><div>1h30</div><div class="e">–</div><div>2h</div><div class="today e">–</div><div><b>3h30</b></div></div>
+   <div class="tr tot"><div>Logged</div><div>5h15</div><div>7h15</div><div>7h</div><div>7h30</div><div class="today">2h45</div><div>29h45</div></div>
+   <div class="tr att"><div><span class="pv odoo" style="width:18px;height:18px"><svg class="i"><use href="#login"/></svg></span>Present (attendance)</div><div>8h45</div><div>8h50</div><div>8h30</div><div>8h45</div><div class="today">08:12–</div><div>34h50</div></div>
+   <div class="tr gap"><div>Not logged yet</div><div><span class="hot" style="padding:3px 5px">3h30</span></div><div>1h35</div><div>1h30</div><div>1h15</div><div class="today e">–</div><div>7h50</div></div>
+  </div>
+  <p class="muted" style="margin:12px 24px 0;font-size:12px">Jira worklogs count on the local day they start. Odoo lines carry their own date and are never shifted. Click any cell to see its entries. Click a “not logged” cell for suggestions.</p>
+ </div>
+ <aside class="sug">
+  <div style="display:flex;align-items:center;gap:8px"><span class="kicker">Monday 16 Nov</span><span class="spacer"></span><span class="pill warn">3h30 not logged</span></div>
+  <div style="font-size:13px;color:var(--text-secondary)">Activity on Monday with no time entry. Select entries to log them together.</div>
+  <div class="ae on"><span class="cb"><svg class="i xs"><use href="#check"/></svg></span><span><b>Pairing: gateway retry (ACME-163)</b><br><span class="m"><span class="badge outlook" style="font-size:9.5px;padding:1px 6px">Outlook</span> 10:00–11:30 · 1h30</span></span></div>
+  <div class="ae on"><span class="cb"><svg class="i xs"><use href="#check"/></svg></span><span><b>fix(payments): retry capture on 504</b><br><span class="m"><span class="badge git" style="font-size:9.5px;padding:1px 6px">Git</span> 3 commits 14:10–15:20 · on branch ACME-163</span></span></div>
+  <div class="ae"><span class="cb"></span><span><b>Review: !412 order page retry banner</b><br><span class="m"><span class="badge gitlab" style="font-size:9.5px;padding:1px 6px">GitLab</span> 16:05 · mentions ACME-171</span></span></div>
+  <div class="ae"><span class="cb"></span><span><b>1:1 Sam / Alex</b><br><span class="m"><span class="badge outlook" style="font-size:9.5px;padding:1px 6px">Outlook</span> 16:30–17:00 · 30m</span></span></div>
+  <div class="sect" style="padding:10px 12px;font-size:12.5px">
+   <span class="kicker">Suggestion</span>
+   <div style="margin-top:6px"><b>2h45m</b> on <span class="key">ACME-163</span> <span class="muted">(key found in the branch)</span></div>
+   <div class="muted" style="font-size:11.5px">Meeting length + first-to-last commit, rounded up to 15 min</div>
+  </div>
+  <span class="btn primary" style="justify-content:center;height:38px">Log time…  <span style="opacity:.75;font-weight:500">preview next</span></span>
+ </aside>
+</main>
+</div>
+<span class="pin" style="left:266px;top:142px">6</span>
+<span class="pin" style="left:780px;top:126px">7</span>
+<span class="pin" style="left:268px;top:578px">8</span>
+<span class="pin" style="left:950px;top:84px">9</span>
+</div>
+<ul class="notes">
+<li><span class="pin">6</span><span><b>Time is a view, not another color on the calendar.</b> One grid answers “what did I book this week, and on what?”, which is what timesheet reporting needs. Day and week views still get day totals in their headers and logged blocks (plan section 4).</span></li>
+<li><span class="pin">7</span><span><b>Odoo attendance</b> sits next to time logged on items, as a separate presence fact. Check in and check out are an optional write (phase 4b) behind the same confirm dialog.</span></li>
+<li><span class="pin">8</span><span><b>“Not logged yet”</b> is present minus logged per local day, computed in the dashboard (civil dates are data). Without attendance it falls back to the span of tracked activity.</span></li>
+<li><span class="pin">9</span><span><b>Log time from activity.</b> Click a gap and that day's unlogged entries appear. The prefill and the target key come from <code>time-suggestion.ts</code>. The same flow starts from a multi-select in the day and week views.</span></li>
+</ul>
+
+<div class="extras">
+ <div class="phone">
+  <div style="padding:16px 14px 8px;display:flex;align-items:center;gap:8px"><span class="brand-mark" style="width:26px;height:26px"><svg class="i sm"><use href="#brand"/></svg></span><b style="font-size:14px">Work items</b><span class="spacer"></span><span class="btn icon" style="width:30px;height:30px"><svg class="i sm"><use href="#plus"/></svg></span></div>
+  <div style="padding:0 12px 8px"><div class="search" style="height:38px;font-size:13px"><svg class="i sm"><use href="#search"/></svg>payment</div></div>
+  <div style="padding:0 12px 8px;display:flex;gap:5px;overflow:hidden"><span class="chip on" style="height:26px;font-size:11.5px">Unassigned</span><span class="chip" style="height:26px;font-size:11.5px">Mine</span><span class="chip" style="height:26px;font-size:11.5px">Open</span></div>
+  <div style="flex:1;background:var(--surface);border-radius:18px 18px 0 0;padding:4px 0;overflow:hidden">
+   <div class="it" style="grid-template-columns:12px 1fr"><span class="ty bug"></span><span class="ti" style="white-space:normal;font-size:12.5px"><span class="key">ACME-163</span> Payment capture not retried after gateway timeout</span></div>
+   <div class="it" style="grid-template-columns:12px 1fr"><span class="ty story"></span><span class="ti" style="white-space:normal;font-size:12.5px"><span class="key">ACME-171</span> Show payment retry state on the order page</span></div>
+   <div class="it" style="grid-template-columns:12px 1fr"><span class="ty bug"></span><span class="ti" style="white-space:normal;font-size:12.5px"><span class="key">PAY-88</span> Refund webhook arrives before capture</span></div>
+   <div class="it" style="grid-template-columns:12px 1fr"><span class="ty task"></span><span class="ti" style="white-space:normal;font-size:12.5px"><span class="key">ACME-158</span> Rotate payment gateway sandbox credentials</span></div>
+  </div>
+  <div class="tabs"><span><svg class="i"><use href="#timeline"/></svg>Timeline</span><span><svg class="i"><use href="#week"/></svg>Calendar</span><span class="on"><svg class="i"><use href="#ticket"/></svg>Work</span><span><svg class="i"><use href="#timer"/></svg>Time</span><span><svg class="i"><use href="#spark"/></svg>Review<span class="dot">2</span></span></div>
+ </div>
+ <div class="txt">
+  <h3>Tablet and phone</h3>
+  <ul>
+   <li><b>Tablet rail (≤ 900 px):</b> the Work group adds three icons under the views, with a divider. Work items detail becomes the flyout again.</li>
+   <li><b>Phone (≤ 640 px):</b> today's bottom bar has four views plus Settings. With A it needs grouping: Timeline · Calendar (Day/Work week/Week behind a segmented control) · Work · Time · Review. Settings moves into a header menu. That is a real change to the phone shell.</li>
+   <li><b>Phone writes:</b> action buttons in the bottom sheet. The confirm dialog becomes a full-height sheet whose confirm button names the effect.</li>
+   <li><b>Browser build:</b> actions are desktop-only (no actions over HTTP), so Work, Time actions and Review are hidden there. Time totals still work if worklogs are collected.</li>
+  </ul>
+  <h3 style="margin-top:14px">States</h3>
+  <ul>
+   <li><b>Empty:</b> “No items match. Try Not mine or Done”, with the JQL that was sent shown when the JQL toggle is on.</li>
+   <li><b>Loading:</b> row skeletons like the timeline's. The detail keeps the old item, dimmed, until the new one arrives.</li>
+   <li><b>Errors:</b> Unreachable or RateLimited shows an inline banner in the list with Retry (and “retry in 20 s” when Jira sends a wait). NotAllowed is never an error state: the view isn't shown.</li>
+  </ul>
+ </div>
+</div>
+</div></body></html>

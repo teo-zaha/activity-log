@@ -25,13 +25,16 @@
 
 ## Data sources
 
-| Source      | What it collects                                                                  |
-| ----------- | --------------------------------------------------------------------------------- |
-| **Git**     | Commits from local repositories via an embedded Git library                       |
-| **GitLab**  | MRs, pushes, comments, reviews                                                    |
-| **Jira**    | Issues assigned to or reported by you                                             |
-| **Outlook** | Calendar events from the running Outlook desktop app via native desktop APIs      |
-| **System**  | Boot and shutdown events from the Windows Event Log and the macOS session history |
+| Source       | What it collects                                                                   |
+| ------------ | ---------------------------------------------------------------------------------- |
+| **Git**      | Commits from local repositories via an embedded Git library                        |
+| **GitLab**   | MRs, pushes, comments, reviews                                                     |
+| **Jira**     | Issues assigned to or reported by you                                              |
+| **Outlook**  | Calendar events from the running Outlook desktop app via native desktop APIs       |
+| **System**   | Boot and shutdown events from the Windows Event Log and the macOS session history  |
+| **Calendar** | Events from published ICS calendar links (Outlook, Google, iCloud) or `.ics` files |
+
+A new install has no sources: add the ones you use with **Add source**. Git, GitLab, Jira and Calendar can be added more than once: two GitLab accounts, two Jira sites, Git on this computer and in each WSL distribution, several calendars. Each connection has its own label, settings, startup check and filter chip. The window opens without waiting for the checks or the first collection: each source shows a spinner until it is checked and collected, and its entries appear as soon as they are in, without waiting for the slowest source.
 
 When a local git commit matches a GitLab push event (same commit SHA), they are merged into a single **git/lab** entry instead of appearing twice.
 
@@ -42,6 +45,8 @@ The entry types, displayed fields, supported platforms and configuration of each
 ### Four views
 
 The sidebar switches between **Timeline** (a list grouped by day, newest day first), **Day**, **Work week** (Monday to Friday) and **Week** (Monday to Sunday). The three calendar views have previous, Today and next buttons and a zoom control.
+
+When the Timeline list is longer than the window, a day index runs down its right edge with one row for every day of the selected range, newest at the top. The highlighted day follows the day header stuck at the top of the list. Hovering shows the day and its event count, and clicking or dragging jumps to that day; a day without events jumps to the nearest day that has some. Long ranges show Monday labels only or, past a few months, one bar per day sized by its event count. From the keyboard it is the next stop after the search box: <kbd>↑</kbd> <kbd>↓</kbd> step between days with events, <kbd>Page Up</kbd> <kbd>Page Down</kbd> move a week, <kbd>Home</kbd> <kbd>End</kbd> go to the newest and oldest day, and <kbd>Enter</kbd> moves focus to that day's first event.
 
 <table>
   <tr>
@@ -87,7 +92,7 @@ The Timeline view has a search box that filters the entries as you type, ignorin
 
 ### Source filter
 
-Every source has a chip with its entry count. Click a chip to toggle that source. Double-click it to show only that source, and double-click it again to show all sources.
+Every connection has a chip with its label, such as "Work GitLab" or "WSL · NixOS", and its entry count. Click a chip to toggle that source. Double-click it to show only that source, and double-click it again to show all sources.
 
 <p align="center">
   <img src="pics/filter-solo.png" width="820" alt="Work week view showing only Outlook entries">
@@ -134,7 +139,9 @@ Total: 64 events
 
 ### Source settings and startup status
 
-**Settings** lists every source with the result of its startup check and the operating systems it supports. In the desktop app, each source pane also has the connection settings for that source. Secret fields are write-only and only show whether a value is set.
+**Settings** lists every connection with the result of its startup check and the operating systems it supports. In the desktop app, each pane also has the connection's settings, its **Label** and **Remove source**. Secret fields are write-only and only show whether a value is set.
+
+**Add source** (in the sidebar, in Settings, and on the empty dashboard before the first source) shows a tile per source with what it collects. A tile adds the source and opens its settings; for Git on Windows it first asks for this computer or an installed WSL distribution. Outlook and System can be added once, and a source that does not run on this operating system is shown but disabled. GitHub, Microsoft Teams, Figma, Miro and Odoo are listed as coming soon.
 
 <p align="center">
   <img src="pics/settings-gitlab.png" width="820" alt="GitLab source pane with startup check and connection settings in the desktop app">
@@ -182,14 +189,15 @@ For each source, this section lists the entries it produces, the line shown unde
 <tr>
 <td width="56%" valign="top">
 
-- **Entries:** one per commit authored with one of your emails, read from all refs of each repository. Your emails are every `user.email` found: in each repository's config (including the global one) and, on Windows, in each WSL distribution's global config. Emails compare case-insensitively, so a repository without `user.email` still contributes commits made with an email configured elsewhere. The title is the commit subject.
+- **Entries:** one per commit authored with one of your emails, read from all refs of each repository. Your emails are every `user.email` found in any Git connection: in each repository's config (including the global one) and in each WSL distribution's global config. Emails compare case-insensitively, so a repository without `user.email` still contributes commits made with an email configured elsewhere. The title is the commit subject.
 - **Timeline line:** repository · branch · first 7 characters of the commit hash
 - **Detail panel:** Repository (folder name), Branch, Commit (full hash), Author (email), Message
 - **Branch:** only set for the commit that is the checked-out `HEAD` of its repository. Other commits have no branch.
 - **Merged entries:** a commit that matches a GitLab push event becomes a [git/lab entry](#gitlab-merge) with an additional GitLab section.
 - **Platforms:** Windows, macOS, Linux
-- **Configuration:** `GIT_DIRS` (optional list). A listed folder that contains `.git` is used as a repository; any other folder is searched for repositories up to four levels deep. Repositories are only skipped when no `user.email` is configured anywhere.
-- **WSL (Windows):** repositories inside WSL are read by running `git` in the distribution (`wsl.exe -d <distro>`), not over `\\wsl.localhost` paths, which is faster and avoids Git's ownership check. By default every registered distribution is searched under its `$HOME`, four levels deep; Docker, Rancher and Podman distributions are skipped. `WSL_GIT_DIRS` replaces that with folders per distribution, read like `GIT_DIRS`; `~` stands for the distribution's home, and an empty map searches none.
+- **Configuration:** `dirs` (optional list) per Git connection. A listed folder that contains `.git` is used as a repository; any other folder is searched for repositories up to four levels deep. Unset means the home folder. Repositories are only skipped when no `user.email` is configured anywhere. Worktrees of one repository are read once, under the name of its main folder, and a commit that several clones or Git sources hold is listed once.
+- **Locations:** each Git connection reads one place: this computer, or (Windows) a WSL distribution. Without configuration there is one connection for this computer and, on Windows, one per registered distribution searching its `~`; Docker, Rancher and Podman distributions are skipped. Removing a distribution's connection excludes it.
+- **WSL (Windows):** repositories inside WSL are read by running `git` in the distribution (`wsl.exe -d <distro>`), not over `\\wsl.localhost` paths, which is faster and avoids Git's ownership check. Folders are Linux paths; `~` stands for the distribution's home.
 
 </td>
 <td width="44%" valign="top"><img src="pics/source-git.png" alt="Detail panel of a Git commit with the fields Repository, Branch, Commit, Author and Message"></td>
@@ -208,7 +216,7 @@ For each source, this section lists the entries it produces, the line shown unde
 - **Detail panel:** Action, Title and Target type. MR (`!` and the target IID) when the event has one. Branch and Commits for push events. File, Comment and Resolved for comments.
 - **Merged entries:** a push event whose commit SHA matches a local commit is shown inside that commit's [git/lab entry](#gitlab-merge) instead of as its own entry.
 - **Platforms:** Windows, macOS, Linux
-- **Configuration:** `GITLAB_URL`, `GITLAB_TOKEN` and `GITLAB_USER` (all required). Results use the [per-day cache](#per-day-cache).
+- **Configuration:** `url`, `token` and `user` (all required). Results use the [per-day cache](#per-day-cache).
 
 </td>
 <td width="44%" valign="top"><img src="pics/source-gitlab.png" alt="Detail panel of a GitLab merged event with the fields Action, Title, Target type and MR"></td>
@@ -228,7 +236,7 @@ For each source, this section lists the entries it produces, the line shown unde
 - **Timeline line:** issue type · status
 - **Detail panel:** Event, Key, Title, Status and Issue type. From status and To status for status changes.
 - **Platforms:** Windows, macOS, Linux
-- **Configuration:** `JIRA_URL` and `JIRA_TOKEN` (required), `JIRA_INSECURE` (optional). Results use the [per-day cache](#per-day-cache).
+- **Configuration:** `url` and `token` (required), `insecure` (optional). Results use the [per-day cache](#per-day-cache).
 
 </td>
 <td width="44%" valign="top"><img src="pics/source-jira.png" alt="Detail panel of a Jira status change with the fields Event, Key, Title, Status, Issue type, From status and To status"></td>
@@ -246,12 +254,22 @@ For each source, this section lists the entries it produces, the line shown unde
 - **Detail panel:** Title, Duration, Location, Organizer and Role (Organizer or Attendee)
 - **Calendar views:** a meeting is drawn as a block that spans its duration.
 - **Platforms:** Windows, macOS
-- **Configuration:** none. Outlook has to be installed and running. On Windows this must be classic Outlook: the new Outlook has no interface for other apps, and Activity Log cannot reach Outlook while it runs as administrator. On macOS it also needs a signed-in Exchange account.
+- **Configuration:** none. Outlook has to be installed and running. On Windows this must be classic Outlook: the new Outlook has no interface for other apps, and Activity Log cannot reach Outlook while it runs as administrator. On macOS it also needs a signed-in Exchange account. With the new Outlook, publish the calendar and add its ICS link as a [Calendar](#calendar) source.
 
 </td>
 <td width="44%" valign="top"><img src="pics/source-outlook.png" alt="Detail panel of an Outlook meeting with the fields Title, Duration, Location, Organizer and Role"></td>
 </tr>
 </table>
+
+### Calendar
+
+- **Entries:** one per event occurrence in the feed that overlaps the date range. Recurring meetings are expanded, with moved and removed occurrences applied. All-day and cancelled events are left out. The title is the event summary.
+- **Timeline line:** duration · location · `org:` and the organizer's name
+- **Detail panel:** Title, Duration, Location, Organizer
+- **Calendar views:** a meeting is drawn as a block that spans its duration.
+- **Platforms:** Windows, macOS, Linux
+- **Configuration:** `ics_url` (required) per calendar: an `https://` or `webcal://` link, or the path of an `.ics` file. Plain `http://` is refused. The link is stored like a token and never written to the logs. Times without a time zone are read in this computer's time zone.
+- **Outlook (also the new Outlook):** Settings → Calendar → Shared calendars → Publish a calendar, then copy the ICS link. The tenant may only allow availability without titles. Anyone who has the link can read the calendar; unpublishing revokes it.
 
 ### System
 
@@ -286,7 +304,7 @@ For each source, this section lists the entries it produces, the line shown unde
 git clone https://git.inform-software.com/gb100/shared/playground/tzaharin/activity-log.git
 cd activity-log
 pnpm install
-cp .env.example .env   # fill in your credentials
+pnpm cli:collect sources add gitlab   # or add sources in the desktop app
 ```
 
 ### Run
@@ -301,25 +319,57 @@ The last 30 days are collected automatically on startup. Use the date pickers in
 
 ## Configuration
 
+### Config file
+
+The CLI, the API server and the desktop app share one file: `activity-log/config.toml` in the OS config folder (`%APPDATA%` on Windows, `~/Library/Application Support` on macOS, `$XDG_CONFIG_HOME` or `~/.config` on Linux). `ACTIVITY_LOG_CONFIG` or `--config <path>` (CLI and API server) points elsewhere. `activity-log config path` prints it.
+
+Each connection is a table in the list of its kind. Field names are the setting names without the kind prefix (`GITLAB_URL` → `url`):
+
+```toml
+[[gitlab]]
+label = "Work GitLab"
+url = "https://gitlab.example.com"
+token = "glpat-…"
+user = "me"
+
+[[gitlab]]
+name = "oss"
+label = "Open source"
+url = "https://gitlab.com"
+token = "glpat-…"
+user = "me"
+
+[[git]]
+label = "This computer"
+dirs = ["~/Projects"]
+
+[[git]]
+label = "WSL · NixOS"
+wsl = "NixOS"
+dirs = ["~", "/srv/tools"]
+
+[[calendar]]
+label = "Team"
+ics_url = "https://outlook.office365.com/owa/calendar/…/calendar.ics"
+```
+
+- The file is the only list of sources: a kind it does not mention is not collected. An empty or missing file means no sources.
+- A connection is identified by its kind and `name`, such as `gitlab/oss`. Without `name`, the name comes from the label (`Work GitLab` → `work-gitlab`). The name never changes with the label.
+- Without `label`, a connection is named after its kind (`GitLab`), or for Git after its location (`This computer`, `WSL · NixOS`).
+- `[[outlook]]` and `[[system]]` have no settings; the empty table adds them.
+- The file holds tokens. It is written readable only by your user on macOS and Linux.
+- The desktop app and the CLI edit it in place and keep comments. The API server reloads it when it changes.
+
 ### Environment variables
 
-Copy `.env.example` to `.env` and fill in the sources you want to enable. Any source without credentials is skipped. The API and CLI read `.env`. The desktop app uses its Settings dialog and falls back to process environment variables.
+Sources are set up only in the [config file](#config-file). These variables (also read from `.env`) change where files live and how the server runs:
 
 | Variable                 | Description                                                                         |
 | ------------------------ | ----------------------------------------------------------------------------------- |
-| `GITLAB_URL`             | Your GitLab instance URL                                                            |
-| `GITLAB_TOKEN`           | GitLab personal access token                                                        |
-| `GITLAB_USER`            | Your GitLab username                                                                |
-| `JIRA_URL`               | Your Jira instance URL                                                              |
-| `JIRA_TOKEN`             | Jira access token                                                                   |
-| `JIRA_INSECURE`          | Set to `true` to skip TLS verification (self-signed certs)                          |
-| `GIT_DIRS`               | Comma-separated repo paths or parent folders (defaults to your OS home dir)         |
-| `WSL_GIT_DIRS`           | Windows: folders per WSL distro as JSON, `{"NixOS":["~/work"]}` (default: each `~`) |
+| `ACTIVITY_LOG_CONFIG`    | Path of the config file                                                             |
 | `PORT`                   | API server port (default: `3000`; `pnpm dev`/`pnpm api:dev` use `3001`)             |
 | `CACHE_TTL_MINUTES`      | How long today's and other recent cached GitLab/Jira days stay fresh (default: `5`) |
 | `ACTIVITY_LOG_CACHE_DIR` | Override the per-day cache directory (default: the OS cache dir)                    |
-
-For CLI runs, you can override any provider key with `--set KEY=VALUE`.
 
 Git history is read in-process. The `git` command is only asked for `user.email` when the config files the library reads have none (some Windows setups keep the global config elsewhere). Outlook and System collectors need no credentials: they read from the local Outlook app and the platform's native event and session history APIs. Outlook is never started by the app: its calendar is collected only while Outlook is already open.
 
@@ -340,11 +390,11 @@ GitLab and Jira opt into a per-day disk cache. Each collection serves the days i
 In the desktop app, provider configuration fields are generated from Rust provider `config_requirements()` metadata and rendered dynamically in the Settings dialog.
 
 - Scope: desktop (Tauri) only. In the web dashboard the source panes show status but not editable settings.
-- Storage: persisted in Tauri Store (`settings.json`).
+- Storage: `config.toml`, shared with the CLI and the API server.
 - Secret fields: values are write-only in UI/API; the frontend only receives `isSet`.
 - Runtime behavior: save operations rebuild provider runtime config and refresh startup status.
-- Lists: `GIT_DIRS` is edited as rows and stored as a JSON array. An unset list shows its default (your home directory); **Use default** returns to it, and removing every row saves an empty list, which means none.
-- Lists by name: `WSL_GIT_DIRS` (Windows) is edited as one entry per WSL distribution, picked from the installed ones, with its folders as rows beneath; it is stored as a JSON object of arrays. Unset, it shows `~` for every distribution. **Use default** and removing every entry work like lists.
+- Lists: `GIT_DIRS` is edited as rows and stored as a TOML array. An unset list shows its default (your home directory, or `~` in WSL); **Use default** returns to it, and removing every row saves an empty list, which means none.
+- Connections: **Add source** adds a connection with a default label; GitLab, Jira, Calendar and Git can have several, Outlook and System one. For Git on Windows it offers this computer or an installed WSL distribution. Every connection can be renamed and removed.
 
 </details>
 
@@ -402,12 +452,12 @@ pnpm dashboard:dev    # dashboard on :4200
 
 `pnpm api:start` runs the API on its default port, [http://localhost:3000](http://localhost:3000) (override with `PORT`). The API routes are:
 
-- `GET /api/activity`
-- `GET /api/providers`
-- `POST /api/collect` with `{ "start": "<RFC 3339>", "end": "<RFC 3339>" }`, the range `[start, end)`
+- `GET /api/activity`: the last collection's log. While it runs the answer is `202` with the log of what is in so far: `meta.pending` lists the connections still being checked or collected, and is absent once the log is complete (`200`). After a collection failed as a whole: `200` with `{ "start", "end", "error" }`. Before the first collection: `503`
+- `GET /api/providers`: every connection with its startup check result, or `"status": "checking"` while the check still runs
+- `POST /api/collect` with `{ "start": "<RFC 3339>", "end": "<RFC 3339>" }`, the range `[start, end)`: starts the collection and answers `202` at once with its first log (no entries, every connection pending), or with the log of the collection that already runs; poll `GET /api/activity` for the result
 - `GET /api/logs`, `DELETE /api/logs`
 
-The last 30 days are collected automatically on startup. Use the date pickers in the header to change the range and re-collect on the fly.
+The last 30 days are collected automatically on startup; the date pickers show that range while it runs, and keep it if it fails. The startup checks run in the background: a source is listed as checking until its own check finishes, and a collection reads each source as soon as that source is checked, so a slow check or a slow source holds back only itself. Results are progressive: the dashboard shows each source's entries when they arrive, and while a range is collected again it keeps a source's previous entries until the new ones are in. Saving settings (or editing `config.toml` under a running server) re-runs the checks the same way, and the backend collects its last range again with the new connections. After a change in Settings the dashboard follows that collection by itself; after an edit of the file, the next **Collect** or reload shows the result, including sources that are new. Use them to change the range and re-collect on the fly.
 
 If you only build the dashboard (`pnpm dashboard:build`), it produces static files under `dashboard/dist/dashboard/` and does not serve them. To preview that build, run a static file server (for example `pnpm --dir dashboard exec npx http-server dist/dashboard/browser -p 4200`) or use `pnpm dashboard:dev`.
 
@@ -466,7 +516,7 @@ No dashboard build needed.
 | `--until <date>`    | End date (`YYYY-MM-DD`). Without `--range`, defaults to today             |
 | `--format <format>` | `json` (default) or `markdown`                                            |
 | `--output <path>`   | Output file (default: `logs/activity_log.json` or `logs/activity_log.md`) |
-| `--set KEY=VALUE`   | Override a provider config key; repeatable                                |
+| `--config <path>`   | Config file to read (default: see [Config file](#config-file))            |
 
 ```bash
 pnpm cli:collect --range today
@@ -498,14 +548,23 @@ pnpm cli:collect --range week --format markdown --output reports/week.md
 
 `--output` is a CLI-only export setting. It is not part of backend `CollectOptions`.
 
-**Provider config overrides**
+**Managing sources**
 
 ```bash
-pnpm cli:collect --range week --set GIT_DIRS=/path/to/repo1,/path/to/repo2
-pnpm cli:collect --range month --set JIRA_URL=https://jira.example.com --set JIRA_INSECURE=true
+pnpm cli:collect sources                              # every connection with its status
+pnpm cli:collect sources add gitlab                   # asks for url, token (hidden), user
+pnpm cli:collect sources add gitlab --label "Work"    # a label of your own; default: the kind's name
+pnpm cli:collect sources add git --wsl NixOS          # a Git location inside WSL
+pnpm cli:collect sources set gitlab/oss url https://gitlab.com
+pnpm cli:collect sources set gitlab/oss token         # asks without echo
+pnpm cli:collect sources set git/this-computer dirs ~/Projects ~/work
+pnpm cli:collect sources unset git/this-computer dirs # back to the default
+pnpm cli:collect sources rename gitlab/oss "Open source"
+pnpm cli:collect sources remove gitlab/oss
+pnpm cli:collect config edit                          # opens the file in $VISUAL or $EDITOR
 ```
 
-`--set KEY=VALUE` is repeatable and validated against Rust provider config metadata. CLI `--set` values take precedence over environment variables.
+A connection is named `kind/name`, or by its name alone when that is unique. Values are checked like in the desktop app before the file is written.
 
 </details>
 

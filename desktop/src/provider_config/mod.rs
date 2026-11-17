@@ -1,254 +1,196 @@
+//! The settings pane's view of `config.toml`: connections with their fields, and the edits it
+//! sends back. The file is shared with the CLI and the API server.
+
 use activity_log_core::{
     model::{
-        ProviderConfigFieldStateDto, ProviderConfigFieldValueDto, ProviderConfigMapEntryDto,
-        ProviderConfigProviderStateDto, ProviderConfigSaveRequestDto, ProviderConfigSnapshotDto,
-        ProviderConfigValueDto, Source,
+        AddConnectionRequestDto, ConnectionId, ProviderConfigConnectionStateDto,
+        ProviderConfigFieldStateDto, ProviderConfigFieldValueDto, ProviderConfigSaveRequestDto,
+        ProviderConfigSnapshotDto, ProviderConfigValueDto, ProviderKindDto, Source, SupportedOs,
     },
     provider::{
-        git::{GIT_DIRS, default_git_root},
+        connection::{Connection, ConnectionLocation, Instances},
+        git::{GIT_DIRS, WSL_HOME, default_git_root},
         provider_config::{
-            ConfigMap, ConfigSource, ProviderConfigKey, ProviderConfigShape,
-            ProviderConfigValueType, clean_config_list, clean_config_map, encode_config_list,
-            encode_config_map, parse_config_list, parse_config_map, provider_config_key_accepts,
+            ConfigSource, ProviderConfigKey, ProviderConfigShape, ProviderConfigValueType,
+            clean_config_list, encode_config_list, parse_config_list, provider_config_key_accepts,
             provider_config_value_matches_type,
         },
         provider_registry,
     },
+    settings::ConfigFile,
 };
-use serde_json::{Map as JsonMap, Value as JsonValue};
-use std::collections::BTreeMap;
-use tauri_plugin_store::StoreExt;
 
-const CONFIG_STORE_PATH: &str = "settings.json";
-const CONFIG_STORE_KEY: &str = "providerConfig";
-
-#[derive(Debug, Clone, Default)]
-pub(crate) struct StoreEnvConfigSource {
-    // `None` is an explicit unset override that shadows process env fallback.
-    pub(crate) store_values: BTreeMap<String, Option<String>>,
+pub(crate) fn load_config() -> Result<ConfigFile, String> {
+    ConfigFile::load(ConfigFile::resolve_path(None)).map_err(|err| format!("{err:#}"))
 }
 
-impl ConfigSource for StoreEnvConfigSource {
-    fn get(&self, key: &str) -> Option<String> {
-        if let Some(store_value) = self.store_values.get(key) {
-            return store_value.clone();
-        }
-
-        std::env::var(key).ok()
-    }
+pub(crate) fn resolve_connections(file: &ConfigFile) -> Result<Vec<Connection>, String> {
+    file.connections()
+        .map(|resolved| resolved.connections)
+        .map_err(|err| format!("{err:#}"))
 }
 
-pub(crate) fn load_store_env_config_source(
-    app: &tauri::AppHandle,
-) -> Result<StoreEnvConfigSource, String> {
-    Ok(StoreEnvConfigSource {
-        store_values: read_store_provider_config(app)?,
-    })
-}
-
-pub(crate) fn read_store_provider_config(
-    app: &tauri::AppHandle,
-) -> Result<BTreeMap<String, Option<String>>, String> {
-    let store = app
-        .store(CONFIG_STORE_PATH)
-        .map_err(|err| format!("Failed to open config store: {err}"))?;
-
-    let Some(raw) = store.get(CONFIG_STORE_KEY) else {
-        return Ok(BTreeMap::new());
-    };
-
-    let Some(object) = raw.as_object() else {
-        return Err("Stored provider config must be a JSON object".to_string());
-    };
-
-    let mut values = BTreeMap::new();
-    for (key, value) in object {
-        let parsed = match value {
-            JsonValue::Null => None,
-            JsonValue::String(string) => Some(string.clone()),
-            JsonValue::Bool(boolean) => Some(boolean.to_string()),
-            JsonValue::Number(number) => Some(number.to_string()),
-            JsonValue::Array(items) => Some(encode_config_list(&string_items(items).ok_or_else(
-                || format!("Stored provider config key '{key}' must be a list of strings"),
-            )?)),
-            JsonValue::Object(entries) => {
-                let map = entries
-                    .iter()
-                    .map(|(name, items)| {
-                        let items = items.as_array().and_then(|items| string_items(items))?;
-                        Some((name.clone(), items))
-                    })
-                    .collect::<Option<ConfigMap>>()
-                    .ok_or_else(|| {
-                        format!(
-                            "Stored provider config key '{key}' must map names to lists of strings"
-                        )
-                    })?;
-                Some(encode_config_map(&map))
-            }
-        };
-
-        values.insert(key.clone(), parsed);
-    }
-
-    Ok(values)
-}
-
-fn string_items(items: &[JsonValue]) -> Option<Vec<String>> {
-    items
-        .iter()
-        .map(|item| item.as_str().map(str::to_string))
-        .collect()
-}
-
-pub(crate) fn write_store_provider_config(
-    app: &tauri::AppHandle,
-    values: &BTreeMap<String, Option<String>>,
-) -> Result<(), String> {
-    let store = app
-        .store(CONFIG_STORE_PATH)
-        .map_err(|err| format!("Failed to open config store: {err}"))?;
-
-    let json_values = values
-        .iter()
-        .map(|(key, value)| {
-            // Lists and maps are kept as JSON, so the file stays readable and editable.
-            let serialized = match (value, shape_of(key)) {
-                (None, _) => JsonValue::Null,
-                (Some(raw), Some(ProviderConfigShape::List(_))) => {
-                    JsonValue::from(parse_config_list(raw))
-                }
-                (Some(raw), Some(ProviderConfigShape::Map(_))) => parse_config_map(raw)
-                    .map_or_else(|| JsonValue::String(raw.clone()), JsonValue::from_iter),
-                (Some(string), _) => JsonValue::String(string.clone()),
-            };
-            (key.clone(), serialized)
-        })
-        .collect::<JsonMap<String, JsonValue>>();
-
-    store.set(CONFIG_STORE_KEY, JsonValue::Object(json_values));
-    store
-        .save()
-        .map_err(|err| format!("Failed to save config store: {err}"))
-}
-
-pub(crate) fn apply_provider_config_updates(
-    store_values: &mut BTreeMap<String, Option<String>>,
+/// Applies the pane's edits to one connection: its label, then each changed value.
+pub(crate) fn apply_save(
+    file: &mut ConfigFile,
     request: &ProviderConfigSaveRequestDto,
 ) -> Result<(), String> {
-    let requirements = exposed_provider_requirements_for(request.source.clone())?;
-    let requirement_by_key = requirements
-        .iter()
-        .map(|requirement| (requirement.name, requirement))
-        .collect::<BTreeMap<_, _>>();
-
-    for value in &request.values {
-        let requirement = requirement_by_key.get(value.key.as_str()).ok_or_else(|| {
-            format!(
-                "Unknown config key '{}' for provider '{}'.",
-                value.key, request.source
-            )
-        })?;
-
-        let invalid = |expected: String| format!("Invalid value for '{}': {expected}", value.key);
-        let next = match (&value.value, requirement.shape) {
-            (None, _) => None,
-            // An empty list or map is kept: it means "none", while clearing means "use the
-            // default".
-            (Some(ProviderConfigValueDto::List(items)), ProviderConfigShape::List(value_type)) => {
-                let items = clean_config_list(items);
-                check_items(&value.key, &items, value_type)?;
-                Some(encode_config_list(&items))
-            }
-            (Some(ProviderConfigValueDto::Map(map)), ProviderConfigShape::Map(value_type)) => {
-                let map = clean_config_map(map);
-                check_items(&value.key, map.values().flatten(), value_type)?;
-                Some(encode_config_map(&map))
-            }
-            (Some(ProviderConfigValueDto::Text(raw)), ProviderConfigShape::List(value_type)) => {
-                if !provider_config_key_accepts(**requirement, raw) {
-                    return Err(invalid(format!("expected a list of {value_type}")));
-                }
-                Some(encode_config_list(&parse_config_list(raw)))
-            }
-            (Some(ProviderConfigValueDto::Text(raw)), ProviderConfigShape::Map(_)) => {
-                match parse_config_map(raw) {
-                    Some(map) if provider_config_key_accepts(**requirement, raw) => {
-                        Some(encode_config_map(&map))
-                    }
-                    _ => return Err(invalid(format!("expected {}", requirement.shape))),
-                }
-            }
-            (Some(ProviderConfigValueDto::Text(raw)), ProviderConfigShape::Single(value_type)) => {
-                let candidate = raw.trim();
-                if candidate.is_empty() {
-                    None
-                } else if provider_config_value_matches_type(candidate, value_type) {
-                    Some(candidate.to_string())
-                } else {
-                    return Err(invalid(format!("expected {value_type}")));
-                }
-            }
-            (Some(ProviderConfigValueDto::List(_)), shape) => {
-                return Err(invalid(format!("expected {shape}, not a list")));
-            }
-            (Some(ProviderConfigValueDto::Map(_)), shape) => {
-                return Err(invalid(format!("expected {shape}, not lists by name")));
-            }
-        };
-
-        store_values.insert(value.key.clone(), next);
+    let id = &request.connection;
+    let keys = requirements_of(&id.source)?;
+    if let Some(label) = &request.label {
+        file.rename(id, label).map_err(|err| format!("{err:#}"))?;
     }
-
+    for value in &request.values {
+        let key = keys
+            .iter()
+            .copied()
+            .find(|key| key.name == value.key)
+            .ok_or_else(|| format!("Unknown setting '{}' for {id}.", value.key))?;
+        let raw = match &value.value {
+            None => None,
+            Some(value) => normalize(key, value)?,
+        };
+        file.set(id, key, raw.as_deref())
+            .map_err(|err| format!("{err:#}"))?;
+    }
     Ok(())
 }
 
-fn check_items<'a>(
-    key: &str,
-    items: impl IntoIterator<Item = &'a String>,
-    value_type: ProviderConfigValueType,
-) -> Result<(), String> {
-    match items
-        .into_iter()
-        .find(|item| !provider_config_value_matches_type(item, value_type))
-    {
-        Some(bad) => Err(format!(
-            "Invalid item \"{bad}\" for '{key}': expected {value_type}"
+pub(crate) fn apply_add(
+    file: &mut ConfigFile,
+    request: &AddConnectionRequestDto,
+) -> Result<ConnectionId, String> {
+    let location = match &request.wsl_distro {
+        Some(distro) => ConnectionLocation::Wsl(distro.clone()),
+        None => ConnectionLocation::Local,
+    };
+    file.add(&request.source, request.label.as_deref(), location)
+        .map_err(|err| format!("{err:#}"))
+}
+
+/// The stored form of a value, checked against its key: `None` for an empty single value,
+/// which clears it. An empty list is kept: it means "none", while clearing means the default.
+fn normalize(
+    key: ProviderConfigKey,
+    value: &ProviderConfigValueDto,
+) -> Result<Option<String>, String> {
+    match (value, key.shape) {
+        (ProviderConfigValueDto::List(items), ProviderConfigShape::List(value_type)) => {
+            let items = clean_config_list(items);
+            if let Some(bad) = items
+                .iter()
+                .find(|item| !provider_config_value_matches_type(item, value_type))
+            {
+                return Err(format!(
+                    "Invalid item \"{bad}\" for '{}': expected {value_type}",
+                    key.name
+                ));
+            }
+            Ok(Some(encode_config_list(&items)))
+        }
+        (ProviderConfigValueDto::Text(raw), ProviderConfigShape::List(value_type)) => {
+            if !provider_config_key_accepts(key, raw) {
+                return Err(format!(
+                    "Invalid value for '{}': expected a list of {value_type}",
+                    key.name
+                ));
+            }
+            Ok(Some(encode_config_list(&parse_config_list(raw))))
+        }
+        (ProviderConfigValueDto::List(_), ProviderConfigShape::Single(value_type)) => Err(format!(
+            "Invalid value for '{}': expected {value_type}, not a list",
+            key.name
         )),
-        None => Ok(()),
+        (ProviderConfigValueDto::Text(raw), ProviderConfigShape::Single(value_type)) => {
+            let candidate = raw.trim();
+            if candidate.is_empty() {
+                Ok(None)
+            } else if provider_config_value_matches_type(candidate, value_type) {
+                Ok(Some(candidate.to_string()))
+            } else {
+                Err(format!(
+                    "Invalid value for '{}': expected {value_type}",
+                    key.name
+                ))
+            }
+        }
     }
 }
 
-fn exposed_provider_requirements_for(source: Source) -> Result<Vec<ProviderConfigKey>, String> {
-    let adapter = provider_registry()
+fn requirements_of(source: &Source) -> Result<Vec<ProviderConfigKey>, String> {
+    provider_registry()
         .into_iter()
-        .find(|provider| provider.id() == source)
-        .ok_or_else(|| format!("Unknown provider '{source}'"))?;
-
-    Ok(adapter.config_requirements().to_vec())
+        .find(|adapter| adapter.id() == *source)
+        .map(|adapter| adapter.config_requirements().to_vec())
+        .ok_or_else(|| format!("Unknown provider '{source}'"))
 }
 
-fn shape_of(key: &str) -> Option<ProviderConfigShape> {
-    provider_registry().into_iter().find_map(|provider| {
-        provider
-            .config_requirements()
-            .iter()
-            .find(|requirement| requirement.name == key)
-            .map(|requirement| requirement.shape)
-    })
+pub(crate) fn build_snapshot(
+    connections: &[Connection],
+    current_os: &SupportedOs,
+) -> ProviderConfigSnapshotDto {
+    let registry = provider_registry();
+    let kinds = registry
+        .iter()
+        .map(|adapter| {
+            let source = adapter.id();
+            ProviderKindDto {
+                label: source.label().to_string(),
+                multiple: adapter.instances() == Instances::Multiple,
+                supported_os: adapter.supported_os().to_vec(),
+                supported: adapter.supported_os().contains(current_os),
+                wsl_distros: wsl_distros(&source, current_os),
+                source,
+            }
+        })
+        .collect();
+    let connections = connections
+        .iter()
+        .filter_map(|connection| {
+            let adapter = registry
+                .iter()
+                .find(|adapter| adapter.id() == *connection.source())?;
+            Some(ProviderConfigConnectionStateDto {
+                connection: connection.id.clone(),
+                label: connection.label.clone(),
+                wsl_distro: match &connection.location {
+                    ConnectionLocation::Wsl(distro) => Some(distro.clone()),
+                    ConnectionLocation::Local => None,
+                },
+                fields: adapter
+                    .config_requirements()
+                    .iter()
+                    .map(|key| ProviderConfigFieldStateDto {
+                        key: key.name.to_string(),
+                        label: provider_config_key_label(key.name),
+                        required: key.required,
+                        is_set: connection.values().get(key.name).is_some(),
+                        value: field_value(connection, *key),
+                    })
+                    .collect(),
+            })
+        })
+        .collect();
+    ProviderConfigSnapshotDto { kinds, connections }
 }
 
-/// The configured value with its type. An unset list or map shows the default the provider falls
-/// back to, so the settings show what is actually used; a secret is never sent.
-fn field_value(
-    config_source: &dyn ConfigSource,
-    source: &Source,
-    requirement: ProviderConfigKey,
-) -> ProviderConfigFieldValueDto {
-    let configured = config_source
-        .get(requirement.name)
+#[cfg_attr(not(target_os = "windows"), allow(unused_variables))]
+fn wsl_distros(source: &Source, current_os: &SupportedOs) -> Vec<String> {
+    #[cfg(target_os = "windows")]
+    if *source == Source::Git && *current_os == SupportedOs::Windows {
+        return activity_log_core::provider::git::windows::default_wsl_distros();
+    }
+    Vec::new()
+}
+
+/// The configured value with its type. An unset list shows the default the provider falls back
+/// to, so the settings show what is actually used; a secret is never sent.
+fn field_value(connection: &Connection, key: ProviderConfigKey) -> ProviderConfigFieldValueDto {
+    let configured = connection
+        .values()
+        .get(key.name)
         .filter(|raw| !raw.trim().is_empty());
-    match requirement.shape {
+    match key.shape {
         ProviderConfigShape::Single(value_type) => {
             let secret = value_type == ProviderConfigValueType::Password;
             ProviderConfigFieldValueDto::Single {
@@ -261,82 +203,22 @@ fn field_value(
             item_type: item_type.into(),
             items: match configured {
                 Some(raw) => parse_config_list(&raw),
-                None => default_list(source, requirement.name),
+                None => default_list(connection, key),
             },
         },
-        ProviderConfigShape::Map(item_type) => ProviderConfigFieldValueDto::Map {
-            item_type: item_type.into(),
-            entries: configured
-                .and_then(|raw| parse_config_map(&raw))
-                .unwrap_or_else(|| default_map(source, requirement.name))
-                .into_iter()
-                .map(|(name, items)| ProviderConfigMapEntryDto { name, items })
-                .collect(),
-            names: map_names(source, requirement.name),
-        },
     }
 }
 
-fn default_list(source: &Source, key: &str) -> Vec<String> {
-    match (source, key) {
-        (Source::Git, key) if key == GIT_DIRS.name() => default_git_root()
+fn default_list(connection: &Connection, key: ProviderConfigKey) -> Vec<String> {
+    if *connection.source() != Source::Git || key != GIT_DIRS {
+        return Vec::new();
+    }
+    match &connection.location {
+        ConnectionLocation::Wsl(_) => vec![WSL_HOME.to_string()],
+        ConnectionLocation::Local => default_git_root()
             .map(|root| vec![root.display().to_string()])
             .unwrap_or_default(),
-        _ => Vec::new(),
     }
-}
-
-#[cfg_attr(not(target_os = "windows"), allow(unused_variables))]
-fn default_map(source: &Source, key: &str) -> ConfigMap {
-    match (source, key) {
-        #[cfg(target_os = "windows")]
-        (Source::Git, key)
-            if key == activity_log_core::provider::git::windows::WSL_GIT_DIRS.name() =>
-        {
-            activity_log_core::provider::git::windows::default_wsl_dirs()
-        }
-        _ => ConfigMap::new(),
-    }
-}
-
-/// The names a map field can hold, offered when adding one.
-#[cfg_attr(not(target_os = "windows"), allow(unused_variables))]
-fn map_names(source: &Source, key: &str) -> Vec<String> {
-    match (source, key) {
-        #[cfg(target_os = "windows")]
-        (Source::Git, key)
-            if key == activity_log_core::provider::git::windows::WSL_GIT_DIRS.name() =>
-        {
-            activity_log_core::provider::git::windows::default_wsl_distros()
-        }
-        _ => Vec::new(),
-    }
-}
-
-pub(crate) fn build_provider_config_snapshot(
-    config_source: &dyn ConfigSource,
-) -> ProviderConfigSnapshotDto {
-    let providers = provider_registry()
-        .into_iter()
-        .map(|adapter| {
-            let source = adapter.id();
-            let fields = adapter
-                .config_requirements()
-                .iter()
-                .map(|requirement| ProviderConfigFieldStateDto {
-                    key: requirement.name.to_string(),
-                    label: provider_config_key_label(requirement.name),
-                    required: requirement.required,
-                    is_set: config_source.get(requirement.name).is_some(),
-                    value: field_value(config_source, &source, *requirement),
-                })
-                .collect();
-
-            ProviderConfigProviderStateDto { source, fields }
-        })
-        .collect();
-
-    ProviderConfigSnapshotDto { providers }
 }
 
 fn provider_config_key_label(key: &str) -> String {
@@ -357,6 +239,8 @@ fn label_part(raw: &str) -> String {
         "GIT" => "Git".to_string(),
         "OUTLOOK" => "Outlook".to_string(),
         "SYSTEM" => "System".to_string(),
+        "CALENDAR" => "Calendar".to_string(),
+        "ICS" => "ICS".to_string(),
         _ => {
             let mut chars = raw.chars();
             let Some(first) = chars.next() else {

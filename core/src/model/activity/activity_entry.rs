@@ -2,7 +2,8 @@ use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
 use crate::model::{
-    git::git_entry::GitEntry, gitlab::gitlab_entry::GitLabEntry, jira::jira_entry::JiraEntry,
+    calendar::calendar_entry::CalendarEntry, common::source::Source, git::git_entry::GitEntry,
+    gitlab::gitlab_entry::GitLabEntry, jira::jira_entry::JiraEntry,
     outlook::outlook_entry::OutlookEntry, system::system_entry::SystemEntry,
 };
 
@@ -15,6 +16,7 @@ pub enum ActivityEntry {
     Jira(JiraEntry),
     Outlook(OutlookEntry),
     System(SystemEntry),
+    Calendar(CalendarEntry),
 }
 
 pub trait IntoActivityEntry {
@@ -42,6 +44,12 @@ impl IntoActivityEntry for JiraEntry {
 impl IntoActivityEntry for OutlookEntry {
     fn into_activity_entry(self) -> ActivityEntry {
         ActivityEntry::Outlook(self)
+    }
+}
+
+impl IntoActivityEntry for CalendarEntry {
+    fn into_activity_entry(self) -> ActivityEntry {
+        ActivityEntry::Calendar(self)
     }
 }
 
@@ -73,6 +81,40 @@ where
 }
 
 impl ActivityEntry {
+    pub fn source(&self) -> Source {
+        match self {
+            ActivityEntry::Git(_) => Source::Git,
+            ActivityEntry::GitLab(_) => Source::Gitlab,
+            ActivityEntry::Jira(_) => Source::Jira,
+            ActivityEntry::Outlook(_) => Source::Outlook,
+            ActivityEntry::System(_) => Source::System,
+            ActivityEntry::Calendar(_) => Source::Calendar,
+        }
+    }
+
+    pub fn connection(&self) -> &str {
+        match self {
+            ActivityEntry::Git(entry) => &entry.connection,
+            ActivityEntry::GitLab(entry) => &entry.connection,
+            ActivityEntry::Jira(entry) => &entry.connection,
+            ActivityEntry::Outlook(entry) => &entry.connection,
+            ActivityEntry::System(entry) => &entry.connection,
+            ActivityEntry::Calendar(entry) => &entry.connection,
+        }
+    }
+
+    pub fn set_connection(&mut self, name: &str) {
+        let connection = match self {
+            ActivityEntry::Git(entry) => &mut entry.connection,
+            ActivityEntry::GitLab(entry) => &mut entry.connection,
+            ActivityEntry::Jira(entry) => &mut entry.connection,
+            ActivityEntry::Outlook(entry) => &mut entry.connection,
+            ActivityEntry::System(entry) => &mut entry.connection,
+            ActivityEntry::Calendar(entry) => &mut entry.connection,
+        };
+        name.clone_into(connection);
+    }
+
     pub fn timestamp(&self) -> &str {
         match self {
             ActivityEntry::Git(entry) => &entry.timestamp,
@@ -80,6 +122,7 @@ impl ActivityEntry {
             ActivityEntry::Jira(entry) => &entry.timestamp,
             ActivityEntry::Outlook(entry) => &entry.timestamp,
             ActivityEntry::System(entry) => &entry.timestamp,
+            ActivityEntry::Calendar(entry) => &entry.timestamp,
         }
     }
 }

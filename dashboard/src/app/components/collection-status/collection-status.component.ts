@@ -34,7 +34,9 @@ export class CollectionStatusComponent {
       case 'idle':
         return null
       case 'collecting': {
-        const sources = this.activity.providers().map(provider => provider.label)
+        const providers = this.activity.providers()
+        const sources = providers.map(provider => provider.label)
+        const pending = providers.filter(provider => provider.collecting).map(p => p.label)
         return {
           tone: 'info',
           icon: 'autorenew',
@@ -42,7 +44,11 @@ export class CollectionStatusComponent {
             status.operation === 'initial'
               ? 'Checking sources and collecting activity'
               : 'Collecting activity',
-          message: sources.length ? `From ${sources.join(', ')}` : 'Waiting for sources',
+          message: pending.length
+            ? `Still collecting ${pending.join(', ')}`
+            : sources.length
+              ? `From ${sources.join(', ')}`
+              : 'Waiting for sources',
           busy: true,
         }
       }
@@ -83,6 +89,6 @@ export class CollectionStatusComponent {
   }
 
   protected openSources(): void {
-    this.settings.open(this.activity.unusableProviders()[0]?.info.id)
+    this.settings.open(this.activity.unusableProviders()[0]?.key)
   }
 }

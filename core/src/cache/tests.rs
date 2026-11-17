@@ -8,7 +8,9 @@ use std::{
 use chrono::{DateTime, NaiveDate, Utc};
 
 use super::{CachePolicy, collect_with_day_cache_at};
-use crate::model::{ActivityEntry, CollectOptions, Source, SystemEntry, SystemEntryType};
+use crate::model::{
+    ActivityEntry, CollectOptions, ConnectionId, Source, SystemEntry, SystemEntryType,
+};
 
 const POLICY: CachePolicy = CachePolicy {
     recent_ttl: Duration::from_secs(5 * 60),
@@ -34,6 +36,7 @@ fn range(since: u32, until: u32) -> CollectOptions {
 fn entry(d: u32) -> ActivityEntry {
     ActivityEntry::System(SystemEntry {
         source: "system".to_string(),
+        connection: String::new(),
         entry_type: SystemEntryType::Boot,
         timestamp: at(d, 12).to_rfc3339(),
         label: format!("day {d}"),
@@ -60,7 +63,7 @@ async fn collect(
 ) -> Vec<ActivityEntry> {
     collect_with_day_cache_at(
         path,
-        &Source::Jira,
+        &ConnectionId::new(Source::Jira, "default"),
         &options,
         POLICY,
         now,
@@ -183,7 +186,7 @@ async fn propagates_fetch_errors() {
 
     let result = collect_with_day_cache_at(
         &path,
-        &Source::Jira,
+        &ConnectionId::new(Source::Jira, "default"),
         &range(10, 10),
         POLICY,
         at(20, 9),

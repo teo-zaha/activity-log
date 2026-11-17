@@ -1,0 +1,297 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Shared · Access and confirm</title>
+<style>:root{--bg:#edf2f6;--surface:#fff;--surface-alt:#f8fafc;--surface-hover:#eef3f8;--border:#b8c0cb;--border-subtle:#cdd3db;--border-strong:#8792a0;--text-primary:#0f1623;--text-secondary:#3d4756;--text-tertiary:#5c6878;--accent:#3b82f6;--accent-hover:#2563eb;--accent-soft:color-mix(in srgb,#3b82f6 14%,transparent);--hairline:color-mix(in srgb,#b8c0cb 58%,transparent);--panel-border:color-mix(in srgb,#b8c0cb 78%,transparent);--panel-muted:color-mix(in srgb,#fff 78%,#f8fafc 22%);--panel-shadow:0 1px 2px rgba(15,23,42,.04),0 2px 8px rgba(15,23,42,.03);--panel-shadow-strong:0 1px 3px rgba(15,23,42,.05),0 8px 24px rgba(15,23,42,.06);--git-bg:#bfdbfe;--git-fg:#1e3a8a;--git-ac:#1d4ed8;--gitlab-bg:#fecaca;--gitlab-fg:#7f1d1d;--gitlab-ac:#b91c1c;--jira-bg:#c7d2fe;--jira-fg:#312e81;--jira-ac:#4338ca;--outlook-bg:#bae6fd;--outlook-fg:#0c4a6e;--outlook-ac:#0369a1;--system-bg:#e2e8f0;--system-fg:#1e293b;--system-ac:#475569;--odoo-bg:#ead5e6;--odoo-fg:#4a2342;--odoo-ac:#714b67;--ok:#22c55e;--ok-fg:#15803d;--warn:#f59e0b;--warn-fg:#b45309;--err:#ef4444;--err-fg:#b91c1c;--logged:#0d9488;--logged-fg:#115e59;--agent:#9333ea;--agent-fg:#6b21a8;--radius-sm:10px;--radius-md:14px;--radius-lg:20px;--radius-xl:24px;--pin:#f59e0b}
+*{box-sizing:border-box}
+body{margin:0;font:400 14px/1.45 Inter,-apple-system,"SF Pro Text","Segoe UI",system-ui,sans-serif;color:var(--text-primary);background:#dfe5ec}
+svg.i{width:18px;height:18px;flex-shrink:0;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+svg.i.sm{width:15px;height:15px}svg.i.xs{width:13px;height:13px}
+.page{max-width:1340px;margin:0 auto;padding:28px 30px 60px}
+.page>header.doc{display:flex;align-items:baseline;justify-content:space-between;gap:20px;margin-bottom:6px}
+.doc h1{margin:0;font-size:26px;letter-spacing:-.02em}
+.doc nav a{color:var(--accent-hover);font-weight:600;text-decoration:none;margin-left:14px;font-size:13px}
+.lede{margin:0 0 22px;color:var(--text-secondary);max-width:900px}
+.caption{display:flex;align-items:center;gap:10px;margin:26px 0 10px;font-weight:700;font-size:15px}
+.caption .tag{font:700 11px/1 Inter,system-ui;letter-spacing:.08em;text-transform:uppercase;color:var(--text-tertiary)}
+.screen{position:relative;width:1280px;height:800px;overflow:hidden;border-radius:16px;box-shadow:0 2px 6px rgba(15,23,42,.08),0 20px 50px rgba(15,23,42,.14);background:radial-gradient(1100px 520px at 8% -14%,color-mix(in srgb,#3b82f6 9%,transparent),transparent 70%),var(--bg);display:flex;flex-direction:column}
+@media (max-width:1340px){.screen{zoom:.72}}
+.notes{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px 28px;margin:14px 0 0;padding:0;list-style:none;max-width:1280px}
+.notes li{display:flex;gap:10px;font-size:13px;color:var(--text-secondary)}
+.notes b{color:var(--text-primary)}
+.pin{display:inline-grid;place-items:center;width:20px;height:20px;border-radius:999px;background:var(--pin);color:#fff;font:800 11px/1 Inter,system-ui;flex-shrink:0;box-shadow:0 0 0 3px color-mix(in srgb,var(--pin) 30%,transparent)}
+.screen .pin{position:absolute;z-index:60}
+/* app chrome */
+.hdr{display:flex;align-items:center;gap:14px;height:68px;padding:0 18px 0 22px;flex-shrink:0}
+.brand{display:flex;align-items:center;gap:10px;font-weight:700;font-size:16px;width:220px}
+.brand-mark{display:grid;place-items:center;width:32px;height:32px;border-radius:9px;background:linear-gradient(135deg,#3b82f6,#2563eb);color:#fff;box-shadow:0 2px 6px rgba(37,99,235,.35)}
+.range{display:flex;align-items:center;gap:8px;height:40px;padding:0 12px;border:1px solid var(--border);border-radius:14px;background:color-mix(in srgb,#fff 88%,transparent);font-size:13.5px}
+.range .lbl{font:700 10.5px/1 Inter,system-ui;letter-spacing:.08em;color:var(--text-tertiary)}
+.range .val{font-weight:500;font-variant-numeric:tabular-nums}
+.range svg{color:var(--text-tertiary)}
+.spacer{flex:1}
+.btn{display:inline-flex;align-items:center;gap:7px;height:34px;padding:0 13px;border-radius:11px;border:1px solid var(--border);background:var(--surface);color:var(--text-primary);font:600 13px/1 Inter,system-ui,sans-serif;white-space:nowrap;cursor:default}
+.btn.primary{background:var(--accent);border-color:var(--accent);color:#fff;box-shadow:0 1px 2px rgba(37,99,235,.3)}
+.btn.ghost{background:transparent;border-color:transparent;color:var(--text-secondary)}
+.btn.icon{width:34px;padding:0;justify-content:center;color:var(--text-secondary)}
+.btn.lg{height:40px;padding:0 18px;border-radius:13px}
+.btn.agent{background:var(--agent);border-color:var(--agent);color:#fff}
+.btn[disabled],.btn.dis{opacity:.45}
+.kbd{display:inline-grid;place-items:center;min-width:20px;height:20px;padding:0 5px;border:1px solid var(--border);border-bottom-width:2px;border-radius:6px;background:var(--surface);font:600 11px/1 Inter,system-ui;color:var(--text-tertiary)}
+.shell{flex:1;display:flex;gap:12px;min-height:0;padding:0 16px 16px 12px}
+.side{width:236px;flex-shrink:0;display:flex;flex-direction:column;gap:20px;padding:6px 4px 0 8px}
+.sl{display:block;padding:0 10px 6px;font:700 10.5px/1 Inter,system-ui;letter-spacing:.08em;text-transform:uppercase;color:var(--text-tertiary)}
+.row{display:flex;align-items:center;gap:10px;min-height:36px;padding:6px 10px;border:1px solid transparent;border-radius:10px;color:var(--text-secondary);font-weight:500;font-size:13.5px}
+.row svg{color:var(--text-tertiary)}
+.row.on{background:var(--surface);border-color:var(--hairline);color:var(--text-primary);font-weight:600;box-shadow:0 1px 2px rgba(15,23,42,.06)}
+.row.on svg{color:var(--accent)}
+.row .t{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.cnt{min-width:24px;padding:2px 7px;border-radius:999px;background:var(--b,color-mix(in srgb,#5c6878 12%,transparent));color:var(--f,inherit);font:700 11px/1.3 Inter,system-ui;text-align:center;font-variant-numeric:tabular-nums}
+.side-bottom{margin-top:auto;border-top:1px solid var(--hairline);padding:10px 0 0}
+.pv{display:inline-grid;place-items:center;width:22px;height:22px;border-radius:7px;flex-shrink:0}
+.pv svg{width:14px;height:14px;stroke-width:2.2}
+.pv.git{background:#fde4dc;color:#f05133}.pv.gitlab{background:#fde1d8;color:#e24329}.pv.jira{background:#dce9ff;color:#2684ff}.pv.outlook{background:#d8ebfb;color:#0a64c8}.pv.system{background:#e2e8f0;color:#475569}.pv.odoo{background:#efe3ec;color:#714b67}
+.main{position:relative;flex:1;min-width:0;display:flex;flex-direction:column;overflow:hidden;border-radius:var(--radius-xl);background:var(--surface);border:1px solid var(--panel-border);box-shadow:var(--panel-shadow)}
+.badge{display:inline-flex;align-items:center;gap:5px;padding:3px 8px;border-radius:999px;font:600 10.5px/1.4 Inter,system-ui;letter-spacing:.05em;text-transform:uppercase;white-space:nowrap}
+.badge.git{background:var(--git-bg);color:var(--git-fg)}.badge.gitlab{background:var(--gitlab-bg);color:var(--gitlab-fg)}.badge.jira{background:var(--jira-bg);color:var(--jira-fg)}.badge.outlook{background:var(--outlook-bg);color:var(--outlook-fg)}.badge.system{background:var(--system-bg);color:var(--system-fg)}.badge.odoo{background:var(--odoo-bg);color:var(--odoo-fg)}
+.badge.logged{background:color-mix(in srgb,var(--logged) 16%,#fff);color:var(--logged-fg)}
+.badge.agent{background:color-mix(in srgb,var(--agent) 14%,#fff);color:var(--agent-fg)}
+.pill{display:inline-flex;align-items:center;gap:6px;height:24px;padding:0 9px;border-radius:999px;font:650 11.5px/1 Inter,system-ui;white-space:nowrap;border:1px solid color-mix(in srgb,currentColor 22%,transparent)}
+.pill.ok{color:var(--ok-fg);background:color-mix(in srgb,var(--ok) 12%,#fff)}.pill.warn{color:var(--warn-fg);background:color-mix(in srgb,var(--warn) 12%,#fff)}.pill.err{color:var(--err-fg);background:color-mix(in srgb,var(--err) 12%,#fff)}.pill.info{color:var(--accent-hover);background:color-mix(in srgb,var(--accent) 12%,#fff)}.pill.mute{color:var(--text-secondary);background:var(--surface-alt)}
+.pill.agent{color:var(--agent-fg);background:color-mix(in srgb,var(--agent) 10%,#fff)}
+.st{display:inline-flex;align-items:center;height:22px;padding:0 8px;border-radius:6px;font:700 10.5px/1 Inter,system-ui;letter-spacing:.04em;text-transform:uppercase;white-space:nowrap}
+.st.todo{background:#e7ebf0;color:#3d4756}.st.prog{background:#dbeafe;color:#1e40af}.st.rev{background:#fef3c7;color:#92400e}.st.done{background:#dcfce7;color:#166534}
+.key{white-space:nowrap;font:600 12px/1 "SF Mono",ui-monospace,Menlo,Consolas,monospace;color:var(--text-secondary)}
+.av{display:inline-grid;place-items:center;width:22px;height:22px;border-radius:999px;font:700 9.5px/1 Inter,system-ui;color:#fff;flex-shrink:0}
+.kicker{font:700 10.5px/1 Inter,system-ui;letter-spacing:.08em;text-transform:uppercase;color:var(--text-tertiary)}
+.muted{color:var(--text-tertiary)}
+.search{display:flex;align-items:center;gap:10px;height:44px;padding:0 14px;border:1px solid var(--border);border-radius:14px;background:var(--surface);color:var(--text-tertiary);font-size:14px}
+.chip{display:inline-flex;align-items:center;gap:6px;height:30px;padding:0 12px;border-radius:999px;border:1px solid var(--border-subtle);background:var(--surface);color:var(--text-secondary);font:600 12.5px/1 Inter,system-ui;white-space:nowrap}
+.chip.on{background:color-mix(in srgb,#fff 72%,var(--accent) 28%);border-color:color-mix(in srgb,var(--accent) 42%,var(--border) 58%);color:var(--text-primary)}
+.seg{display:inline-flex;padding:3px;gap:2px;border-radius:12px;background:color-mix(in srgb,var(--surface-alt) 72%,#fff 28%);border:1px solid color-mix(in srgb,var(--border) 74%,transparent)}
+.seg span{padding:6px 11px;border-radius:9px;font:600 12px/1 Inter,system-ui;color:var(--text-tertiary)}
+.seg span.on{background:var(--surface);color:var(--text-primary);box-shadow:0 1px 2px rgba(15,23,42,.08)}
+.panel{display:flex;flex-direction:column;border-radius:var(--radius-xl);background:var(--surface);border:1px solid var(--panel-border);box-shadow:var(--panel-shadow-strong);overflow:hidden}
+.ph{display:flex;align-items:center;gap:10px;padding:12px 12px 12px 20px;border-bottom:1px solid var(--hairline)}
+.pb{padding:18px 20px;overflow:hidden;flex:1}
+.sect{padding:14px;border:1px solid var(--hairline);border-radius:var(--radius-lg);background:var(--panel-muted)}
+.fields{margin:0;border-top:1px solid var(--hairline)}
+.fields div{display:grid;grid-template-columns:110px minmax(0,1fr);gap:12px;padding:8px 2px;border-bottom:1px solid var(--hairline);font-size:13px}
+.fields dt{color:var(--text-tertiary);font-weight:500}.fields dd{margin:0}
+.backdrop{position:absolute;inset:0;background:color-mix(in srgb,#0b1220 32%,transparent);z-index:40}
+.dialog{position:absolute;z-index:50;border-radius:var(--radius-xl);background:var(--surface);border:1px solid var(--panel-border);box-shadow:0 10px 40px rgba(15,23,42,.25);overflow:hidden}
+.warnbox{display:flex;gap:10px;padding:10px 12px;border-radius:12px;font-size:12.5px;line-height:1.4}
+.warnbox.warn{background:color-mix(in srgb,var(--warn) 12%,#fff);color:#7c2d12;border:1px solid color-mix(in srgb,var(--warn) 35%,transparent)}
+.warnbox.info{background:color-mix(in srgb,var(--accent) 8%,#fff);color:#1e3a8a;border:1px solid color-mix(in srgb,var(--accent) 25%,transparent)}
+.warnbox.agent{background:color-mix(in srgb,var(--agent) 7%,#fff);color:var(--agent-fg);border:1px dashed color-mix(in srgb,var(--agent) 45%,transparent)}
+.warnbox.err{background:color-mix(in srgb,var(--err) 9%,#fff);color:#7f1d1d;border:1px solid color-mix(in srgb,var(--err) 30%,transparent)}
+.hatch{background:repeating-linear-gradient(135deg,color-mix(in srgb,var(--logged) 18%,#fff) 0 5px,color-mix(in srgb,var(--logged) 7%,#fff) 5px 10px)}
+.ev{position:absolute;left:4px;right:4px;display:flex;align-items:center;gap:5px;padding:0 7px;border:1.5px solid;border-radius:7px;font:600 11.5px/1.2 Inter,system-ui;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
+.ev.git{background:var(--git-bg);color:var(--git-fg);border-color:var(--git-ac)}.ev.gitlab{background:var(--gitlab-bg);color:var(--gitlab-fg);border-color:var(--gitlab-ac)}.ev.jira{background:var(--jira-bg);color:var(--jira-fg);border-color:var(--jira-ac)}.ev.outlook{background:var(--outlook-bg);color:var(--outlook-fg);border-color:var(--outlook-ac)}.ev.system{background:var(--system-bg);color:var(--system-fg);border-color:var(--system-ac)}
+.ev.logged{color:var(--logged-fg);border-color:var(--logged);border-width:1.5px}
+.ev.draft{background:color-mix(in srgb,var(--agent) 6%,#fff);color:var(--agent-fg);border:1.5px dashed var(--agent)}
+.ev.sel{box-shadow:0 0 0 2px #fff,0 0 0 4px var(--accent)}
+.ev.tall{align-items:flex-start;padding-top:5px;white-space:normal}
+/* phone mini frame */
+.phone{width:300px;height:620px;border-radius:38px;border:10px solid #0f1623;background:var(--bg);overflow:hidden;display:flex;flex-direction:column;position:relative;box-shadow:0 14px 40px rgba(15,23,42,.2);flex-shrink:0}
+.tabs{display:flex;justify-content:space-around;height:58px;border-top:1px solid var(--hairline);background:var(--surface);padding-top:7px;flex-shrink:0}
+.tabs span{display:flex;flex-direction:column;align-items:center;gap:3px;font:600 9.5px/1 Inter,system-ui;color:var(--text-tertiary);position:relative}
+.tabs span.on{color:var(--accent)}
+.tabs .dot{display:block;position:absolute;top:-3px;right:-4px;min-width:15px;height:15px;padding:0 4px;border-radius:999px;background:var(--agent);color:#fff;font:700 9px/15px Inter,system-ui;text-align:center}
+.extras{display:flex;gap:28px;align-items:flex-start;margin-top:30px}
+.extras .txt{font-size:13px;color:var(--text-secondary);max-width:520px}
+.extras h3{margin:0 0 8px;font-size:15px;color:var(--text-primary)}
+.extras ul{margin:0;padding-left:18px}.extras li{margin:3px 0}
+
+.set{position:absolute;z-index:50;left:120px;top:84px;width:1040px;height:700px;display:flex;border-radius:28px;background:var(--surface);box-shadow:0 18px 60px rgba(15,23,42,.3);overflow:hidden}
+.snav{width:270px;flex-shrink:0;background:var(--surface-alt);border-right:1px solid var(--hairline);padding:22px 14px;display:flex;flex-direction:column;gap:4px}
+.snav .row{min-height:44px}
+.snav .sub{display:block;font-size:11.5px;color:var(--text-tertiary);font-weight:500}
+.sdot{width:9px;height:9px;border-radius:9px;background:var(--ok);box-shadow:0 0 0 3px color-mix(in srgb,var(--ok) 18%,transparent)}
+.spane{flex:1;padding:24px 28px;overflow:hidden;display:flex;flex-direction:column;gap:14px}
+.card2{border:1px solid var(--hairline);border-radius:20px;padding:16px 18px}
+.acc{display:grid;grid-template-columns:40px minmax(0,1fr) auto;gap:4px 12px;align-items:center;padding:11px 0;border-top:1px solid var(--hairline)}
+.acc b{font-size:13.5px}.acc .d{grid-column:2;font-size:12px;color:var(--text-tertiary)}
+.tg2{width:36px;height:20px;border-radius:99px;background:color-mix(in srgb,var(--text-tertiary) 30%,transparent);position:relative}
+.tg2:after{content:"";position:absolute;top:2px;left:2px;width:16px;height:16px;border-radius:99px;background:#fff;box-shadow:0 1px 2px rgba(0,0,0,.2)}
+.tg2.on{background:var(--accent)}.tg2.on:after{left:18px}
+.tg2.wr.on{background:var(--warn-fg)}
+.cf{position:absolute;z-index:50;left:150px;top:70px;width:600px;border-radius:24px;background:var(--surface);box-shadow:0 18px 60px rgba(15,23,42,.3);overflow:hidden}
+.steps{display:flex;gap:8px;align-items:center;font-size:12.5px;color:var(--text-tertiary)}
+.steps b{display:inline-grid;place-items:center;width:20px;height:20px;border-radius:99px;background:var(--surface-alt);border:1px solid var(--border-subtle);font-size:11px;margin-right:5px}
+.steps .on{color:var(--text-primary);font-weight:650}.steps .on b{background:var(--accent);border-color:var(--accent);color:#fff}
+.steps .ok b{background:var(--ok-fg);border-color:var(--ok-fg);color:#fff}
+.toast{position:absolute;z-index:55;left:790px;width:400px;display:flex;gap:12px;padding:14px 16px;border-radius:18px;background:var(--surface);border:1px solid var(--panel-border);box-shadow:var(--panel-shadow-strong);font-size:12.5px;line-height:1.45}
+.toast b{display:block;font-size:13.5px;margin-bottom:2px}
+.toast .ic{display:grid;place-items:center;width:30px;height:30px;border-radius:10px;flex-shrink:0}
+.toast .acts{display:flex;gap:6px;margin-top:8px}.toast .btn{height:28px;font-size:12px}
+.olbl{position:absolute;z-index:56;left:790px;font:700 10.5px/1 Inter,system-ui;letter-spacing:.08em;text-transform:uppercase;color:#fff;text-shadow:0 1px 2px rgba(0,0,0,.4)}
+</style></head>
+<body><svg width="0" height="0" style="position:absolute" aria-hidden="true">
+<symbol id="brand" viewBox="0 0 24 24"><path d="M3 16l5-6 4 4 8-9"/></symbol>
+<symbol id="search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></symbol>
+<symbol id="timeline" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="7" rx="1.5"/><rect x="3" y="13" width="18" height="7" rx="1.5"/></symbol>
+<symbol id="day" viewBox="0 0 24 24"><path d="M4 7h16M4 12h16M4 17h16"/></symbol>
+<symbol id="workweek" viewBox="0 0 24 24"><path d="M6 5v14M12 5v14M18 5v14"/></symbol>
+<symbol id="week" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M9 4v16M15 4v16"/></symbol>
+<symbol id="cog" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><circle cx="12" cy="12" r="7.5" stroke-dasharray="3.3 2.6" stroke-width="3"/></symbol>
+<symbol id="plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol>
+<symbol id="x" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></symbol>
+<symbol id="chev" viewBox="0 0 24 24"><path d="M9 6l6 6-6 6"/></symbol>
+<symbol id="chevd" viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></symbol>
+<symbol id="arrow" viewBox="0 0 24 24"><path d="M5 12h14M13 6l6 6-6 6"/></symbol>
+<symbol id="sync" viewBox="0 0 24 24"><path d="M20 11a8 8 0 0 0-14.9-3M4 13a8 8 0 0 0 14.9 3M5 3v5h5M19 21v-5h-5"/></symbol>
+<symbol id="doc" viewBox="0 0 24 24"><path d="M14 3H6v18h12V7zM14 3v4h4M9 13h6M9 17h6"/></symbol>
+<symbol id="braces" viewBox="0 0 24 24"><path d="M8 4c-2 0-2 1.5-2 4s-1 4-2 4c1 0 2 1.5 2 4s0 4 2 4M16 4c2 0 2 1.5 2 4s1 4 2 4c-1 0-2 1.5-2 4s0 4-2 4"/></symbol>
+<symbol id="clock" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></symbol>
+<symbol id="ext" viewBox="0 0 24 24"><path d="M14 4h6v6M20 4l-9 9M18 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h5"/></symbol>
+<symbol id="check" viewBox="0 0 24 24"><path d="M5 12l5 5L20 7"/></symbol>
+<symbol id="lock" viewBox="0 0 24 24"><rect x="5" y="11" width="14" height="9" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/></symbol>
+<symbol id="warn" viewBox="0 0 24 24"><path d="M12 3l10 18H2zM12 10v4M12 17.5v.01"/></symbol>
+<symbol id="spark" viewBox="0 0 24 24"><path d="M12 3l1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8zM19 16l.8 2.2L22 19l-2.2.8L19 22l-.8-2.2L16 19l2.2-.8z"/></symbol>
+<symbol id="inbox" viewBox="0 0 24 24"><path d="M3 13h5l2 3h4l2-3h5M5.5 5h13L21 13v6H3v-6z"/></symbol>
+<symbol id="ticket" viewBox="0 0 24 24"><path d="M4 7h16v3a2 2 0 0 0 0 4v3H4v-3a2 2 0 0 0 0-4z"/></symbol>
+<symbol id="timer" viewBox="0 0 24 24"><circle cx="12" cy="13" r="8"/><path d="M12 9v4l2 2M9 2h6"/></symbol>
+<symbol id="user" viewBox="0 0 24 24"><circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/></symbol>
+<symbol id="comment" viewBox="0 0 24 24"><path d="M4 5h16v11H9l-5 4z"/></symbol>
+<symbol id="filter" viewBox="0 0 24 24"><path d="M3 5h18l-7 8v6l-4-2v-4z"/></symbol>
+<symbol id="login" viewBox="0 0 24 24"><path d="M10 17l5-5-5-5M15 12H3M14 3h5a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-5"/></symbol>
+<symbol id="history" viewBox="0 0 24 24"><path d="M3 12a9 9 0 1 0 3-6.7L3 8M3 3v5h5M12 7v5l4 2"/></symbol>
+<symbol id="cal" viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 10h18M8 3v4M16 3v4"/></symbol>
+<symbol id="eye" viewBox="0 0 24 24"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/></symbol>
+<symbol id="edit" viewBox="0 0 24 24"><path d="M4 20h4L19 9l-4-4L4 16zM14 6l4 4"/></symbol>
+<symbol id="git" viewBox="0 0 24 24"><path d="M12 2.5l9.5 9.5-9.5 9.5L2.5 12z"/><circle cx="12" cy="9" r="1.2"/><circle cx="12" cy="15" r="1.2"/><path d="M12 10v4"/></symbol>
+<symbol id="gitlab" viewBox="0 0 24 24"><path d="M12 21l9-7-2.5-9-2.5 7h-8L5.5 5 3 14z"/></symbol>
+<symbol id="jira" viewBox="0 0 24 24"><path d="M12 3l5 5-5 5-5-5zM12 11l5 5-5 5-5-5z"/></symbol>
+<symbol id="outlook" viewBox="0 0 24 24"><rect x="3" y="6" width="18" height="13" rx="2"/><path d="M3 8l9 6 9-6"/></symbol>
+<symbol id="power" viewBox="0 0 24 24"><path d="M12 3v8M6.5 7a7 7 0 1 0 11 0"/></symbol>
+<symbol id="odoo" viewBox="0 0 24 24"><circle cx="12" cy="12" r="6.5"/></symbol>
+</svg>
+<div class="page">
+<header class="doc"><h1>Shared by all three directions</h1><nav><a href="index.html">← Overview</a><a href="a-views-grow.html">A</a><a href="b-command.html">B</a><a href="c-workspace.html">C</a></nav></header>
+<p class="lede">Whichever direction you pick, these pieces are the same: the <b>Access</b> section in each connection's settings, and the <b>prepare, preview, confirm</b> dialog with its outcomes. Visual grammar used throughout: <b>solid</b> means it happened, <span class="hatch" style="padding:0 6px;border-radius:4px;border:1px solid var(--logged)">hatched</span> means time is booked, <span style="padding:0 6px;border-radius:4px;border:1.5px dashed var(--agent);color:var(--agent-fg)">dashed violet</span> means a draft nothing has sent yet.</p>
+
+<div class="caption"><span class="tag">Screen 1</span>Settings › Work Jira › Access: allow list per connection, with what the token can actually do</div>
+<div class="screen">
+<div class="hdr">
+  <div class="brand"><span class="brand-mark"><svg class="i"><use href="#brand"/></svg></span>Activity Log</div>
+  <div class="spacer"></div>
+  
+  <div class="range"><span class="lbl">FROM</span><span class="val">16/11/2026</span><svg class="i sm"><use href="#cal"/></svg><svg class="i sm"><use href="#arrow"/></svg><span class="lbl">TO</span><span class="val">20/11/2026</span><svg class="i sm"><use href="#cal"/></svg></div>
+  <span class="btn primary lg"><svg class="i sm"><use href="#sync"/></svg>Collect</span>
+  <span class="btn icon"><svg class="i sm"><use href="#doc"/></svg></span>
+  <span class="btn icon"><svg class="i sm"><use href="#braces"/></svg></span>
+</div>
+
+<div class="shell"><aside class="side"><div><span class="sl">View</span><div class="row on"><svg class="i"><use href="#timeline"/></svg><span class="t">Timeline</span></div></div><div><span class="sl">Sources</span>
+  <div class="row on"><span class="pv git"><svg class="i"><use href="#git"/></svg></span><span class="t">Git</span><span class="cnt" style="--b:var(--git-bg);--f:var(--git-fg)">14</span></div>
+  <div class="row on"><span class="pv gitlab"><svg class="i"><use href="#gitlab"/></svg></span><span class="t">GitLab</span><span class="cnt" style="--b:var(--gitlab-bg);--f:var(--gitlab-fg)">7</span></div>
+  <div class="row on"><span class="pv jira"><svg class="i"><use href="#jira"/></svg></span><span class="t">Work Jira</span><span class="cnt" style="--b:var(--jira-bg);--f:var(--jira-fg)">9</span></div>
+  <div class="row on"><span class="pv outlook"><svg class="i"><use href="#outlook"/></svg></span><span class="t">Outlook</span><span class="cnt" style="--b:var(--outlook-bg);--f:var(--outlook-fg)">12</span></div>
+  <div class="row on"><span class="pv odoo"><svg class="i"><use href="#odoo"/></svg></span><span class="t">Odoo</span><span class="cnt" style="--b:var(--odoo-bg);--f:var(--odoo-fg)">6</span></div>
+  <div class="row on"><span class="pv system"><svg class="i"><use href="#power"/></svg></span><span class="t">System</span><span class="cnt">4</span></div>
+  <div class="row muted"><span class="pv" style="border:1px dashed var(--border)"><svg class="i"><use href="#plus"/></svg></span><span class="t">Add source</span></div>
+</div>
+</aside><main class="main"></main></div>
+<div class="backdrop"></div>
+<div class="set">
+ <nav class="snav">
+  <span class="kicker" style="padding:0 10px 4px">Settings</span>
+  <div class="row"><svg class="i"><use href="#filter"/></svg><span class="t">General</span></div>
+  <div class="row"><svg class="i"><use href="#doc"/></svg><span class="t">Logs</span></div>
+  <div class="row"><svg class="i"><use href="#history"/></svg><span class="t">Actions history<span class="sub">confirmed writes · actions.jsonl</span></span></div>
+  <span class="kicker" style="padding:14px 10px 4px">Sources</span>
+  <div class="row"><span class="pv git"><svg class="i"><use href="#git"/></svg></span><span class="t">Git<span class="sub">Collect only</span></span><span class="sdot"></span></div>
+  <div class="row"><span class="pv gitlab"><svg class="i"><use href="#gitlab"/></svg></span><span class="t">GitLab<span class="sub">Search, read</span></span><span class="sdot"></span></div>
+  <div class="row on" style="border-color:color-mix(in srgb,var(--accent) 40%,transparent);background:color-mix(in srgb,var(--accent) 10%,#fff)"><span class="pv jira"><svg class="i"><use href="#jira"/></svg></span><span class="t">Work Jira<span class="sub">Search, read, create, log time</span></span><span class="sdot"></span></div>
+  <div class="row"><span class="pv outlook"><svg class="i"><use href="#outlook"/></svg></span><span class="t">Outlook<span class="sub">Collect only</span></span><span class="sdot"></span></div>
+  <div class="row"><span class="pv odoo"><svg class="i"><use href="#odoo"/></svg></span><span class="t">Odoo<span class="sub">Log time · 1 issue</span></span><span class="sdot" style="background:var(--warn)"></span></div>
+  <div class="row muted"><span class="pv" style="border:1px dashed var(--border)"><svg class="i"><use href="#plus"/></svg></span><span class="t">Add source</span></div>
+ </nav>
+ <div class="spane">
+  <div style="display:flex;align-items:center;gap:12px"><span class="pv jira" style="width:44px;height:44px;border-radius:13px"><svg class="i" style="width:24px;height:24px"><use href="#jira"/></svg></span><div><span class="kicker">Jira Data Center</span><div style="font-size:24px;font-weight:700;letter-spacing:-.02em">Work Jira</div></div><span class="spacer"></span><span class="pill ok"><span class="sdot" style="width:7px;height:7px"></span>Available</span><span class="btn icon"><svg class="i sm"><use href="#x"/></svg></span></div>
+  <div style="display:flex;gap:6px;border-bottom:1px solid var(--hairline)"><span style="padding:8px 12px;font-weight:600;font-size:13px;color:var(--text-tertiary)">Connection</span><span style="padding:8px 12px;font-weight:650;font-size:13px;border-bottom:2px solid var(--accent)">Access</span><span style="padding:8px 12px;font-weight:600;font-size:13px;color:var(--text-tertiary)">Startup check</span></div>
+  <div class="card2">
+   <span class="kicker">Access · desktop app and CLI</span>
+   <div style="font-size:16px;font-weight:700;margin:4px 0 2px">What Activity Log may do in Work Jira</div>
+   <div style="font-size:12.5px;color:var(--text-secondary);margin-bottom:8px">Collecting your own activity is always on. Everything below acts <b>as you</b>, with your Jira permissions. Every write is shown to you before it is sent.</div>
+   <div class="acc"><span class="tg2 on"></span><b>Search and read items</b><span class="pill ok"><svg class="i xs"><use href="#check"/></svg>Token can</span><span class="d">Find tickets that aren't yours and open their details. On by default.</span></div>
+   <div class="acc"><span class="tg2 wr on"></span><b>Create tickets</b><span class="pill ok"><svg class="i xs"><use href="#check"/></svg>Token can</span><span class="d">Required fields Activity Log can't fill are refused, not guessed.</span></div>
+   <div class="acc"><span class="tg2"></span><b>Comment</b><span class="pill ok"><svg class="i xs"><use href="#check"/></svg>Token can</span><span class="d">Comments notify watchers.</span></div>
+   <div class="acc"><span class="tg2 wr on"></span><b>Change status and assignee</b><span class="pill err"><svg class="i xs"><use href="#lock"/></svg>No TRANSITION_ISSUES</span><span class="d">On, but your Jira user can't transition issues, so Move to… stays disabled. Assigning still works.</span></div>
+   <div class="acc"><span class="tg2 wr on"></span><b>Log time</b><span class="pill info">Tempo detected</span><span class="d">Plain Jira worklogs. Tempo is installed and is assumed to show them (not verified).</span></div>
+   <div class="acc" style="opacity:.8"><span class="tg2"></span><b style="color:var(--agent-fg)">Agent may draft these actions</b><span class="pill agent"><svg class="i xs"><use href="#spark"/></svg>later</span><span class="d">Drafts only, for the actions turned on above. The agent can never send. You confirm in this app.</span></div>
+  </div>
+ </div>
+</div>
+<span class="pin" style="left:566px;top:168px">1</span>
+<span class="pin" style="left:428px;top:422px">2</span>
+<span class="pin" style="left:1110px;top:538px">3</span>
+<span class="pin" style="left:428px;top:714px">4</span>
+<span class="pin" style="left:132px;top:236px">5</span>
+</div>
+<ul class="notes">
+<li><span class="pin">1</span><span><b>Access gets its own tab</b> in the connection pane. It stores <code>allow = […]</code> in <code>config.toml</code>, so the CLI follows the same rules. The sidebar row under each source summarises it (“Search, read, create, log time”).</span></li>
+<li><span class="pin">2</span><span><b>Write toggles look different</b> (amber when on), and turning on the first one asks once: “Activity Log will be able to create tickets in Work Jira as you.” On a connection with <code>insecure = true</code> they are disabled: “Writes need a valid certificate”.</span></li>
+<li><span class="pin">3</span><span><b>What the token can do is shown next to each toggle:</b> allowed (your choice) and granted (the probe) are separate facts. In the UI, an action that is not allowed is hidden, or locked with a link here. An action that is allowed but not granted is disabled and shows this reason.</span></li>
+<li><span class="pin">4</span><span><b>Agent rights are a separate, later switch</b> per connection, limited to the actions turned on above. Whether it needs per-project limits is still open.</span></li>
+<li><span class="pin">5</span><span><b>Actions history</b> shows <code>actions.jsonl</code> as a table (time, channel, connection, action, target, outcome), next to the Logs pane. It is the human-readable audit for every direction.</span></li>
+</ul>
+
+<div class="caption"><span class="tag">Screen 2</span>One confirm pattern for every write, and what each outcome looks like</div>
+<div class="screen">
+<div class="hdr">
+  <div class="brand"><span class="brand-mark"><svg class="i"><use href="#brand"/></svg></span>Activity Log</div>
+  <div class="spacer"></div>
+  
+  <div class="range"><span class="lbl">FROM</span><span class="val">16/11/2026</span><svg class="i sm"><use href="#cal"/></svg><svg class="i sm"><use href="#arrow"/></svg><span class="lbl">TO</span><span class="val">20/11/2026</span><svg class="i sm"><use href="#cal"/></svg></div>
+  <span class="btn primary lg"><svg class="i sm"><use href="#sync"/></svg>Collect</span>
+  <span class="btn icon"><svg class="i sm"><use href="#doc"/></svg></span>
+  <span class="btn icon"><svg class="i sm"><use href="#braces"/></svg></span>
+</div>
+
+<div class="shell"><aside class="side"><div><span class="sl">View</span><div class="row"><svg class="i"><use href="#timeline"/></svg><span class="t">Timeline</span></div><div class="row on"><svg class="i"><use href="#ticket"/></svg><span class="t">Work items</span></div></div><div><span class="sl">Sources</span>
+  <div class="row on"><span class="pv git"><svg class="i"><use href="#git"/></svg></span><span class="t">Git</span><span class="cnt" style="--b:var(--git-bg);--f:var(--git-fg)">14</span></div>
+  <div class="row on"><span class="pv gitlab"><svg class="i"><use href="#gitlab"/></svg></span><span class="t">GitLab</span><span class="cnt" style="--b:var(--gitlab-bg);--f:var(--gitlab-fg)">7</span></div>
+  <div class="row on"><span class="pv jira"><svg class="i"><use href="#jira"/></svg></span><span class="t">Work Jira</span><span class="cnt" style="--b:var(--jira-bg);--f:var(--jira-fg)">9</span></div>
+  <div class="row on"><span class="pv outlook"><svg class="i"><use href="#outlook"/></svg></span><span class="t">Outlook</span><span class="cnt" style="--b:var(--outlook-bg);--f:var(--outlook-fg)">12</span></div>
+  <div class="row on"><span class="pv odoo"><svg class="i"><use href="#odoo"/></svg></span><span class="t">Odoo</span><span class="cnt" style="--b:var(--odoo-bg);--f:var(--odoo-fg)">6</span></div>
+  <div class="row on"><span class="pv system"><svg class="i"><use href="#power"/></svg></span><span class="t">System</span><span class="cnt">4</span></div>
+  <div class="row muted"><span class="pv" style="border:1px dashed var(--border)"><svg class="i"><use href="#plus"/></svg></span><span class="t">Add source</span></div>
+</div>
+</aside><main class="main"></main></div>
+<div class="backdrop"></div>
+<div class="cf">
+ <div class="ph" style="padding:14px 14px 14px 22px"><span class="badge jira"><svg class="i xs"><use href="#jira"/></svg>Work Jira</span><b style="font-size:15px">New ticket</b><span class="spacer"></span><span class="steps"><span class="ok"><b>✓</b>Details</span><svg class="i xs"><use href="#chev"/></svg><span class="on"><b>2</b>Review</span></span><span class="btn icon ghost"><svg class="i sm"><use href="#x"/></svg></span></div>
+ <div style="padding:16px 22px">
+  <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px"><span class="kicker">Will be sent to Work Jira · nothing sent yet</span><span class="spacer"></span><span class="muted" style="font-size:11.5px">ref a91c03f2</span></div>
+  <dl class="fields">
+   <div><dt>Project</dt><dd>ACME · Checkout</dd></div>
+   <div><dt>Type</dt><dd>Bug</dd></div>
+   <div><dt>Summary</dt><dd><b>Refund webhook retried without backoff</b></dd></div>
+   <div><dt>Description</dt><dd style="color:var(--text-secondary)">The refund webhook handler retries immediately on 5xx, which floods the gateway during incidents. Seen during the 12 Nov outage… <span style="color:var(--accent-hover);font-weight:600">Show all</span></dd></div>
+   <div><dt>Priority</dt><dd>High</dd></div>
+   <div><dt>Labels</dt><dd>payments, webhooks</dd></div>
+   <div><dt>Assignee</dt><dd class="muted">Unassigned</dd></div>
+  </dl>
+  <div class="warnbox info" style="margin-top:12px"><svg class="i sm"><use href="#eye"/></svg><span>Others will see this. ACME's watchers and the project lead are notified. Activity Log can't delete tickets.</span></div>
+  <div style="display:flex;gap:8px;align-items:center;margin-top:16px"><span class="btn ghost"><svg class="i xs" style="transform:scaleX(-1)"><use href="#chev"/></svg>Back to edit</span><span class="spacer"></span><span class="muted" style="font-size:11.5px">Enter doesn't send</span><span class="btn primary lg">Create in Work Jira</span></div>
+ </div>
+</div>
+<span class="olbl" style="top:78px">After confirm, one of:</span>
+<div class="toast" style="top:96px"><span class="ic" style="background:color-mix(in srgb,var(--ok) 15%,#fff);color:var(--ok-fg)"><svg class="i sm"><use href="#check"/></svg></span><div><b>Created ACME-182</b>The ticket appears in Work items right away.<div class="acts"><span class="btn"><svg class="i xs"><use href="#ext"/></svg>Open in Jira</span><span class="btn ghost">Show</span></div></div></div>
+<div class="toast" style="top:211px;border-color:color-mix(in srgb,var(--warn) 50%,transparent)"><span class="ic" style="background:color-mix(in srgb,var(--warn) 15%,#fff);color:var(--warn-fg)"><svg class="i sm"><use href="#warn"/></svg></span><div><b>Not sure it was created</b>Jira timed out after the request was sent. Look in ACME for “Refund webhook retried…” before trying again. Stays until dismissed.<div class="acts"><span class="btn"><svg class="i xs"><use href="#ext"/></svg>Open ACME in Jira</span><span class="btn ghost">Dismiss</span></div></div></div>
+<div class="toast" style="top:371px"><span class="ic" style="background:var(--surface-alt);color:var(--text-secondary)"><svg class="i sm"><use href="#clock"/></svg></span><div><b>This preview expired</b>Settings changed or 5 min passed. Nothing sent.<div class="acts"><span class="btn primary">Check again</span></div></div></div>
+<div class="toast" style="top:501px;border-color:color-mix(in srgb,var(--err) 40%,transparent)"><span class="ic" style="background:color-mix(in srgb,var(--err) 12%,#fff);color:var(--err-fg)"><svg class="i sm"><use href="#lock"/></svg></span><div><b>Jira refused: no permission in PAY</b>Your user can't create tickets in that project. Nothing was sent.<div class="acts"><span class="btn ghost">Pick another project</span></div></div></div>
+<div class="toast" style="top:631px"><span class="ic" style="background:color-mix(in srgb,var(--warn) 15%,#fff);color:var(--warn-fg)"><svg class="i sm"><use href="#history"/></svg></span><div><b>Before confirming: a similar write</b>“You logged 1h on ACME-163 7 minutes ago.” Shown inside the preview, from the audit.</div></div>
+<span class="pin" style="left:136px;top:150px">6</span>
+<span class="pin" style="left:136px;top:490px">7</span>
+<span class="pin" style="left:716px;top:548px">8</span>
+<span class="pin" style="left:1196px;top:220px">9</span>
+</div>
+<ul class="notes">
+<li><span class="pin">6</span><span><b>The preview comes from core</b> (typed fields), not from the form. It shows exactly what will be sent, to which connection, plus a reference id that matches the audit line.</span></li>
+<li><span class="pin">7</span><span><b>Side effects in plain words.</b> Who gets notified, and that there is no undo from here.</span></li>
+<li><span class="pin">8</span><span><b>The button names the effect</b> (“Create in Work Jira”, “Log 1h30m on ACME-163”). Enter doesn't send. Double-clicks are safe: confirm works once and a repeat returns the stored result.</span></li>
+<li><span class="pin">9</span><span><b>Outcome unknown is sticky and never retried for you.</b> Expired and refused results say that nothing was sent. Success inserts the item or time entry at once.</span></li>
+</ul>
+</div></body></html>

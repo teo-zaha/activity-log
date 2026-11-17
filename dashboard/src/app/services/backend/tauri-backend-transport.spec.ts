@@ -1,6 +1,7 @@
 import { TestBed } from '@angular/core/testing'
 import { clearMocks, mockIPC } from '@tauri-apps/api/mocks'
 import { afterEach, describe, expect, it, vi } from 'vitest'
+import { collectingLog } from '../../testing/activity-fixtures'
 import { BackendOperations } from './backend-contract'
 import { TauriBackendTransport } from './tauri-backend-transport'
 
@@ -37,7 +38,7 @@ describe('TauriBackendTransport', () => {
   })
 
   it('passes the request as { request }', async () => {
-    const invocations = mockInvoke(() => ({ collecting: true }))
+    const invocations = mockInvoke(() => collectingLog)
     const request = { start: '2026-05-17T00:00:00Z', end: '2026-05-19T00:00:00Z' }
 
     await setup().call(BackendOperations.collect, request)
@@ -50,12 +51,18 @@ describe('TauriBackendTransport', () => {
     const transport = setup()
 
     await transport.call(BackendOperations.providerConfig, undefined)
-    await transport.call(BackendOperations.saveProviderConfig, { source: 'git', values: [] })
+    await transport.call(BackendOperations.saveProviderConfig, {
+      connection: { source: 'git', name: 'default' },
+      values: [],
+    })
     await transport.call(BackendOperations.clearLogs, undefined)
 
     expect(invocations).toEqual([
       { command: 'get_provider_config', args: {} },
-      { command: 'save_provider_config', args: { request: { source: 'git', values: [] } } },
+      {
+        command: 'save_provider_config',
+        args: { request: { connection: { source: 'git', name: 'default' }, values: [] } },
+      },
       { command: 'clear_logs', args: {} },
     ])
   })

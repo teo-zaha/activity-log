@@ -1,6 +1,6 @@
 use activity_log_core::model::{
-    ActivityLog, ActivityLogMeta, CollectedActivity, CollectedActivitySummary, OutputFormat,
-    ProviderInfo, ProviderStatus, Source, SupportedOs,
+    ActivityLog, ActivityLogMeta, CollectedActivity, CollectedActivitySummary, ConnectionId,
+    OutputFormat, ProviderInfo, ProviderStatus, Source, SupportedOs,
 };
 use clap::Parser;
 use tempfile::tempdir;
@@ -8,16 +8,13 @@ use tempfile::tempdir;
 #[path = "generate_ts_support.rs"]
 mod generate_ts_support;
 
-use crate::{
-    Cli, build_collect_request, parse_format, parse_provider_config_overrides,
-    provider_summary_lines,
-};
+use crate::{Cli, build_collect_request, parse_format, provider_summary_lines};
 use generate_ts_support::generate_ts;
 
 #[test]
 fn parses_cli_defaults() {
     let cli = Cli::try_parse_from(["activity-log-cli"]).unwrap();
-    let request = build_collect_request(&cli, &OutputFormat::Json).unwrap();
+    let request = build_collect_request(&cli.collect, &OutputFormat::Json).unwrap();
     assert_eq!(
         request.output_path.as_deref(),
         Some("logs/activity_log.json")
@@ -47,7 +44,7 @@ fn generates_ts_files() {
 #[test]
 fn invalid_range_lists_values_from_enum() {
     let cli = Cli::try_parse_from(["activity-log-cli", "--range", "nope"]).unwrap();
-    let err = build_collect_request(&cli, &OutputFormat::Json).unwrap_err();
+    let err = build_collect_request(&cli.collect, &OutputFormat::Json).unwrap_err();
     assert_eq!(
         err.to_string(),
         "Unknown range: \"nope\". Use today|yesterday|week|lastweek|month|lastmonth"
@@ -55,48 +52,39 @@ fn invalid_range_lists_values_from_enum() {
 }
 
 #[test]
-fn rejects_set_without_separator() {
-    let err = parse_provider_config_overrides(&["JIRA_URL".to_string()]).unwrap_err();
-    assert_eq!(
-        err.to_string(),
-        "Invalid --set \"JIRA_URL\". Use KEY=VALUE."
-    );
-}
-
-#[test]
-fn rejects_unknown_set_key() {
-    let err = parse_provider_config_overrides(&["NOPE=value".to_string()]).unwrap_err();
-    assert!(
-        err.to_string()
-            .contains("Unknown provider config key \"NOPE\"")
-    );
-}
-
-#[test]
-fn rejects_invalid_typed_set_value() {
-    let err = parse_provider_config_overrides(&["JIRA_INSECURE=1".to_string()]).unwrap_err();
-    assert_eq!(
-        err.to_string(),
-        "Invalid value for \"JIRA_INSECURE\": expected bool"
-    );
-}
-
-#[test]
-fn duplicate_set_key_uses_last_value() {
-    let values = parse_provider_config_overrides(&[
-        "GIT_DIRS=/tmp/one".to_string(),
-        "GIT_DIRS=/tmp/two".to_string(),
+fn parses_source_commands() {
+    let cli = Cli::try_parse_from([
+        "activity-log-cli",
+        "--config",
+        "/tmp/config.toml",
+        "sources",
+        "set",
+        "gitlab/work",
+        "url",
+        "https://gitlab.com",
     ])
     .unwrap();
-
-    assert_eq!(values.get("GIT_DIRS"), Some(&"/tmp/two".to_string()));
+    assert_eq!(
+        cli.config.as_deref(),
+        Some(std::path::Path::new("/tmp/config.toml"))
+    );
+    assert!(matches!(
+        cli.command,
+        Some(crate::Command::Sources {
+            action: Some(crate::SourcesCommand::Set { .. })
+        })
+    ));
+    assert!(Cli::try_parse_from(["activity-log-cli", "--set", "JIRA_URL=x"]).is_err());
+    assert!(Cli::try_parse_from(["activity-log-cli", "sources", "add", "nope"]).is_err());
 }
 
 #[test]
 fn provider_summary_includes_skipped_and_usable_providers() {
     let provider_info = vec![
         ProviderInfo {
-            id: Source::Git,
+            connection: ConnectionId::new(Source::Git, "this-computer"),
+            label: "Git".to_string(),
+            wsl_distro: None,
             status: ProviderStatus::Available,
             usable: true,
             supported_os: vec![SupportedOs::Windows, SupportedOs::Macos, SupportedOs::Linux],
@@ -104,7 +92,9 @@ fn provider_summary_includes_skipped_and_usable_providers() {
             checked_at: "2026-01-01T00:00:00Z".to_string(),
         },
         ProviderInfo {
-            id: Source::Outlook,
+            connection: ConnectionId::new(Source::Outlook, "outlook"),
+            label: "Outlook".to_string(),
+            wsl_distro: None,
             status: ProviderStatus::Unavailable,
             usable: false,
             supported_os: vec![SupportedOs::Windows],
@@ -120,6 +110,7 @@ fn provider_summary_includes_skipped_and_usable_providers() {
                 generated: "2026-01-01T00:00:00Z".to_string(),
                 start: "2026-01-01T00:00:00Z".to_string(),
                 end: "2026-01-02T00:00:00Z".to_string(),
+                pending: Vec::new(),
             },
             summary: CollectedActivitySummary::default(),
             entries: Vec::new(),
@@ -128,6 +119,12 @@ fn provider_summary_includes_skipped_and_usable_providers() {
 
     let lines = provider_summary_lines(&provider_info, &collected);
 
-    assert_eq!(lines[0], "  ✓ git (0 entries, 0 merged with gitlab)");
-    assert_eq!(lines[1], "  - outlook — skipped (OS not supported)");
+    assert_eq!(
+        lines[0],
+        "  ✓ git/this-computer (Git) (0 entries, 0 merged with gitlab)"
+    );
+    assert_eq!(
+        lines[1],
+        "  - outlook/outlook (Outlook) — skipped (OS not supported)"
+    );
 }

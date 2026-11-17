@@ -5,7 +5,7 @@ import type { ExportedActivityLog } from '../models/exported-activity-log'
 import type { EntryUiAdapter } from '../providers/types'
 import { ActivityBackendClient } from './backend/backend-client'
 import { extractBackendErrorMessage } from './backend/error-message'
-import { dateOfKey } from '../utils/local-day'
+import { longDayLabel } from '../utils/local-day'
 
 @Service()
 export class ActivityExportService {
@@ -44,19 +44,9 @@ export class ActivityExportService {
       let markdown = `# Activity Summary - ${from} to ${to}\n\nTotal: ${entries.length} events\n\n`
 
       for (const { date, entries: dayEntries } of groupedByDay) {
-        const label = dateOfKey(date).toLocaleDateString('en-GB', {
-          weekday: 'long',
-          year: 'numeric',
-          month: 'long',
-          day: 'numeric',
-        })
-        markdown += `## ${label}\n\n`
+        markdown += `## ${longDayLabel(date)}\n\n`
         for (const entry of dayEntries) {
-          const time = new Date(entry.timestamp).toLocaleTimeString('en-GB', {
-            hour: '2-digit',
-            minute: '2-digit',
-          })
-          markdown += `- **[${entry.source}]** ${entry.markdownSummary()} (${entry.markdownMeta(time)})\n`
+          markdown += `- **[${entry.source}]** ${entry.markdownSummary()} (${entry.markdownMeta(entry.timeLabel)})\n`
         }
         markdown += '\n'
       }

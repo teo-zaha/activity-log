@@ -1,20 +1,24 @@
 use std::{future::Future, sync::Arc, time::Duration};
 
-use futures::future::join_all;
+use futures::{
+    FutureExt,
+    future::{BoxFuture, join_all},
+};
 
 use crate::{
     diagnostics,
     model::{
-        ActivityEntry, CollectOptions, LogLevel, ProviderInfo, ProviderStatus, ProvidersResponse,
+        ActivityEntry, CollectOptions, ConnectionId, LogLevel, ProviderInfo, ProviderStatus,
+        ProvidersResponse,
     },
     utils::now_iso,
 };
 
 use super::{
+    connection::{Connection, ConnectionLocation},
     current_os,
-    provider_adapter::ProviderAdapter,
+    provider_adapter::{CollectionState, ProviderAdapter},
     provider_check_result::ProviderCheckResult,
-    provider_config::{ConfigSource, EnvConfigSource},
     provider_context::ProviderContext,
     provider_registry,
 };
@@ -31,13 +35,15 @@ pub struct ProviderRuntime {
 }
 
 impl ProviderRuntime {
-    pub async fn inspect(
-        adapter: Arc<dyn ProviderAdapter>,
-        config_source: &dyn ConfigSource,
-    ) -> Self {
+    pub async fn inspect(adapter: Arc<dyn ProviderAdapter>, connection: &Connection) -> Self {
         // Resolve provider config once so startup checks and later collections use the same input.
-        let mut context = ProviderContext::resolve(config_source, adapter.config_requirements());
-        let info = build_provider_info(adapter.as_ref(), &mut context).await;
+        let mut context =
+            ProviderContext::for_connection(connection, adapter.config_requirements());
+        let info = diagnostics::in_connection(
+            connection.id.clone(),
+            build_provider_info(adapter.as_ref(), connection, &mut context),
+        )
+        .await;
 
         Self {
             adapter,
@@ -46,8 +52,12 @@ impl ProviderRuntime {
         }
     }
 
-    pub fn id(&self) -> crate::model::Source {
-        self.info.id.clone()
+    pub fn id(&self) -> &ConnectionId {
+        &self.info.connection
+    }
+
+    pub fn adapter(&self) -> &Arc<dyn ProviderAdapter> {
+        &self.adapter
     }
 
     pub fn usable(&self) -> bool {
@@ -62,41 +72,63 @@ impl ProviderRuntime {
         self.info.clone()
     }
 
-    pub async fn collect(&self, options: CollectOptions) -> anyhow::Result<Vec<ActivityEntry>> {
+    /// Collects this connection; `state` is its kind's state for this collection.
+    pub async fn collect(
+        &self,
+        options: CollectOptions,
+        state: Option<CollectionState>,
+    ) -> anyhow::Result<Vec<ActivityEntry>> {
         let current_os = current_os();
-        match self.adapter.cache_policy() {
-            Some(policy) => {
-                crate::cache::collect_with_day_cache(
-                    &self.info.id,
-                    self.context.cache_scope(),
-                    &options,
-                    policy,
-                    |span| self.adapter.collect(current_os, span, self.context.clone()),
-                )
-                .await
-            }
-            None => {
-                self.adapter
-                    .collect(current_os, options, self.context.clone())
+        let context = self.context.clone().with_collection_state(state);
+        let collect = async {
+            match self.adapter.cache_policy() {
+                Some(policy) => {
+                    crate::cache::collect_with_day_cache(
+                        self.id(),
+                        self.context.cache_scope(),
+                        &options,
+                        policy,
+                        |span| self.adapter.collect(current_os, span, context.clone()),
+                    )
                     .await
+                }
+                None => self.adapter.collect(current_os, options, context).await,
             }
-        }
+        };
+        diagnostics::in_connection(self.id().clone(), collect).await
     }
 }
 
-pub async fn inspect_provider_runtimes() -> Vec<ProviderRuntime> {
-    inspect_provider_runtimes_with(&EnvConfigSource).await
-}
-
-pub async fn inspect_provider_runtimes_with(
-    config_source: &dyn ConfigSource,
-) -> Vec<ProviderRuntime> {
+/// One runtime per connection, in connection order.
+pub async fn inspect_provider_runtimes_with(connections: &[Connection]) -> Vec<ProviderRuntime> {
     join_all(
-        provider_registry()
+        start_checks(connections)
             .into_iter()
-            .map(|adapter| ProviderRuntime::inspect(adapter, config_source)),
+            .map(|(_, check)| check),
     )
     .await
+}
+
+/// For each connection of a known kind: what its info says while its startup check runs, and
+/// that check.
+pub fn start_checks(
+    connections: &[Connection],
+) -> Vec<(ProviderInfo, BoxFuture<'static, ProviderRuntime>)> {
+    let registry = provider_registry();
+    connections
+        .iter()
+        .filter_map(|connection| {
+            let adapter = registry
+                .iter()
+                .find(|adapter| adapter.id() == *connection.source())?
+                .clone();
+            let checking =
+                provider_info(adapter.as_ref(), connection, ProviderStatus::Checking, None);
+            let connection = connection.clone();
+            let check = async move { ProviderRuntime::inspect(adapter, &connection).await };
+            Some((checking, check.boxed()))
+        })
+        .collect()
 }
 
 pub fn providers_response_from_runtimes(runtimes: &[ProviderRuntime]) -> ProvidersResponse {
@@ -108,6 +140,7 @@ pub fn providers_response_from_runtimes(runtimes: &[ProviderRuntime]) -> Provide
 
 async fn build_provider_info(
     adapter: &dyn ProviderAdapter,
+    connection: &Connection,
     context: &mut ProviderContext,
 ) -> ProviderInfo {
     let current_os = current_os();
@@ -116,7 +149,7 @@ async fn build_provider_info(
     let result = if !adapter.supported_os().contains(&current_os) {
         ProviderCheckResult::unavailable("OS not supported")
     } else if !context.missing_required_keys(requirements).is_empty() {
-        ProviderCheckResult::unavailable(format!("{} not configured", adapter.id()))
+        ProviderCheckResult::unavailable(format!("{} is not configured", connection.label))
     } else if let Some(key) = context.first_invalid_key(requirements) {
         ProviderCheckResult::unavailable(format!("{} must be a {}", key.name, key.shape))
     } else if let Some(binding) = adapter.config_binding() {
@@ -144,17 +177,31 @@ async fn build_provider_info(
         None => format!("Startup check {status} after {elapsed} ms"),
     };
     let level = match status {
-        ProviderStatus::Available => LogLevel::Info,
+        ProviderStatus::Checking | ProviderStatus::Available => LogLevel::Info,
         ProviderStatus::Degraded | ProviderStatus::Unavailable => LogLevel::Warn,
     };
-    diagnostics::record(level, adapter.id().as_ref(), summary);
+    diagnostics::record(level, connection.id.to_string(), summary);
 
+    provider_info(adapter, connection, status, result.reason)
+}
+
+fn provider_info(
+    adapter: &dyn ProviderAdapter,
+    connection: &Connection,
+    status: ProviderStatus,
+    reason: Option<String>,
+) -> ProviderInfo {
     ProviderInfo {
-        id: adapter.id(),
-        status: status.clone(),
-        usable: status != ProviderStatus::Unavailable,
+        connection: connection.id.clone(),
+        label: connection.label.clone(),
+        wsl_distro: match &connection.location {
+            ConnectionLocation::Wsl(distro) => Some(distro.clone()),
+            ConnectionLocation::Local => None,
+        },
+        usable: matches!(status, ProviderStatus::Available | ProviderStatus::Degraded),
+        status,
         supported_os: adapter.supported_os().to_vec(),
-        reason: result.reason,
+        reason,
         checked_at: now_iso(),
     }
 }

@@ -1,6 +1,8 @@
 import { Service, inject, type ResourceRef } from '@angular/core'
 import type {
   CollectRequest,
+  AddConnectionRequestDto,
+  ConnectionId,
   ProviderConfigSaveRequestDto,
   ProviderConfigSaveResponseDto,
   ProviderConfigSnapshotDto,
@@ -40,6 +42,14 @@ export class ActivityBackendClient {
     request: ProviderConfigSaveRequestDto
   ): Promise<ProviderConfigSaveResponseDto> {
     return this.transport.call(BackendOperations.saveProviderConfig, request)
+  }
+
+  addConnection(request: AddConnectionRequestDto): Promise<ProviderConfigSaveResponseDto> {
+    return this.transport.call(BackendOperations.addConnection, request)
+  }
+
+  removeConnection(connection: ConnectionId): Promise<ProviderConfigSaveResponseDto> {
+    return this.transport.call(BackendOperations.removeConnection, connection)
   }
 
   export(request: ExportRequest): Promise<void> {

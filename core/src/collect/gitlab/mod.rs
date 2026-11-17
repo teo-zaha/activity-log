@@ -79,6 +79,7 @@ pub fn map_gitlab_event(event: &Value) -> Option<GitLabEntry> {
 
     Some(GitLabEntry {
         source: "gitlab".to_string(),
+        connection: String::new(),
         entry_type: GitLabType::from_gitlab_action_name(
             object
                 .get("action_name")

@@ -3,33 +3,37 @@ use chrono::{DateTime, FixedOffset};
 use crate::{
     model::{
         ActivityEntry, ActivityLog, ActivityLogMeta, CollectOptions, CollectedActivity,
-        CollectedActivitySummary, IntoActivityEntries,
+        CollectedActivitySummary, ConnectionCount, ConnectionId, IntoActivityEntries,
     },
+    provider::provider_adapter::ConnectionEntries,
     utils::{merge_git_with_gitlab, now_iso},
 };
 
+/// Combines what the connections collected so far: GitLab pushes fold into their git commits,
+/// and everything is sorted newest first.
+///
+/// `results` holds the connections that finished, in connection order; one that failed comes
+/// with no entries (its failure is logged where providers run, see `collect_progressively`).
+/// `pending` holds those still being checked or collected: they are named in `meta.pending`
+/// and join `summary.connections` only once they finish.
 pub fn collect_activity_from_results(
     options: CollectOptions,
-    results: Vec<(crate::model::Source, anyhow::Result<Vec<ActivityEntry>>)>,
+    results: Vec<ConnectionEntries>,
+    pending: Vec<ConnectionId>,
 ) -> CollectedActivity {
-    // Failures are logged where providers run, see `collect_activity_detailed_with_provider_runtimes`.
-    let collected_entries = results
-        .into_iter()
-        .filter_map(|(_, result)| result.ok())
-        .flatten();
+    let mut connections = Vec::new();
     let mut git_entries = Vec::new();
     let mut gitlab_entries = Vec::new();
-    let mut jira_entries = Vec::new();
-    let mut outlook_entries = Vec::new();
-    let mut system_entries = Vec::new();
+    let mut entries = Vec::new();
 
-    for entry in collected_entries {
-        match entry {
-            ActivityEntry::Git(entry) => git_entries.push(entry),
-            ActivityEntry::GitLab(entry) => gitlab_entries.push(entry),
-            ActivityEntry::Jira(entry) => jira_entries.push(entry),
-            ActivityEntry::Outlook(entry) => outlook_entries.push(entry),
-            ActivityEntry::System(entry) => system_entries.push(entry),
+    for (connection, connection_entries) in results {
+        connections.push(connection);
+        for entry in connection_entries {
+            match entry {
+                ActivityEntry::Git(entry) => git_entries.push(entry),
+                ActivityEntry::GitLab(entry) => gitlab_entries.push(entry),
+                other => entries.push(other),
+            }
         }
     }
 
@@ -41,36 +45,25 @@ pub fn collect_activity_from_results(
         .iter()
         .filter(|entry| entry.gitlab_event.is_some())
         .count();
+    entries.extend(merged.merged_git.into_iter().into_activity_entries());
+    entries.extend(merged.remaining_gitlab.into_iter().into_activity_entries());
+    entries.sort_by(|a, b| compare_timestamps_desc(a.timestamp(), b.timestamp()));
 
     let summary = CollectedActivitySummary {
-        git_count: merged.merged_git.len(),
-        gitlab_count: merged.remaining_gitlab.len(),
-        jira_count: jira_entries.len(),
-        outlook_count: outlook_entries.len(),
-        system_count: system_entries.len(),
+        connections: connections
+            .into_iter()
+            .map(|connection| ConnectionCount {
+                count: entries
+                    .iter()
+                    .filter(|entry| {
+                        entry.source() == connection.source && entry.connection() == connection.name
+                    })
+                    .count(),
+                connection,
+            })
+            .collect(),
         merged_count,
     };
-
-    let mut entries = Vec::with_capacity(
-        summary.git_count
-            + summary.gitlab_count
-            + summary.jira_count
-            + summary.outlook_count
-            + summary.system_count,
-    );
-
-    entries.extend(merged.merged_git.iter().cloned().into_activity_entries());
-    entries.extend(
-        merged
-            .remaining_gitlab
-            .iter()
-            .cloned()
-            .into_activity_entries(),
-    );
-    entries.extend(jira_entries.iter().cloned().into_activity_entries());
-    entries.extend(outlook_entries.iter().cloned().into_activity_entries());
-    entries.extend(system_entries.iter().cloned().into_activity_entries());
-    entries.sort_by(|a, b| compare_timestamps_desc(a.timestamp(), b.timestamp()));
 
     CollectedActivity {
         summary: summary.clone(),
@@ -79,6 +72,7 @@ pub fn collect_activity_from_results(
                 generated: now_iso(),
                 start: options.start.to_rfc3339(),
                 end: options.end.to_rfc3339(),
+                pending,
             },
             summary,
             entries,

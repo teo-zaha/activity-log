@@ -8,6 +8,9 @@ use crate::model::gitlab::gitlab_entry::GitLabEntry;
 pub struct GitEntry {
     #[ts(type = "\"git\"")]
     pub source: String,
+    /// The name of the connection within its kind, such as `oss`; set by the runtime.
+    #[serde(default)]
+    pub connection: String,
     pub timestamp: String,
     pub repo: String,
     pub hash: String,
@@ -31,6 +34,7 @@ impl GitEntry {
     ) -> Self {
         Self {
             source: "git".to_string(),
+            connection: String::new(),
             timestamp,
             repo,
             hash,

@@ -162,6 +162,7 @@ fn normalize_outlook_event(event: RawOutlookEvent) -> OutlookEntry {
 
     OutlookEntry {
         source: "outlook".to_string(),
+        connection: String::new(),
         timestamp: event.start,
         title: event.subject.unwrap_or_else(|| "(No title)".to_string()),
         location: event.location,

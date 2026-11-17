@@ -1,7 +1,8 @@
 import { HttpErrorResponse } from '@angular/common/http'
 import type { ErrorResponse } from '../../generated/activity'
 
-export function extractBackendErrorMessage(error: unknown): string {
+/** The backend's message for a failed call, or `fallback` when it gave none. */
+export function extractBackendErrorMessage(error: unknown, fallback = 'Unknown error'): string {
   if (error instanceof HttpErrorResponse) {
     const body: unknown = error.error
     if (
@@ -15,6 +16,7 @@ export function extractBackendErrorMessage(error: unknown): string {
     if (typeof body === 'string') return body
     return error.statusText || error.message
   }
-  if (error instanceof Error) return error.message
-  return 'Unknown error'
+  if (error instanceof Error && error.message.trim()) return error.message
+  if (typeof error === 'string' && error.trim()) return error
+  return fallback
 }

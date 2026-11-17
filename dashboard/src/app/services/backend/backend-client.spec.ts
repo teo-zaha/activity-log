@@ -126,7 +126,10 @@ describe('ActivityBackendClient', () => {
 
   it('saveProviderConfig forwards its request to the save operation, not the read one', () => {
     const { client, transport } = setup()
-    const request: ProviderConfigSaveRequestDto = { source: 'git', values: [] }
+    const request: ProviderConfigSaveRequestDto = {
+      connection: { source: 'git', name: 'default' },
+      values: [],
+    }
 
     void client.saveProviderConfig(request)
 

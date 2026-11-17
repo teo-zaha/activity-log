@@ -20,6 +20,97 @@
   animation: u-spin 0.9s linear infinite;
 }
 
+// ── Messages ─────────────────────────────────────────────────────────────────
+// A neutral note, such as "only in the desktop app".
+
+.u-note {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  margin: 0;
+  padding: 12px 14px;
+  border-radius: var(--radius-md);
+  background: var(--surface-alt);
+  color: var(--text-secondary);
+  font-size: 13.5px;
+  line-height: 1.5;
+
+  .material-icons {
+    font-size: 18px;
+    color: var(--text-tertiary);
+  }
+}
+
+// A status message in the tone of its `data-tone`: info, ok, warn or error. Inline by default;
+// `u-feedback-block` makes it a full-width row, with room for an action at the end.
+
+.u-feedback {
+  display: inline-flex;
+  align-items: flex-start;
+  gap: 8px;
+  max-width: 100%;
+  margin: 0;
+  padding: 7px 10px;
+  border-radius: var(--radius-sm);
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 1.4;
+  @include ui.status-tone($mix: 10%);
+
+  .material-icons {
+    font-size: 17px;
+  }
+}
+
+.u-feedback-text {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.u-feedback-block {
+  display: flex;
+  align-items: center;
+
+  .u-feedback-text {
+    flex: 1;
+  }
+}
+
+// ── Empty states ─────────────────────────────────────────────────────────────
+// A dashed panel that explains why there is nothing to show, with an optional action.
+
+.u-empty-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  padding: 72px 24px;
+  border: 1px dashed var(--border);
+  border-radius: var(--radius-xl);
+  text-align: center;
+  animation: u-rise 0.3s var(--ease-out);
+
+  .u-btn {
+    margin-top: 12px;
+  }
+}
+
+.u-empty-title {
+  margin: 0;
+  color: var(--text-primary);
+  font-size: 16px;
+  font-weight: 650;
+  overflow-wrap: anywhere;
+}
+
+.u-empty-sub {
+  max-width: 420px;
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: 13.5px;
+  line-height: 1.5;
+}
+
 // ── Buttons ──────────────────────────────────────────────────────────────────
 // Theme-aware buttons shared by the shell, status banners, empty states and settings.
 
@@ -92,6 +183,18 @@
   &:hover:not(:disabled) {
     border-color: transparent;
     color: var(--text-primary);
+  }
+}
+
+// For an action that cannot be undone, such as removing something.
+.u-btn-danger {
+  border-color: transparent;
+  background: var(--status-error-fg);
+  color: #fff;
+
+  &:hover:not(:disabled) {
+    border-color: transparent;
+    background: color-mix(in srgb, var(--status-error-fg) 86%, #000);
   }
 }
 

@@ -1,5 +1,15 @@
-import { Component, computed, inject, input, linkedSignal, resource, signal } from '@angular/core'
+import {
+  Component,
+  computed,
+  inject,
+  input,
+  linkedSignal,
+  output,
+  resource,
+  signal,
+} from '@angular/core'
 import { applyEach, disabled, form, FormField, FormRoot, validate } from '@angular/forms/signals'
+import { MatDialog } from '@angular/material/dialog'
 import { MatFormFieldModule } from '@angular/material/form-field'
 import { MatInputModule } from '@angular/material/input'
 import { MatSelectModule } from '@angular/material/select'
@@ -7,10 +17,14 @@ import type {
   ProviderConfigFieldStateDto,
   ProviderConfigSaveRequestDto,
   ProviderStatus,
-  SupportedOs,
 } from '../../../generated/activity'
+import { connectionKey } from '../../../providers/connection'
+import { supportedOsLabel } from '../../../providers/source-catalog'
 import { ActivityService } from '../../../services/activity.service'
+import { extractBackendErrorMessage } from '../../../services/backend/error-message'
 import { RuntimeEnvironmentService } from '../../../services/backend/runtime-environment.service'
+import { ToastService } from '../../../services/toast.service'
+import { confirmAction } from '../../confirm-dialog/confirm-dialog.component'
 import { StatusPillComponent } from '../../ui-status/status-pill.component'
 import { validateProviderConfigValue } from './provider-config-validation'
 import type { SettingsProviderRow } from '../settings-dialog.types'
@@ -18,23 +32,18 @@ import type { SettingsProviderRow } from '../settings-dialog.types'
 interface ProviderHealthVm {
   readonly icon: string
   readonly title: string
+  readonly reason: string
+  /** The startup check has not finished; `checkedAt` is when it started. */
+  readonly checking: boolean
 }
 
 /** Field values by key. A secret is `null` once the user chose to clear it, `''` while untouched. */
 type DraftValues = Record<string, string | null>
 /** Items of `list` fields by key; blank rows are dropped on save. */
 type ListDrafts = Record<string, string[]>
-/** One name of a `map` field with its items, such as a WSL distribution and its folders. */
-interface MapEntryDraft {
-  name: string
-  items: string[]
-}
-/** Entries of `map` fields by key; blank item rows are dropped on save. */
-type MapDrafts = Record<string, MapEntryDraft[]>
 
 type SingleField = Extract<ProviderConfigFieldStateDto, { shape: 'single' }>
 type ListField = Extract<ProviderConfigFieldStateDto, { shape: 'list' }>
-type MapField = Extract<ProviderConfigFieldStateDto, { shape: 'map' }>
 
 function isSingleField(field: ProviderConfigFieldStateDto): field is SingleField {
   return field.shape === 'single'
@@ -42,24 +51,6 @@ function isSingleField(field: ProviderConfigFieldStateDto): field is SingleField
 
 function isListField(field: ProviderConfigFieldStateDto): field is ListField {
   return field.shape === 'list'
-}
-
-function isMapField(field: ProviderConfigFieldStateDto): field is MapField {
-  return field.shape === 'map'
-}
-
-function copyEntries(entries: readonly MapEntryDraft[]): MapEntryDraft[] {
-  return entries.map(entry => ({ name: entry.name, items: [...entry.items] }))
-}
-
-function sameEntries(a: readonly MapEntryDraft[], b: readonly MapEntryDraft[]): boolean {
-  return (
-    a.length === b.length &&
-    a.every((entry, index) => {
-      const other = b[index]
-      return other !== undefined && entry.name === other.name && sameItems(entry.items, other.items)
-    })
-  )
 }
 
 /** Trimmed, without blank rows: what the backend would store. */
@@ -72,19 +63,6 @@ function sameItems(a: readonly string[], b: readonly string[]): boolean {
 }
 
 const TIMEOUT_REASON = /timed? ?out/i
-
-function errorMessage(error: unknown, fallback: string): string {
-  if (error instanceof Error) {
-    return error.message
-  }
-
-  // Tauri commands reject with the backend's error string.
-  if (typeof error === 'string' && error.trim()) {
-    return error
-  }
-
-  return fallback
-}
 
 @Component({
   selector: 'app-settings-source-pane',
@@ -102,34 +80,53 @@ function errorMessage(error: unknown, fallback: string): string {
 export class SettingsSourcePaneComponent {
   private readonly activity = inject(ActivityService)
   private readonly runtime = inject(RuntimeEnvironmentService)
+  private readonly dialog = inject(MatDialog)
+  private readonly toast = inject(ToastService)
 
   readonly provider = input.required<SettingsProviderRow>()
+  /** Emitted once the connection was removed. */
+  readonly removed = output<void>()
 
   protected readonly isDesktop = this.runtime.isTauri()
   protected readonly savingConfig = signal(false)
 
-  private readonly selectionKey = computed(() => this.provider().info.id)
+  private readonly selectionKey = computed(() => this.provider().key)
 
-  /** The snapshot holds every provider; it reloads whenever another source is selected. */
+  /** The snapshot holds every connection; it reloads whenever another one is selected. */
   private readonly config = resource({
     params: () => (this.isDesktop ? this.selectionKey() : undefined),
     loader: () =>
       this.activity.loadProviderConfig().catch((error: unknown) => {
-        throw new Error(errorMessage(error, 'Failed to load provider settings.'))
+        throw new Error(extractBackendErrorMessage(error, 'Failed to load provider settings.'))
       }),
   })
 
   protected readonly loadingConfig = this.config.isLoading
 
-  protected readonly configFields = computed(() => {
+  /** This connection's settings, once loaded. */
+  private readonly connectionState = computed(() => {
     // `value()` throws while the resource is in its error state.
     if (!this.config.hasValue()) {
-      return []
+      return null
     }
 
-    const source = this.selectionKey()
-    return this.config.value().providers.find(provider => provider.source === source)?.fields ?? []
+    const key = this.selectionKey()
+    return (
+      this.config
+        .value()
+        .connections.find(connection => connectionKey(connection.connection) === key) ?? null
+    )
   })
+
+  protected readonly configFields = computed(() => this.connectionState()?.fields ?? [])
+  protected readonly hasConnectionState = computed(() => this.connectionState() !== null)
+
+  /** The label the user is typing. */
+  protected readonly labelDraft = linkedSignal(() => this.connectionState()?.label ?? '')
+  protected readonly labelForm = form(this.labelDraft, path => {
+    disabled(path, { when: () => this.savingConfig() })
+  })
+  protected readonly removing = signal(false)
 
   private readonly fieldByKey = computed(
     () => new Map(this.configFields().map(field => [field.key, field]))
@@ -178,57 +175,8 @@ export class SettingsSourcePaneComponent {
     })
   })
 
-  /** The configured entries, or the default the provider uses while the key is unset. */
-  private readonly initialMaps = computed<MapDrafts>(() =>
-    Object.fromEntries(
-      this.configFields()
-        .filter(isMapField)
-        .map(field => [field.key, copyEntries(field.entries)])
-    )
-  )
-  protected readonly mapDrafts = linkedSignal<MapDrafts>(() =>
-    Object.fromEntries(
-      Object.entries(this.initialMaps()).map(([key, entries]) => [key, copyEntries(entries)])
-    )
-  )
-  /** Map keys the user reset, so their default applies again after saving. */
-  private readonly resetMaps = linkedSignal<MapDrafts, ReadonlySet<string>>({
-    source: this.initialMaps,
-    computation: () => new Set(),
-  })
-
-  /** Like a list, every item is checked against the field's value type. */
-  protected readonly mapForm = form(this.mapDrafts, path => {
-    applyEach(path, entries => {
-      applyEach(entries, entry => {
-        disabled(entry, { when: () => this.savingConfig() })
-        applyEach(entry.items, item => {
-          // `pathKeys` is `[fieldKey, entryIndex, 'items', itemIndex]`.
-          validate(item, ({ value, pathKeys }) => {
-            const field = this.fieldByKey().get(pathKeys()[0] ?? '')
-            const text = value().trim()
-            if (!field || !isMapField(field) || text === '') return undefined
-            const message = validateProviderConfigValue(text, field.itemType)
-            return message ? { kind: 'providerConfigValue', message } : undefined
-          })
-        })
-      })
-    })
-  })
-
   private readonly saveError = linkedSignal<string, string | null>({
     source: this.selectionKey,
-    computation: () => null,
-  })
-  /** Hidden again by any edit, and by switching source. */
-  protected readonly configMessage = linkedSignal<unknown, string | null>({
-    source: () => [
-      this.draftValues(),
-      this.listDrafts(),
-      this.resetLists(),
-      this.mapDrafts(),
-      this.resetMaps(),
-    ],
     computation: () => null,
   })
   protected readonly configError = computed(
@@ -238,9 +186,16 @@ export class SettingsSourcePaneComponent {
   protected readonly health = computed<ProviderHealthVm>(() => {
     const { status, reason } = this.provider().info
     const timedOut = reason !== undefined && TIMEOUT_REASON.test(reason)
+    const checking = status === 'checking'
     return {
       icon: timedOut ? 'timer_off' : this.statusIcon(status),
       title: this.statusTitle(status, timedOut),
+      reason:
+        reason ??
+        (checking
+          ? 'The startup check is still running.'
+          : 'No issues were reported during the latest provider inspection.'),
+      checking,
     }
   })
 
@@ -267,12 +222,6 @@ export class SettingsSourcePaneComponent {
         continue
       }
 
-      if (isMapField(field)) {
-        const change = this.pendingMapValue(field)
-        if (change !== undefined) values.push({ key: field.key, value: change })
-        continue
-      }
-
       const value = draft[field.key] ?? null
 
       if (field.secret) {
@@ -293,12 +242,19 @@ export class SettingsSourcePaneComponent {
       }
     }
 
-    if (values.length === 0) {
+    const state = this.connectionState()
+    if (!state) {
+      return null
+    }
+    const label = this.labelDraft().trim()
+    const labelChanged = label !== '' && label !== state.label
+    if (values.length === 0 && !labelChanged) {
       return null
     }
 
     return {
-      source: this.selectionKey(),
+      connection: state.connection,
+      ...(labelChanged ? { label } : {}),
       values,
     }
   })
@@ -308,7 +264,7 @@ export class SettingsSourcePaneComponent {
     () =>
       new Map(
         this.pendingRequest()?.values.flatMap(({ key, value }) =>
-          typeof value === 'string' || value === null ? [[key, value] as const] : []
+          Array.isArray(value) ? [] : [[key, value] as const]
         )
       )
   )
@@ -346,20 +302,10 @@ export class SettingsSourcePaneComponent {
       !this.savingConfig() &&
       this.pendingRequest() !== null &&
       this.draftForm().valid() &&
-      this.listForm().valid() &&
-      this.mapForm().valid()
+      this.listForm().valid()
   )
 
-  protected supportedOsLabel(os: SupportedOs): string {
-    switch (os) {
-      case 'linux':
-        return 'Linux'
-      case 'macos':
-        return 'macOS'
-      case 'windows':
-        return 'Windows'
-    }
-  }
+  protected readonly supportedOsLabel = supportedOsLabel
 
   protected listItemError(key: string, index: number): string | null {
     const [error] = this.listForm[key][index]().errors()
@@ -400,97 +346,60 @@ export class SettingsSourcePaneComponent {
     })
   }
 
-  protected mapItemError(key: string, entryIndex: number, itemIndex: number): string | null {
-    const [error] = this.mapForm[key][entryIndex].items[itemIndex]().errors()
-    return error?.message ?? null
-  }
-
-  private mapItemErrors(key: string): string[] {
-    return (this.mapDrafts()[key] ?? []).flatMap((entry, entryIndex) =>
-      entry.items.flatMap((_, itemIndex) => this.mapItemError(key, entryIndex, itemIndex) ?? [])
-    )
-  }
-
-  protected isMapReset(field: MapField): boolean {
-    return this.resetMaps().has(field.key)
-  }
-
-  /** Names entry `index` can switch to: its own and every name no other entry holds. */
-  protected mapNameOptions(field: MapField, index: number): string[] {
-    const entries = this.mapDrafts()[field.key] ?? []
-    const own = entries[index]?.name
-    const taken = new Set(entries.filter((_, i) => i !== index).map(entry => entry.name))
-    const names =
-      own !== undefined && !field.names.includes(own) ? [own, ...field.names] : field.names
-    return names.filter(name => !taken.has(name))
-  }
-
-  /** The name the next added entry gets, or `null` once every name is in use. */
-  protected nextMapName(field: MapField): string | null {
-    const taken = new Set((this.mapDrafts()[field.key] ?? []).map(entry => entry.name))
-    return field.names.find(name => !taken.has(name)) ?? null
-  }
-
-  protected addMapEntry(field: MapField): void {
-    const name = this.nextMapName(field)
-    if (name === null) return
-    this.updateMapEntries(field, entries => [...entries, { name, items: [''] }])
-  }
-
-  protected removeMapEntry(field: MapField, index: number): void {
-    this.updateMapEntries(field, entries => entries.filter((_, i) => i !== index))
-  }
-
-  protected addMapItem(field: MapField, index: number): void {
-    this.updateMapEntries(field, entries =>
-      entries.map((entry, i) => (i === index ? { ...entry, items: [...entry.items, ''] } : entry))
-    )
-  }
-
-  protected removeMapItem(field: MapField, index: number, itemIndex: number): void {
-    this.updateMapEntries(field, entries =>
-      entries.map((entry, i) =>
-        i === index ? { ...entry, items: entry.items.filter((_, j) => j !== itemIndex) } : entry
-      )
-    )
-  }
-
-  /** Drops the configured map so the provider's default applies again. */
-  protected resetMap(field: MapField): void {
-    this.resetMaps.update(keys => new Set(keys).add(field.key))
-  }
-
-  protected undoMapReset(field: MapField): void {
-    this.resetMaps.update(keys => {
-      const next = new Set(keys)
-      next.delete(field.key)
-      return next
-    })
-  }
-
   protected fieldId(field: ProviderConfigFieldStateDto): string {
-    return `provider-config-${this.provider().info.id}-${field.key}`
+    return `${this.idPrefix()}-${field.key}`
+  }
+
+  protected labelFieldId(): string {
+    return `${this.idPrefix()}-label`
+  }
+
+  private idPrefix(): string {
+    const { source, name } = this.provider().info.connection
+    return `provider-config-${source}-${name}`
+  }
+
+  protected async removeConnection(): Promise<void> {
+    const state = this.connectionState()
+    if (!state || this.removing()) return
+    const confirmed = await confirmAction(this.dialog, {
+      title: `Remove ${this.provider().label}?`,
+      message: 'Its settings are deleted from the config file. You can add it again later.',
+      confirmLabel: 'Remove',
+      tone: 'danger',
+    })
+    if (!confirmed) return
+    const label = this.provider().label
+    this.removing.set(true)
+    this.saveError.set(null)
+    try {
+      await this.activity.removeConnection(state.connection)
+      this.toast.success(`${label} removed`)
+      this.removed.emit()
+    } catch (error) {
+      this.saveError.set(extractBackendErrorMessage(error, 'Failed to remove the source.'))
+    } finally {
+      this.removing.set(false)
+    }
   }
 
   protected reload(): void {
     this.config.reload()
   }
 
-  protected clearField(field: SingleField): void {
-    this.draftValues.update(values => ({ ...values, [field.key]: field.secret ? null : '' }))
+  /** Marks a saved secret for removal; `null` in the draft means "clear on save". */
+  protected clearSecret(field: SingleField): void {
+    this.draftValues.update(values => ({ ...values, [field.key]: null }))
   }
 
-  protected canClearField(field: SingleField): boolean {
-    if (field.secret) {
-      return (this.draftValues()[field.key] ?? '').trim().length > 0 || this.isSecretFieldSet(field)
-    }
-
-    return (this.draftValues()[field.key] ?? '').trim().length > 0
+  /** A saved secret is never shown, so its field says that one exists. */
+  protected placeholderFor(field: SingleField): string {
+    return this.isSecretFieldSet(field) ? 'Saved; type to replace' : ''
   }
 
   protected fieldError(key: string): string | null {
     if (!(key in this.draftValues())) {
-      return [...this.listItemErrors(key), ...this.mapItemErrors(key)][0] ?? null
+      return this.listItemErrors(key)[0] ?? null
     }
 
     const [error] = this.draftForm[key]().errors()
@@ -534,14 +443,13 @@ export class SettingsSourcePaneComponent {
 
     this.savingConfig.set(true)
     this.saveError.set(null)
-    this.configMessage.set(null)
 
     try {
       const response = await this.activity.saveProviderConfig(request)
       this.config.set(response.snapshot)
-      this.configMessage.set('Settings saved.')
+      this.toast.success(`${request.label ?? this.provider().label} saved`)
     } catch (error) {
-      this.saveError.set(errorMessage(error, 'Failed to save provider settings.'))
+      this.saveError.set(extractBackendErrorMessage(error, 'Failed to save provider settings.'))
     } finally {
       this.savingConfig.set(false)
     }
@@ -560,30 +468,6 @@ export class SettingsSourcePaneComponent {
     return sameItems(items, this.initialLists()[field.key] ?? []) ? undefined : items
   }
 
-  /**
-   * Like {@link pendingListValue}: `null` resets, an object of lists by name replaces the map
-   * (empty means none), and `undefined` means unchanged.
-   */
-  private pendingMapValue(field: MapField): Record<string, string[]> | null | undefined {
-    if (this.resetMaps().has(field.key)) {
-      return field.isSet ? null : undefined
-    }
-
-    const entries = (this.mapDrafts()[field.key] ?? []).map(entry => ({
-      name: entry.name,
-      items: cleanItems(entry.items),
-    }))
-    if (sameEntries(entries, this.initialMaps()[field.key] ?? [])) return undefined
-    return Object.fromEntries(entries.map(entry => [entry.name, entry.items]))
-  }
-
-  private updateMapEntries(
-    field: MapField,
-    change: (entries: MapEntryDraft[]) => MapEntryDraft[]
-  ): void {
-    this.mapDrafts.update(maps => ({ ...maps, [field.key]: change(maps[field.key] ?? []) }))
-  }
-
   private initialValueFor(field: SingleField): string {
     const value = field.secret ? '' : (field.value ?? '')
     if (field.valueType !== 'bool') {
@@ -596,6 +480,8 @@ export class SettingsSourcePaneComponent {
 
   private statusIcon(status: ProviderStatus): string {
     switch (status) {
+      case 'checking':
+        return 'hourglass_empty'
       case 'available':
         return 'check_circle'
       case 'degraded':
@@ -607,6 +493,8 @@ export class SettingsSourcePaneComponent {
 
   private statusTitle(status: ProviderStatus, timedOut: boolean): string {
     switch (status) {
+      case 'checking':
+        return 'Checking'
       case 'available':
         return 'Ready to collect'
       case 'degraded':
