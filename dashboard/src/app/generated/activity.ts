@@ -8,11 +8,17 @@ export type SupportedOs = "windows" | "macos" | "linux";
 
 export type ProviderStatus = "checking" | "available" | "unavailable" | "degraded";
 
+export type ProviderProblem = "timedOut" | "unsupported" | "notConfigured" | "failed";
+
 export type ProviderInfo = { connection: ConnectionId, label: string, 
 /**
  * Set for a Git connection inside a WSL distribution.
  */
-wslDistro?: string, status: ProviderStatus, usable: boolean, supportedOs: Array<SupportedOs>, reason?: string, checkedAt: string, };
+wslDistro?: string, status: ProviderStatus, usable: boolean, supportedOs: Array<SupportedOs>, reason?: string, 
+/**
+ * Set with `reason`: what kind of problem it describes.
+ */
+problem?: ProviderProblem, checkedAt: string, };
 
 export type ProvidersResponse = { currentOs: SupportedOs, providers: Array<ProviderInfo>, };
 
@@ -45,6 +51,10 @@ export type ProviderConfigConnectionStateDto = { connection: ConnectionId, label
 wslDistro?: string, fields: Array<ProviderConfigFieldStateDto>, };
 
 export type ProviderKindDto = { source: Source, label: string, 
+/**
+ * What the kind collects, in a few words.
+ */
+description: string, 
 /**
  * Whether more than one connection of the kind can be added.
  */
@@ -81,6 +91,8 @@ label?: string,
  * For Git: read this WSL distribution instead of this computer.
  */
 wslDistro?: string, };
+
+export type AddConnectionResponseDto = { created: ConnectionId, snapshot: ProviderConfigSnapshotDto, providersResponse: ProvidersResponse, };
 
 export type GitLabType = "pushedTo" | "created" | "opened" | "closed" | "reopened" | "updated" | "merged" | "accepted" | "commentedOn" | "approved" | "joined" | "destroyed" | "expired" | "unknown";
 

@@ -14,6 +14,7 @@ import { SettingsAddSourcePaneComponent } from './settings-add-source-pane.compo
 const kind = (
   overrides: Partial<ProviderKindDto> & Pick<ProviderKindDto, 'source' | 'label'>
 ): ProviderKindDto => ({
+  description: `What ${overrides.label} collects`,
   multiple: true,
   supportedOs: ['windows', 'macos', 'linux'],
   supported: true,

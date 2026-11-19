@@ -2,7 +2,8 @@ use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
 use crate::model::common::{
-    connection_id::ConnectionId, provider_status::ProviderStatus, supported_os::SupportedOs,
+    connection_id::ConnectionId, provider_problem::ProviderProblem,
+    provider_status::ProviderStatus, supported_os::SupportedOs,
 };
 
 /// One connection and the result of its startup check.
@@ -22,5 +23,9 @@ pub struct ProviderInfo {
     #[serde(skip_serializing_if = "Option::is_none")]
     #[ts(optional)]
     pub reason: Option<String>,
+    /// Set with `reason`: what kind of problem it describes.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub problem: Option<ProviderProblem>,
     pub checked_at: String,
 }

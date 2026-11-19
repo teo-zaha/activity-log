@@ -51,6 +51,10 @@ crate::provider! {
                 .map(|entries| entries.into_activity_entries())
         }
 
+        fn description(&self) -> &'static str {
+            "Issues assigned to or reported by you"
+        }
+
         fn instances(&self) -> crate::provider::connection::Instances {
             crate::provider::connection::Instances::Multiple
         }

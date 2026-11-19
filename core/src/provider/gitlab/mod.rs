@@ -50,6 +50,10 @@ crate::provider! {
                 .map(|entries| entries.into_activity_entries())
         }
 
+        fn description(&self) -> &'static str {
+            "Merge requests, pushes, comments and reviews"
+        }
+
         fn instances(&self) -> crate::provider::connection::Instances {
             crate::provider::connection::Instances::Multiple
         }

@@ -70,6 +70,7 @@ fn fixture_providers() -> Vec<ProviderInfo> {
         usable: true,
         supported_os: vec![SupportedOs::Windows, SupportedOs::Macos, SupportedOs::Linux],
         reason: None,
+        problem: None,
         checked_at: "2026-03-25T10:00:00Z".to_string(),
     }]
 }

@@ -8,8 +8,8 @@ use futures::{
 use crate::{
     diagnostics,
     model::{
-        ActivityEntry, CollectOptions, ConnectionId, LogLevel, ProviderInfo, ProviderStatus,
-        ProvidersResponse,
+        ActivityEntry, CollectOptions, ConnectionId, LogLevel, ProviderInfo, ProviderProblem,
+        ProviderStatus, ProvidersResponse,
     },
     utils::now_iso,
 };
@@ -114,21 +114,26 @@ pub async fn inspect_provider_runtimes_with(connections: &[Connection]) -> Vec<P
 pub fn start_checks(
     connections: &[Connection],
 ) -> Vec<(ProviderInfo, BoxFuture<'static, ProviderRuntime>)> {
-    let registry = provider_registry();
-    connections
-        .iter()
-        .filter_map(|connection| {
-            let adapter = registry
-                .iter()
-                .find(|adapter| adapter.id() == *connection.source())?
-                .clone();
-            let checking =
-                provider_info(adapter.as_ref(), connection, ProviderStatus::Checking, None);
-            let connection = connection.clone();
-            let check = async move { ProviderRuntime::inspect(adapter, &connection).await };
-            Some((checking, check.boxed()))
-        })
-        .collect()
+    connections.iter().filter_map(start_check).collect()
+}
+
+/// `start_checks` for one connection; `None` for a kind no provider handles.
+pub fn start_check(
+    connection: &Connection,
+) -> Option<(ProviderInfo, BoxFuture<'static, ProviderRuntime>)> {
+    let adapter = provider_registry()
+        .into_iter()
+        .find(|adapter| adapter.id() == *connection.source())?;
+    let checking = provider_info(
+        adapter.as_ref(),
+        connection,
+        ProviderStatus::Checking,
+        None,
+        None,
+    );
+    let connection = connection.clone();
+    let check = async move { ProviderRuntime::inspect(adapter, &connection).await };
+    Some((checking, check.boxed()))
 }
 
 pub fn providers_response_from_runtimes(runtimes: &[ProviderRuntime]) -> ProvidersResponse {
@@ -147,14 +152,23 @@ async fn build_provider_info(
     let requirements = adapter.config_requirements();
     let started = std::time::Instant::now();
     let result = if !adapter.supported_os().contains(&current_os) {
-        ProviderCheckResult::unavailable("OS not supported")
+        unavailable(ProviderProblem::Unsupported, "OS not supported")
     } else if !context.missing_required_keys(requirements).is_empty() {
-        ProviderCheckResult::unavailable(format!("{} is not configured", connection.label))
+        unavailable(
+            ProviderProblem::NotConfigured,
+            format!("{} is not configured", connection.label),
+        )
     } else if let Some(key) = context.first_invalid_key(requirements) {
-        ProviderCheckResult::unavailable(format!("{} must be a {}", key.name, key.shape))
+        unavailable(
+            ProviderProblem::NotConfigured,
+            format!("{} must be a {}", key.name, key.shape),
+        )
     } else if let Some(binding) = adapter.config_binding() {
         if let Err(err) = (binding.resolve)(context) {
-            ProviderCheckResult::unavailable(format!("Config resolution failed: {err}"))
+            unavailable(
+                ProviderProblem::NotConfigured,
+                format!("Config resolution failed: {err}"),
+            )
         } else {
             with_startup_timeout(
                 adapter.startup_check(current_os.clone(), context.clone()),
@@ -182,13 +196,18 @@ async fn build_provider_info(
     };
     diagnostics::record(level, connection.id.to_string(), summary);
 
-    provider_info(adapter, connection, status, result.reason)
+    provider_info(adapter, connection, status, result.problem, result.reason)
+}
+
+fn unavailable(problem: ProviderProblem, reason: impl Into<String>) -> ProviderCheckResult {
+    ProviderCheckResult::problem(ProviderStatus::Unavailable, problem, reason)
 }
 
 fn provider_info(
     adapter: &dyn ProviderAdapter,
     connection: &Connection,
     status: ProviderStatus,
+    problem: Option<ProviderProblem>,
     reason: Option<String>,
 ) -> ProviderInfo {
     ProviderInfo {
@@ -202,6 +221,7 @@ fn provider_info(
         status,
         supported_os: adapter.supported_os().to_vec(),
         reason,
+        problem,
         checked_at: now_iso(),
     }
 }
@@ -213,9 +233,9 @@ pub(crate) async fn with_startup_timeout(
     tokio::time::timeout(timeout, check)
         .await
         .unwrap_or_else(|_| {
-            ProviderCheckResult::unavailable(format!(
-                "Startup check timed out after {}s",
-                timeout.as_secs()
-            ))
+            unavailable(
+                ProviderProblem::TimedOut,
+                format!("Startup check timed out after {}s", timeout.as_secs()),
+            )
         })
 }

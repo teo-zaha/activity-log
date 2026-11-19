@@ -22,6 +22,8 @@ pub type ConnectionEntries = (ConnectionId, Vec<ActivityEntry>);
 pub trait ProviderAdapter: Send + Sync {
     fn id(&self) -> Source;
     fn supported_os(&self) -> &'static [SupportedOs];
+    /// What the kind collects, in a few words, for the tile that adds it.
+    fn description(&self) -> &'static str;
 
     /// Whether the kind can be configured more than once.
     fn instances(&self) -> Instances {
