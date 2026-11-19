@@ -314,9 +314,10 @@ impl CollectionRuntime {
     /// shows stays on screen until each connection is in again. Returns the work to spawn.
     ///
     /// Stopping drops the run at its next await. Blocking work it already handed to a thread
-    /// cannot be dropped: the local Git walk sees it and stops between folders, repositories and
-    /// commits (`collect::git::blocking_until_dropped`); WSL scripts, Outlook COM and event log
-    /// reads run to their end unseen.
+    /// sees it (`platform::blocking`): the local Git walk stops between folders, repositories
+    /// and commits, a WSL script's `wsl.exe` is killed, Outlook and event log reads stop between
+    /// items. A call into Outlook that does not return holds Outlook until it does; the next
+    /// collection waits for it.
     #[must_use]
     pub fn take_over(&self, previous: &CollectionRuntime) -> Option<RuntimeTask> {
         let (options, shown) = {

@@ -4,7 +4,7 @@ use std::{
     ops::ControlFlow,
     path::{Path, PathBuf},
     sync::{
-        Arc, Mutex,
+        Mutex,
         atomic::{AtomicBool, Ordering},
     },
 };
@@ -21,7 +21,7 @@ use gix::{
 use crate::{
     diagnostics,
     model::{CollectOptions, GitEntry},
-    platform::background_command,
+    platform::{background_command, blocking::blocking_until_dropped},
     provider::{
         connection::ConnectionLocation,
         git::{GitConfig, default_git_root},
@@ -45,6 +45,7 @@ mod windows_impl {
     pub(crate) fn collect_wsl(
         target: &WslTarget,
         _options: &CollectOptions,
+        _cancelled: &std::sync::atomic::AtomicBool,
     ) -> Result<RepoCommits> {
         bail!("WSL {} needs Windows", target.distro)
     }
@@ -192,43 +193,17 @@ pub(crate) async fn collect_git(
 ) -> Result<RepoCommits> {
     let options = *options;
     let config = config.clone();
-    let connection = diagnostics::current_connection();
-    blocking_until_dropped(move |cancelled| {
-        diagnostics::in_connection_sync(connection, || match location {
-            ConnectionLocation::Local => collect_local_repos(&options, &config, cancelled),
-            // The `wsl.exe` script cannot be stopped from here; it ends on its own.
-            ConnectionLocation::Wsl(distro) => {
-                let target = WslTarget {
-                    distro,
-                    dirs: config.wsl_dirs()?,
-                };
-                windows_impl::collect_wsl(&target, &options)
-            }
-        })
+    blocking_until_dropped("Git collection", move |cancelled| match location {
+        ConnectionLocation::Local => collect_local_repos(&options, &config, cancelled),
+        ConnectionLocation::Wsl(distro) => {
+            let target = WslTarget {
+                distro,
+                dirs: config.wsl_dirs()?,
+            };
+            windows_impl::collect_wsl(&target, &options, cancelled)
+        }
     })
     .await?
-}
-
-/// Sets its flag when dropped: the future waiting for blocking work is gone.
-struct CancelOnDrop(Arc<AtomicBool>);
-
-impl Drop for CancelOnDrop {
-    fn drop(&mut self) {
-        self.0.store(true, Ordering::Relaxed);
-    }
-}
-
-/// Runs `work` on a blocking thread with a flag that is set once nobody waits for it any more:
-/// the collection was stopped (another range, a settings change) or timed out. Dropping the
-/// future cannot stop the thread, so `work` checks the flag and ends early.
-pub(crate) async fn blocking_until_dropped<T: Send + 'static>(
-    work: impl FnOnce(&AtomicBool) -> T + Send + 'static,
-) -> Result<T> {
-    let cancelled = Arc::new(AtomicBool::new(false));
-    let _cancel_on_drop = CancelOnDrop(cancelled.clone());
-    tokio::task::spawn_blocking(move || work(&cancelled))
-        .await
-        .map_err(|err| anyhow!("Git collection task failed: {err}"))
 }
 
 /// The basic implementation: repositories on this machine's file system, read with gix. Stops

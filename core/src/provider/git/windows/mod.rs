@@ -17,6 +17,7 @@ pub fn default_wsl_distros() -> Vec<String> {
 pub(super) fn check_wsl_ready(
     distro: &str,
     config: &super::GitConfig,
+    cancelled: &std::sync::atomic::AtomicBool,
 ) -> crate::provider::provider_check_result::ProviderCheckResult {
     use crate::{
         collect::git::{WslTarget, windows::has_wsl_repos},
@@ -30,7 +31,7 @@ pub(super) fn check_wsl_ready(
         },
         Err(err) => return ProviderCheckResult::unavailable(err.to_string()),
     };
-    match has_wsl_repos(&target) {
+    match has_wsl_repos(&target, cancelled) {
         Ok(false) => {
             ProviderCheckResult::unavailable(format!("No repositories found in WSL {distro}"))
         }

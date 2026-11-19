@@ -9,8 +9,8 @@ use ::windows::{
             Input::KeyboardAndMouse::{TME_LEAVE, TME_NONCLIENT, TRACKMOUSEEVENT, TrackMouseEvent},
             Shell::{DefSubclassProc, SetWindowSubclass},
             WindowsAndMessaging::{
-                CREATESTRUCTW, CreateWindowExW, DefWindowProcW, FindWindowExW, GA_ROOT,
-                GWLP_USERDATA, GetAncestor, GetClientRect, GetWindowLongPtrW, HTMAXBUTTON,
+                CREATESTRUCTW, CreateWindowExW, DefWindowProcW, DestroyWindow, FindWindowExW,
+                GA_ROOT, GWLP_USERDATA, GetAncestor, GetClientRect, GetWindowLongPtrW, HTMAXBUTTON,
                 HWND_TOP, IDC_ARROW, IsZoomed, LoadCursorW, RegisterClassExW, SM_CYFRAME,
                 SW_MAXIMIZE, SW_RESTORE, SWP_NOACTIVATE, SWP_NOOWNERZORDER, SetWindowLongPtrW,
                 SetWindowPos, ShowWindow, WINDOW_EX_STYLE, WM_NCCREATE, WM_NCDESTROY, WM_NCHITTEST,
@@ -22,6 +22,7 @@ use ::windows::{
     },
     core::{PCWSTR, w},
 };
+use activity_log_core::diagnostics;
 use serde_json::json;
 use tauri::{Emitter, Runtime, WebviewWindow};
 
@@ -38,6 +39,10 @@ struct Overlay {
     hovered: Cell<bool>,
     pressed: Cell<bool>,
     notify: Box<dyn Fn(bool, bool)>,
+    /// Set once `CreateWindowExW` returned the window: from then on the window frees this
+    /// when it is destroyed. Before, a window that fails while it is created is destroyed
+    /// without freeing it, and `attach_to` does.
+    owned_by_window: Cell<bool>,
 }
 
 impl Overlay {
@@ -51,30 +56,45 @@ impl Overlay {
 }
 
 /// Puts the window over the button, or moves it there when the page asks again (a reload).
+/// It is made on the main thread after this returns; if that fails, the page's own button
+/// stays, without snap layouts, and the Logs pane says why.
 pub fn attach<R: Runtime>(window: WebviewWindow<R>, area: ButtonArea) -> Result<(), String> {
     let target = window.clone();
     window
         .run_on_main_thread(move || {
-            let Ok(parent) = target.hwnd() else {
-                return;
-            };
-            let parent = HWND(parent.0);
-            let notify = move |hovered: bool, pressed: bool| {
-                let _ = target.emit(EVENT, json!({ "hovered": hovered, "pressed": pressed }));
-            };
-            unsafe { attach_to(parent, area, Box::new(notify)) };
+            let attached = target
+                .hwnd()
+                .map_err(|err| format!("the window has no handle: {err}"))
+                .and_then(|parent| {
+                    let parent = HWND(parent.0);
+                    let notify = move |hovered: bool, pressed: bool| {
+                        let _ =
+                            target.emit(EVENT, json!({ "hovered": hovered, "pressed": pressed }));
+                    };
+                    unsafe { attach_to(parent, area, Box::new(notify)) }
+                });
+            if let Err(reason) = attached {
+                diagnostics::warn(
+                    "window",
+                    format!("Snap layouts over the maximize button are unavailable: {reason}"),
+                );
+            }
         })
         .map_err(|err| err.to_string())
 }
 
-unsafe fn attach_to(parent: HWND, area: ButtonArea, notify: Box<dyn Fn(bool, bool)>) {
+unsafe fn attach_to(
+    parent: HWND,
+    area: ButtonArea,
+    notify: Box<dyn Fn(bool, bool)>,
+) -> Result<(), String> {
     unsafe {
         if let Ok(overlay) = FindWindowExW(Some(parent), None, CLASS_NAME, PCWSTR::null()) {
             if let Some(state) = overlay_state(overlay) {
                 state.area.set(area);
             }
             place(overlay, parent);
-            return;
+            return Ok(());
         }
 
         let instance = GetModuleHandleW(PCWSTR::null())
@@ -95,9 +115,10 @@ unsafe fn attach_to(parent: HWND, area: ButtonArea, notify: Box<dyn Fn(bool, boo
             hovered: Cell::new(false),
             pressed: Cell::new(false),
             notify,
+            owned_by_window: Cell::new(false),
         }));
         // Never painted, as Tauri's window over the resize border: the page shows through.
-        let Ok(overlay) = CreateWindowExW(
+        let created = CreateWindowExW(
             WINDOW_EX_STYLE::default(),
             CLASS_NAME,
             PCWSTR::null(),
@@ -110,11 +131,28 @@ unsafe fn attach_to(parent: HWND, area: ButtonArea, notify: Box<dyn Fn(bool, boo
             None,
             instance,
             Some(state as _),
-        ) else {
-            return;
+        );
+        let overlay = match created {
+            Ok(overlay) => {
+                (*state).owned_by_window.set(true);
+                overlay
+            }
+            Err(err) => {
+                drop(Box::from_raw(state));
+                return Err(format!("creating the window over the button failed: {err}"));
+            }
         };
         place(overlay, parent);
-        let _ = SetWindowSubclass(parent, Some(follow_parent), SUBCLASS_ID, overlay.0 as usize);
+        if !SetWindowSubclass(parent, Some(follow_parent), SUBCLASS_ID, overlay.0 as usize)
+            .as_bool()
+        {
+            // Without following the window it would sit in the wrong place after a resize, and
+            // the next attach would find it and take it for working: it goes, and that attach
+            // makes a new one. Destroying it frees its state.
+            let _ = DestroyWindow(overlay);
+            return Err("following the window's size failed".to_string());
+        }
+        Ok(())
     }
 }
 
@@ -229,7 +267,7 @@ unsafe extern "system" fn overlay_proc(
             WM_NCRBUTTONDOWN | WM_NCRBUTTONUP => return LRESULT(0),
             WM_NCDESTROY => {
                 let state = SetWindowLongPtrW(hwnd, GWLP_USERDATA, 0) as *mut Overlay;
-                if !state.is_null() {
+                if !state.is_null() && (*state).owned_by_window.get() {
                     drop(Box::from_raw(state));
                 }
             }

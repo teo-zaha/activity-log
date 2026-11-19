@@ -27,7 +27,11 @@ use self::windows as windows_impl;
 mod windows_impl {
     use crate::provider::{git::GitConfig, provider_check_result::ProviderCheckResult};
 
-    pub(super) fn check_wsl_ready(distro: &str, _config: &GitConfig) -> ProviderCheckResult {
+    pub(super) fn check_wsl_ready(
+        distro: &str,
+        _config: &GitConfig,
+        _cancelled: &std::sync::atomic::AtomicBool,
+    ) -> ProviderCheckResult {
         ProviderCheckResult::unavailable(format!("WSL {distro} needs Windows"))
     }
 }
@@ -44,14 +48,17 @@ crate::provider! {
 
             let config = config.clone();
             let location = context.location();
-            tokio::task::spawn_blocking(move || match location {
-                ConnectionLocation::Local => local_check_result(&config),
-                ConnectionLocation::Wsl(distro) => windows_impl::check_wsl_ready(&distro, &config),
+            // Its timeout drops the wait, which stops a `wsl.exe` that hangs.
+            crate::platform::blocking::blocking_until_dropped("Git startup check", move |cancelled| {
+                match location {
+                    ConnectionLocation::Local => local_check_result(&config),
+                    ConnectionLocation::Wsl(distro) => {
+                        windows_impl::check_wsl_ready(&distro, &config, cancelled)
+                    }
+                }
             })
             .await
-            .unwrap_or_else(|err| {
-                ProviderCheckResult::unavailable(format!("Git startup check failed: {err}"))
-            })
+            .unwrap_or_else(|err| ProviderCheckResult::unavailable(format!("{err:#}")))
         }
 
         async fn collect(&self, _current_os, options, context) {

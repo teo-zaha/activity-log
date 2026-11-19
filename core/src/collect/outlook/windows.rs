@@ -1,11 +1,14 @@
+use std::sync::atomic::{AtomicBool, Ordering};
+
 use anyhow::Result;
 use chrono::{DateTime, Days, Utc};
 
 use crate::{
     model::{CollectOptions, OutlookEntry, outlook::raw_outlook_event::RawOutlookEvent},
     platform::{
-        ComGuard, DispatchObject, active_outlook_application, connect_outlook_application,
-        process_is_elevated, running_process_names,
+        ComGuard, DispatchObject, active_outlook_application,
+        blocking::{Exclusive, STOPPED, blocking_until_dropped},
+        connect_outlook_application, process_is_elevated, running_process_names,
     },
 };
 
@@ -15,23 +18,37 @@ use super::{OutlookFallback, busy_status_from_com, normalize_outlook_events};
 const MAX_EVENTS: usize = 10_000;
 
 pub(super) async fn collect_outlook(options: &CollectOptions) -> Result<Vec<OutlookEntry>> {
+    // A call Outlook does not answer cannot be stopped from here: until it returns, the next
+    // collection waits for it (and gives up when it is stopped) instead of adding another.
+    static OUTLOOK: Exclusive = Exclusive::new();
     let blocking_options = *options;
-    let events = tokio::task::spawn_blocking(move || collect_outlook_blocking(&blocking_options))
-        .await
-        .map_err(|err| anyhow::anyhow!("Outlook collection task failed: {err}"))??;
+    let events = blocking_until_dropped("Outlook collection", move |cancelled| {
+        OUTLOOK
+            .run(cancelled, || {
+                collect_outlook_blocking(&blocking_options, cancelled)
+            })
+            .and_then(|events| events)
+    })
+    .await??;
     Ok(normalize_outlook_events(events, options))
 }
 
-fn collect_outlook_blocking(options: &CollectOptions) -> Result<Vec<RawOutlookEvent>> {
+/// Reads the calendar; between appointments it stops once `cancelled` is set.
+fn collect_outlook_blocking(
+    options: &CollectOptions,
+    cancelled: &AtomicBool,
+) -> Result<Vec<RawOutlookEvent>> {
     let _com = ComGuard::new()?;
     let outlook = attach_to_outlook()?;
     let namespace = outlook.method_dispatch_string("GetNamespace", "MAPI")?;
     let calendar = namespace.method_dispatch_i32("GetDefaultFolder", 9)?;
     let items = calendar.property_dispatch("Items")?;
-    // Expanding recurring meetings needs a collection sorted by start, and leaves it without a
-    // usable `Count` (Outlook can report `i32::MAX`), so it is walked with `GetFirst`/`GetNext`.
-    items.set_bool("IncludeRecurrences", true)?;
+    // Outlook expands recurring meetings only in a collection sorted by start before
+    // `IncludeRecurrences` is set (and then restricted), so the order matters. The expanded
+    // collection has no usable `Count` (Outlook can report `i32::MAX`), so it is walked with
+    // `GetFirst`/`GetNext`.
     items.method_unit_string("Sort", "[Start]")?;
+    items.set_bool("IncludeRecurrences", true)?;
 
     // Restrict compares in Outlook's local time. Rather than converting, pad the UTC range by a
     // day on each side (more than any UTC offset); `normalize_outlook_events` then applies the
@@ -46,6 +63,9 @@ fn collect_outlook_blocking(options: &CollectOptions) -> Result<Vec<RawOutlookEv
     let mut next = filtered.method_optional_dispatch("GetFirst")?;
 
     while let Some(event) = next {
+        if cancelled.load(Ordering::Relaxed) {
+            return Err(anyhow::anyhow!(STOPPED));
+        }
         if events.len() >= MAX_EVENTS {
             return Err(anyhow::anyhow!(
                 "Outlook returned more than {MAX_EVENTS} events for the range; stopped reading"

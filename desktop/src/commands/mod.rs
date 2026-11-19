@@ -84,13 +84,19 @@ pub(crate) async fn recheck_connection(
     Ok(response)
 }
 
+/// Async, so reading the file and listing WSL distributions (the registry) never holds the
+/// window's thread, which runs the commands that are not.
 #[tauri::command]
-pub(crate) fn get_provider_config() -> Result<ProviderConfigSnapshotDto, String> {
-    let connections = match load_config()? {
-        Some(file) => shown_connections(&file)?,
-        None => Vec::new(),
-    };
-    Ok(build_snapshot(&connections, &current_os()))
+pub(crate) async fn get_provider_config() -> Result<ProviderConfigSnapshotDto, String> {
+    tauri::async_runtime::spawn_blocking(|| {
+        let connections = match load_config()? {
+            Some(file) => shown_connections(&file)?,
+            None => Vec::new(),
+        };
+        Ok(build_snapshot(&connections, &current_os()))
+    })
+    .await
+    .map_err(|err| format!("Reading settings failed: {err}"))?
 }
 
 #[tauri::command]
@@ -188,10 +194,15 @@ async fn update_config_at<T: Send + 'static>(
         *current = runtime;
     }
 
+    // Off the async workers: it lists WSL distributions from the registry.
+    let snapshot =
+        tauri::async_runtime::spawn_blocking(move || build_snapshot(&connections, &current_os()))
+            .await
+            .map_err(|err| format!("Reading settings failed: {err}"))?;
     Ok((
         edited.value,
         ProviderConfigSaveResponseDto {
-            snapshot: build_snapshot(&connections, &current_os()),
+            snapshot,
             providers_response,
         },
     ))

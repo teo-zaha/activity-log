@@ -1,4 +1,7 @@
-use std::mem::{ManuallyDrop, size_of};
+use std::{
+    mem::{ManuallyDrop, size_of},
+    sync::atomic::AtomicBool,
+};
 
 use anyhow::{Result, anyhow};
 use chrono::NaiveDate;
@@ -240,33 +243,29 @@ pub fn wsl_distribution_names() -> Vec<String> {
 
 /// Runs a POSIX shell script in a WSL distribution as a login shell, so `PATH` matches an
 /// interactive terminal (NixOS keeps git outside `/usr/bin`). The script goes in on stdin, so
-/// no value in it passes through Windows command-line quoting.
-pub fn run_wsl_script(distro: &str, script: &str) -> Result<String> {
-    use std::{io::Write, process::Stdio};
+/// no value in it passes through Windows command-line quoting. One script at a time per
+/// distribution; `wsl.exe` is killed once `cancelled` is set.
+pub fn run_wsl_script(distro: &str, script: &str, cancelled: &AtomicBool) -> Result<String> {
+    use std::sync::LazyLock;
 
-    let mut command = std::process::Command::new("wsl.exe");
-    hide_console_window(&mut command);
-    let mut child = command
-        .args(["-d", distro, "--exec", "/bin/sh", "-l", "-s"])
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()
-        .map_err(|err| anyhow!("Cannot start wsl.exe: {err}"))?;
-    child
-        .stdin
-        .take()
-        .ok_or_else(|| anyhow!("wsl.exe has no stdin"))?
-        .write_all(script.as_bytes())?;
-    let output = child.wait_with_output()?;
-    if !output.status.success() {
-        return Err(anyhow!(
-            "wsl.exe exited with {}: {}",
-            output.status,
-            wsl_message(&output.stderr).trim()
-        ));
-    }
-    Ok(String::from_utf8_lossy(&output.stdout).into_owned())
+    use super::blocking::{ExclusiveByName, run_cancellable};
+
+    static DISTRIBUTIONS: LazyLock<ExclusiveByName> = LazyLock::new(ExclusiveByName::new);
+    DISTRIBUTIONS.get(distro).run(cancelled, || {
+        // `run_cancellable` starts it without a console window.
+        let mut command = std::process::Command::new("wsl.exe");
+        command.args(["-d", distro, "--exec", "/bin/sh", "-l", "-s"]);
+        let output = run_cancellable(&mut command, Some(script.as_bytes().to_vec()), cancelled)
+            .map_err(|err| anyhow!("wsl.exe: {err:#}"))?;
+        if !output.status.success() {
+            return Err(anyhow!(
+                "wsl.exe exited with {}: {}",
+                output.status,
+                wsl_message(&output.stderr).trim()
+            ));
+        }
+        Ok(String::from_utf8_lossy(&output.stdout).into_owned())
+    })?
 }
 
 /// wsl.exe writes its own messages as UTF-16LE, while Linux programs write UTF-8.
@@ -290,19 +289,38 @@ pub fn system_log_access(log_name: &str) -> Result<()> {
     Ok(())
 }
 
-pub fn query_windows_event_log(log_name: &str, query: &str) -> Result<Vec<String>> {
+/// The events of `log_name` that match `query`, as XML. One read at a time; between batches
+/// it stops once `cancelled` is set.
+pub fn query_windows_event_log(
+    log_name: &str,
+    query: &str,
+    cancelled: &AtomicBool,
+) -> Result<Vec<String>> {
+    static EVENT_LOG: super::blocking::Exclusive = super::blocking::Exclusive::new();
+    EVENT_LOG.run(cancelled, || read_event_log(log_name, query, cancelled))?
+}
+
+fn read_event_log(log_name: &str, query: &str, cancelled: &AtomicBool) -> Result<Vec<String>> {
     let result_set = EventHandle::query(log_name, query)?;
     let mut event_handles = [0isize; 16];
     let mut xml_events = Vec::new();
 
     loop {
+        if cancelled.load(std::sync::atomic::Ordering::Relaxed) {
+            return Err(anyhow!(super::blocking::STOPPED));
+        }
         let mut returned = 0;
         let next = unsafe { EvtNext(result_set.raw, &mut event_handles, 0, 0, &mut returned) };
 
         match next {
             Ok(()) => {
-                for raw in &event_handles[..returned as usize] {
-                    let event = EventHandle::from_raw(EVT_HANDLE(*raw));
+                // Every handle of the batch is owned before the first render can fail, so an
+                // error closes the rest too.
+                let batch = event_handles[..returned as usize]
+                    .iter()
+                    .map(|raw| EventHandle::from_raw(EVT_HANDLE(*raw)))
+                    .collect::<Vec<_>>();
+                for event in &batch {
                     xml_events.push(render_event_xml(event.raw)?);
                 }
             }
