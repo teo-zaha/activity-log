@@ -25,7 +25,8 @@ pub use common::{
     add_connection_response_dto::AddConnectionResponseDto, collect_options::CollectOptions,
     collect_request::CollectRequest, collection_failed_response::CollectionFailedResponse,
     connection_id::ConnectionId, error_response::ErrorResponse, export_file::ExportFile,
-    export_request::ExportRequest, output_format::OutputFormat,
+    export_request::ExportRequest, identity_evidence::IdentityEvidence,
+    output_format::OutputFormat,
     provider_config_connection_state_dto::ProviderConfigConnectionStateDto,
     provider_config_field_state_dto::ProviderConfigFieldStateDto,
     provider_config_field_value_dto::ProviderConfigFieldValueDto,
@@ -36,8 +37,8 @@ pub use common::{
     provider_config_value_dto::ProviderConfigValueDto,
     provider_config_value_type_dto::ProviderConfigValueTypeDto, provider_info::ProviderInfo,
     provider_kind_dto::ProviderKindDto, provider_problem::ProviderProblem,
-    provider_status::ProviderStatus, providers_response::ProvidersResponse, source::Source,
-    supported_os::SupportedOs,
+    provider_status::ProviderStatus, providers_response::ProvidersResponse,
+    remote_identity::RemoteIdentity, source::Source, supported_os::SupportedOs,
 };
 pub use diagnostics::{log_entry::LogEntry, log_level::LogLevel, logs_response::LogsResponse};
 pub use git::git_entry::GitEntry;

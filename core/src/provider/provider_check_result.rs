@@ -1,4 +1,4 @@
-use crate::model::{ProviderProblem, ProviderStatus};
+use crate::model::{IdentityEvidence, ProviderProblem, ProviderStatus};
 
 #[derive(Debug, Clone)]
 pub struct ProviderCheckResult {
@@ -6,6 +6,8 @@ pub struct ProviderCheckResult {
     /// Set together with `reason`.
     pub problem: Option<ProviderProblem>,
     pub reason: Option<String>,
+    /// Whose token the check saw; only remote kinds with an identity request set it.
+    pub identity: IdentityEvidence,
 }
 
 impl ProviderCheckResult {
@@ -14,6 +16,7 @@ impl ProviderCheckResult {
             status: ProviderStatus::Available,
             problem: None,
             reason: None,
+            identity: IdentityEvidence::None,
         }
     }
 
@@ -34,6 +37,12 @@ impl ProviderCheckResult {
             status,
             problem: Some(problem),
             reason: Some(reason.into()),
+            identity: IdentityEvidence::None,
         }
+    }
+
+    pub fn with_identity(mut self, identity: IdentityEvidence) -> Self {
+        self.identity = identity;
+        self
     }
 }

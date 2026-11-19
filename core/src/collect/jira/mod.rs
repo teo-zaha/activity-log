@@ -1,16 +1,25 @@
-use anyhow::{Result, anyhow};
+use std::collections::HashSet;
+
+use anyhow::{Result, anyhow, bail};
 use chrono::{DateTime, Days, FixedOffset};
 
 use crate::{
+    diagnostics,
     model::{
         CollectOptions, JiraEntry, JiraEntryType,
-        jira::{jira_issue::JiraIssue, jira_search_response::JiraSearchResponse},
+        jira::{
+            jira_changelog::JiraChangelog, jira_issue::JiraIssue,
+            jira_search_response::JiraSearchResponse,
+        },
     },
     provider::{
-        jira::{JiraConfig, jira_client},
+        jira::{JiraConfig, api::JiraApi},
         provider_context::ProviderContext,
+        remote_error::ApiError,
     },
 };
+
+const PAGE_SIZE: usize = 50;
 
 pub async fn collect_jira(
     options: &CollectOptions,
@@ -22,41 +31,123 @@ pub async fn collect_jira(
     let since = (options.start.date_naive() - Days::new(1))
         .format("%Y-%m-%d")
         .to_string();
+    let jql = jira_search_jql(&since);
 
-    let client = jira_client(config)?;
+    let api = JiraApi::new(config).map_err(|err| anyhow!(err.reason(JiraApi::SERVICE)))?;
 
     let mut entries = Vec::new();
+    let mut partial = Vec::new();
+    let mut seen = HashSet::new();
     let mut start_at = 0;
-    let max_results = 50;
 
     loop {
-        let jql_query = jira_search_jql(&since);
-        let jql = urlencoding::encode(&jql_query);
-        let url = format!(
-            "{}/rest/api/2/search?jql={jql}&startAt={start_at}&maxResults={max_results}&fields=summary,status,issuetype,created,updated&expand=changelog",
-            config.url.trim_end_matches('/')
+        let mut url = api.endpoint(&["search"]);
+        url.query_pairs_mut()
+            .append_pair("jql", &jql)
+            .append_pair("startAt", &start_at.to_string())
+            .append_pair("maxResults", &PAGE_SIZE.to_string())
+            .append_pair("fields", "summary,status,issuetype,created,updated")
+            .append_pair("expand", "changelog");
+        let page = api
+            .get_json::<JiraSearchResponse>(url)
+            .await
+            .map_err(|err| anyhow!(err.message(JiraApi::SERVICE)))?;
+
+        // A page of another offset, or one with nothing new, would repeat issues or never end;
+        // an issue that moved into a later page is kept once.
+        let received = page.issues.len();
+        let fresh: Vec<JiraIssue> = page
+            .issues
+            .into_iter()
+            .filter(|issue| seen.insert(issue.key.clone()))
+            .collect();
+        if page.start_at.is_some_and(|start| start != start_at)
+            || (received > 0 && fresh.is_empty())
+        {
+            bail!(ApiError::Decode.message(JiraApi::SERVICE));
+        }
+
+        partial.extend(partial_changelogs(&fresh));
+        entries.extend(map_jira_issues(&fresh, options));
+        match next_start(start_at, received, page.total, page.is_last) {
+            Some(next) => start_at = next,
+            None => break,
+        }
+    }
+
+    if !partial.is_empty() {
+        diagnostics::warn(
+            "jira",
+            format!(
+                "Jira sent only part of the change history of {}; status changes outside it are missing",
+                describe_issues(&partial)
+            ),
         );
-        let response = client.get(url).send().await?;
-
-        if !response.status().is_success() {
-            let status = response.status();
-            let body = response.text().await.unwrap_or_default();
-            return Err(anyhow!("[jira] API error {status}: {body}"));
-        }
-
-        let data = response.json::<JiraSearchResponse>().await?;
-        if data.issues.is_empty() {
-            break;
-        }
-
-        entries.extend(map_jira_issues(&data.issues, options));
-        if data.issues.len() < max_results {
-            break;
-        }
-        start_at += max_results;
     }
 
     Ok(entries)
+}
+
+/// Where the next page starts. Paging follows what came back: the server may cap a page below
+/// `PAGE_SIZE`, so only an empty page, `isLast` or reaching `total` ends it, never a short
+/// page alone.
+pub(crate) fn next_start(
+    start_at: usize,
+    received: usize,
+    total: Option<usize>,
+    is_last: Option<bool>,
+) -> Option<usize> {
+    let next = start_at + received;
+    let more = received > 0 && is_last != Some(true) && total.is_none_or(|total| next < total);
+    more.then_some(next)
+}
+
+/// Keys of issues whose embedded changelog is only one page of it.
+pub(crate) fn partial_changelogs(issues: &[JiraIssue]) -> Vec<String> {
+    issues
+        .iter()
+        .filter(|issue| {
+            issue
+                .changelog
+                .as_ref()
+                .is_some_and(JiraChangelog::is_partial)
+        })
+        .map(|issue| issue.key.clone())
+        .collect()
+}
+
+/// The issues for a log line. Keys are server text, so only well-formed ones (`ABC-12`) are
+/// shown, at most five; the rest are counted.
+pub(crate) fn describe_issues(keys: &[String]) -> String {
+    const SHOWN: usize = 5;
+    let shown: Vec<&str> = keys
+        .iter()
+        .map(String::as_str)
+        .filter(|key| is_issue_key(key))
+        .take(SHOWN)
+        .collect();
+    let more = keys.len() - shown.len();
+    match (shown.is_empty(), more) {
+        (true, _) => format!("{} issues", keys.len()),
+        (false, 0) => shown.join(", "),
+        (false, more) => format!("{} and {more} more", shown.join(", ")),
+    }
+}
+
+/// `PROJECT-123`: a project key of capitals, digits and `_` starting with a capital, a
+/// number without leading zeros; at most 100 characters.
+fn is_issue_key(key: &str) -> bool {
+    let Some((project, number)) = key.rsplit_once('-') else {
+        return false;
+    };
+    key.len() <= 100
+        && project.starts_with(|ch: char| ch.is_ascii_uppercase())
+        && project.len() >= 2
+        && project
+            .chars()
+            .all(|ch| ch.is_ascii_uppercase() || ch.is_ascii_digit() || ch == '_')
+        && number.starts_with(|ch: char| matches!(ch, '1'..='9'))
+        && number.chars().all(|ch| ch.is_ascii_digit())
 }
 
 /// Issues touched on or after `since`. There is deliberately no upper bound on `updatedDate`:

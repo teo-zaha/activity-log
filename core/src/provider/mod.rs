@@ -9,6 +9,8 @@ pub mod provider_check_result;
 pub mod provider_config;
 pub mod provider_context;
 pub mod provider_runtime;
+pub(crate) mod remote_api;
+pub mod remote_error;
 pub mod system;
 
 #[cfg(test)]
@@ -29,9 +31,13 @@ pub use provider_runtime::{
 
 /// HTTP client defaults for remote providers; reqwest has no timeouts by default.
 pub(crate) fn http_client_builder() -> reqwest::ClientBuilder {
-    reqwest::Client::builder()
+    let builder = reqwest::Client::builder()
         .connect_timeout(Duration::from_secs(10))
-        .timeout(Duration::from_secs(30))
+        .timeout(Duration::from_secs(30));
+    // Tests talk to local servers only; a proxy from the environment must never see them.
+    #[cfg(test)]
+    let builder = builder.no_proxy();
+    builder
 }
 
 #[macro_export]
