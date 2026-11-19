@@ -254,7 +254,8 @@ export class DayIndexComponent {
   private readonly dayPillHeight = computed(() => {
     const active = this.activeIndex()
     const preview = this.previewIndex()
-    if (!this.magnifies() || Math.abs(active - preview) !== 1) return DAY_PILL_HEIGHT
+    // `preview` is -1 without a pointer; next to the newest day (0) that is no neighbour.
+    if (!this.magnifies() || preview < 0 || Math.abs(active - preview) !== 1) return DAY_PILL_HEIGHT
     const { centres } = this.layout()
     const gap = Math.abs(centres[active] - centres[preview])
     const fits = 2 * (gap - BULGE_GAP - MIN_BULGE_HALF)

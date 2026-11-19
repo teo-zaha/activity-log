@@ -148,6 +148,13 @@ describe('DayIndexComponent', () => {
     expect(parseFloat(bulge.style.getPropertyValue('--y')) + half).toBeLessThanOrEqual(pillY - 11)
   })
 
+  it('keeps the full pill on the newest day while nothing is hovered', async () => {
+    // The newest day is the first row of the rail.
+    const { rail } = await renderLongRail(items, '2026-11-16', 260)
+    const pill = rail.querySelector<HTMLElement>('.pill')!
+    expect(parseFloat(pill.style.getPropertyValue('--pill-h'))).toBe(22)
+  })
+
   it('makes the pill thinner beside a magnified day and keeps the day on its own row', async () => {
     const busy = buildDayIndex(
       '2026-11-02',
