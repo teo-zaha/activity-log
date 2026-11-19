@@ -33,15 +33,6 @@ class SystemEntryUiAdapter extends EntryUiAdapter<SystemEntry> {
       styleKey: provider.source,
     })
   }
-
-  markdownSummary(): string {
-    const entry = this.entry
-    return entry.label
-  }
-
-  markdownMeta(timeLabel: string): string {
-    return timeLabel
-  }
 }
 
 class SystemProviderAdapter extends ProviderUiAdapterDefinition<

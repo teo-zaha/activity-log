@@ -1,3 +1,5 @@
+import { Location } from '@angular/common'
+import { provideLocationMocks } from '@angular/common/testing'
 import { TestBed } from '@angular/core/testing'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { ActivityLog } from '../generated/activity'
@@ -15,6 +17,7 @@ import {
   ACTIVITY_POLL_DELAY_MS,
 } from './activity-data.service'
 import { ActivityViewStateService } from './activity-view-state.service'
+import { localDayRange } from '../utils/local-day'
 
 /**
  * A collection still running with nothing in yet, 4–6 May (noon to noon, so every time zone
@@ -89,6 +92,48 @@ describe('ActivityDataService', () => {
     vi.useRealTimers()
   })
 
+  describe('opened on a URL with a range', () => {
+    const range = localDayRange('2026-05-17', '2026-05-18')
+
+    function openOnRange(): ReturnType<typeof setup> {
+      TestBed.configureTestingModule({ providers: [provideLocationMocks()] })
+      const parts = setup()
+      TestBed.inject(Location).go('/day/2026-05-18?from=2026-05-17&to=2026-05-18')
+      return parts
+    }
+
+    function collectRequests(backend: MockBackendTransport): unknown[] {
+      return vi
+        .mocked(backend.call)
+        .mock.calls.filter(([operation]) => operation === BackendOperations.collect)
+        .map(([, request]) => request)
+    }
+
+    it('collects that range instead of showing the startup collection', async () => {
+      const { backend, service, viewState } = openOnRange()
+      vi.spyOn(backend, 'call')
+
+      await service.initLoad()
+
+      expect(collectRequests(backend)).toEqual([range])
+      expect(service.allEntries()).toEqual(activityLog.entries)
+      expect([viewState.dateFrom(), viewState.dateTo()]).toEqual(['2026-05-17', '2026-05-18'])
+    })
+
+    it('follows its own collection, which replaces a startup collection of another range', async () => {
+      const { backend, service } = openOnRange()
+      vi.spyOn(backend, 'call')
+      backend.collectResponses = [{ ...running, meta: { ...running.meta, ...range } }]
+      backend.activityResponses = [activityLog]
+
+      await service.initLoad()
+
+      expect(collectRequests(backend)).toEqual([range])
+      expect(service.allEntries()).toEqual(activityLog.entries)
+      expect(service.collectionStatus()).toEqual({ kind: 'idle' })
+    })
+  })
+
   describe('while a collection runs', () => {
     beforeEach(() => vi.useFakeTimers())
     afterEach(() => vi.useRealTimers())
@@ -147,43 +192,48 @@ describe('ActivityDataService', () => {
       expect(service.allEntries()).toEqual(activityLog.entries)
     })
 
-    it('clears the selection when a collection starts, not when entries arrive', async () => {
-      const { backend, service, viewState } = setup()
+    it('follows the collection after a settings change', async () => {
+      const { backend, service } = setup()
       await service.initLoad()
-      viewState.selectedEntry.set(service.allEntryAdapters()[0] ?? null)
-      backend.collectResponse = collectingLog
-      backend.activityResponses = [activityLog]
-
-      const collect = service.collect('2026-05-17', '2026-05-18')
-      expect(viewState.selectedEntry()).toBeNull()
-      await settleAnswers()
-      const selected = service.allEntryAdapters()[0] ?? null
-      viewState.selectedEntry.set(selected)
-
-      await vi.runAllTimersAsync()
-      await collect
-
-      expect(selected).not.toBeNull()
-      expect(viewState.selectedEntry()).toBe(selected)
-    })
-
-    it('follows the collection after a settings change without clearing the selection', async () => {
-      const { backend, service, viewState } = setup()
-      await service.initLoad()
-      const selected = service.allEntryAdapters()[0] ?? null
-      viewState.selectedEntry.set(selected)
-      backend.activityResponses = [{ ...collectingLog, entries: [] }, activityLog]
+      // The backend carries Jira's entry while Jira is collected again.
+      const carried = activityLog.entries.filter(entry => entry.source === 'jira')
+      backend.activityResponses = [{ ...collectingLog, entries: carried }, activityLog]
 
       const follow = service.followCollection()
       await settleAnswers()
 
       expect(service.collectionStatus()).toMatchObject({ kind: 'collecting', operation: 'collect' })
       expect(service.allEntries().map(entry => entry.source)).toEqual(['jira'])
-      expect(viewState.selectedEntry()).toBe(selected)
 
       await vi.runAllTimersAsync()
       await follow
       expect(service.allEntries()).toEqual(activityLog.entries)
+      expect(service.collectionStatus()).toEqual({ kind: 'idle' })
+    })
+
+    it('checks a source again and follows the collection the backend starts after it', async () => {
+      const { backend, service } = setup()
+      await service.initLoad()
+      const listed = backend.providersResponse
+      const [git, ...others] = listed.providers
+      if (!git) throw new Error('fixture has providers')
+      backend.providersResponse = {
+        ...listed,
+        providers: [{ ...git, status: 'checking', usable: false }, ...others],
+      }
+      backend.activityResponses = [collectingLog, activityLog]
+
+      const recheck = service.recheckConnection(git.connection)
+      await settleAnswers()
+
+      expect(backend.requests).toContainEqual(git.connection)
+      expect(service.providerInfo()[0]?.status).toBe('checking')
+      expect(service.collectionStatus()).toMatchObject({ kind: 'collecting', operation: 'collect' })
+
+      backend.providersResponse = listed
+      await vi.runAllTimersAsync()
+      await recheck
+      expect(service.providerInfo()[0]?.status).toBe(git.status)
       expect(service.collectionStatus()).toEqual({ kind: 'idle' })
     })
 
@@ -231,17 +281,18 @@ describe('ActivityDataService', () => {
       expect(service.providerInfo().map(info => info.status)).toEqual(['available', 'available'])
     })
 
-    it('keeps what was shown for a connection until it is collected again', async () => {
+    it('shows a partial log as the backend sends it, carried entries included', async () => {
       const { backend, service } = setup()
       await service.initLoad()
-      backend.collectResponse = { ...collectingLog, entries: [] }
+      // Git is in with nothing; Jira is pending and the backend carries its entry from before.
+      const carried = activityLog.entries.filter(entry => entry.source === 'jira')
+      backend.collectResponse = { ...collectingLog, entries: carried }
       backend.activityResponses = [activityLog]
 
       const collect = service.collect('2026-05-17', '2026-05-18')
       await settleAnswers()
 
-      // Git is in with nothing; Jira is pending and keeps its entry from before.
-      expect(service.allEntries().map(entry => entry.source)).toEqual(['jira'])
+      expect(service.allEntries()).toEqual(carried)
 
       await vi.runAllTimersAsync()
       await collect

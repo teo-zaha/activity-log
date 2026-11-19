@@ -1,36 +1,25 @@
 import { inject, Service } from '@angular/core'
-import { MatDialog } from '@angular/material/dialog'
-import { BREAKPOINTS } from '../../utils/breakpoints'
+import { MatDialog, type MatDialogRef } from '@angular/material/dialog'
 import { SettingsDialogComponent } from './settings-dialog.component'
-import type { SettingsDialogData, SettingsSelection, SettingsTarget } from './settings-dialog.types'
 
 /** Lives in its own file so the dialog and its panes stay out of the initial bundle. */
 @Service()
 export class SettingsDialogOpener {
   private readonly dialog = inject(MatDialog)
 
-  open(target?: SettingsTarget): void {
-    const fullscreen = window.matchMedia?.(`(max-width: ${BREAKPOINTS.phone}px)`).matches ?? false
-    const data: SettingsDialogData = { initialSelection: initialSelection(target) }
-
-    this.dialog.open(SettingsDialogComponent, {
-      data,
-      panelClass: fullscreen
-        ? ['settings-dialog-panel', 'settings-dialog-fullscreen']
-        : 'settings-dialog-panel',
+  /** Opens the dialog on the section the URL names; a phone uses the page host. */
+  open(): MatDialogRef<SettingsDialogComponent> {
+    return this.dialog.open(SettingsDialogComponent, {
+      panelClass: 'settings-dialog-panel',
       backdropClass: 'settings-dialog-backdrop',
-      width: fullscreen ? '100vw' : 'min(1040px, calc(100vw - 32px))',
-      maxWidth: fullscreen ? '100vw' : 'calc(100vw - 32px)',
-      height: fullscreen ? '100dvh' : undefined,
-      maxHeight: fullscreen ? '100dvh' : 'calc(100dvh - 32px)',
+      width: 'min(1040px, calc(100vw - 32px))',
+      maxWidth: 'calc(100vw - 32px)',
+      maxHeight: 'var(--dialog-max-height)',
       autoFocus: 'dialog',
       restoreFocus: true,
+      // The URL opens and closes it: going back within the settings must not close it.
+      closeOnNavigation: false,
       ariaLabel: 'Settings',
     })
   }
-}
-
-function initialSelection(target: SettingsTarget | undefined): SettingsSelection {
-  if (target === undefined) return 'general'
-  return target === 'add' ? 'add' : `connection:${target}`
 }

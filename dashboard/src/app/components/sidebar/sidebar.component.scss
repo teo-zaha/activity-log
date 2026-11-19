@@ -82,13 +82,6 @@
   &:focus-visible {
     @include ui.focus-ring;
   }
-
-  mat-icon {
-    flex-shrink: 0;
-    width: 20px;
-    height: 20px;
-    font-size: 20px;
-  }
 }
 
 %row-active {
@@ -100,6 +93,7 @@
 
 .view-btn {
   @extend %row;
+  text-decoration: none;
 
   mat-icon {
     color: var(--text-tertiary);
@@ -125,8 +119,6 @@
 }
 
 // ── Sources ──────────────────────────────────────────────────────────────────
-
-@include ui.provider-source-vars('.source-chip');
 
 .source-chip {
   @extend %row;
@@ -202,12 +194,7 @@
     height: 24px;
     border: 1px dashed var(--border);
     border-radius: 7px;
-
-    mat-icon {
-      width: 16px;
-      height: 16px;
-      font-size: 16px;
-    }
+    --icon-size: 16px;
   }
 
   &:hover .add-icon {
@@ -218,14 +205,29 @@
 
 // ── Unavailable providers ────────────────────────────────────────────────────
 
+.issue-row {
+  position: relative;
+}
+
 .issue {
   @extend %row;
   padding-block: 8px;
+
+  &.has-action {
+    padding-right: 40px;
+  }
 
   .issue-icon {
     filter: grayscale(1);
     opacity: 0.6;
   }
+}
+
+.issue-action {
+  position: absolute;
+  top: 50%;
+  right: 6px;
+  transform: translateY(-50%);
 }
 
 .issue-copy {
@@ -256,10 +258,7 @@
   @extend %row;
   gap: 6px;
   color: var(--status-error-fg);
-
-  .material-icons {
-    font-size: 18px;
-  }
+  --icon-size: 18px;
 }
 
 .issues-count {

@@ -1,11 +1,10 @@
 import { Component, computed, inject, output, resource, signal } from '@angular/core'
+import { MatIconModule } from '@angular/material/icon'
+import { FeedbackComponent } from '../../feedback/feedback.component'
+import { ButtonComponent } from '../../button/button.component'
 import type { AddConnectionRequestDto, ProviderKindDto } from '../../../generated/activity'
 import { type ConnectionKey, connectionKey } from '../../../providers/connection'
-import {
-  SOURCE_DESCRIPTIONS,
-  UPCOMING_SOURCES,
-  onlyOnLabel,
-} from '../../../providers/source-catalog'
+import { UPCOMING_SOURCES, onlyOnLabel } from '../../../providers/source-catalog'
 import { ActivityService } from '../../../services/activity.service'
 import { extractBackendErrorMessage } from '../../../services/backend/error-message'
 import { RuntimeEnvironmentService } from '../../../services/backend/runtime-environment.service'
@@ -34,7 +33,7 @@ interface GitLocation {
 
 @Component({
   selector: 'app-settings-add-source-pane',
-  imports: [ProviderIconComponent],
+  imports: [FeedbackComponent, ButtonComponent, MatIconModule, ProviderIconComponent],
   templateUrl: './settings-add-source-pane.component.html',
   styleUrl: './settings-add-source-pane.component.scss',
 })
@@ -62,7 +61,7 @@ export class SettingsAddSourcePaneComponent {
       const existing = connections.filter(state => state.connection.source === kind.source)
       return {
         kind,
-        description: SOURCE_DESCRIPTIONS[kind.source],
+        description: kind.description,
         state: this.tileState(
           kind,
           existing.map(state => connectionKey(state.connection))
@@ -157,19 +156,13 @@ export class SettingsAddSourcePaneComponent {
 
   private async add(request: AddConnectionRequestDto, tileId: string): Promise<void> {
     if (this.adding() !== null || !this.config.hasValue()) return
-    const before = new Set(
-      this.config.value().connections.map(state => connectionKey(state.connection))
-    )
 
     this.adding.set(tileId)
     this.error.set(null)
     try {
       const response = await this.activity.addConnection(request)
       this.config.set(response.snapshot)
-      const created = response.snapshot.connections
-        .map(state => connectionKey(state.connection))
-        .find(key => !before.has(key))
-      if (created) this.opened.emit(created)
+      this.opened.emit(connectionKey(response.created))
     } catch (error) {
       this.error.set(extractBackendErrorMessage(error, 'Failed to add the source.'))
     } finally {

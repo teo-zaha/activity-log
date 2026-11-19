@@ -1,6 +1,6 @@
 import { Service, inject, type ResourceRef } from '@angular/core'
 import type { BackendOperation, ReadOperation } from './backend-contract'
-import type { ExportRequest } from './export-request'
+import type { ExportRequest } from '../../generated/activity'
 import { HttpBackendTransport } from './http-backend-transport'
 import { RuntimeEnvironmentService } from './runtime-environment.service'
 import { TauriBackendTransport } from './tauri-backend-transport'
@@ -25,4 +25,11 @@ export abstract class BackendTransport {
   ): Promise<Res>
   /** Saves an export: a browser download over HTTP, a native save dialog on desktop. */
   abstract saveExport(request: ExportRequest): Promise<void>
+  /** Opens an http(s) link outside the app: a new browser tab, the default browser on desktop. */
+  abstract openUrl(url: string): Promise<void>
+  /**
+   * Passes each `activity-log:` link the desktop app gets to `open`, the one that launched it
+   * first. The browser gets none. The links are untrusted input.
+   */
+  abstract listenForDeepLinks(open: (link: string) => void): Promise<void>
 }

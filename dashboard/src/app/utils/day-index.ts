@@ -1,9 +1,16 @@
-import type { DayIndexDay, DayIndexDensity, DayIndexItem } from '../models/day-index'
+import type {
+  DayIndexDay,
+  DayIndexDensity,
+  DayIndexItem,
+  DayIndexMonthRow,
+  MonthDensity,
+} from '../models/day-index'
 import { addDaysToKey, dateOfKey, monthLabel } from './local-day'
 
 /**
  * Every day from `toKey` back to `fromKey` (newest first, like the timeline), with a month
- * heading before each month's first row. A heading where the year changes shows the year.
+ * heading before each month's first row. A heading where the year changes shows the year, and
+ * when the range spans years the oldest heading shows its month and year (`Nov ’25`).
  */
 export function buildDayIndex(
   fromKey: string,
@@ -14,6 +21,7 @@ export function buildDayIndex(
   if (fromKey > toKey) return []
   const max = Math.max(1, ...counts.values())
   const items: DayIndexItem[] = []
+  const shortYear = (date: Date): string => `’${String(date.getFullYear()).slice(2)}`
   let previous: Date | null = null
   for (let key = toKey; key >= fromKey; key = addDaysToKey(key, -1)) {
     const date = dateOfKey(key)
@@ -22,7 +30,7 @@ export function buildDayIndex(
       items.push({
         kind: 'month',
         key: key.slice(0, 7),
-        label: yearChanged ? `’${String(date.getFullYear()).slice(2)}` : monthLabel(key),
+        label: yearChanged ? `${monthLabel(key)} ${shortYear(date)}` : monthLabel(key),
       })
     }
     const count = counts.get(key) ?? 0
@@ -39,7 +47,28 @@ export function buildDayIndex(
     })
     previous = date
   }
+  if (fromKey.slice(0, 4) !== toKey.slice(0, 4)) {
+    const oldest = items.map(item => item.kind).lastIndexOf('month')
+    const month = items[oldest].key
+    const first = `${month}-01`
+    items[oldest] = {
+      kind: 'month',
+      key: month,
+      label: `${monthLabel(first)} ${shortYear(dateOfKey(first))}`,
+    }
+  }
   return items
+}
+
+/**
+ * The day index for the days that have events, `counts` by day: from the newest such day back to
+ * the oldest, with the empty days between them, so the rail spans the list rather than the whole
+ * collected range. Empty with fewer than two days.
+ */
+export function dayIndexOf(counts: ReadonlyMap<string, number>, todayKey: string): DayIndexItem[] {
+  const days = [...counts.keys()].filter(day => (counts.get(day) ?? 0) > 0).sort()
+  if (days.length < 2) return []
+  return buildDayIndex(days[0], days[days.length - 1], counts, todayKey)
 }
 
 /** The index of the day with events closest to `index`; the newer day wins a tie. -1 if none. */
@@ -51,10 +80,74 @@ export function nearestDayWithEntries(days: readonly DayIndexDay[], index: numbe
   return -1
 }
 
-/** Full labels from 17 px per day, sparse labels from 6 px, bars below that. */
+/** Full labels from 17 px per day, sparse labels from 6 px, bars from 3 px, months below. */
 export function densityFor(slotPx: number): DayIndexDensity {
   if (slotPx >= 17) return 'full'
-  return slotPx >= 6 ? 'sparse' : 'dense'
+  if (slotPx >= 6) return 'sparse'
+  return slotPx >= 3 ? 'dense' : 'months'
+}
+
+/**
+ * How a rail of months labels them at `rowPx` per month: name, year and bar from 22 px; name
+ * and bar from 13 px; quarters and years from 7 px; below that, years only. Unlabelled months
+ * keep their bar as a tick.
+ */
+export function monthDensityFor(rowPx: number): MonthDensity {
+  if (rowPx >= 22) return 'months'
+  if (rowPx >= 13) return 'months-compact'
+  return rowPx >= 7 ? 'quarters' : 'years'
+}
+
+export function isMonthDensity(density: DayIndexDensity): density is MonthDensity {
+  return density !== 'full' && density !== 'sparse' && density !== 'dense'
+}
+
+/**
+ * The label of a month row at `density`, or null for a tick. January carries the year where the
+ * rows are too thin for a line of its own: `’25` beside month names, `2025` among quarters.
+ */
+export function monthRowLabel(row: DayIndexMonthRow, density: MonthDensity): string | null {
+  const month = Number(row.key.slice(5, 7))
+  const year = row.key.slice(0, 4)
+  switch (density) {
+    case 'months':
+      return row.label
+    case 'months-compact':
+      return month === 1 ? `’${year.slice(2)}` : row.label
+    case 'quarters':
+      if (month === 1) return year
+      return month % 3 === 1 ? row.label : null
+    case 'years':
+      return month === 1 ? year : null
+  }
+}
+
+/**
+ * The months of `items` (newest first) with their days and events. When the range spans years,
+ * the newest month of each older year carries the year, so the rail reads `Jan`, `Dec ’25`.
+ */
+export function monthRows(items: readonly DayIndexItem[]): DayIndexMonthRow[] {
+  const rows: { key: string; label: string; days: number; count: number }[] = []
+  for (const item of items) {
+    if (item.kind === 'month') {
+      rows.push({ key: item.key, label: monthLabel(`${item.key}-01`), days: 0, count: 0 })
+    } else if (rows.length > 0) {
+      const row = rows[rows.length - 1]
+      row.days++
+      row.count += item.count
+    }
+  }
+  const max = Math.max(1, ...rows.map(row => row.count))
+  const newestYear = rows[0]?.key.slice(0, 4)
+  return rows.map((row, index) => {
+    const year = row.key.slice(0, 4)
+    const firstOfYear = index > 0 && rows[index - 1].key.slice(0, 4) !== year
+    return {
+      ...row,
+      year: firstOfYear && year !== newestYear ? `’${year.slice(2)}` : null,
+      weight: row.count / max,
+    }
+  })
 }
 
 /** The index of the centre closest to `y` in ascending `centres`. -1 when there are none. */

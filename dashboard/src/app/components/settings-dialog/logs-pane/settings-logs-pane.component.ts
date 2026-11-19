@@ -1,14 +1,29 @@
 import {
+  afterNextRender,
   Component,
   DestroyRef,
+  type ElementRef,
   InjectionToken,
   computed,
+  effect,
   inject,
   linkedSignal,
   signal,
+  type TemplateRef,
+  viewChild,
 } from '@angular/core'
 import { Clipboard } from '@angular/cdk/clipboard'
-import { MatIconModule } from '@angular/material/icon'
+import { NgTemplateOutlet } from '@angular/common'
+import { AutoAnimateDirective } from '../../auto-animate/auto-animate.directive'
+import { interval } from '@signality/core/scheduling/interval'
+import { ButtonComponent } from '../../button/button.component'
+import { EmptyStateComponent } from '../../empty-state/empty-state.component'
+import { FeedbackComponent } from '../../feedback/feedback.component'
+import { SettingsPageActions } from '../settings-page-actions'
+import {
+  type SegmentedOption,
+  SegmentedControlComponent,
+} from '../../segmented-control/segmented-control.component'
 import type { LogEntry, LogsResponse } from '../../../generated/activity'
 import { ActivityBackendClient } from '../../../services/backend/backend-client'
 import { BackendOperations } from '../../../services/backend/backend-contract'
@@ -24,14 +39,19 @@ export const LOGS_POLL_INTERVAL_MS = new InjectionToken<number>('LOGS_POLL_INTER
   factory: (): number => 2000,
 })
 
-interface LevelFilterOption {
-  readonly id: LogLevelFilter
-  readonly label: string
-}
+/** Above this many rows the list stops animating (see `animateRows`). */
+const ANIMATED_ROWS_MAX = 200
 
 @Component({
   selector: 'app-settings-logs-pane',
-  imports: [MatIconModule],
+  imports: [
+    AutoAnimateDirective,
+    ButtonComponent,
+    EmptyStateComponent,
+    FeedbackComponent,
+    NgTemplateOutlet,
+    SegmentedControlComponent,
+  ],
   templateUrl: './settings-logs-pane.component.html',
   styleUrl: './settings-logs-pane.component.scss',
 })
@@ -59,17 +79,25 @@ export class SettingsLogsPaneComponent {
   protected readonly copied = signal(false)
   protected readonly filter = signal<LogLevelFilter>('all')
 
-  protected readonly filterOptions: readonly LevelFilterOption[] = [
-    { id: 'all', label: 'All' },
-    { id: 'warn', label: 'Warnings' },
-    { id: 'error', label: 'Errors' },
-  ]
+  protected readonly filterOptions = computed((): readonly SegmentedOption<LogLevelFilter>[] => {
+    const counts = this.counts()
+    return [
+      { value: 'all', label: 'All', count: counts.all },
+      { value: 'warn', label: 'Warnings', count: counts.warn, tone: 'warn' },
+      { value: 'error', label: 'Errors', count: counts.error, tone: 'error' },
+    ]
+  })
 
   private readonly filtered = computed(() =>
     this.entries().filter(entry => matchesLevelFilter(entry.level, this.filter()))
   )
   /** Newest first, which is what you want when chasing the last failure. */
   protected readonly rows = computed(() => [...this.filtered()].reverse())
+  /**
+   * A new line moves every row below it, and AutoAnimate measures and moves each row of the list
+   * on every change. That is fine for a short log; the backend keeps up to 1000 lines.
+   */
+  protected readonly animateRows = computed(() => this.rows().length < ANIMATED_ROWS_MAX)
   protected readonly counts = computed(() => {
     const entries = this.entries()
     return {
@@ -83,16 +111,20 @@ export class SettingsLogsPaneComponent {
 
   private copiedTimer: ReturnType<typeof setTimeout> | undefined
 
-  constructor() {
-    const pollTimer = setInterval(() => this.logs.reload(), inject(LOGS_POLL_INTERVAL_MS))
-    inject(DestroyRef).onDestroy(() => {
-      clearInterval(pollTimer)
-      clearTimeout(this.copiedTimer)
-    })
-  }
+  private readonly pageActions = inject(SettingsPageActions, { optional: true })
+  /** Copy and Clear go in the settings page header when the pane is shown in one. */
+  protected readonly inPageHeader = this.pageActions !== null
+  private readonly actions = viewChild.required<TemplateRef<unknown>>('actions')
+  private readonly list = viewChild<ElementRef<HTMLElement>>('list')
 
-  protected countFor(filter: LogLevelFilter): number {
-    return this.counts()[filter]
+  constructor() {
+    interval(() => this.logs.reload(), inject(LOGS_POLL_INTERVAL_MS))
+    this.keepColumnsForLeavingRows()
+    afterNextRender(() => this.pageActions?.template.set(this.actions()))
+    inject(DestroyRef).onDestroy(() => {
+      clearTimeout(this.copiedTimer)
+      this.pageActions?.template.set(null)
+    })
   }
 
   protected async clear(): Promise<void> {
@@ -105,10 +137,34 @@ export class SettingsLogsPaneComponent {
     }
   }
 
+  /**
+   * AutoAnimate takes a removed row out of the flow (`position: absolute`) while it fades, and a
+   * row out of the flow is no subgrid: its cells would fall into one column. The stylesheet gives
+   * it the columns the rows have, from `--log-columns`, read here before the rows change: a
+   * component effect runs before its template updates, so this is the layout the leaving rows had.
+   */
+  private keepColumnsForLeavingRows(): void {
+    effect(() => {
+      this.rows()
+      const list = this.list()?.nativeElement
+      // Narrow screens give each row columns of its own (no grid list).
+      if (!list || getComputedStyle(list).display !== 'grid') return
+      const row = list.querySelector('.log-row:not([style*="position: absolute"])')
+      if (!row) return
+      // Cells stretch to their column. The message column fills the rest, whatever the width.
+      const widths = [...row.children].slice(0, 3).map(cell => cell.getBoundingClientRect().width)
+      list.style.setProperty(
+        '--log-columns',
+        `${widths.map(w => `${w}px`).join(' ')} minmax(0, 1fr)`
+      )
+    })
+  }
+
   protected copy(): void {
     if (this.clipboard.copy(formatLogsAsText(this.filtered()))) {
       this.copied.set(true)
       clearTimeout(this.copiedTimer)
+      // Hand-written: Signality has no one-shot timer (only `interval`, debounce and throttle).
       this.copiedTimer = setTimeout(() => this.copied.set(false), 1600)
     }
   }

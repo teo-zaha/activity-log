@@ -1,7 +1,9 @@
 import type { ProviderInfo, Source } from '../generated/activity'
 import type { ConnectionKey } from '../providers/connection'
 
-export type ViewMode = 'list' | 'day' | 'workweek' | 'week'
+export const VIEW_MODES = ['list', 'day', 'workweek', 'week'] as const
+
+export type ViewMode = (typeof VIEW_MODES)[number]
 
 export interface ProviderViewModel {
   info: ProviderInfo

@@ -1,69 +1,79 @@
 <div class="logs-pane">
   <div class="logs-toolbar">
-    <div class="level-filter" role="radiogroup" aria-label="Minimum log level">
-      @for (option of filterOptions; track option.id) {
-        <button
-          type="button"
-          role="radio"
-          class="level-option"
-          [class.active]="filter() === option.id"
-          [attr.aria-checked]="filter() === option.id"
-          [attr.data-level]="option.id"
-          (click)="filter.set(option.id)"
-        >
-          {{ option.label }}
-          <span class="level-count">{{ countFor(option.id) }}</span>
-        </button>
-      }
-    </div>
+    <app-segmented-control
+      class="level-filter"
+      label="Minimum log level"
+      [options]="filterOptions()"
+      [(value)]="filter"
+    />
 
-    <div class="logs-actions">
-      <span class="live-pill" aria-hidden="true"><span class="live-dot"></span>Live</span>
-      <button type="button" class="u-btn" (click)="copy()" [disabled]="rows().length === 0">
-        <mat-icon>{{ copied() ? 'check' : 'content_copy' }}</mat-icon>
-        <span>{{ copied() ? 'Copied' : 'Copy' }}</span>
-      </button>
-      <button
-        type="button"
-        class="u-btn u-btn-ghost"
-        (click)="clear()"
-        [disabled]="counts().all === 0"
-      >
-        <mat-icon>delete_sweep</mat-icon>
-        <span>Clear</span>
-      </button>
-    </div>
+    <span class="live-pill" aria-hidden="true"><span class="live-dot"></span>Live</span>
+    @if (!inPageHeader) {
+      <div class="logs-actions"><ng-container *ngTemplateOutlet="actions" /></div>
+    }
   </div>
 
+  <!-- In the settings page header when there is one, else in the toolbar. -->
+  <ng-template #actions>
+    <button
+      appButton
+      class="log-action"
+      [icon]="copied() ? 'check' : 'content_copy'"
+      (click)="copy()"
+      [disabled]="rows().length === 0"
+    >
+      <span class="action-label">{{ copied() ? 'Copied' : 'Copy' }}</span>
+    </button>
+    <button
+      appButton
+      variant="ghost"
+      class="log-action"
+      icon="delete_sweep"
+      (click)="clear()"
+      [disabled]="counts().all === 0"
+    >
+      <span class="action-label">Clear</span>
+    </button>
+  </ng-template>
+
   @if (loadError(); as error) {
-    <p class="u-feedback u-feedback-block" data-tone="error" role="alert">
-      <span class="material-icons" aria-hidden="true">error_outline</span>
-      <span class="u-feedback-text">Could not load logs: {{ error }}</span>
-    </p>
+    <app-feedback tone="error" block>Could not load logs: {{ error }}</app-feedback>
   }
 
-  <div class="logs-list" role="log" aria-live="polite" aria-label="Diagnostic log, newest first">
+  <div
+    #list
+    class="logs-list"
+    [appAutoAnimate]="animateRows()"
+    role="log"
+    aria-live="polite"
+    aria-label="Diagnostic log, newest first"
+  >
     @for (entry of rows(); track entry.id) {
       <div class="log-row" [attr.data-level]="entry.level">
         <time class="log-time" [attr.datetime]="entry.timestamp" [title]="entry.timestamp">
           {{ formatTime(entry.timestamp) }}
         </time>
         <span class="log-level">{{ entry.level }}</span>
-        <span class="log-scope">{{ entry.scope }}</span>
+        <!-- Long sources break after the slash only (zero-width space), never inside a name. -->
+        @let slash = entry.scope.indexOf('/') + 1;
+        <span class="log-scope"
+          ><span>{{ entry.scope.slice(0, slash) }}</span
+          >&#8203;<span>{{ entry.scope.slice(slash) }}</span></span
+        >
         <span class="log-message">{{ entry.message }}</span>
       </div>
     } @empty {
       @if (loaded()) {
-        <div class="logs-empty">
-          <mat-icon>inbox</mat-icon>
-          <span>
-            @if (counts().all === 0) {
-              Nothing logged yet. Entries appear when sources are checked or collected.
-            } @else {
-              No entries at this level.
-            }
-          </span>
-        </div>
+        <app-empty-state
+          class="logs-empty"
+          appearance="plain"
+          icon="inbox"
+          [heading]="counts().all === 0 ? 'Nothing logged yet' : 'No entries at this level'"
+        >
+          @if (counts().all === 0) {
+            Entries appear when sources are checked or collected.
+          }
+        </app-empty-state>
       }
     }
   </div>

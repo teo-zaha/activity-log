@@ -1,6 +1,6 @@
 import type { OutlookEntry } from '../../generated/activity'
 import { EntryUiAdapter, ProviderUiAdapterDefinition } from '../types'
-import { createBadge, formatDuration, joinParts, toDefinedStrings } from '../utils'
+import { busyStatusLabel, createBadge, formatDuration, joinParts, toDefinedStrings } from '../utils'
 
 class OutlookEntryUiAdapter extends EntryUiAdapter<OutlookEntry> {
   constructor(provider: OutlookProviderAdapter, entry: OutlookEntry) {
@@ -16,11 +16,22 @@ class OutlookEntryUiAdapter extends EntryUiAdapter<OutlookEntry> {
         entry.organizer && !entry.isOrganizer ? `org: ${entry.organizer}` : '',
       ]),
       entryIcon,
-      searchTerms: toDefinedStrings([entry.title, entry.location, entry.organizer]),
+      searchTerms: toDefinedStrings([
+        entry.title,
+        entry.location,
+        entry.organizer,
+        entry.description,
+      ]),
       calendarDurationMinutes: entry.durationMinutes,
+      busyStatus: entry.busyStatus ?? null,
+      meetingWeight: entry.meetingWeight,
+      description: entry.description ?? null,
+      descriptionBlocks: entry.descriptionBlocks ?? [],
+      joinUrl: entry.joinUrl ?? null,
       detailFields: [
         { label: 'Title', value: entry.title },
         { label: 'Duration', value: formatDuration(entry.durationMinutes) },
+        { label: 'Status', value: entry.busyStatus ? busyStatusLabel(entry.busyStatus) : '' },
         { label: 'Location', value: entry.location ?? '' },
         { label: 'Organizer', value: entry.organizer ?? '' },
         { label: 'Role', value: entry.isOrganizer ? 'Organizer' : 'Attendee' },
@@ -30,16 +41,6 @@ class OutlookEntryUiAdapter extends EntryUiAdapter<OutlookEntry> {
       detailSections: [],
       styleKey: provider.source,
     })
-  }
-
-  markdownSummary(): string {
-    const entry = this.entry
-    return `${entry.title}${entry.location ? ` @ ${entry.location}` : ''}`
-  }
-
-  markdownMeta(timeLabel: string): string {
-    const entry = this.entry
-    return joinParts([timeLabel, formatDuration(entry.durationMinutes)])
   }
 }
 

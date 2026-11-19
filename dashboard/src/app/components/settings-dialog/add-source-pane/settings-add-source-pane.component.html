@@ -2,19 +2,21 @@
   @if (!isDesktop) {
     <h3 id="add-source-title" class="u-sr-only">Add source</h3>
     <p class="u-note">
-      <span class="material-icons" aria-hidden="true">desktop_windows</span>
+      <mat-icon>desktop_windows</mat-icon>
       Sources are added in the desktop app, or with <code>activity-log sources add</code>.
     </p>
   } @else if (loadError(); as message) {
     <h3 id="add-source-title" class="u-sr-only">Add source</h3>
-    <p class="u-feedback u-feedback-block" data-tone="error" role="alert">
-      <span class="material-icons" aria-hidden="true">error_outline</span>
-      <span class="u-feedback-text">{{ message }}</span>
-    </p>
+    <app-feedback tone="error" block>{{ message }}</app-feedback>
   } @else if (locationsFor(); as kind) {
     <div class="step-head">
-      <button type="button" class="u-btn u-btn-ghost back-btn" (click)="backToSources()">
-        <span class="material-icons" aria-hidden="true">arrow_back</span>
+      <button
+        appButton
+        variant="ghost"
+        icon="arrow_back"
+        class="back-btn"
+        (click)="backToSources()"
+      >
         All sources
       </button>
       <h3 id="add-source-title" class="step-title">Where should {{ kind.label }} look?</h3>
@@ -43,12 +45,9 @@
               }}</span>
             </span>
             <span class="tile-state" data-tone="add" [id]="'location-' + $index + '-state'">
-              <span
-                class="material-icons"
-                [class.u-spin]="adding() === location.label"
-                aria-hidden="true"
-                >{{ adding() === location.label ? 'autorenew' : 'add' }}</span
-              >
+              <mat-icon [class.u-spin]="adding() === location.label">{{
+                adding() === location.label ? 'autorenew' : 'add'
+              }}</mat-icon>
               {{ adding() === location.label ? 'Adding…' : 'Add' }}
             </span>
           </button>
@@ -95,10 +94,10 @@
                 [id]="'tile-' + tile.kind.source + '-state'"
               >
                 @if (adding() === tile.kind.source) {
-                  <span class="material-icons u-spin" aria-hidden="true">autorenew</span>
+                  <mat-icon class="u-spin">autorenew</mat-icon>
                   Adding…
                 } @else {
-                  <span class="material-icons" aria-hidden="true">{{ stateIcon(tile.state) }}</span>
+                  <mat-icon>{{ stateIcon(tile.state) }}</mat-icon>
                   {{ stateLabel(tile.state) }}
                 }
               </span>
@@ -122,9 +121,6 @@
   }
 
   @if (error(); as message) {
-    <p class="u-feedback u-feedback-block" data-tone="error" role="alert">
-      <span class="material-icons" aria-hidden="true">error_outline</span>
-      <span class="u-feedback-text">{{ message }}</span>
-    </p>
+    <app-feedback tone="error" block>{{ message }}</app-feedback>
   }
 </section>

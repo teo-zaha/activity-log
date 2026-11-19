@@ -8,13 +8,14 @@
   flex-shrink: 0;
 }
 
-img,
-mat-icon {
+img {
   display: block;
   width: 1em;
   height: 1em;
-  font-size: 1em;
-  line-height: 1;
+}
+
+mat-icon {
+  --icon-size: 1em;
 }
 
 // ── Boxed ────────────────────────────────────────────────────────────────────
@@ -48,22 +49,4 @@ mat-icon {
   --provider-icon-box: 42px;
   --provider-icon-glyph: 22px;
   --provider-icon-radius: 12px;
-}
-
-// The same colours as `provider-source-vars`; ICS calendars share Outlook's.
-$badges: (
-  git: git,
-  gitlab: gitlab,
-  jira: jira,
-  outlook: outlook,
-  calendar: outlook,
-  system: system,
-);
-
-@each $source, $badge in $badges {
-  :host([data-size][data-src='#{$source}']) {
-    --badge-bg: var(--badge-#{$badge}-bg);
-    --badge-fg: var(--badge-#{$badge}-fg);
-    --badge-accent: var(--badge-#{$badge}-accent);
-  }
 }

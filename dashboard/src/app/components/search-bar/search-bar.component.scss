@@ -42,7 +42,6 @@
 .search-icon {
   position: absolute;
   left: 14px;
-  font-size: 20px;
   color: var(--text-tertiary);
   pointer-events: none;
 }
@@ -74,25 +73,7 @@
 
 .search-clear {
   position: absolute;
-  right: 8px;
-  display: grid;
-  place-items: center;
-  width: 30px;
-  height: 30px;
-  border: none;
-  border-radius: var(--radius-xs);
-  background: transparent;
-  color: var(--text-tertiary);
-  cursor: pointer;
-
-  &:hover {
-    background: var(--surface-hover);
-    color: var(--text-primary);
-  }
-
-  .material-icons {
-    font-size: 18px;
-  }
+  right: 6px;
 }
 
 .search-hint {
@@ -130,7 +111,7 @@
 
   .search-icon {
     left: 11px;
-    font-size: 18px;
+    --icon-size: 18px;
   }
 
   .search-input {

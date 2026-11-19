@@ -1,25 +1,25 @@
 <div class="search-dock">
   <div class="search-field">
-    <span class="material-icons search-icon" aria-hidden="true">search</span>
+    <mat-icon class="search-icon">search</mat-icon>
     <input
       #input
       class="search-input"
       type="search"
       enterkeyhint="search"
-      [attr.aria-label]="placeholder()"
+      [attr.aria-label]="label() ?? placeholder()"
       [placeholder]="placeholder()"
       [formField]="query"
       (keydown.escape)="clear()"
     />
     @if (value()) {
       <button
-        type="button"
+        appIconButton
+        size="sm"
+        icon="close"
         class="search-clear"
+        [label]="clearLabel()"
         (click)="clear(); input.focus()"
-        aria-label="Clear search"
-      >
-        <span class="material-icons" aria-hidden="true">close</span>
-      </button>
+      ></button>
     } @else {
       <kbd class="search-hint" aria-hidden="true">/</kbd>
     }

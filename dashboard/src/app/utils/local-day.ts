@@ -18,6 +18,11 @@ export function todayKey(): string {
   return localDateKey(new Date())
 }
 
+/** Whether `value` is a `YYYY-MM-DD` key of a real calendar day, such as one read from a URL. */
+export function isDayKey(value: string): boolean {
+  return /^\d{4}-\d{2}-\d{2}$/.test(value) && localDateKey(dateOfKey(value)) === value
+}
+
 /** Local noon of a `YYYY-MM-DD` key: safe for date arithmetic and labels across DST changes. */
 export function dateOfKey(key: string): Date {
   const [y, m, d] = key.split('-').map(Number)
@@ -38,6 +43,11 @@ export function localDayRange(fromKey: string, toKey: string): { start: string; 
     return date.toISOString()
   }
   return { start: startOf(fromKey), end: startOf(addDaysToKey(toKey, 1)) }
+}
+
+/** The keys within `fromKey`–`toKey`, inclusive; an empty bound does not limit. */
+export function keysWithin(keys: readonly string[], fromKey: string, toKey: string): string[] {
+  return keys.filter(key => (!fromKey || key >= fromKey) && (!toKey || key <= toKey))
 }
 
 /** The local day holding the last instant before `end`, an exclusive range end. */
@@ -71,19 +81,7 @@ export function longDayLabel(key: string): string {
   return LONG_DAY.format(dateOfKey(key))
 }
 
-const SHORT_DAY = new Intl.DateTimeFormat('en-GB', {
-  weekday: 'short',
-  day: 'numeric',
-  month: 'short',
-})
 const MONTH = new Intl.DateTimeFormat('en-GB', { month: 'short' })
-
-/** `Mon 16 Nov`, or `Mon 16 Nov 2026` with the year, for a `YYYY-MM-DD` key. */
-export function shortDayLabel(key: string, withYear = false): string {
-  // Appended by hand: en-GB puts a comma after the weekday once the year is in the pattern.
-  const label = SHORT_DAY.format(dateOfKey(key))
-  return withYear ? `${label} ${key.slice(0, 4)}` : label
-}
 
 /** `Nov`: three letters for every month (en-GB writes September as "Sept"). */
 export function monthLabel(key: string): string {

@@ -1,13 +1,15 @@
 import { HttpClient, httpResource } from '@angular/common/http'
 import { inject, resource, type ResourceRef, Service } from '@angular/core'
 import { firstValueFrom } from 'rxjs'
+import type { ExportRequest, OutputFormat } from '../../generated/activity'
 import {
   type BackendOperation,
+  BackendOperations,
   DesktopOnlyBackendError,
   type ReadOperation,
 } from './backend-contract'
 import type { BackendTransport } from './backend-transport'
-import type { ExportRequest } from './export-request'
+import { isWebLink } from '../../utils/text-links'
 
 @Service()
 export class HttpBackendTransport implements BackendTransport {
@@ -29,21 +31,31 @@ export class HttpBackendTransport implements BackendTransport {
     return firstValueFrom(this.http.request<Res>(http.method, http.url, { body: request }))
   }
 
+  /** The API renders the file; the browser downloads it. */
   async saveExport(request: ExportRequest): Promise<void> {
-    const blob = new Blob([request.content], { type: this.mimeTypeFor(request.format) })
+    const file = await this.call(BackendOperations.renderExport, request)
+    const blob = new Blob([file.content], { type: this.mimeTypeFor(request.format) })
     const href = URL.createObjectURL(blob)
 
     try {
       const link = document.createElement('a')
       link.href = href
-      link.download = request.fileName
+      link.download = file.fileName
       link.click()
     } finally {
       URL.revokeObjectURL(href)
     }
   }
 
-  private mimeTypeFor(format: ExportRequest['format']): string {
+  async openUrl(url: string): Promise<void> {
+    if (!isWebLink(url)) throw new Error('Only web links can be opened.')
+    window.open(url, '_blank', 'noopener,noreferrer')
+  }
+
+  /** A browser opens `activity-log:` links in no tab of its own. */
+  async listenForDeepLinks(): Promise<void> {}
+
+  private mimeTypeFor(format: OutputFormat): string {
     return format === 'markdown' ? 'text/markdown' : 'application/json'
   }
 }

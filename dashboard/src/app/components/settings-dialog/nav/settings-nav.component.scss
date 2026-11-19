@@ -1,0 +1,213 @@
+@use '../../dashboard-shared' as ui;
+
+:host {
+  display: flex;
+  min-width: 0;
+  min-height: 0;
+}
+
+.settings-nav {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-width: 0;
+  border-right: 1px solid var(--border-subtle);
+  background: var(--surface-alt);
+  overflow-y: auto;
+}
+
+.nav-title {
+  margin: 0;
+  padding: 24px 22px 12px;
+  color: var(--text-primary);
+  font-size: 20px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+}
+
+.nav-body {
+  display: flex;
+  flex-direction: column;
+  padding: 4px 12px 16px;
+}
+
+.nav-group {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.nav-group-label {
+  margin: 18px 10px 6px;
+  @include ui.kicker-label;
+}
+
+.nav-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  min-height: 44px;
+  padding: 6px 10px;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-secondary);
+  font: inherit;
+  font-weight: 500;
+  text-align: left;
+  cursor: pointer;
+  @include ui.interactive-option;
+
+  &:focus-visible {
+    @include ui.focus-ring;
+  }
+}
+
+.nav-icon {
+  --icon-size: 20px;
+
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 24px;
+  color: var(--text-tertiary);
+}
+
+.nav-item.active .nav-icon {
+  color: var(--accent);
+}
+
+.nav-copy {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.nav-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.source-item .nav-name {
+  color: var(--text-primary);
+  font-weight: 600;
+}
+
+.source-status {
+  overflow: hidden;
+  color: var(--text-tertiary);
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.source-item[data-status='unavailable'] .source-status {
+  color: var(--status-error-fg);
+}
+
+.source-item[data-status='degraded'] .source-status {
+  color: var(--status-warn-fg);
+}
+
+.nav-value {
+  color: var(--text-tertiary);
+  font-size: 13px;
+}
+
+// Chevrons say "opens a page": only on the phone's list.
+.nav-chevron {
+  --icon-size: 20px;
+
+  display: none;
+  color: var(--text-tertiary);
+}
+
+.add-item {
+  color: var(--accent);
+  font-weight: 600;
+
+  .nav-icon {
+    color: inherit;
+  }
+}
+
+// A narrower column on tablets: the status words give way to the dot.
+@include ui.down('tablet') {
+  .nav-title {
+    padding: 18px 18px 10px;
+  }
+
+  .nav-body {
+    padding: 4px 10px 14px;
+  }
+
+  .source-status {
+    display: none;
+  }
+}
+
+// ── Phone: the settings' first page ─────────────────────────────────────────
+
+:host(.is-home) {
+  .settings-nav {
+    border-right: 0;
+    background: var(--surface);
+  }
+
+  .home-header {
+    --page-header-padding: 6px 8px 6px 16px;
+  }
+
+  .home-title {
+    margin: 0;
+    outline: none;
+    font-size: 22px;
+    font-weight: 700;
+    letter-spacing: -0.02em;
+  }
+
+  .nav-body {
+    padding: 14px 16px 24px;
+  }
+
+  .nav-group {
+    gap: 0;
+    border: 1px solid var(--hairline);
+    border-radius: var(--radius-md);
+    overflow: hidden;
+
+    > .nav-item + .nav-item {
+      border-top-color: var(--hairline);
+    }
+  }
+
+  .nav-group-label {
+    margin: 20px 4px 8px;
+  }
+
+  .nav-item {
+    min-height: 56px;
+    padding: 8px 8px 8px 12px;
+    border-radius: 0;
+    color: var(--text-primary);
+    font-weight: 600;
+  }
+
+  .source-status {
+    display: block;
+    font-weight: 400;
+  }
+
+  .nav-chevron {
+    display: inline-grid;
+  }
+
+  .add-item {
+    color: var(--accent);
+  }
+}

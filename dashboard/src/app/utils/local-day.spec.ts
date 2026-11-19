@@ -3,17 +3,26 @@ import {
   addDaysToKey,
   clockTime,
   dayKeyOf,
+  isDayKey,
+  keysWithin,
   lastDayKeyBefore,
   localDateKey,
   localDayRange,
   longDayLabel,
   monthLabel,
   relativeDayLabel,
-  shortDayLabel,
 } from './local-day'
 
 // Expectations are built with local `Date` constructors, so they hold in any time zone.
 describe('local days', () => {
+  it('accepts only keys of real days', () => {
+    expect(isDayKey('2026-11-17')).toBe(true)
+    expect(isDayKey('2028-02-29')).toBe(true)
+    expect(isDayKey('2026-02-29')).toBe(false)
+    expect(isDayKey('2026-1-7')).toBe(false)
+    expect(isDayKey('')).toBe(false)
+  })
+
   it('formats local date keys', () => {
     expect(localDateKey(new Date(2026, 0, 5, 23, 30))).toBe('2026-01-05')
   })
@@ -57,9 +66,14 @@ describe('labels', () => {
     expect(longDayLabel('2026-11-16')).toBe('Monday, 16 November 2026')
   })
 
-  it('writes short day and month labels', () => {
-    expect(shortDayLabel('2026-11-16')).toBe('Mon 16 Nov')
-    expect(shortDayLabel('2026-11-16', true)).toBe('Mon 16 Nov 2026')
+  it('writes month labels', () => {
     expect(monthLabel('2026-09-01')).toBe('Sep')
+  })
+
+  it('keeps the keys within a range, an empty bound not limiting', () => {
+    const keys = ['2026-11-16', '2026-11-17', '2026-11-18']
+    expect(keysWithin(keys, '2026-11-17', '2026-11-17')).toEqual(['2026-11-17'])
+    expect(keysWithin(keys, '2026-11-17', '')).toEqual(['2026-11-17', '2026-11-18'])
+    expect(keysWithin(keys, '', '')).toEqual(keys)
   })
 })

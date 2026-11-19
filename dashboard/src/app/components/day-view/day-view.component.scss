@@ -17,10 +17,6 @@
   @include cal.nav-bar;
 }
 
-.nav-btn {
-  @include cal.nav-button;
-}
-
 .nav-controls {
   @include cal.nav-controls;
 }
@@ -34,7 +30,15 @@
 }
 
 .today-btn {
-  @include cal.today-button;
+  min-width: 64px;
+}
+
+.cal-heading {
+  @include cal.heading;
+}
+
+.cal-meeting-time {
+  @include cal.meeting-time;
 }
 
 .cal-title {
@@ -98,9 +102,9 @@
   align-items: center;
   gap: 4px;
   cursor: pointer;
-  background: var(--badge-outlook-bg);
-  color: var(--badge-outlook-fg);
-  border-left: 3px solid var(--badge-outlook-accent);
+  background: var(--badge-bg);
+  color: var(--badge-fg);
+  border-left: 3px solid var(--badge-accent);
   transition: filter 0.1s ease;
   z-index: 1;
 
@@ -113,9 +117,10 @@
     outline-offset: 2px;
   }
 
+  @include cal.busy-markers;
+
   .cal-event-icon {
-    font-size: 11px;
-    flex-shrink: 0;
+    --icon-size: 11px;
     opacity: 0.85;
   }
 
@@ -162,3 +167,4 @@
 }
 
 @include cal.event-styles;
+@include cal.now-line;

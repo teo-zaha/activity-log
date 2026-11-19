@@ -1,8 +1,12 @@
 import { signal } from '@angular/core'
-import { render, screen } from '@testing-library/angular'
+import { provideLocationMocks } from '@angular/common/testing'
+import { TestBed } from '@angular/core/testing'
+import { provideRouter, Router } from '@angular/router'
+import { render, screen, within } from '@testing-library/angular'
 import userEvent from '@testing-library/user-event'
 import { describe, expect, it, vi } from 'vitest'
 import type { ConnectionKey } from '../../providers/connection'
+import { provideAppRouter } from '../../app.routes'
 import { ActivityService } from '../../services/activity.service'
 import type { ProviderViewModel } from '../../services/types'
 import { providerInfo } from '../../testing/activity-fixtures'
@@ -38,24 +42,26 @@ const outlook: ProviderViewModel = {
 }
 
 describe('SidebarComponent', () => {
-  it('lists unavailable providers with their reason and opens their settings', async () => {
+  it('lists unavailable providers with their reason, opens their settings and checks them again', async () => {
     const open = vi.fn()
     const toggleConnection = vi.fn()
+    const recheckConnection = vi.fn(() => Promise.resolve())
     await render(SidebarComponent, {
       providers: [
         {
           provide: ActivityService,
           useValue: {
-            currentView: signal('list'),
+            selectedDay: signal('2026-11-17'),
             providers: signal([git]),
             unusableProviders: signal([outlook]),
             activeConnections: signal(new Set<ConnectionKey>(['git/default'])),
-            setView: vi.fn(),
             toggleConnection,
             isolateConnection: vi.fn(),
+            recheckConnection,
           },
         },
-        { provide: SettingsDialogLauncher, useValue: { open } },
+        { provide: SettingsDialogLauncher, useValue: { open, pageOpen: signal(false) } },
+        provideRouter([]),
       ],
     })
 
@@ -68,8 +74,12 @@ describe('SidebarComponent', () => {
     await userEvent.click(gitChip)
     expect(toggleConnection).toHaveBeenCalledWith('git/default')
 
-    await userEvent.click(screen.getByRole('button', { name: /Outlook/ }))
+    await userEvent.click(screen.getByRole('button', { name: /^Outlook/ }))
     expect(open).toHaveBeenCalledWith('outlook/default')
+
+    await userEvent.click(screen.getByRole('button', { name: 'Check Outlook again' }))
+    expect(recheckConnection).toHaveBeenCalledWith(outlook.info.connection)
+    expect(open).toHaveBeenCalledTimes(1)
   })
 
   it('shows a spinner instead of the count while a source is still collected', async () => {
@@ -79,16 +89,16 @@ describe('SidebarComponent', () => {
         {
           provide: ActivityService,
           useValue: {
-            currentView: signal('list'),
+            selectedDay: signal('2026-11-17'),
             providers: signal([{ ...git, count: 0, collecting: true }]),
             unusableProviders: signal([]),
             activeConnections: signal(new Set<ConnectionKey>(['git/default'])),
-            setView: vi.fn(),
             toggleConnection,
             isolateConnection: vi.fn(),
           },
         },
-        { provide: SettingsDialogLauncher, useValue: { open: vi.fn() } },
+        { provide: SettingsDialogLauncher, useValue: { open: vi.fn(), pageOpen: signal(false) } },
+        provideRouter([]),
       ],
     })
 
@@ -99,5 +109,40 @@ describe('SidebarComponent', () => {
     // Unlike a source being checked, it can already be switched off.
     await userEvent.click(chip)
     expect(toggleConnection).toHaveBeenCalledWith('git/default')
+  })
+
+  it('links the views, keeping the range and the day, and marks the current one', async () => {
+    await render(SidebarComponent, {
+      providers: [
+        provideAppRouter(),
+        provideLocationMocks(),
+        {
+          provide: ActivityService,
+          useValue: {
+            selectedDay: signal('2026-11-10'),
+            providers: signal([git]),
+            unusableProviders: signal([]),
+            activeConnections: signal(new Set<ConnectionKey>(['git/default'])),
+            toggleConnection: vi.fn(),
+            isolateConnection: vi.fn(),
+          },
+        },
+        { provide: SettingsDialogLauncher, useValue: { open: vi.fn(), pageOpen: signal(false) } },
+      ],
+    })
+    const router = TestBed.inject(Router)
+    await router.navigateByUrl('/week/2026-11-10?q=review&from=2026-11-01&to=2026-11-14')
+
+    const views = screen.getByRole('navigation', { name: 'Views' })
+    const link = (name: string): HTMLElement => within(views).getByRole('link', { name })
+    await vi.waitFor(() => expect(link('Week').getAttribute('aria-current')).toBe('page'))
+    await vi.waitFor(() => {
+      expect(link('Timeline').getAttribute('href')).toBe('/timeline?from=2026-11-01&to=2026-11-14')
+      expect(link('Day').getAttribute('href')).toBe('/day/2026-11-10?from=2026-11-01&to=2026-11-14')
+      expect(link('Timeline').getAttribute('aria-current')).toBeNull()
+    })
+
+    await userEvent.click(link('Day'))
+    await vi.waitFor(() => expect(router.url).toBe('/day/2026-11-10?from=2026-11-01&to=2026-11-14'))
   })
 })

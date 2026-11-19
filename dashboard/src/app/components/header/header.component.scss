@@ -30,6 +30,16 @@
   pointer-events: none;
 }
 
+// Windows: no traffic lights to make room for; the header itself is the title bar, and its
+// right end leaves room for the window buttons.
+:host-context(html.frameless) .window-drag-strip {
+  height: 0;
+}
+
+:host-context(html.frameless) .header-inner {
+  padding-right: calc(16px + var(--window-controls-width));
+}
+
 .header-inner {
   display: flex;
   align-items: center;
@@ -53,7 +63,8 @@
   display: flex;
   align-items: center;
   gap: 10px;
-  min-width: 0;
+  // Never squeezed: when the row runs out of room, the date fields give a little first.
+  flex-shrink: 0;
   margin-right: auto;
 }
 
@@ -72,10 +83,6 @@
   box-shadow:
     inset 0 1px 0 rgba(255, 255, 255, 0.25),
     0 1px 3px color-mix(in srgb, var(--accent) 22%, transparent);
-
-  .material-icons {
-    font-size: 20px;
-  }
 }
 
 .brand-title {
@@ -98,6 +105,7 @@
 .range {
   display: flex;
   align-items: center;
+  min-width: 0;
   height: 40px;
   padding: 0 2px 0 4px;
   border: 1px solid var(--border);
@@ -135,6 +143,7 @@
 }
 
 .range-input {
+  flex: 0 1 92px;
   width: 92px;
   min-width: 0;
   border: 0;
@@ -159,15 +168,14 @@
 }
 
 .range-sep {
-  font-size: 16px;
+  --icon-size: 16px;
   color: var(--text-tertiary);
   margin: 0 2px;
 }
 
 .btn-collect {
-  height: 40px;
+  flex-shrink: 0;
   min-width: 112px;
-  border-radius: var(--radius-md);
 }
 
 .btn-collect-label {
@@ -192,13 +200,9 @@
   border-left: 1px solid var(--hairline);
 }
 
-.btn-export {
-  width: 40px;
-  height: 40px;
-  border-radius: var(--radius-md);
-  background: transparent;
+// Ghost buttons with a hairline, so export and share read as quieter than Collect.
+.btn-action {
   border-color: var(--hairline);
-  color: var(--text-secondary);
 }
 
 // ── Responsive ───────────────────────────────────────────────────────────────
@@ -234,9 +238,12 @@
 }
 
 @include ui.down('phone') {
+  // Rows from the top: with the range left out (the Settings tab), the logo and buttons stay
+  // where they are instead of centring in the desktop app's minimum height.
   .header-inner {
     padding-left: 12px;
     flex-wrap: wrap;
+    align-content: flex-start;
     row-gap: 10px;
     min-height: 0;
   }

@@ -1,10 +1,13 @@
 import { signal } from '@angular/core'
+import { TestBed } from '@angular/core/testing'
+import { Router, provideRouter } from '@angular/router'
 import { MAT_DATE_LOCALE } from '@angular/material/core'
 import { render, screen } from '@testing-library/angular'
 import userEvent from '@testing-library/user-event'
-import { describe, expect, it, vi } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { ActivityLog } from '../../generated/activity'
 import { ActivityService } from '../../services/activity.service'
+import { ToastService } from '../../services/toast.service'
 import { activityLog } from '../../testing/activity-fixtures'
 import { HeaderComponent } from './header.component'
 
@@ -23,6 +26,8 @@ async function setup(state: { loading?: boolean; meta?: ActivityLog['meta'] } = 
         useValue: {
           dateFrom,
           dateTo,
+          setDateFrom: (day: string): void => dateFrom.set(day),
+          setDateTo: (day: string): void => dateTo.set(day),
           collect,
           isLoading: signal(state.loading ?? false),
           meta: signal(state.meta ?? null),
@@ -99,5 +104,82 @@ describe('HeaderComponent export', () => {
     await setup({ meta: activityLog.meta, loading: true })
 
     expect(exportButtons().map(button => button.hasAttribute('disabled'))).toEqual([true, true])
+  })
+})
+
+describe('HeaderComponent share', () => {
+  const link = 'activity-log://day/2026-11-17?q=standup'
+
+  async function setupShare(
+    nav: {
+      share?: (data: ShareData) => Promise<void>
+      canShare?: (data?: ShareData) => boolean
+    },
+    url = '/day/2026-11-17?q=standup&settings=logs'
+  ): Promise<{ writeText: ReturnType<typeof vi.fn>; success: ReturnType<typeof vi.fn> }> {
+    const writeText = vi.fn(() => Promise.resolve())
+    const success = vi.fn()
+    vi.stubGlobal('navigator', {
+      ...navigator,
+      ...nav,
+      clipboard: { writeText, readText: () => Promise.resolve('') },
+    })
+    await render(HeaderComponent, {
+      providers: [
+        provideRouter([{ path: '**', children: [] }]),
+        {
+          provide: ActivityService,
+          useValue: {
+            dateFrom: signal('2026-11-17'),
+            dateTo: signal('2026-11-18'),
+            isLoading: signal(false),
+            meta: signal(null),
+          },
+        },
+        { provide: ToastService, useValue: { success } },
+        { provide: MAT_DATE_LOCALE, useValue: 'en-GB' },
+      ],
+    })
+    await TestBed.inject(Router).navigateByUrl(url)
+    return { writeText, success }
+  }
+
+  afterEach(() => {
+    vi.unstubAllGlobals()
+  })
+
+  it('shares the deep link of the view, without the settings dialog, where it can', async () => {
+    const share = vi.fn((_data: ShareData) => Promise.resolve())
+    // As WebKit: a custom-scheme `url` cannot be shared, text can.
+    const canShare = (data?: ShareData): boolean => !data?.url?.startsWith('activity-log:')
+    const { writeText, success } = await setupShare({ share, canShare })
+
+    await userEvent.click(screen.getByRole('button', { name: 'Share link to this view' }))
+
+    expect(share).toHaveBeenCalledWith({ title: 'Activity Log', text: link })
+    expect(writeText).not.toHaveBeenCalled()
+    expect(success).not.toHaveBeenCalled()
+  })
+
+  it('includes the details open over the view', async () => {
+    const { writeText } = await setupShare(
+      {},
+      '/day/2026-11-17?settings=logs&events=git%2Fa%2F1&events=git%2Fa%2F2&event=git%2Fa%2F2'
+    )
+
+    await userEvent.click(screen.getByRole('button', { name: 'Share link to this view' }))
+
+    expect(writeText).toHaveBeenCalledWith(
+      'activity-log://day/2026-11-17?event=git%2Fa%2F2&events=git%2Fa%2F1&events=git%2Fa%2F2'
+    )
+  })
+
+  it('copies the link and says so where the system cannot share it', async () => {
+    const { writeText, success } = await setupShare({})
+
+    await userEvent.click(screen.getByRole('button', { name: 'Share link to this view' }))
+
+    expect(writeText).toHaveBeenCalledWith(link)
+    expect(success).toHaveBeenCalledWith('Link copied')
   })
 })

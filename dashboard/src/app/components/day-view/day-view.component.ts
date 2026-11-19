@@ -1,9 +1,27 @@
 import { Component, ElementRef, afterNextRender, computed, inject, viewChild } from '@angular/core'
+import { MatIconModule } from '@angular/material/icon'
+import { mediaQuery } from '@signality/core/browser/media-query'
+import { IconButtonComponent } from '../button/icon-button.component'
+import { ButtonComponent } from '../button/button.component'
 import { ActivityService } from '../../services/activity.service'
 import type { EntryUiAdapter } from '../../providers/types'
-import { injectBreakpointDown } from '../../utils/breakpoints'
-import { dateOfKey, dayKeyOf, todayKey } from '../../utils/local-day'
-import { calendarEntryKey, layoutEventsWithOverflow } from '../calendar-layout'
+import { downQuery } from '../../utils/breakpoints'
+import { injectMinuteClock } from '../../utils/clock'
+import { dateOfKey, dayKeyOf, keysWithin } from '../../utils/local-day'
+import {
+  NO_MEETING_TIME,
+  meetingTimeByDay,
+  meetingTimeLabel,
+  meetingTimeParts,
+} from '../../utils/meeting-time'
+import {
+  calendarEntryKey,
+  calendarEventClass,
+  calendarEventLabel,
+  layoutEventsWithOverflow,
+  nowMarker,
+} from '../calendar-layout'
+import { injectCalendarZoom } from '../calendar-zoom'
 
 export const HOUR_START = 0
 export const HOUR_END = 23
@@ -50,14 +68,19 @@ interface PositionedAllDayEntry {
 
 @Component({
   selector: 'app-day-view',
+  imports: [IconButtonComponent, ButtonComponent, MatIconModule],
   templateUrl: './day-view.component.html',
   styleUrl: './day-view.component.scss',
 })
 export class DayViewComponent {
   protected readonly activity = inject(ActivityService)
-  private readonly isPhone = injectBreakpointDown('phone')
+  private readonly isPhone = mediaQuery(downQuery('phone'))
+  private readonly now = injectMinuteClock()
+  private readonly today = computed(() => dayKeyOf(this.now()))
 
   private readonly scrollEl = viewChild.required<ElementRef<HTMLElement>>('scrollEl')
+  private readonly gridEl = viewChild.required<ElementRef<HTMLElement>>('gridEl')
+  protected readonly zoom = injectCalendarZoom(this.scrollEl, this.gridEl)
 
   protected readonly hours = Array.from(
     { length: HOUR_END - HOUR_START + 1 },
@@ -87,8 +110,30 @@ export class DayViewComponent {
   }
 
   protected isToday(dateStr: string): boolean {
-    return dateStr === todayKey()
+    return dateStr === this.today()
   }
+
+  /** The current-time line, while the shown day is today. */
+  protected readonly nowLine = computed(() =>
+    this.activity.selectedDay() === this.today()
+      ? nowMarker(this.now(), this.activity.hourHeight())
+      : null
+  )
+
+  /** Only for a collected day: outside the range its meetings were not read. */
+  private readonly meetingTime = computed(() => {
+    const days = keysWithin(
+      [this.activity.selectedDay()],
+      this.activity.dateFrom(),
+      this.activity.dateTo()
+    )
+    return meetingTimeByDay(this.activity.calendarEntries(), days).get(days[0]) ?? NO_MEETING_TIME
+  })
+
+  protected readonly meetingTimeParts = computed(() => meetingTimeParts(this.meetingTime()))
+  protected readonly meetingTimeLabel = computed(() => meetingTimeLabel(this.meetingTime()))
+
+  protected readonly eventClass = calendarEventClass
 
   protected getTop(ts: string): number {
     const d = new Date(ts)
@@ -104,21 +149,16 @@ export class DayViewComponent {
     return 22
   }
 
+  /** A meeting that runs past midnight; one that ends at midnight stays a block. */
   private isMultiDayEvent(e: EntryUiAdapter): boolean {
-    if (e.source !== 'outlook' && e.source !== 'calendar') return false
-    const durationMinutes = e.calendarDurationMinutes
-    if (durationMinutes == null) return false
-    const endMs = new Date(e.timestamp).getTime() + durationMinutes * 60000
-    return dayKeyOf(endMs) > e.dayKey
+    return (e.source === 'outlook' || e.source === 'calendar') && e.lastDayKey > e.dayKey
   }
 
   readonly multiDayEntries = computed<EntryUiAdapter[]>(() => {
     const day = this.activity.selectedDay()
-    return this.activity.filteredEntries().filter(e => {
-      if (!this.isMultiDayEvent(e)) return false
-      const endMs = new Date(e.timestamp).getTime() + (e.calendarDurationMinutes ?? 0) * 60000
-      return e.dayKey <= day && dayKeyOf(endMs) > day
-    })
+    return this.activity
+      .calendarEntries()
+      .filter(e => this.isMultiDayEvent(e) && e.dayKey <= day && e.lastDayKey >= day)
   })
 
   protected readonly allDayEntries = computed<PositionedAllDayEntry[]>(() =>
@@ -180,21 +220,12 @@ export class DayViewComponent {
     }
   }
 
-  protected zoomOut(): void {
-    this.activity.hourHeight.update(h => Math.max(32, h - 16))
-  }
-  protected zoomIn(): void {
-    this.activity.hourHeight.update(h => Math.min(192, h + 16))
-  }
-
   protected selectEntry(entry: EntryUiAdapter): void {
-    this.activity.selectedEntries.set(null)
-    this.activity.selectedEntry.set(entry)
+    void this.activity.openEvent(entry.trackKey)
   }
 
   protected selectOverflow(entries: EntryUiAdapter[]): void {
-    this.activity.selectedEntry.set(null)
-    this.activity.selectedEntries.set(entries)
+    void this.activity.openGroup(entries.map(entry => entry.trackKey))
   }
 
   protected formatHour(h: number): string {
@@ -202,7 +233,7 @@ export class DayViewComponent {
   }
 
   protected eventAriaLabel(entry: EntryUiAdapter): string {
-    return `Open event: ${entry.title}`
+    return calendarEventLabel(entry)
   }
 
   protected overflowAriaLabel(entries: readonly EntryUiAdapter[]): string {

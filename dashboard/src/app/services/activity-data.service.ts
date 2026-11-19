@@ -1,16 +1,18 @@
-import { InjectionToken, Service, computed, inject, signal } from '@angular/core'
+import { InjectionToken, Service, computed, inject, linkedSignal, signal } from '@angular/core'
 import type {
   ActivityEntry,
   ActivityLog,
   CollectedActivitySummary,
+  ConnectionId,
   ProviderInfo,
 } from '../generated/activity'
 import { type ConnectionKey, connectionKey } from '../providers/connection'
-import { createEntryAdapter, getProviderAdapter } from '../providers/provider-adapter'
+import { createEntryAdapters, getProviderAdapter } from '../providers/provider-adapter'
+import type { EntryUiAdapter } from '../providers/types'
 import type { ActivityResponse } from './backend/backend-contract'
 import { ActivityBackendClient } from './backend/backend-client'
 import { extractBackendErrorMessage } from './backend/error-message'
-import { ActivityViewStateService } from './activity-view-state.service'
+import { ActivityViewStateService, type DayRange } from './activity-view-state.service'
 import { dayKeyOf, lastDayKeyBefore, localDayRange } from '../utils/local-day'
 import type { CollectionOperation, CollectionStatus, ProviderViewModel } from './types'
 
@@ -33,9 +35,15 @@ export class ActivityDataService {
   private readonly pollDelayMs = inject(ACTIVITY_POLL_DELAY_MS)
 
   readonly allEntries = signal<ActivityEntry[]>([])
-  readonly allEntryAdapters = computed(() => this.allEntries().map(createEntryAdapter))
+  /** The entries' adapters; an entry that a new answer repeats unchanged keeps its adapter. */
+  readonly allEntryAdapters = linkedSignal<ActivityEntry[], EntryUiAdapter[]>({
+    source: this.allEntries,
+    computation: (entries, previous) => createEntryAdapters(entries, previous?.value ?? []),
+  }).asReadonly()
   readonly providerInfo = signal<ProviderInfo[]>([])
-  private readonly providersLoaded = signal(false)
+  private readonly loadedProviders = signal(false)
+  /** Whether the list of sources has come in once. */
+  readonly providersLoaded = this.loadedProviders.asReadonly()
   private refreshingProviders = false
   /** Numbers the provider requests, so an answer older than the list on screen is dropped. */
   private providerRequests = 0
@@ -101,11 +109,13 @@ export class ActivityDataService {
     this.showRange(log.meta)
   }
 
+  /** Shows the backend's startup collection, or collects the range the dashboard was opened with. */
   async initLoad(): Promise<void> {
+    const opened = this.viewState.openedRange()
     this.begin('initial')
     try {
       await this.loadProviders()
-      await this.settle('initial', null)
+      await this.settle('initial', opened && (await this.collectOpenedRange(opened)))
     } catch (error) {
       this.fail('initial', 'failed', extractBackendErrorMessage(error))
     } finally {
@@ -140,7 +150,7 @@ export class ActivityDataService {
   async followCollection(): Promise<void> {
     // A collection already being shown reads the same backend state.
     if (this.isLoading()) return
-    this.begin('collect', true)
+    this.begin('collect')
     try {
       await this.settle('collect', null)
     } catch {
@@ -150,10 +160,19 @@ export class ActivityDataService {
     }
   }
 
-  private begin(operation: CollectionOperation, keepSelection = false): void {
+  /**
+   * Runs a source's startup check again. The backend then collects its kind again for the range
+   * on screen, which is followed like the collection after a settings change.
+   */
+  async recheckConnection(connection: ConnectionId): Promise<void> {
+    const { providers } = await this.backend.recheckConnection(connection)
+    this.applyProviders(providers, false)
+    await this.followCollection()
+  }
+
+  private begin(operation: CollectionOperation): void {
     this.isLoading.set(true)
     this.error.set(null)
-    if (!keepSelection) this.viewState.clearSelection()
     this.collectionStatus.set({ kind: 'collecting', operation, startedAt: Date.now() })
   }
 
@@ -194,7 +213,7 @@ export class ActivityDataService {
   private showProviders(providers: ProviderInfo[], activateAllUsable: boolean): void {
     const previous = this.providerInfo()
     this.providerInfo.set(providers)
-    this.providersLoaded.set(true)
+    this.loadedProviders.set(true)
     if (activateAllUsable) {
       this.viewState.activateAllUsable(providers)
     } else {
@@ -267,10 +286,14 @@ export class ActivityDataService {
     await this.refreshProviders(false).catch(() => undefined)
   }
 
+  /** Starts collecting `range`; the backend stops its startup collection of another range. */
+  private collectOpenedRange({ from, to }: DayRange): Promise<ActivityResponse> {
+    return this.backend.collect(localDayRange(from, to))
+  }
+
   /** Shows a range of instants as the local days it covers. */
   private showRange({ start, end }: { start: string; end: string }): void {
-    this.viewState.dateFrom.set(dayKeyOf(start))
-    this.viewState.dateTo.set(lastDayKeyBefore(end))
+    this.viewState.showCollectedRange({ from: dayKeyOf(start), to: lastDayKeyBefore(end) })
   }
 }
 

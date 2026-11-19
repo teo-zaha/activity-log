@@ -36,15 +36,6 @@ class JiraEntryUiAdapter extends EntryUiAdapter<JiraEntry> {
       styleKey: provider.source,
     })
   }
-
-  markdownSummary(): string {
-    const entry = this.entry
-    return `${entry.key}: ${entry.title} [${entry.status}]`
-  }
-
-  markdownMeta(timeLabel: string): string {
-    return timeLabel
-  }
 }
 
 class JiraProviderAdapter extends ProviderUiAdapterDefinition<

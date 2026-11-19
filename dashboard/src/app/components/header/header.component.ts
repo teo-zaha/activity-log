@@ -3,8 +3,14 @@ import { form, FormField, FormRoot } from '@angular/forms/signals'
 import { MatTooltipModule } from '@angular/material/tooltip'
 import { MatDatepickerModule } from '@angular/material/datepicker'
 import { MatNativeDateModule } from '@angular/material/core'
+import { MatIconModule } from '@angular/material/icon'
+import { Router } from '@angular/router'
+import { IconButtonComponent } from '../button/icon-button.component'
+import { ButtonComponent } from '../button/button.component'
 import { ActivityService } from '../../services/activity.service'
-import { RuntimeEnvironmentService } from '../../services/backend/runtime-environment.service'
+import { WindowChromeService } from '../../services/window-chrome.service'
+import { SettingsDialogLauncher } from '../settings-dialog/settings-dialog-launcher.service'
+import { appLink, injectShareLink } from '../share/share-link'
 import { dateOfKey, localDateKey } from '../../utils/local-day'
 
 interface DateRange {
@@ -14,13 +20,26 @@ interface DateRange {
 
 @Component({
   selector: 'app-header',
-  imports: [FormField, FormRoot, MatTooltipModule, MatDatepickerModule, MatNativeDateModule],
+  imports: [
+    IconButtonComponent,
+    ButtonComponent,
+    MatIconModule,
+    FormField,
+    FormRoot,
+    MatTooltipModule,
+    MatDatepickerModule,
+    MatNativeDateModule,
+  ],
   templateUrl: './header.component.html',
   styleUrl: './header.component.scss',
 })
 export class HeaderComponent {
   protected readonly activity = inject(ActivityService)
-  protected readonly runtime = inject(RuntimeEnvironmentService)
+  private readonly chrome = inject(WindowChromeService)
+  private readonly router = inject(Router)
+  /** On a phone the settings are a tab, without the range that filters the views. */
+  protected readonly settingsTab = inject(SettingsDialogLauncher).pageOpen
+  private readonly shareLink = injectShareLink()
 
   protected readonly dateFromObj = computed(() => this.parseDateStr(this.activity.dateFrom()))
   protected readonly dateToObj = computed(() => this.parseDateStr(this.activity.dateTo()))
@@ -61,6 +80,11 @@ export class HeaderComponent {
     void this.activity.exportJson()
   }
 
+  /** Shares the link to this view, with the details open in it, if any. */
+  protected shareView(): Promise<void> {
+    return this.shareLink(appLink(this.router, ['q', 'from', 'to', 'event', 'events']))
+  }
+
   protected startHeaderDrag(event: MouseEvent): void {
     if (this.isDragSurface(event)) void this.startWindowDrag(event)
   }
@@ -77,25 +101,11 @@ export class HeaderComponent {
     )
   }
 
-  protected async startWindowDrag(event: MouseEvent): Promise<void> {
-    if (!this.runtime.isTauri() || event.button !== 0) {
-      return
-    }
-
-    event.preventDefault()
-
-    const { getCurrentWindow } = await import('@tauri-apps/api/window')
-    await getCurrentWindow().startDragging()
+  protected startWindowDrag(event: MouseEvent): Promise<void> {
+    return this.chrome.startDrag(event)
   }
 
-  protected async toggleWindowMaximize(event: MouseEvent): Promise<void> {
-    if (!this.runtime.isTauri() || event.button !== 0) {
-      return
-    }
-
-    event.preventDefault()
-
-    const { getCurrentWindow } = await import('@tauri-apps/api/window')
-    await getCurrentWindow().toggleMaximize()
+  protected toggleWindowMaximize(event: MouseEvent): Promise<void> {
+    return this.chrome.toggleMaximize(event)
   }
 }

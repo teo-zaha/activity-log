@@ -1,71 +1,63 @@
-<div class="settings-shell">
-  <app-settings-dialog-nav
-    [selection]="selection()"
-    [providers]="providerRows()"
-    (selected)="selection.set($event)"
-  />
+<div class="settings-shell" [class.shows-home]="showsHome()">
+  @if (!isPhone() || showsHome()) {
+    <app-settings-nav
+      [selection]="section()"
+      [providers]="providerRows()"
+      [home]="isPhone()"
+      (selected)="select($event)"
+    />
+  }
 
-  <section class="settings-content">
-    <header class="content-header">
-      <div class="content-heading">
+  @if (!showsHome()) {
+    <section class="settings-content" aria-labelledby="settings-page-title">
+      <app-page-header
+        class="content-header"
+        [backLabel]="isPhone() ? 'Back to settings' : null"
+        [closeLabel]="isPhone() ? null : 'Close settings'"
+        (goBack)="back()"
+        (dismiss)="close()"
+      >
         @if (selectedProvider(); as provider) {
-          <span class="content-kicker u-kicker">Sources</span>
-          <div class="provider-heading">
-            <app-provider-icon [source]="provider.info.connection.source" size="lg" />
-            <h2>{{ provider.label }}</h2>
+          <app-provider-icon [source]="provider.info.connection.source" size="sm" />
+        }
+        <h2 id="settings-page-title" tabindex="-1" cdkFocusInitial>{{ title() }}</h2>
+        @if (pageActions(); as actions) {
+          <div pageAction class="page-actions">
+            <ng-container *ngTemplateOutlet="actions" />
           </div>
-        } @else if (selection() === 'add') {
-          <span class="content-kicker u-kicker">Sources</span>
-          <h2>Add source</h2>
-          <p>
-            Pick what to collect. A source can be added more than once, such as two GitLab accounts,
-            and renamed or removed later.
-          </p>
-        } @else if (selection() === 'logs') {
-          <span class="content-kicker u-kicker">Diagnostics</span>
-          <h2>Logs</h2>
-          <p>
-            Provider checks, collection runs and settings saves from this session. Copy them when
-            reporting a problem.
-          </p>
+        }
+      </app-page-header>
+
+      @if (description(); as text) {
+        <p class="page-lede">{{ text }}</p>
+      }
+
+      <div class="settings-scroll">
+        @if (selectedProvider(); as provider) {
+          <app-settings-source-pane [provider]="provider" (removed)="afterRemove()" />
+        } @else if (missingSource(); as state) {
+          @if (state === 'loading') {
+            <div class="source-loading" role="status">
+              <span class="u-sr-only">Loading sources…</span>
+              <span class="u-skeleton status-line is-title"></span>
+              <span class="u-skeleton status-line"></span>
+            </div>
+          } @else {
+            <app-empty-state appearance="plain" icon="link_off" heading="This source is not set up">
+              The link may be old, or the source was removed.
+              <button appButton emptyStateAction variant="secondary" (click)="afterRemove()">
+                {{ isPhone() ? 'All settings' : 'Show Appearance' }}
+              </button>
+            </app-empty-state>
+          }
+        } @else if (section() === 'add') {
+          <app-settings-add-source-pane (opened)="select(connectionSelection($event))" />
+        } @else if (section() === 'logs') {
+          <app-settings-logs-pane />
         } @else {
-          <span class="content-kicker u-kicker">General</span>
-          <h2>Appearance</h2>
-          <p>
-            Pick a theme for the dashboard. Changes apply immediately and stay active after reload.
-          </p>
+          <app-settings-general-pane />
         }
       </div>
-
-      <div class="header-actions">
-        <button
-          mat-icon-button
-          type="button"
-          class="close-btn"
-          (click)="close()"
-          aria-label="Close settings"
-        >
-          <mat-icon>close</mat-icon>
-        </button>
-      </div>
-    </header>
-
-    <app-settings-dialog-mobile-tabs
-      [selection]="selection()"
-      [providers]="providerRows()"
-      (selected)="selection.set($event)"
-    />
-
-    <div class="settings-scroll">
-      @if (selectedProvider(); as provider) {
-        <app-settings-source-pane [provider]="provider" (removed)="selection.set('general')" />
-      } @else if (selection() === 'add') {
-        <app-settings-add-source-pane (opened)="selection.set(connectionSelection($event))" />
-      } @else if (selection() === 'logs') {
-        <app-settings-logs-pane />
-      } @else {
-        <app-settings-general-pane />
-      }
-    </div>
-  </section>
+    </section>
+  }
 </div>

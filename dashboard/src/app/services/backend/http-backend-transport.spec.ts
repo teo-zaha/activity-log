@@ -2,7 +2,12 @@ import { provideHttpClient } from '@angular/common/http'
 import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing'
 import { TestBed } from '@angular/core/testing'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { activityLog, collectingLog, providersResponse } from '../../testing/activity-fixtures'
+import {
+  activityLog,
+  collectingLog,
+  exportRequest,
+  providersResponse,
+} from '../../testing/activity-fixtures'
 import { BackendOperations, DesktopOnlyBackendError } from './backend-contract'
 import { HttpBackendTransport } from './http-backend-transport'
 
@@ -107,18 +112,59 @@ describe('HttpBackendTransport', () => {
     await vi.waitFor(() => expect(config.error()).toBeInstanceOf(DesktopOnlyBackendError))
   })
 
-  it('downloads exports through a temporary object URL', async () => {
-    const { transport } = setup()
+  it('has the API render an export and downloads it through a temporary object URL', async () => {
+    const { transport, http } = setup()
     const createObjectURL = vi.fn(() => 'blob:export')
     const revokeObjectURL = vi.fn()
     vi.stubGlobal('URL', { createObjectURL, revokeObjectURL })
-    const click = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => undefined)
+    let downloaded = ''
+    const click = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(function (
+      this: HTMLAnchorElement
+    ) {
+      downloaded = this.download
+    })
 
-    await transport.saveExport({ content: '# hi', fileName: 'a.md', format: 'markdown' })
+    const saved = transport.saveExport(exportRequest)
+    const req = http.expectOne('/api/export')
+    expect(req.request.method).toBe('POST')
+    expect(req.request.body).toEqual(exportRequest)
+    req.flush({ fileName: 'activity-2026-05-17-2026-05-18.md', content: '# hi' })
+    await saved
 
     expect(click).toHaveBeenCalledOnce()
+    expect(downloaded).toBe('activity-2026-05-17-2026-05-18.md')
     expect(createObjectURL).toHaveBeenCalledWith(expect.objectContaining({ type: 'text/markdown' }))
     expect(revokeObjectURL).toHaveBeenCalledWith('blob:export')
+  })
+
+  it('downloads nothing when the API rejects an export', async () => {
+    const { transport, http } = setup()
+    const click = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => undefined)
+
+    const saved = transport.saveExport({ ...exportRequest, timeZone: 'Mars/Olympus' })
+    http
+      .expectOne('/api/export')
+      .flush(
+        { error: 'Unknown time zone "Mars/Olympus"' },
+        { status: 400, statusText: 'Bad Request' }
+      )
+
+    await expect(saved).rejects.toMatchObject({ status: 400 })
+    expect(click).not.toHaveBeenCalled()
+  })
+
+  it('opens web links in a new tab without access to this page', async () => {
+    const { transport } = setup()
+    const open = vi.spyOn(window, 'open').mockImplementation(() => null)
+
+    await transport.openUrl('https://example.org/a')
+    await expect(transport.openUrl('javascript:alert(1)')).rejects.toThrow('Only web links')
+
+    expect(open).toHaveBeenCalledExactlyOnceWith(
+      'https://example.org/a',
+      '_blank',
+      'noopener,noreferrer'
+    )
   })
 
   it('refuses a request that does not match the operation', () => {

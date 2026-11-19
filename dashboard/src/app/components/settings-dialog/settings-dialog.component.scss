@@ -8,14 +8,16 @@
   overflow: hidden;
 }
 
+// ── Dialog on wide screens: the list beside the page ────────────────────────
+
 .settings-shell {
   box-sizing: border-box;
   display: grid;
   grid-template-columns: 280px minmax(0, 1fr);
   width: min(1040px, 100%);
   max-width: 100%;
-  height: min(720px, calc(100dvh - 32px));
-  max-height: calc(100dvh - 32px);
+  height: min(720px, var(--dialog-max-height));
+  max-height: var(--dialog-max-height);
   color: var(--text-primary);
   @include ui.panel-shell(
     $radius: var(--radius-xl),
@@ -26,192 +28,135 @@
   animation: u-rise 0.26s var(--ease-out);
 }
 
-:host-context(.settings-dialog-fullscreen) .settings-shell {
-  height: 100dvh;
-  max-height: 100dvh;
-  border: 0;
-  border-radius: 0;
+// ── Page in the main content on a phone ─────────────────────────────────────
+
+:host(.is-page) {
+  height: 100%;
+
+  .settings-shell {
+    width: 100%;
+    height: 100%;
+    max-height: none;
+    border: 0;
+    border-radius: 0;
+    box-shadow: none;
+    animation: none;
+  }
 }
 
 .settings-content {
-  box-sizing: border-box;
   display: flex;
   flex-direction: column;
   min-width: 0;
   min-height: 0;
-  padding: 24px 20px 0 28px;
   background: var(--surface);
   overflow: hidden;
 }
 
 .content-header {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 24px;
-  padding: 0 6px 22px 0;
-  min-width: 0;
-}
+  --page-header-min-height: 72px;
+  --page-header-padding: 14px 18px 14px 28px;
 
-.header-actions {
-  display: inline-flex;
-  align-items: center;
-  justify-content: flex-end;
-  gap: 10px;
-  min-width: 0;
-  flex-shrink: 0;
-}
-
-.content-heading {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-
+  // Focused when a page opens, so it is read out first; not a control, so no ring.
   h2 {
     margin: 0;
-    font-size: 26px;
-    line-height: 1.1;
-    letter-spacing: -0.03em;
-  }
-
-  p {
-    margin: 0;
-    max-width: 720px;
-    color: var(--text-secondary);
-    line-height: 1.6;
+    outline: none;
+    overflow: hidden;
+    font-size: 22px;
+    letter-spacing: -0.02em;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
 }
 
-.provider-heading {
-  display: inline-flex;
+.page-actions {
+  display: flex;
   align-items: center;
-  gap: 14px;
-  min-width: 0;
-
-  h2 {
-    margin: 0;
-  }
+  gap: 6px;
 }
 
-.close-btn {
-  @include ui.chrome-icon-button(
-    $size: 38px,
-    $radius: var(--radius-sm),
-    $border: 1px solid transparent,
-    $background: transparent
-  );
-
-  padding: 0;
-  flex-shrink: 0;
-  border-color: var(--border);
-
-  &:active {
-    transform: translateY(0);
-  }
+.page-lede {
+  margin: 0;
+  padding: 16px 28px 0;
+  color: var(--text-secondary);
+  font-size: 13.5px;
+  line-height: 1.5;
 }
 
-// Scrolling clips whatever is drawn outside it, so the inset leaves room for focus rings and
-// hover lifts; the negative margin keeps the content where it was.
+// Scrolling clips whatever is drawn outside it, so the inset leaves room for focus rings.
 .settings-scroll {
-  --scroll-inset: 6px;
-
   flex: 1;
   min-height: 0;
-  overflow-y: auto;
+  padding: 18px 28px 0;
   overflow-x: hidden;
-  margin: calc(-1 * var(--scroll-inset));
-  margin-right: 0;
-  padding: var(--scroll-inset);
-  padding-right: 12px;
+  overflow-y: auto;
   scrollbar-gutter: stable;
 }
 
 @include ui.down('tablet') {
   .settings-shell {
-    grid-template-columns: 1fr;
-    width: 100%;
-    max-width: 100%;
-    height: min(720px, calc(100dvh - 32px));
-    border-radius: var(--radius-lg);
-  }
-
-  app-settings-dialog-nav {
-    display: none;
-  }
-
-  .settings-content {
-    padding: 20px 14px 0 16px;
-    min-width: 0;
+    grid-template-columns: 240px minmax(0, 1fr);
   }
 
   .content-header {
-    align-items: center;
-    gap: 14px;
-    padding: 0 2px 16px 0;
-  }
-
-  .content-heading {
-    gap: 6px;
+    --page-header-min-height: 60px;
+    --page-header-padding: 8px 12px 8px 20px;
 
     h2 {
-      font-size: 28px;
-    }
-
-    p {
-      max-width: none;
-      font-size: 14px;
-      line-height: 1.5;
+      font-size: 19px;
     }
   }
 
-  .header-actions {
-    gap: 8px;
+  .page-lede {
+    padding: 14px 20px 0;
   }
 
   .settings-scroll {
-    padding-right: 6px;
+    padding: 16px 20px 0;
   }
 }
 
+// ── A source the URL names that is not there ────────────────────────────────
+
+.source-loading {
+  display: grid;
+  gap: 12px;
+  padding-top: 4px;
+}
+
+.status-line {
+  height: 14px;
+  width: 70%;
+
+  &.is-title {
+    height: 22px;
+    width: 45%;
+  }
+}
+
+// ── Phone: one page at a time ───────────────────────────────────────────────
+
 @include ui.down('phone') {
   .settings-shell {
-    width: 100%;
-    max-width: 100%;
-  }
-
-  .settings-content {
-    padding: 16px 10px 0 12px;
+    grid-template-columns: minmax(0, 1fr);
   }
 
   .content-header {
-    gap: 10px;
-    padding-bottom: 14px;
-  }
-
-  .header-actions {
-    gap: 6px;
-  }
-
-  .content-heading {
-    min-width: 0;
+    --page-header-min-height: 56px;
+    --page-header-padding: 6px 8px;
 
     h2 {
-      font-size: 24px;
-      overflow-wrap: anywhere;
+      font-size: 17px;
+      font-weight: 650;
     }
   }
 
-  .provider-heading {
-    gap: 10px;
+  .page-lede {
+    padding: 14px 16px 0;
   }
 
-  .provider-heading app-provider-icon {
-    --provider-icon-box: 34px;
-    --provider-icon-glyph: 17px;
-  }
-
-  .close-btn {
-    width: 38px;
-    height: 38px;
+  .settings-scroll {
+    padding: 14px 16px 0;
+    scrollbar-gutter: auto;
   }
 }

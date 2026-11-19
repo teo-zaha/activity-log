@@ -15,7 +15,8 @@
 
 .flyout {
   position: fixed;
-  top: 12px;
+  // Below the window buttons the app draws on Windows.
+  top: calc(12px + var(--window-controls-height));
   right: 12px;
   bottom: 12px;
   z-index: 201;
@@ -27,63 +28,69 @@
   animation: slide-in 0.28s var(--ease-out);
 }
 
-.grabber {
-  display: none;
-}
-
 // ── Header ───────────────────────────────────────────────────────────────────
 
 .flyout-header {
+  --page-header-min-height: 64px;
+  --page-header-padding: 14px 14px 14px 22px;
+
+  // A single event: only the close button, beside the badges at the top of the body.
+  &.is-bare {
+    position: absolute;
+    top: 0;
+    right: 0;
+    z-index: 1;
+    padding: 14px;
+    border-bottom: 0;
+  }
+}
+
+.flyout-back {
+  flex: 0 1 auto;
+  justify-content: flex-start;
+  min-width: 0;
+  margin-left: -10px;
+}
+
+.flyout-back-label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+// Focusable only so a click inside the drawer keeps focus in it.
+.flyout:focus {
+  outline: none;
+}
+
+.flyout-stepper {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  flex-shrink: 0;
-  padding: 14px 14px 14px 22px;
-  border-bottom: 1px solid var(--hairline);
+  gap: 2px;
+  margin-right: 4px;
+}
+
+.flyout-position {
+  margin-right: 4px;
+  color: var(--text-tertiary);
+  font-size: 12.5px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.flyout-list-title {
+  margin: 0;
+  color: var(--text-primary);
+  font-size: 15px;
+  font-weight: 650;
 }
 
 .flyout-badges {
   display: flex;
   flex-wrap: wrap;
   gap: 6px;
-}
-
-.flyout-badge {
-  @include ui.provider-badge-base($padding: 4px 10px 4px 8px, $font-size: 11px);
-  margin: 0;
-  letter-spacing: 0.06em;
-}
-
-@include ui.provider-badge-variants('.flyout-badge');
-
-.flyout-badge-icon {
-  font-size: 13px;
-}
-
-.flyout-close {
-  @include ui.chrome-icon-button(
-    $size: 36px,
-    $radius: var(--radius-sm),
-    $border: 1px solid transparent,
-    $background: transparent
-  );
-
-  &:hover:not(:disabled) {
-    transform: none;
-    box-shadow: none;
-  }
-
-  .material-icons {
-    font-size: 20px;
-  }
-}
-
-.flyout-overflow-count {
-  margin: 0;
-  color: var(--text-primary);
-  font-size: 15px;
-  font-weight: 650;
+  margin-bottom: 14px;
 }
 
 // ── Body ─────────────────────────────────────────────────────────────────────
@@ -95,6 +102,17 @@
   padding: 22px;
 }
 
+// Beside the floating close button: the badges line up with it.
+.flyout-header.is-bare + .flyout-body {
+  padding-top: 24px;
+
+  .flyout-badges {
+    min-height: 40px;
+    align-items: center;
+    margin: -12px 96px 14px 0;
+  }
+}
+
 .flyout-title {
   margin: 0 0 10px;
   color: var(--text-primary);
@@ -103,6 +121,11 @@
   line-height: 1.25;
   letter-spacing: -0.02em;
   overflow-wrap: anywhere;
+
+  // Focused only so a screen reader reads the event that just opened.
+  &:focus {
+    outline: none;
+  }
 }
 
 .flyout-time {
@@ -112,11 +135,28 @@
   margin: 0 0 22px;
   color: var(--text-secondary);
   font-size: 13.5px;
+  --icon-size: 16px;
 
-  .material-icons {
-    font-size: 16px;
+  mat-icon {
     color: var(--text-tertiary);
   }
+}
+
+// ── Meeting ──────────────────────────────────────────────────────────────────
+
+.flyout-join {
+  margin: -8px 0 22px;
+}
+
+.flyout-description {
+  margin-top: 22px;
+}
+
+.flyout-description-title {
+  margin: 0 0 8px;
+  color: var(--text-tertiary);
+  font-size: 13px;
+  font-weight: 500;
 }
 
 // ── Sections ─────────────────────────────────────────────────────────────────
@@ -132,30 +172,133 @@
   }
 }
 
-.flyout-subsection + .flyout-subsection {
-  margin-top: 14px;
+.flyout-section-title {
+  margin: 0 0 10px;
+  font: inherit;
 }
 
-.flyout-section-header {
-  display: flex;
-  align-items: flex-start;
-  gap: 10px;
+// ── Loading or missing ───────────────────────────────────────────────────────
+
+.status-line {
+  height: 14px;
   margin-bottom: 12px;
+  width: 80%;
+
+  &.is-title {
+    height: 24px;
+    width: 60%;
+    margin-bottom: 18px;
+  }
+
+  &.is-short {
+    width: 45%;
+  }
 }
 
-.flyout-section-entry-title {
-  flex: 1;
+// ── Overlapping events ───────────────────────────────────────────────────────
+
+.flyout-body.is-list {
+  padding: 14px;
+}
+
+.overlap-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+
+  > li + li {
+    border-top: 1px solid var(--hairline);
+  }
+}
+
+.overlap-row {
+  appearance: none;
+  display: grid;
+  grid-template-columns: 44px minmax(0, 1fr) 20px;
+  align-items: start;
+  column-gap: 12px;
+  width: 100%;
+  padding: 12px 12px 12px 14px;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: background-color 0.15s ease;
+
+  &:hover {
+    background: color-mix(in srgb, var(--surface-hover) 65%, transparent);
+  }
+
+  &:focus-visible {
+    outline: none;
+    box-shadow: inset 0 0 0 2px var(--accent);
+
+    @media (forced-colors: active) {
+      outline: 2px solid Highlight;
+      outline-offset: -2px;
+    }
+  }
+
+  &:hover .overlap-chevron,
+  &:focus-visible .overlap-chevron {
+    color: var(--text-primary);
+  }
+}
+
+.overlap-time {
+  color: var(--text-secondary);
+  font-size: 12.5px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  line-height: 20px;
+}
+
+.overlap-body {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
   min-width: 0;
-  margin: 2px 0 0;
+}
+
+.overlap-title {
+  overflow: hidden;
   color: var(--text-primary);
   font-size: 14px;
   font-weight: 600;
-  overflow-wrap: anywhere;
+  line-height: 20px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
-.flyout-section-title {
-  display: inline-flex;
-  margin-bottom: 10px;
+.overlap-meta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.overlap-online {
+  --icon-size: 15px;
+  color: var(--text-tertiary);
+}
+
+.overlap-meta-text {
+  overflow: hidden;
+  color: var(--text-tertiary);
+  font-size: 12.5px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.overlap-chevron {
+  align-self: center;
+  color: var(--text-tertiary);
+  transition: color 0.15s ease;
 }
 
 // ── Fields ───────────────────────────────────────────────────────────────────
@@ -187,33 +330,44 @@
   user-select: text;
 }
 
-// ── Phone: bottom sheet ──────────────────────────────────────────────────────
+// ── Phone: a page of its own ─────────────────────────────────────────────────
+// The details cover the screen and are left with a back arrow; a view transition slides them
+// in and out (`styles.scss`).
 
 @include ui.down('phone') {
-  .flyout {
-    top: auto;
-    left: 0;
-    right: 0;
-    bottom: 0;
-    width: 100%;
-    max-height: 88dvh;
-    border-radius: var(--radius-xl) var(--radius-xl) 0 0;
-    border-bottom: 0;
-    padding-bottom: env(safe-area-inset-bottom);
-    animation-name: sheet-in;
+  .backdrop {
+    display: none;
   }
 
-  .grabber {
-    display: block;
-    width: 36px;
-    height: 4px;
-    margin: 8px auto 0;
-    border-radius: 999px;
-    background: var(--border);
+  .flyout {
+    inset: 0;
+    width: 100%;
+    border: 0;
+    border-radius: 0;
+    box-shadow: none;
+    padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom)
+      env(safe-area-inset-left);
+    animation: none;
+    view-transition-name: event-detail;
   }
 
   .flyout-header {
-    padding: 8px 10px 10px 16px;
+    --page-header-min-height: 56px;
+    --page-header-padding: 8px 10px;
+
+    &.is-bare {
+      position: static;
+      border-bottom: 1px solid var(--hairline);
+    }
+  }
+
+  .flyout-header.is-bare + .flyout-body {
+    padding-top: 18px;
+
+    .flyout-badges {
+      min-height: 0;
+      margin: 0 0 14px;
+    }
   }
 
   .flyout-body {
@@ -237,15 +391,6 @@
   }
   to {
     opacity: 1;
-    transform: none;
-  }
-}
-
-@keyframes sheet-in {
-  from {
-    transform: translateY(100%);
-  }
-  to {
     transform: none;
   }
 }
