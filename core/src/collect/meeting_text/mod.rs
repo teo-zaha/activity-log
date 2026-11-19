@@ -12,7 +12,7 @@ use reqwest::Url;
 use crate::model::DescriptionBlock;
 
 pub(crate) use structure::looks_like_html;
-use structure::{Line, LineKind, blocks, html_lines, plain_lines, plain_text};
+use structure::{Line, LineKind, Run, blocks, html_lines, plain_lines, plain_text};
 
 #[cfg(test)]
 mod tests;
@@ -61,7 +61,7 @@ pub(crate) fn meeting_text<'a>(
             lines
                 .iter()
                 .flat_map(|line| &line.runs)
-                .find_map(|run| meeting_link(run.href.as_deref()?))
+                .find_map(run_meeting_link)
         });
     let blocks = blocks(&clean(lines), MAX_DESCRIPTION_CHARS);
     MeetingText {
@@ -89,6 +89,17 @@ pub(crate) fn meeting_link(raw: &str) -> Option<String> {
         _ => false,
     };
     is_meeting.then(|| url.to_string())
+}
+
+/// The online-meeting link of a run: where it links to, or one written in its text (HTML
+/// links only what is in an anchor).
+fn run_meeting_link(run: &Run) -> Option<String> {
+    match run.href.as_deref() {
+        Some(href) => meeting_link(href),
+        None => url_spans(&run.text)
+            .into_iter()
+            .find_map(|span| meeting_link(&run.text[span])),
+    }
 }
 
 fn https_url(raw: &str) -> Option<String> {
@@ -188,11 +199,7 @@ fn drop_invitation_blocks(lines: Vec<Line>) -> Vec<Line> {
         let is_invitation = lines[open..=close].iter().any(|line| {
             let text = line.text();
             TEAMS_MARKERS.iter().any(|marker| text.contains(marker))
-                || line
-                    .runs
-                    .iter()
-                    .filter_map(|run| run.href.as_deref())
-                    .any(|href| meeting_link(href).is_some())
+                || line.runs.iter().any(|run| run_meeting_link(run).is_some())
         });
         if is_invitation {
             dropped[open..=close].fill(true);

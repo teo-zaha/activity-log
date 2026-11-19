@@ -297,7 +297,7 @@ For each source, this section lists the entries it produces, the line shown unde
 
 ### Calendar
 
-- **Entries:** one per event occurrence in the feed that overlaps the date range. Recurring meetings are expanded, with moved and removed occurrences applied. All-day and cancelled events are left out. The title is the event summary.
+- **Entries:** one per event occurrence in the feed that overlaps the date range. Recurring meetings are expanded, with moved and removed occurrences applied: each occurrence is named by when its series planned it, a change (`RECURRENCE-ID`) replaces the occurrence planned at that time, a "this and future" change every later one (when it changes the length, every later one takes the new length; otherwise each keeps its own, an explicit period too), and a change that names no planned occurrence is shown as a meeting of its own. A date that is listed twice is one meeting; a change's extra date is a meeting of its own unless it repeats the change's own start. All-day and cancelled events are left out. The title is the event summary.
 - **Timeline line:** duration · location · `org:` and the organizer's name
 - **Detail panel:** Title, Duration, Status, Location, Organizer, a **Join meeting** button for online meetings and the **Description**
 - **Calendar views:** a meeting is drawn as a block that spans its duration. In the Timeline an online meeting has a camera mark.
@@ -305,7 +305,7 @@ For each source, this section lists the entries it produces, the line shown unde
 - **Join link:** `X-MICROSOFT-SKYPETEAMSMEETINGURL`, `X-MICROSOFT-ONLINEMEETINGEXTERNALLINK` or `X-GOOGLE-CONFERENCE` when the feed has one, then `URL` when it is a meeting link; otherwise the first Teams, Zoom, Google Meet or Webex link in the description. Only `https://` links are used. Join meeting opens it in the browser (on desktop, the default browser).
 - **Busy status:** Outlook's `X-MICROSOFT-CDO-BUSYSTATUS` when the feed has it; otherwise `TRANSP:TRANSPARENT` is free (a transparent event blocks no time, even when tentative), then `STATUS:TENTATIVE` is tentative and `TRANSP:OPAQUE` busy. A moved or changed occurrence of a series uses its own value.
 - **Platforms:** Windows, macOS, Linux
-- **Configuration:** `ics_url` (required) per calendar: an `https://` or `webcal://` link, or the path of an `.ics` file. Plain `http://` is refused. The link is stored like a token and never written to the logs. Times without a time zone are read in this computer's time zone.
+- **Configuration:** `ics_url` (required) per calendar: an `https://` or `webcal://` link, or the path of an `.ics` file. Plain `http://` is refused. The link is stored like a token and never written to the logs. Times without a time zone are read in this computer's time zone, and so are times whose `TZID` names a zone neither the feed nor the IANA database knows, with a warning in the Logs pane. A series that would run through more than 50,000 occurrences is cut there with a warning, without holding back the other events.
 - **Outlook (also the new Outlook):** Settings → Calendar → Shared calendars → Publish a calendar, then copy the ICS link. The tenant may only allow availability without titles. Anyone who has the link can read the calendar; unpublishing revokes it.
 
 ### System
