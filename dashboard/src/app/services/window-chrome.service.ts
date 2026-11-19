@@ -1,5 +1,12 @@
 import { Service, inject, signal } from '@angular/core'
+import { listener, setupSync } from '@signality/core/browser/listener'
 import type { Window as TauriWindow } from '@tauri-apps/api/window'
+import {
+  APP_CONTEXT_MENU,
+  type SelectionRects,
+  keepsNativeMenu,
+  selectionRects,
+} from '../utils/context-menu'
 import { RuntimeEnvironmentService } from './backend/runtime-environment.service'
 
 /** The pointer over the maximize button, as `desktop/src/window_chrome/` reports it. */
@@ -10,7 +17,8 @@ export interface MaximizeButtonState {
 
 /**
  * The desktop window's frame: dragging and maximizing it from the app's own surfaces and, where
- * the window has no title bar (Windows, `tauri.windows.conf.json`), its buttons.
+ * the window has no title bar (Windows, `tauri.windows.conf.json`), its buttons. In the desktop
+ * app the web view's own right-click menu shows only in text fields and over selected text.
  */
 @Service()
 export class WindowChromeService {
@@ -27,7 +35,29 @@ export class WindowChromeService {
   readonly maximizeButton = signal<MaximizeButtonState>({ hovered: false, pressed: false })
 
   constructor() {
+    if (this.runtime.isTauri()) this.limitContextMenu()
     if (this.frameless) void this.followWindow()
+  }
+
+  /**
+   * The selection is read when the button goes down, before WebKit selects the word under a
+   * right-click; the menu key has no press and reads it as it is. Registered at once, so the
+   * splash's own blocker in `index.html` can go.
+   */
+  private limitContextMenu(): void {
+    let pressed: SelectionRects | null = null
+    setupSync(() => {
+      listener.capture(document, 'pointerdown', () => {
+        pressed = selectionRects(document.getSelection())
+      })
+      listener(document, 'contextmenu', event => {
+        const selected =
+          event.button < 0 || !pressed ? selectionRects(document.getSelection()) : pressed
+        pressed = null
+        if (!keepsNativeMenu(event, selected)) event.preventDefault()
+      })
+    })
+    document.dispatchEvent(new Event(APP_CONTEXT_MENU))
   }
 
   /** Puts the snap layouts over `button`, which keeps its place at the window's top right. */
@@ -77,10 +107,11 @@ export class WindowChromeService {
   private async followWindow(): Promise<void> {
     const appWindow = await this.window()
     const sync = async (): Promise<void> => this.maximized.set(await appWindow.isMaximized())
-    await sync()
+    // Listening first, so a change between the first read and the listener is not missed.
     await appWindow.onResized(() => void sync())
     await appWindow.listen<MaximizeButtonState>('maximize-button', ({ payload }) =>
       this.maximizeButton.set(payload)
     )
+    await sync()
   }
 }
