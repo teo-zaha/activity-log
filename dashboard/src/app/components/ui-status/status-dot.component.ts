@@ -3,7 +3,7 @@ import type { ProviderStatus } from '../../generated/activity'
 
 @Component({
   selector: 'app-status-dot',
-  templateUrl: './status-dot.component.html',
+  template: '',
   styleUrl: './status-dot.component.scss',
   host: {
     'aria-hidden': 'true',

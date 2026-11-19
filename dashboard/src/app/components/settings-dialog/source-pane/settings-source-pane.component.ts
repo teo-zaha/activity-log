@@ -1,21 +1,29 @@
 import {
   Component,
   computed,
+  effect,
   inject,
   input,
   linkedSignal,
   output,
   resource,
   signal,
+  untracked,
 } from '@angular/core'
 import { applyEach, disabled, form, FormField, FormRoot, validate } from '@angular/forms/signals'
 import { MatDialog } from '@angular/material/dialog'
 import { MatFormFieldModule } from '@angular/material/form-field'
 import { MatInputModule } from '@angular/material/input'
 import { MatSelectModule } from '@angular/material/select'
+import { MatIconModule } from '@angular/material/icon'
+import { AutoAnimateDirective } from '../../auto-animate/auto-animate.directive'
+import { FeedbackComponent } from '../../feedback/feedback.component'
+import { IconButtonComponent } from '../../button/icon-button.component'
+import { ButtonComponent } from '../../button/button.component'
 import type {
   ProviderConfigFieldStateDto,
   ProviderConfigSaveRequestDto,
+  ProviderProblem,
   ProviderStatus,
 } from '../../../generated/activity'
 import { connectionKey } from '../../../providers/connection'
@@ -25,9 +33,9 @@ import { extractBackendErrorMessage } from '../../../services/backend/error-mess
 import { RuntimeEnvironmentService } from '../../../services/backend/runtime-environment.service'
 import { ToastService } from '../../../services/toast.service'
 import { confirmAction } from '../../confirm-dialog/confirm-dialog.component'
-import { StatusPillComponent } from '../../ui-status/status-pill.component'
 import { validateProviderConfigValue } from './provider-config-validation'
 import type { SettingsProviderRow } from '../settings-dialog.types'
+import { type SourceDraft, SourceDrafts } from './source-drafts.service'
 
 interface ProviderHealthVm {
   readonly icon: string
@@ -62,17 +70,19 @@ function sameItems(a: readonly string[], b: readonly string[]): boolean {
   return a.length === b.length && a.every((item, index) => item === b[index])
 }
 
-const TIMEOUT_REASON = /timed? ?out/i
-
 @Component({
   selector: 'app-settings-source-pane',
   imports: [
+    AutoAnimateDirective,
+    FeedbackComponent,
+    IconButtonComponent,
+    ButtonComponent,
+    MatIconModule,
     FormField,
     FormRoot,
     MatFormFieldModule,
     MatInputModule,
     MatSelectModule,
-    StatusPillComponent,
   ],
   templateUrl: './settings-source-pane.component.html',
   styleUrl: './settings-source-pane.component.scss',
@@ -82,6 +92,7 @@ export class SettingsSourcePaneComponent {
   private readonly runtime = inject(RuntimeEnvironmentService)
   private readonly dialog = inject(MatDialog)
   private readonly toast = inject(ToastService)
+  private readonly drafts = inject(SourceDrafts)
 
   readonly provider = input.required<SettingsProviderRow>()
   /** Emitted once the connection was removed. */
@@ -121,8 +132,16 @@ export class SettingsSourcePaneComponent {
   protected readonly configFields = computed(() => this.connectionState()?.fields ?? [])
   protected readonly hasConnectionState = computed(() => this.connectionState() !== null)
 
+  /** Unsaved edits left earlier, applied when this connection's settings load. */
+  private readonly savedDraft = computed<SourceDraft | undefined>(() => {
+    const key = this.selectionKey()
+    return this.connectionState() ? untracked(() => this.drafts.get(key)) : undefined
+  })
+
   /** The label the user is typing. */
-  protected readonly labelDraft = linkedSignal(() => this.connectionState()?.label ?? '')
+  protected readonly labelDraft = linkedSignal(
+    () => this.savedDraft()?.label ?? this.connectionState()?.label ?? ''
+  )
   protected readonly labelForm = form(this.labelDraft, path => {
     disabled(path, { when: () => this.savingConfig() })
   })
@@ -139,7 +158,10 @@ export class SettingsSourcePaneComponent {
         .map(field => [field.key, this.initialValueFor(field)])
     )
   )
-  private readonly draftValues = linkedSignal<DraftValues>(() => ({ ...this.initialValues() }))
+  private readonly draftValues = linkedSignal<DraftValues>(() => ({
+    ...this.initialValues(),
+    ...this.savedDraft()?.values,
+  }))
 
   /** The configured items, or the default the provider uses while the key is unset. */
   private readonly initialLists = computed<ListDrafts>(() =>
@@ -149,13 +171,16 @@ export class SettingsSourcePaneComponent {
         .map(field => [field.key, [...field.items]])
     )
   )
-  protected readonly listDrafts = linkedSignal<ListDrafts>(() =>
-    Object.fromEntries(Object.entries(this.initialLists()).map(([key, items]) => [key, [...items]]))
-  )
+  protected readonly listDrafts = linkedSignal<ListDrafts>(() => {
+    const drafted = this.savedDraft()?.lists ?? {}
+    return Object.fromEntries(
+      Object.entries(this.initialLists()).map(([key, items]) => [key, [...(drafted[key] ?? items)]])
+    )
+  })
   /** List keys the user reset, so their default applies again after saving. */
   private readonly resetLists = linkedSignal<ListDrafts, ReadonlySet<string>>({
     source: this.initialLists,
-    computation: () => new Set(),
+    computation: () => new Set(this.savedDraft()?.resets),
   })
 
   /** Every item is checked against the field's value type, like a single value. */
@@ -184,12 +209,11 @@ export class SettingsSourcePaneComponent {
   )
 
   protected readonly health = computed<ProviderHealthVm>(() => {
-    const { status, reason } = this.provider().info
-    const timedOut = reason !== undefined && TIMEOUT_REASON.test(reason)
+    const { status, reason, problem } = this.provider().info
     const checking = status === 'checking'
     return {
-      icon: timedOut ? 'timer_off' : this.statusIcon(status),
-      title: this.statusTitle(status, timedOut),
+      icon: problem === 'timedOut' ? 'timer_off' : this.statusIcon(status),
+      title: this.statusTitle(status, problem),
       reason:
         reason ??
         (checking
@@ -198,6 +222,23 @@ export class SettingsSourcePaneComponent {
       checking,
     }
   })
+
+  /** A source whose check or collection failed can be checked again; one on another OS cannot. */
+  protected readonly canRecheck = computed(() => {
+    const { status, problem } = this.provider().info
+    return (status === 'unavailable' || status === 'degraded') && problem !== 'unsupported'
+  })
+  /** From the press until the collection after the new check has ended. */
+  protected readonly rechecking = signal(false)
+
+  protected async recheck(): Promise<void> {
+    this.rechecking.set(true)
+    try {
+      await this.activity.recheckConnection(this.provider().info.connection)
+    } finally {
+      this.rechecking.set(false)
+    }
+  }
 
   protected readonly checkedAtLabel = computed(() => {
     const checkedAt = new Date(this.provider().info.checkedAt)
@@ -295,6 +336,9 @@ export class SettingsSourcePaneComponent {
     }
   )
 
+  /** Whether anything differs from what is saved. */
+  protected readonly dirty = computed(() => this.pendingRequest() !== null)
+
   protected readonly canSave = computed(
     () =>
       this.isDesktop &&
@@ -306,6 +350,24 @@ export class SettingsSourcePaneComponent {
   )
 
   protected readonly supportedOsLabel = supportedOsLabel
+
+  constructor() {
+    // Keeps the edits of the loaded connection for when it is opened again; see `SourceDrafts`.
+    effect(() => {
+      const key = this.selectionKey()
+      if (this.connectionState() === null) return
+      if (!this.dirty()) {
+        this.drafts.delete(key)
+        return
+      }
+      this.drafts.set(key, {
+        label: this.labelDraft(),
+        values: this.draftValues(),
+        lists: this.listDrafts(),
+        resets: [...this.resetLists()],
+      })
+    })
+  }
 
   protected listItemError(key: string, index: number): string | null {
     const [error] = this.listForm[key][index]().errors()
@@ -320,6 +382,19 @@ export class SettingsSourcePaneComponent {
 
   protected isListReset(field: ListField): boolean {
     return this.resetLists().has(field.key)
+  }
+
+  /** Drops every edit: the fields show what is saved again. */
+  protected discard(): void {
+    this.drafts.delete(this.selectionKey())
+    this.labelDraft.set(this.connectionState()?.label ?? '')
+    this.draftValues.set({ ...this.initialValues() })
+    this.listDrafts.set(
+      Object.fromEntries(
+        Object.entries(this.initialLists()).map(([key, items]) => [key, [...items]])
+      )
+    )
+    this.resetLists.set(new Set())
   }
 
   protected addListItem(field: ListField): void {
@@ -374,6 +449,7 @@ export class SettingsSourcePaneComponent {
     this.saveError.set(null)
     try {
       await this.activity.removeConnection(state.connection)
+      this.drafts.delete(this.selectionKey())
       this.toast.success(`${label} removed`)
       this.removed.emit()
     } catch (error) {
@@ -411,8 +487,9 @@ export class SettingsSourcePaneComponent {
     return error.kind === 'parse' ? 'Enter a whole number.' : (error.message ?? null)
   }
 
+  /** A saved secret that the draft has not cleared; plain fields show their value instead. */
   protected isSecretFieldSet(field: SingleField): boolean {
-    return field.isSet && this.draftValues()[field.key] !== null
+    return field.secret && field.isSet && this.draftValues()[field.key] !== null
   }
 
   protected inputTypeFor(field: SingleField): string {
@@ -446,6 +523,8 @@ export class SettingsSourcePaneComponent {
 
     try {
       const response = await this.activity.saveProviderConfig(request)
+      // Before the new snapshot resets the fields, which would read the draft again.
+      this.drafts.delete(this.selectionKey())
       this.config.set(response.snapshot)
       this.toast.success(`${request.label ?? this.provider().label} saved`)
     } catch (error) {
@@ -491,16 +570,26 @@ export class SettingsSourcePaneComponent {
     }
   }
 
-  private statusTitle(status: ProviderStatus, timedOut: boolean): string {
+  private statusTitle(status: ProviderStatus, problem: ProviderProblem | undefined): string {
     switch (status) {
       case 'checking':
         return 'Checking'
       case 'available':
         return 'Ready to collect'
       case 'degraded':
-        return timedOut ? 'Responding slowly' : 'Running with issues'
+        return 'Running with issues'
       case 'unavailable':
-        return timedOut ? 'Startup check timed out' : 'Not available'
+        switch (problem) {
+          case 'timedOut':
+            return 'Startup check timed out'
+          case 'unsupported':
+            return 'Not supported on this system'
+          case 'notConfigured':
+            return 'Not configured'
+          case 'failed':
+          case undefined:
+            return 'Not available'
+        }
     }
   }
 }

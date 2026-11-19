@@ -4,34 +4,39 @@
     [attr.data-status]="provider().info.status"
     aria-labelledby="source-health-title"
   >
-    <span class="health-icon" aria-hidden="true">
-      <span class="material-icons">{{ health().icon }}</span>
-    </span>
+    <mat-icon class="health-icon">{{ health().icon }}</mat-icon>
     <div class="health-copy">
-      <span class="u-kicker">Startup check</span>
       <h3 id="source-health-title" class="health-title">{{ health().title }}</h3>
       <p class="health-reason">{{ health().reason }}</p>
-      <div class="health-meta">
-        <span>{{ health().checking ? 'Started' : 'Checked' }} {{ checkedAtLabel() }}</span>
-        <span class="health-os" role="list" aria-label="Supported operating systems">
-          @for (os of provider().info.supportedOs; track os) {
-            <span class="os-pill" role="listitem">{{ supportedOsLabel(os) }}</span>
+      <p class="health-meta">
+        {{ health().checking ? 'Started' : 'Checked' }} {{ checkedAtLabel() }} ·
+        <span role="list" aria-label="Supported operating systems">
+          @for (os of provider().info.supportedOs; track os; let last = $last) {
+            <span role="listitem">{{ supportedOsLabel(os) }}</span
+            >{{ last ? '' : ', ' }}
           }
         </span>
-      </div>
+      </p>
     </div>
-    <app-status-pill class="health-pill" [status]="provider().info.status" />
+    @if (canRecheck() || rechecking()) {
+      <button
+        appButton
+        size="sm"
+        icon="refresh"
+        class="health-action"
+        [busy]="rechecking()"
+        [disabled]="rechecking()"
+        (click)="recheck()"
+      >
+        Check again
+      </button>
+    }
   </section>
 
-  <section class="config" aria-labelledby="source-config-title">
-    <div class="config-head">
-      <span class="u-kicker">Configuration</span>
-      <h3 id="source-config-title" class="config-title">Connection settings</h3>
-    </div>
-
+  <section class="config" aria-label="Connection settings">
     @if (!isDesktop) {
       <p class="u-note">
-        <span class="material-icons" aria-hidden="true">desktop_windows</span>
+        <mat-icon>desktop_windows</mat-icon>
         Authentication and provider-specific connection settings are editable only in the desktop
         app.
       </p>
@@ -43,11 +48,10 @@
         }
       </div>
     } @else if (!hasConnectionState() && configError()) {
-      <div class="u-feedback u-feedback-block" data-tone="error" role="alert">
-        <span class="material-icons" aria-hidden="true">error_outline</span>
-        <span class="u-feedback-text">{{ configError() }}</span>
-        <button type="button" class="u-btn" (click)="reload()">Retry</button>
-      </div>
+      <app-feedback tone="error" block>
+        {{ configError() }}
+        <button appButton feedbackAction (click)="reload()">Retry</button>
+      </app-feedback>
     } @else {
       <form class="config-form" [formRoot]="draftForm" [attr.aria-busy]="savingConfig()">
         <fieldset class="config-fields" [disabled]="savingConfig()">
@@ -70,7 +74,7 @@
           </div>
           @if (configFields().length === 0) {
             <p class="u-note">
-              <span class="material-icons" aria-hidden="true">check</span>
+              <mat-icon>check</mat-icon>
               {{ provider().kindLabel }} needs no further settings.
             </p>
           }
@@ -98,19 +102,14 @@
               @if (field.shape === 'list') {
                 <div
                   class="config-list"
+                  appAutoAnimate
                   role="group"
                   [attr.aria-labelledby]="fieldId(field) + '-label'"
                 >
                   @if (isListReset(field)) {
                     <p class="config-list-note">The default applies after saving.</p>
                     <div class="config-list-actions">
-                      <button
-                        type="button"
-                        class="u-btn u-btn-ghost"
-                        (click)="undoListReset(field)"
-                      >
-                        Undo
-                      </button>
+                      <button appButton variant="ghost" (click)="undoListReset(field)">Undo</button>
                     </div>
                   } @else {
                     @for (item of listDrafts()[field.key]; track $index) {
@@ -130,24 +129,20 @@
                           />
                         </mat-form-field>
                         <button
-                          type="button"
-                          class="u-btn u-btn-ghost u-btn-icon"
-                          [attr.aria-label]="'Remove ' + (item || 'empty row')"
+                          appIconButton
+                          variant="danger-ghost"
+                          icon="close"
+                          [label]="'Remove ' + (item || 'empty row')"
                           (click)="removeListItem(field, $index)"
-                        >
-                          <span class="material-icons" aria-hidden="true">close</span>
-                        </button>
+                        ></button>
                       </div>
                     } @empty {
                       <p class="config-list-note">None</p>
                     }
                     <div class="config-list-actions">
-                      <button type="button" class="u-btn" (click)="addListItem(field)">
-                        <span class="material-icons" aria-hidden="true">add</span>
-                        Add
-                      </button>
+                      <button appButton icon="add" (click)="addListItem(field)">Add</button>
                       @if (field.isSet) {
-                        <button type="button" class="u-btn u-btn-ghost" (click)="resetList(field)">
+                        <button appButton variant="ghost" (click)="resetList(field)">
                           Use default
                         </button>
                       }
@@ -193,8 +188,10 @@
                       @if (isSecretFieldSet(field)) {
                         <button
                           matSuffix
-                          type="button"
-                          class="u-btn u-btn-ghost field-clear"
+                          appButton
+                          variant="ghost"
+                          size="sm"
+                          class="field-clear"
                           [attr.aria-label]="'Clear saved ' + field.label"
                           (click)="clearSecret(field)"
                         >
@@ -208,7 +205,7 @@
 
               @if (fieldError(field.key); as error) {
                 <p class="field-error" [id]="fieldId(field) + '-error'">
-                  <span class="material-icons" aria-hidden="true">error</span>
+                  <mat-icon>error</mat-icon>
                   {{ error }}
                 </p>
               }
@@ -216,33 +213,41 @@
           }
         </fieldset>
 
-        <div class="config-actions">
+        <div class="config-feedback" appAutoAnimate>
+          @if (configError() && !savingConfig()) {
+            <app-feedback tone="error" block>{{ configError() }}</app-feedback>
+          }
+        </div>
+
+        <!-- Always there, at the bottom of the pane; Discard and Save wait for a change. -->
+        <div class="config-actions" role="region" aria-label="Source actions">
           <button
-            type="button"
-            class="u-btn u-btn-ghost config-remove"
-            [disabled]="removing()"
+            appButton
+            variant="danger-ghost"
+            icon="delete_outline"
+            class="remove-btn"
+            [busy]="removing()"
+            [disabled]="removing() || savingConfig()"
             (click)="removeConnection()"
           >
-            <span class="material-icons" aria-hidden="true">delete_outline</span>
             {{ removing() ? 'Removing…' : 'Remove source' }}
           </button>
-          <div class="config-feedback">
-            @if (configError() && !savingConfig()) {
-              <span class="u-feedback" data-tone="error" role="alert">
-                <span class="material-icons" aria-hidden="true">error_outline</span>
-                <span class="u-feedback-text">{{ configError() }}</span>
-              </span>
-            }
-          </div>
           <button
+            appButton
+            variant="ghost"
+            [disabled]="!dirty() || savingConfig()"
+            (click)="discard()"
+          >
+            Discard
+          </button>
+          <button
+            appButton
             type="submit"
-            class="u-btn u-btn-primary save-config-btn"
-            [class.is-busy]="savingConfig()"
+            variant="primary"
+            class="save-config-btn"
+            [busy]="savingConfig()"
             [disabled]="!canSave()"
           >
-            @if (savingConfig()) {
-              <span class="material-icons u-spin" aria-hidden="true">autorenew</span>
-            }
             {{ savingConfig() ? 'Saving…' : 'Save settings' }}
           </button>
         </div>
