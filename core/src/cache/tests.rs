@@ -7,7 +7,7 @@ use std::{
 
 use chrono::{DateTime, NaiveDate, Utc};
 
-use super::{CachePolicy, collect_with_day_cache_at};
+use super::{CachePolicy, collect_with_day_cache_at, recent_ttl};
 use crate::model::{
     ActivityEntry, CollectOptions, ConnectionId, Source, SystemEntry, SystemEntryType,
 };
@@ -228,4 +228,18 @@ async fn refetches_days_from_a_file_of_an_older_version() {
             |entry| entry.scope == scope && entry.message.contains(&path.display().to_string())
         )
     );
+}
+
+/// B11: a value too large for a duration of minutes no longer overflows.
+#[test]
+fn the_recent_ttl_override_is_checked() {
+    assert_eq!(recent_ttl(Some("30")), Duration::from_secs(30 * 60));
+    assert_eq!(recent_ttl(Some(" 0 ")), Duration::ZERO);
+    for fallback in [None, Some("soon"), Some("-1"), Some("18446744073709551615")] {
+        assert_eq!(
+            recent_ttl(fallback),
+            Duration::from_secs(5 * 60),
+            "{fallback:?}"
+        );
+    }
 }
