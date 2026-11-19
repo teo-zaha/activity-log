@@ -9,15 +9,17 @@ use calcard::{
     icalendar::{
         ICalendar, ICalendarComponent, ICalendarComponentType, ICalendarEntry,
         ICalendarParameterName, ICalendarParameterValue, ICalendarPeriod, ICalendarProperty,
-        ICalendarStatus, ICalendarValue, dates::TimeOrDelta, utils::strip_mailto_scheme,
+        ICalendarStatus, ICalendarTransparency, ICalendarValue, dates::TimeOrDelta,
+        utils::strip_mailto_scheme,
     },
 };
 use chrono::{DateTime, Datelike, Days, Timelike, Utc};
 use reqwest::Url;
 
+use super::meeting_text::{looks_like_html, meeting_link, meeting_text};
 use crate::{
     diagnostics,
-    model::{CalendarEntry, CollectOptions},
+    model::{BusyStatus, CalendarEntry, CollectOptions, MeetingWeight},
 };
 
 #[cfg(test)]
@@ -25,6 +27,13 @@ mod tests;
 
 /// Stops a feed with runaway recurrences; far more than any range holds.
 const MAX_OCCURRENCES: usize = 200_000;
+
+/// Properties some servers write for the online-meeting link, in order of preference.
+const JOIN_URL_PROPERTIES: [&str; 3] = [
+    "X-MICROSOFT-SKYPETEAMSMEETINGURL",
+    "X-MICROSOFT-ONLINEMEETINGEXTERNALLINK",
+    "X-GOOGLE-CONFERENCE",
+];
 
 /// Where a feed is read from.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -294,16 +303,126 @@ fn entry(
     start: DateTime<Utc>,
     end: DateTime<Utc>,
 ) -> CalendarEntry {
+    // Outlook adds the description as HTML (`X-ALT-DESC;FMTTYPE=text/html`) besides the text.
+    let html = other_property(component, "X-ALT-DESC").filter(|html| looks_like_html(html));
+    let meeting = meeting_text(
+        text(component, ICalendarProperty::Description).as_deref(),
+        html.as_deref(),
+        explicit_join_urls(component).iter().map(String::as_str),
+    );
+    let title = text(component, ICalendarProperty::Summary);
+    let id = match component.uid() {
+        // An override names the occurrence it replaces, which stays its id when it moves.
+        Some(uid) => format!(
+            "{uid}/{}",
+            recurrence_id(component).unwrap_or_else(|| start.to_rfc3339())
+        ),
+        None => crate::utils::stable_id(&[
+            title.as_deref().unwrap_or_default(),
+            &start.to_rfc3339(),
+            &end.to_rfc3339(),
+        ]),
+    };
     CalendarEntry {
         source: "calendar".to_string(),
         connection: String::new(),
+        id,
         timestamp: start.to_rfc3339(),
-        title: text(component, ICalendarProperty::Summary)
-            .unwrap_or_else(|| "(No title)".to_string()),
+        title: title.unwrap_or_else(|| "(No title)".to_string()),
         location: text(component, ICalendarProperty::Location),
         organizer: organizer(component),
         duration_minutes: i32::try_from((end - start).num_minutes()).unwrap_or(i32::MAX),
+        busy_status: busy_status(component),
+        meeting_weight: MeetingWeight::of(busy_status(component)),
+        description: meeting.description,
+        description_blocks: meeting.blocks,
+        join_url: meeting.join_url,
     }
+}
+
+/// `RECURRENCE-ID` as written (`20260303T090000` with its `TZID`, or `…Z`), for an override.
+fn recurrence_id(component: &ICalendarComponent) -> Option<String> {
+    let entry = component.property(&ICalendarProperty::RecurrenceId)?;
+    let at = entry.values.first()?.as_partial_date_time()?;
+    let mut text = format!("{:04}{:02}{:02}", at.year?, at.month?, at.day?);
+    if let (Some(hour), Some(minute)) = (at.hour, at.minute) {
+        text.push_str(&format!(
+            "T{hour:02}{minute:02}{:02}",
+            at.second.unwrap_or(0)
+        ));
+    }
+    match (at.tz_hour, entry.tz_id()) {
+        (Some(0), _) if at.tz_minute.unwrap_or(0) == 0 => text.push('Z'),
+        (Some(hour), _) => text.push_str(&format!(
+            "{}{hour:02}{:02}",
+            if at.tz_minus { '-' } else { '+' },
+            at.tz_minute.unwrap_or(0)
+        )),
+        (None, Some(zone)) => text.push_str(&format!(";{zone}")),
+        (None, None) => {}
+    }
+    Some(text)
+}
+
+/// The values of `JOIN_URL_PROPERTIES`, then `URL` when it links to an online meeting (it can
+/// also be any page about the event).
+fn explicit_join_urls(component: &ICalendarComponent) -> Vec<String> {
+    let mut urls = JOIN_URL_PROPERTIES
+        .iter()
+        .filter_map(|name| other_property(component, name))
+        .collect::<Vec<_>>();
+    urls.extend(text(component, ICalendarProperty::Url).and_then(|url| meeting_link(&url)));
+    urls
+}
+
+/// An `X-` property as written: the parser splits unknown properties at `;`.
+fn other_property(component: &ICalendarComponent, name: &str) -> Option<String> {
+    let entry = component.entries.iter().find(|entry| {
+        matches!(&entry.name, ICalendarProperty::Other(other) if other.eq_ignore_ascii_case(name))
+    })?;
+    let value = entry
+        .values
+        .iter()
+        .filter_map(ICalendarValue::as_text)
+        .collect::<Vec<_>>()
+        .join(";");
+    let value = value.trim();
+    (!value.is_empty()).then(|| value.to_string())
+}
+
+/// Outlook's own free/busy value when the feed has it. Otherwise a transparent event blocks no
+/// time (RFC 5545), so it is free even when tentative; else `STATUS:TENTATIVE` is tentative and
+/// an opaque event busy. An occurrence moved or changed by an override is read from the override.
+fn busy_status(component: &ICalendarComponent) -> Option<BusyStatus> {
+    let microsoft = component
+        .entries
+        .iter()
+        .find(|entry| {
+            matches!(&entry.name, ICalendarProperty::Other(name)
+                if name.eq_ignore_ascii_case("X-MICROSOFT-CDO-BUSYSTATUS"))
+        })
+        .and_then(|entry| entry.values.first())
+        .and_then(ICalendarValue::as_text)
+        .and_then(|value| match value.trim().to_ascii_uppercase().as_str() {
+            "BUSY" => Some(BusyStatus::Busy),
+            "TENTATIVE" => Some(BusyStatus::Tentative),
+            "FREE" => Some(BusyStatus::Free),
+            "OOF" => Some(BusyStatus::OutOfOffice),
+            "WORKINGELSEWHERE" => Some(BusyStatus::WorkingElsewhere),
+            _ => None,
+        });
+    let transparency = component.transparency();
+    microsoft
+        .or_else(|| {
+            (transparency == Some(&ICalendarTransparency::Transparent)).then_some(BusyStatus::Free)
+        })
+        .or_else(|| {
+            (component.status() == Some(&ICalendarStatus::Tentative))
+                .then_some(BusyStatus::Tentative)
+        })
+        .or_else(|| {
+            (transparency == Some(&ICalendarTransparency::Opaque)).then_some(BusyStatus::Busy)
+        })
 }
 
 fn text(component: &ICalendarComponent, property: ICalendarProperty) -> Option<String> {

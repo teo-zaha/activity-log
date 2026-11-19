@@ -1,6 +1,6 @@
 use anyhow::{Result, anyhow};
 use chrono::{DateTime, Days};
-use serde_json::{Map, Value};
+use serde_json::Value;
 
 use crate::{
     model::{CollectOptions, GitLabEntry, GitLabType},
@@ -65,7 +65,7 @@ pub async fn collect_gitlab(
 }
 
 pub fn map_gitlab_event(event: &Value) -> Option<GitLabEntry> {
-    let object = event.as_object()?.clone();
+    let object = event.as_object()?;
     let push_data = object.get("push_data").and_then(Value::as_object);
     let note = object.get("note").and_then(Value::as_object);
     let note_position = note
@@ -77,25 +77,41 @@ pub fn map_gitlab_event(event: &Value) -> Option<GitLabEntry> {
         .unwrap_or("unknown")
         .to_string();
 
+    let entry_type = GitLabType::from_gitlab_action_name(
+        object
+            .get("action_name")
+            .and_then(Value::as_str)
+            .unwrap_or("unknown"),
+    );
+
+    let timestamp = object
+        .get("created_at")
+        .and_then(Value::as_str)
+        .unwrap_or_default()
+        .to_string();
+    let title = object
+        .get("target_title")
+        .and_then(Value::as_str)
+        .unwrap_or_default()
+        .to_string();
+    let id = match object.get("id") {
+        Some(Value::Number(id)) => id.to_string(),
+        Some(Value::String(id)) => id.clone(),
+        _ => crate::utils::stable_id(&[entry_type.as_ref(), &timestamp, &title]),
+    };
+
     Some(GitLabEntry {
         source: "gitlab".to_string(),
         connection: String::new(),
-        entry_type: GitLabType::from_gitlab_action_name(
-            object
-                .get("action_name")
-                .and_then(Value::as_str)
-                .unwrap_or("unknown"),
-        ),
-        timestamp: object
-            .get("created_at")
+        id,
+        pushed_commit: push_data
+            .filter(|_| entry_type == GitLabType::PushedTo)
+            .and_then(|value| value.get("commit_to"))
             .and_then(Value::as_str)
-            .unwrap_or_default()
-            .to_string(),
-        title: object
-            .get("target_title")
-            .and_then(Value::as_str)
-            .unwrap_or_default()
-            .to_string(),
+            .map(str::to_string),
+        entry_type,
+        timestamp,
+        title,
         target_type,
         mr_iid: object
             .get("target_iid")
@@ -120,18 +136,7 @@ pub fn map_gitlab_event(event: &Value) -> Option<GitLabEntry> {
         note_resolved: note
             .and_then(|value| value.get("resolved"))
             .and_then(Value::as_bool),
-        raw: Value::Object(Map::<String, Value>::from_iter(object)),
     })
-}
-
-pub fn commit_to_sha(entry: &GitLabEntry) -> Option<&str> {
-    entry
-        .raw
-        .as_object()
-        .and_then(|raw| raw.get("push_data"))
-        .and_then(Value::as_object)
-        .and_then(|push_data| push_data.get("commit_to"))
-        .and_then(Value::as_str)
 }
 
 #[cfg(test)]

@@ -9,7 +9,7 @@ use crate::{
     },
 };
 
-use super::{OutlookFallback, normalize_outlook_events};
+use super::{OutlookFallback, busy_status_from_com, normalize_outlook_events};
 
 /// Guards against a collection that never ends, such as an unbounded recurrence.
 const MAX_EVENTS: usize = 10_000;
@@ -53,6 +53,11 @@ fn collect_outlook_blocking(options: &CollectOptions) -> Result<Vec<RawOutlookEv
         }
         let meeting_status = event.property_i32("MeetingStatus").unwrap_or_default();
         events.push(RawOutlookEvent {
+            id: event
+                .property_optional_string("GlobalAppointmentID")
+                .ok()
+                .flatten()
+                .filter(|id| !id.is_empty()),
             subject: event.property_optional_string("Subject")?,
             start: event.property_utc_rfc3339("StartUTC")?,
             end: event.property_utc_rfc3339("EndUTC")?,
@@ -60,6 +65,14 @@ fn collect_outlook_blocking(options: &CollectOptions) -> Result<Vec<RawOutlookEv
             organizer: event.property_optional_string("Organizer")?,
             is_organizer: Some(matches!(meeting_status, 0 | 1)),
             is_default_calendar: Some(true),
+            busy_status: event
+                .property_i32("BusyStatus")
+                .ok()
+                .and_then(busy_status_from_com),
+            // Guarded by Outlook's Object Model Guard, like `Organizer`: without healthy
+            // antivirus Outlook can ask the user first. A denied or failed read only loses the
+            // description.
+            body: event.property_optional_string("Body").ok().flatten(),
         });
         next = filtered.method_optional_dispatch("GetNext")?;
     }

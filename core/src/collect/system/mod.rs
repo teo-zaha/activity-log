@@ -94,6 +94,7 @@ pub(crate) fn map_windows_events(
             SystemEntry {
                 source: "system".to_string(),
                 connection: String::new(),
+                id: format!("{entry_type}/{}", event.ts),
                 entry_type,
                 timestamp: event.ts.clone(),
                 label: if label == "Unknown event" {

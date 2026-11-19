@@ -56,7 +56,5 @@ export function withCarriedEntries(
 /** The commit a GitLab push event pushed, as the backend reads it from the event. */
 function pushedCommit(entry: ActivityEntry): string | null {
   if (entry.source !== 'gitlab' || entry.type !== 'pushedTo') return null
-  const pushData = entry.raw['push_data']
-  if (typeof pushData !== 'object' || pushData === null || !('commit_to' in pushData)) return null
-  return typeof pushData.commit_to === 'string' ? pushData.commit_to : null
+  return entry.pushedCommit ?? null
 }

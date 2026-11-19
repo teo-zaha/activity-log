@@ -31,7 +31,7 @@ use crate::{
 mod tests;
 
 /// Bump when the file layout changes; older files are then ignored and rewritten.
-const FILE_VERSION: u32 = 3;
+const FILE_VERSION: u32 = 4;
 /// A day counts as settled once it was fetched at least this long after it ended, so late
 /// writes (clock skew, slow API indexing) are not frozen into the cache.
 const SETTLE_GRACE: Duration = Duration::from_secs(60 * 60);
@@ -300,9 +300,16 @@ fn load(path: &Path, scope: &str) -> CacheFile {
     let Ok(raw) = fs::read_to_string(path) else {
         return CacheFile::default();
     };
+    // An older file stores entries in an older shape: its version is read on its own first.
+    #[derive(Deserialize)]
+    struct Version {
+        version: u32,
+    }
+    if serde_json::from_str::<Version>(&raw).is_ok_and(|file| file.version != FILE_VERSION) {
+        return CacheFile::default();
+    }
     match serde_json::from_str::<CacheFile>(&raw) {
-        Ok(file) if file.version == FILE_VERSION => file,
-        Ok(_) => CacheFile::default(),
+        Ok(file) => file,
         Err(err) => {
             diagnostics::warn(
                 scope,

@@ -115,6 +115,28 @@ impl ActivityEntry {
         name.clone_into(connection);
     }
 
+    pub fn id(&self) -> &str {
+        match self {
+            ActivityEntry::Git(entry) => &entry.id,
+            ActivityEntry::GitLab(entry) => &entry.id,
+            ActivityEntry::Jira(entry) => &entry.id,
+            ActivityEntry::Outlook(entry) => &entry.id,
+            ActivityEntry::System(entry) => &entry.id,
+            ActivityEntry::Calendar(entry) => &entry.id,
+        }
+    }
+
+    pub fn id_mut(&mut self) -> &mut String {
+        match self {
+            ActivityEntry::Git(entry) => &mut entry.id,
+            ActivityEntry::GitLab(entry) => &mut entry.id,
+            ActivityEntry::Jira(entry) => &mut entry.id,
+            ActivityEntry::Outlook(entry) => &mut entry.id,
+            ActivityEntry::System(entry) => &mut entry.id,
+            ActivityEntry::Calendar(entry) => &mut entry.id,
+        }
+    }
+
     pub fn timestamp(&self) -> &str {
         match self {
             ActivityEntry::Git(entry) => &entry.timestamp,

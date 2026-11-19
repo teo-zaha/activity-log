@@ -100,41 +100,123 @@ export type JiraEntryType = "issueCreated" | "issueUpdated" | "statusChanged";
 
 export type SystemEntryType = "boot" | "shutdown" | "sleep" | "wake" | "unexpected_shutdown" | "lock" | "unlock";
 
+export type BusyStatus = "busy" | "tentative" | "free" | "out_of_office" | "working_elsewhere";
+
+export type MeetingWeight = "busy" | "tentative" | "none";
+
+export type TextSegment = { "kind": "text", text: string, strong?: boolean, emphasis?: boolean, } | { "kind": "link", text: string, href: string, };
+
+export type ListItem = { 
+/**
+ * 0 for an item of the list itself, 1 for one under such an item, and so on.
+ */
+depth: number, segments: Array<TextSegment>, };
+
+export type DescriptionBlock = { "kind": "paragraph", segments: Array<TextSegment>, } | { "kind": "heading", segments: Array<TextSegment>, } | { "kind": "list", ordered: boolean, items: Array<ListItem>, } | { "kind": "image", src?: string, alt?: string, };
+
 export type GitLabEntry = { source: "gitlab", 
 /**
  * The name of the connection within its kind, such as `oss`; set by the runtime.
  */
-connection: string, type: GitLabType, timestamp: string, title: string, targetType: string, mrIid?: number, branch?: string, commitCount?: number, noteBody?: string, noteFile?: string, noteResolved?: boolean, raw: Record<string, unknown>, };
+connection: string, 
+/**
+ * The source's own id for the entry (a commit hash, an event id), unique within its
+ * connection: `source`, `connection` and `id` identify an entry.
+ */
+id: string, type: GitLabType, timestamp: string, title: string, targetType: string, mrIid?: number, branch?: string, commitCount?: number, noteBody?: string, noteFile?: string, noteResolved?: boolean, 
+/**
+ * The commit a `pushedTo` event pushed (`push_data.commit_to`); it folds into that commit.
+ */
+pushedCommit?: string, };
 
 export type GitEntry = { source: "git", 
 /**
  * The name of the connection within its kind, such as `oss`; set by the runtime.
  */
-connection: string, timestamp: string, repo: string, hash: string, message: string, author: string, branch: string, gitlabEvent?: GitLabEntry, };
+connection: string, 
+/**
+ * The source's own id for the entry (a commit hash, an event id), unique within its
+ * connection: `source`, `connection` and `id` identify an entry.
+ */
+id: string, timestamp: string, repo: string, hash: string, message: string, author: string, branch: string, gitlabEvent?: GitLabEntry, };
 
 export type JiraEntry = { source: "jira", 
 /**
  * The name of the connection within its kind, such as `oss`; set by the runtime.
  */
-connection: string, type: JiraEntryType, timestamp: string, key: string, title: string, status: string, issueType: string, fromStatus?: string, toStatus?: string, };
+connection: string, 
+/**
+ * The source's own id for the entry (a commit hash, an event id), unique within its
+ * connection: `source`, `connection` and `id` identify an entry.
+ */
+id: string, type: JiraEntryType, timestamp: string, key: string, title: string, status: string, issueType: string, fromStatus?: string, toStatus?: string, };
 
 export type OutlookEntry = { source: "outlook", 
 /**
  * The name of the connection within its kind, such as `oss`; set by the runtime.
  */
-connection: string, timestamp: string, title: string, location?: string, organizer?: string, isOrganizer: boolean, durationMinutes: number, };
+connection: string, 
+/**
+ * The source's own id for the entry (a commit hash, an event id), unique within its
+ * connection: `source`, `connection` and `id` identify an entry.
+ */
+id: string, timestamp: string, title: string, location?: string, organizer?: string, isOrganizer: boolean, durationMinutes: number, busyStatus?: BusyStatus, 
+/**
+ * How the entry counts towards meeting time, from `busy_status`.
+ */
+meetingWeight: MeetingWeight, 
+/**
+ * The description as plain text, without the online-meeting invitation and capped in
+ * length.
+ */
+description?: string, 
+/**
+ * `description` as paragraphs, headings and lists of text and links, for rendering.
+ */
+descriptionBlocks?: Array<DescriptionBlock>, 
+/**
+ * The https link that joins the online meeting (Teams, Zoom, Google Meet, Webex).
+ */
+joinUrl?: string, };
 
 export type SystemEntry = { source: "system", 
 /**
  * The name of the connection within its kind, such as `oss`; set by the runtime.
  */
-connection: string, type: SystemEntryType, timestamp: string, label: string, };
+connection: string, 
+/**
+ * The source's own id for the entry (a commit hash, an event id), unique within its
+ * connection: `source`, `connection` and `id` identify an entry.
+ */
+id: string, type: SystemEntryType, timestamp: string, label: string, };
 
 export type CalendarEntry = { source: "calendar", 
 /**
  * The name of the connection within its kind, such as `oss`; set by the runtime.
  */
-connection: string, timestamp: string, title: string, location?: string, organizer?: string, durationMinutes: number, };
+connection: string, 
+/**
+ * The source's own id for the entry (a commit hash, an event id), unique within its
+ * connection: `source`, `connection` and `id` identify an entry.
+ */
+id: string, timestamp: string, title: string, location?: string, organizer?: string, durationMinutes: number, busyStatus?: BusyStatus, 
+/**
+ * How the entry counts towards meeting time, from `busy_status`.
+ */
+meetingWeight: MeetingWeight, 
+/**
+ * The description as plain text, without the online-meeting invitation and capped in
+ * length.
+ */
+description?: string, 
+/**
+ * `description` as paragraphs, headings and lists of text and links, for rendering.
+ */
+descriptionBlocks?: Array<DescriptionBlock>, 
+/**
+ * The https link that joins the online meeting (Teams, Zoom, Google Meet, Webex).
+ */
+joinUrl?: string, };
 
 export type ActivityEntry = GitEntry | GitLabEntry | JiraEntry | OutlookEntry | SystemEntry | CalendarEntry;
 
