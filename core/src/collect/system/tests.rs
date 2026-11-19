@@ -4,7 +4,7 @@ use crate::model::SystemEntryType;
 
 use super::{
     WINDOWS_SYSTEM_EVENTS,
-    macos::{parse_last_output, parse_power_log},
+    macos::{LastLine, LastReader, parse_last_output, parse_power_log},
     map_windows_events,
     windows::{build_event_query, parse_event_xml},
 };
@@ -162,8 +162,8 @@ fn parses_macos_last_output() {
         "reboot time                                Fri May 15 2026 14:23\nshutdown time                              Wed May 13 2026 17:23\nwtmp begins Mon May 11 22:14:48 CEST 2026\n".to_string(),
         Utc.with_ymd_and_hms(2026, 3, 25, 0, 0, 0).unwrap(),
         Utc.with_ymd_and_hms(2026, 5, 20, 23, 59, 59).unwrap(),
-    )
-    .unwrap();
+        Local,
+    );
 
     assert_eq!(entries.len(), 2);
     assert_eq!(entries[0].entry_type, SystemEntryType::Boot);
@@ -179,8 +179,8 @@ fn macos_last_output_stops_at_the_first_entry_before_the_range() {
         "reboot time                                Fri May 15 2026 14:23\nshutdown time                              Wed Mar 11 2026 17:23\nreboot time                                not a date\n".to_string(),
         Utc.with_ymd_and_hms(2026, 3, 25, 0, 0, 0).unwrap(),
         Utc.with_ymd_and_hms(2026, 5, 20, 23, 59, 59).unwrap(),
-    )
-    .unwrap();
+        Local,
+    );
 
     assert_eq!(entries.len(), 1);
     assert_eq!(entries[0].entry_type, SystemEntryType::Boot);
@@ -358,4 +358,104 @@ fn stops_at_the_first_sleep_or_wake_after_the_range() {
             "{junk}"
         );
     }
+}
+
+/// In Europe/Berlin 2026-10-25 02:30 happens twice and 2026-03-29 02:30 never.
+#[test]
+fn macos_last_keeps_an_ambiguous_hour_and_skips_unreadable_lines() {
+    let berlin = chrono_tz::Europe::Berlin;
+    let entries = parse_last_output(
+        [
+            "reboot time                                Mon Oct 26 2026 08:00",
+            "shutdown time                              Sun Oct 25 2026 02:30",
+            "reboot time                                Sun Oct 25 2026 01:15",
+            "shutdown time                              Sun Mar 29 2026 02:30",
+            "reboot time                                not a date",
+            "shutdown time                              Sat Oct 24 2026 18:00",
+        ]
+        .join("\n"),
+        Utc.with_ymd_and_hms(2026, 3, 1, 0, 0, 0).unwrap(),
+        Utc.with_ymd_and_hms(2026, 11, 1, 0, 0, 0).unwrap(),
+        berlin,
+    );
+
+    let timestamps = entries
+        .iter()
+        .map(|entry| entry.timestamp.as_str())
+        .collect::<Vec<_>>();
+    assert_eq!(
+        timestamps,
+        [
+            "2026-10-26T07:00:00+00:00",
+            // The later of the two 02:30s: nothing newer rules it out.
+            "2026-10-25T01:30:00+00:00",
+            "2026-10-24T23:15:00+00:00",
+            "2026-10-24T16:00:00+00:00",
+        ]
+    );
+    // The collector names what it skipped in the Logs pane.
+    let skipped = LastReader::new(
+        Utc.with_ymd_and_hms(2026, 3, 1, 0, 0, 0).unwrap(),
+        Utc.with_ymd_and_hms(2026, 11, 1, 0, 0, 0).unwrap(),
+        berlin,
+    )
+    .line("shutdown time                              Sun Mar 29 2026 02:30");
+    assert!(matches!(skipped, LastLine::Unreadable(time) if time == "Sun Mar 29 2026 02:30"));
+}
+
+/// Newest first, 02:05 in the second 02 o'clock hour, then 02:50 in the first: the order tells
+/// the two apart, and neither ends the scan early.
+#[test]
+fn macos_last_reads_a_repeated_hour_by_the_order_of_the_records() {
+    let berlin = chrono_tz::Europe::Berlin;
+    let entries = parse_last_output(
+        [
+            "reboot time                                Sun Oct 25 2026 02:05",
+            "shutdown time                              Sun Oct 25 2026 02:50",
+        ]
+        .join("\n"),
+        Utc.with_ymd_and_hms(2026, 10, 25, 0, 30, 0).unwrap(),
+        Utc.with_ymd_and_hms(2026, 10, 26, 0, 0, 0).unwrap(),
+        berlin,
+    );
+
+    let timestamps = entries
+        .iter()
+        .map(|entry| entry.timestamp.as_str())
+        .collect::<Vec<_>>();
+    assert_eq!(
+        timestamps,
+        ["2026-10-25T01:05:00+00:00", "2026-10-25T00:50:00+00:00"]
+    );
+}
+
+/// A lone record in the repeated hour: the reading inside the range is taken; when both are
+/// inside and nothing decides, the later one is, and the reader says so.
+#[test]
+fn macos_last_takes_the_reading_in_the_range_and_reports_one_it_cannot_decide() {
+    let berlin = chrono_tz::Europe::Berlin;
+    let line = "shutdown time                              Sun Oct 25 2026 02:50";
+
+    // Only the first 02:50 (00:50Z) is in the range.
+    let mut first_fold = LastReader::new(
+        Utc.with_ymd_and_hms(2026, 10, 25, 0, 30, 0).unwrap(),
+        Utc.with_ymd_and_hms(2026, 10, 25, 1, 0, 0).unwrap(),
+        berlin,
+    );
+    let LastLine::Entry(entry) = first_fold.line(line) else {
+        panic!("the record is in the range");
+    };
+    assert_eq!(entry.timestamp, "2026-10-25T00:50:00+00:00");
+    assert!(first_fold.undecided().is_empty());
+
+    let mut whole_day = LastReader::new(
+        Utc.with_ymd_and_hms(2026, 10, 24, 22, 0, 0).unwrap(),
+        Utc.with_ymd_and_hms(2026, 10, 25, 23, 0, 0).unwrap(),
+        berlin,
+    );
+    let LastLine::Entry(entry) = whole_day.line(line) else {
+        panic!("the record is in the range");
+    };
+    assert_eq!(entry.timestamp, "2026-10-25T01:50:00+00:00");
+    assert_eq!(whole_day.undecided(), ["Sun Oct 25 2026 02:50"]);
 }
