@@ -395,6 +395,19 @@ pub(crate) fn visit_git_repos(
     Ok(())
 }
 
+/// Commits are kept by author time, but history can only be cut short by commit time, and a
+/// commit can be recorded before it was authored or before its parent (a clock off, a rebase
+/// or patches applied with their dates). So history is read from this long before the range:
+/// such work is found within the margin, and a branch tip is always read with its parents,
+/// however old its own date. Reading all of history would cost about 5 µs per commit of every
+/// repository in each collection (2 s for 400,000 commits).
+const HISTORY_MARGIN: chrono::Duration = chrono::Duration::days(30);
+
+/// The commit time before which history is not read, for `options`.
+pub(crate) fn history_cutoff(options: &CollectOptions) -> DateTime<Utc> {
+    options.start - HISTORY_MARGIN
+}
+
 /// Every commit in the range reachable from any ref, by any author.
 fn collect_repo_entries(
     repo: &Repository,
@@ -403,40 +416,22 @@ fn collect_repo_entries(
     cancelled: &AtomicBool,
 ) -> Result<Vec<GitEntry>> {
     let head = head_target(repo);
-    let tips = reachable_ref_tips(repo)?;
+    let cutoff = history_cutoff(options).timestamp();
     let mut entries = Vec::new();
-
-    // Commit time is never before author time in practice, so stopping at the
-    // range start skips the rest of history without dropping matches.
-    let walk = repo
-        .rev_walk(tips)
-        .sorting(Sorting::ByCommitTimeCutoff {
-            order: Default::default(),
-            seconds: options.start.timestamp(),
-        })
-        .all()?;
-
-    for item in walk {
-        if cancelled.load(Ordering::Relaxed) {
-            bail!("Stopped while reading {repo_name}");
-        }
-        let item = item?;
-        let commit = item.id().object()?.into_commit();
+    let mut keep = |commit: gix::Commit<'_>| -> Result<()> {
         let decoded = commit.decode()?;
         let author_signature = commit.author()?;
         let author = bstr_to_string(author_signature.email);
         let timestamp = gix_time_to_rfc3339(author_signature.time()?)?;
         let timestamp_utc = DateTime::parse_from_rfc3339(&timestamp)?.with_timezone(&Utc);
         if !options.contains(timestamp_utc) {
-            continue;
+            return Ok(());
         }
-
         let branch = head
             .as_ref()
             .filter(|(head_id, _)| *head_id == commit.id)
             .map(|(_, branch)| branch.clone())
             .unwrap_or_default();
-
         entries.push(GitEntry::new(
             repo_name.to_string(),
             commit.id.to_string(),
@@ -445,6 +440,34 @@ fn collect_repo_entries(
             branch,
             timestamp,
         ));
+        Ok(())
+    };
+
+    // The walk below leaves out every commit recorded before the cutoff, with what is behind
+    // it; a tip that old is read here and the walk starts from its parents.
+    let mut starts = Vec::new();
+    for tip in reachable_ref_tips(repo)? {
+        let commit = repo.find_commit(tip)?;
+        if commit.time()?.seconds >= cutoff {
+            starts.push(tip);
+        } else {
+            starts.extend(commit.parent_ids().map(|id| id.detach()));
+            keep(commit)?;
+        }
+    }
+
+    let walk = repo
+        .rev_walk(starts)
+        .sorting(Sorting::ByCommitTimeCutoff {
+            order: Default::default(),
+            seconds: cutoff,
+        })
+        .all()?;
+    for item in walk {
+        if cancelled.load(Ordering::Relaxed) {
+            bail!("Stopped while reading {repo_name}");
+        }
+        keep(item?.id().object()?.into_commit())?;
     }
 
     Ok(entries)

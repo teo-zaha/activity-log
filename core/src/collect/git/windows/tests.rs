@@ -213,3 +213,77 @@ fn repo_history_keeps_every_author_in_the_range_and_labels_the_distro() {
         vec![("api", "mine"), ("api", "theirs")]
     );
 }
+
+/// As on this machine: a tip recorded before `since` is read with the history behind it.
+#[cfg(unix)]
+#[test]
+fn the_script_reads_a_tip_recorded_before_since_with_its_parents() {
+    use std::process::Command;
+
+    use chrono::{TimeZone, Utc};
+
+    use super::{WslTarget, build_script};
+
+    let home = tempfile::tempdir().unwrap();
+    let repo = home.path().join("repo");
+    std::fs::create_dir_all(&repo).unwrap();
+    let isolated = |command: &mut Command| {
+        command
+            .env("HOME", home.path())
+            .env("XDG_CONFIG_HOME", home.path().join(".config"))
+            .env("GIT_CONFIG_NOSYSTEM", "1");
+    };
+    let git = |args: &[&str], authored: &str, committed: &str| {
+        let mut command = Command::new("git");
+        isolated(&mut command);
+        let status = command
+            .args(args)
+            .current_dir(&repo)
+            .env("GIT_AUTHOR_DATE", authored)
+            .env("GIT_COMMITTER_DATE", committed)
+            .status()
+            .unwrap();
+        assert!(status.success());
+    };
+    let now = "2026-03-10T09:00:00+00:00";
+    git(&["init", "-q", "-b", "main"], now, now);
+    git(&["config", "user.email", "me@example.com"], now, now);
+    git(&["config", "user.name", "Me"], now, now);
+    git(&["commit", "-q", "--allow-empty", "-m", "Parent"], now, now);
+    git(
+        &["commit", "-q", "--allow-empty", "-m", "Old tip"],
+        "2026-03-11T09:00:00+00:00",
+        "2026-01-01T09:00:00+00:00",
+    );
+
+    let target = WslTarget {
+        distro: "Test".to_string(),
+        dirs: vec![repo.display().to_string()],
+    };
+    let mut command = Command::new("sh");
+    isolated(&mut command);
+    let output = command
+        .arg("-c")
+        // `since` as the collector passes it: the range's start less the margin.
+        .arg(build_script(
+            &target,
+            Some(Utc.with_ymd_and_hms(2026, 2, 1, 0, 0, 0).unwrap()),
+        ))
+        .output()
+        .unwrap();
+    let WslOutput::Scanned(scan) = parse_output(&String::from_utf8_lossy(&output.stdout)) else {
+        panic!("collecting failed");
+    };
+
+    let options = CollectOptions {
+        start: Utc.with_ymd_and_hms(2026, 3, 1, 0, 0, 0).unwrap(),
+        end: Utc.with_ymd_and_hms(2026, 3, 12, 0, 0, 0).unwrap(),
+    };
+    let history = repo_history("Test", scan.repos.into_iter().next().unwrap(), &options);
+    let subjects = history
+        .commits
+        .iter()
+        .map(|commit| commit.message.as_str())
+        .collect::<Vec<_>>();
+    assert_eq!(subjects, ["Old tip", "Parent"], "each once");
+}

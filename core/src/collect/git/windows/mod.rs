@@ -60,8 +60,8 @@ pub(crate) fn collect_wsl(
     options: &CollectOptions,
     cancelled: &std::sync::atomic::AtomicBool,
 ) -> anyhow::Result<RepoCommits> {
-    let scan =
-        run(target, Some(options.start), cancelled).map_err(|reason| anyhow::anyhow!(reason))?;
+    let scan = run(target, Some(super::history_cutoff(options)), cancelled)
+        .map_err(|reason| anyhow::anyhow!(reason))?;
     diagnostics::info(
         "git",
         format!(
@@ -81,19 +81,22 @@ pub(crate) fn collect_wsl(
 }
 
 /// One reported repository, with the commits whose author time is in the range (`--since`
-/// selects by commit time).
+/// selects by commit time, from `history_cutoff`).
 pub(crate) fn repo_history(
     distro: &str,
     repo: WslRepoReport,
     options: &CollectOptions,
 ) -> RepoHistory {
     let name = repo_name(&repo.path).to_string();
+    // The script prints a commit twice when an old tip's history meets the rest.
+    let mut seen = std::collections::HashSet::new();
     let commits = repo
         .commits
         .into_iter()
         .filter(|commit| {
             DateTime::parse_from_rfc3339(&commit.author_time)
                 .is_ok_and(|at| options.contains(at.to_utc()))
+                && seen.insert(commit.hash.clone())
         })
         .map(|commit| {
             GitEntry::new(
@@ -146,11 +149,16 @@ pub(crate) fn build_script(target: &WslTarget, since: Option<DateTime<Utc>>) -> 
         .map(|dir| sh_quote(dir))
         .collect::<Vec<_>>()
         .join(" ");
+    let since_unix = since
+        .map(|since| since.timestamp().to_string())
+        .unwrap_or_default();
     let since = since.map(|since| since.to_rfc3339()).unwrap_or_default();
 
     format!(
         r#"command -v git >/dev/null 2>&1 || {{ printf '\036E\037git is not installed in this distribution\n'; exit 0; }}
 since={since}
+since_unix={since_unix}
+format='%x1eC%x1f%H%x1f%aI%x1f%ae%x1f%s%x1f%D'
 [ -z "$since" ] || printf '\036G\037%s\n' "$(git config --global --get user.email 2>/dev/null)"
 repos() {{
   for dir in {dirs}; do
@@ -179,10 +187,20 @@ seen=' '
   fi
   email=$(git -C "$repo" config --get user.email 2>/dev/null)
   printf '\036R\037%s\037%s\n' "$main" "$email"
-  git -C "$repo" log --all --since="$since" --format='%x1eC%x1f%H%x1f%aI%x1f%ae%x1f%s%x1f%D' 2>/dev/null
+  git -C "$repo" log --all --since="$since" --format="$format" 2>/dev/null
+  # `--since` leaves out a tip recorded before it, and what is behind it: such a tip is read
+  # with its parents' history.
+  {{ git -C "$repo" for-each-ref --format='%(objectname) %(committerdate:unix)' refs/heads refs/remotes refs/tags 2>/dev/null; git -C "$repo" log -1 --format='%H %ct' HEAD 2>/dev/null; }} |
+  while read -r tip date; do
+    [ -n "$date" ] && [ "$date" -lt "$since_unix" ] || continue
+    git -C "$repo" log -1 --format="$format" "$tip" 2>/dev/null
+    parents=$(git -C "$repo" rev-parse "$tip^@" 2>/dev/null)
+    [ -z "$parents" ] || git -C "$repo" log --since="$since" --format="$format" $parents 2>/dev/null
+  done
 done
 "#,
         since = sh_quote(&since),
+        since_unix = sh_quote(&since_unix),
     )
 }
 

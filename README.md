@@ -221,7 +221,7 @@ For each source, this section lists the entries it produces, the line shown unde
 <tr>
 <td width="56%" valign="top">
 
-- **Entries:** one per commit authored with one of your emails, read from all refs of each repository. Your emails are every `user.email` found in any Git connection: in each repository's config (including the global one) and in each WSL distribution's global config. Emails compare case-insensitively, so a repository without `user.email` still contributes commits made with an email configured elsewhere. The title is the commit subject.
+- **Entries:** one per commit authored with one of your emails, read from all refs of each repository. Your emails are every `user.email` found in any Git connection: in each repository's config (including the global one) and in each WSL distribution's global config. Emails compare case-insensitively, so a repository without `user.email` still contributes commits made with an email configured elsewhere. Commits count by their author time; history is read from 30 days before the range by commit time, and every branch tip with what is behind it however old its own date, so work committed up to that much before it was authored (a clock off, a rebase that keeps dates) is still found. The title is the commit subject.
 - **Timeline line:** repository · branch · first 7 characters of the commit hash
 - **Detail panel:** Repository (folder name), Branch, Commit (full hash), Author (email), Message
 - **Branch:** only set for the commit that is the checked-out `HEAD` of its repository. Other commits have no branch.
