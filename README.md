@@ -602,7 +602,7 @@ pnpm cli:collect sources set git/this-computer dirs ~/Projects ~/work
 pnpm cli:collect sources unset git/this-computer dirs # back to the default
 pnpm cli:collect sources rename gitlab/oss "Open source"
 pnpm cli:collect sources remove gitlab/oss
-pnpm cli:collect config edit                          # opens the file in $VISUAL or $EDITOR
+pnpm cli:collect config edit                          # edits a private copy in $VISUAL or $EDITOR
 ```
 
 A connection is named `kind/name`, or by its name alone when that is unique. Values are checked like in the desktop app before the file is written.

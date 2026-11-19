@@ -9,7 +9,7 @@ use activity_log_core::{
     },
     provider::current_os,
     runtime::{ActivitySnapshot, CollectionRuntime, resolve_collect_options},
-    settings::ConfigFile,
+    settings::{ConfigFile, EditError, NO_LOCATION, Precondition, edit_config},
 };
 use rfd::FileDialog;
 use std::path::PathBuf;
@@ -18,9 +18,7 @@ use tauri_plugin_opener::OpenerExt;
 
 use crate::{
     app_state::AppState,
-    provider_config::{
-        apply_add, apply_save, build_snapshot, edited_connections, load_config, shown_connections,
-    },
+    provider_config::{apply_add, apply_save, build_snapshot, load_config, shown_connections},
 };
 
 #[cfg(test)]
@@ -88,8 +86,11 @@ pub(crate) async fn recheck_connection(
 
 #[tauri::command]
 pub(crate) fn get_provider_config() -> Result<ProviderConfigSnapshotDto, String> {
-    let file = load_config()?;
-    Ok(build_snapshot(&shown_connections(&file)?, &current_os()))
+    let connections = match load_config()? {
+        Some(file) => shown_connections(&file)?,
+        None => Vec::new(),
+    };
+    Ok(build_snapshot(&connections, &current_os()))
 }
 
 #[tauri::command]
@@ -97,9 +98,11 @@ pub(crate) async fn save_provider_config(
     state: tauri::State<'_, AppState>,
     request: ProviderConfigSaveRequestDto,
 ) -> Result<ProviderConfigSaveResponseDto, String> {
-    Ok(update_config(&state, |file| apply_save(file, &request))
-        .await?
-        .1)
+    Ok(
+        update_config(&state, move |file| apply_save(file, &request))
+            .await?
+            .1,
+    )
 }
 
 #[tauri::command]
@@ -107,12 +110,8 @@ pub(crate) async fn add_connection(
     state: tauri::State<'_, AppState>,
     request: AddConnectionRequestDto,
 ) -> Result<AddConnectionResponseDto, String> {
-    let (created, saved) = update_config(&state, |file| {
-        let id = apply_add(file, &request)?;
-        diagnostics::info("settings", format!("Added {id}"));
-        Ok(id)
-    })
-    .await?;
+    let (created, saved) = update_config(&state, move |file| apply_add(file, &request)).await?;
+    diagnostics::info("settings", format!("Added {created}"));
     Ok(AddConnectionResponseDto { created, saved })
 }
 
@@ -121,42 +120,63 @@ pub(crate) async fn remove_connection(
     state: tauri::State<'_, AppState>,
     request: ConnectionId,
 ) -> Result<ProviderConfigSaveResponseDto, String> {
-    let (_, saved) = update_config(&state, |file| {
-        file.remove(&request).map_err(|err| format!("{err:#}"))?;
-        diagnostics::info("settings", format!("Removed {request}"));
-        Ok(())
+    let removed = request.clone();
+    let (_, saved) = update_config(&state, move |file| {
+        file.remove(&request).map_err(|err| format!("{err:#}"))
     })
     .await?;
+    diagnostics::info("settings", format!("Removed {removed}"));
     Ok(saved)
 }
 
-/// Edits `config.toml`, saves it and re-runs the startup checks of every connection in the
-/// background; the response lists the connections as checking. The new runtime takes over the
-/// collection the old one was showing. Answers with what `change` returned and the new settings.
-async fn update_config<T>(
+/// Edits `config.toml` through the config lock and re-runs the startup checks of every
+/// connection in the background; the response lists the connections as checking. The new
+/// runtime takes over the collection the old one was showing. Answers with what `change`
+/// returned and the new settings.
+async fn update_config<T: Send + 'static>(
     state: &AppState,
-    change: impl FnOnce(&mut ConfigFile) -> Result<T, String>,
+    change: impl FnOnce(&mut ConfigFile) -> Result<T, String> + Send + 'static,
 ) -> Result<(T, ProviderConfigSaveResponseDto), String> {
     update_config_at(state, ConfigFile::resolve_path(None), change).await
 }
 
-async fn update_config_at<T>(
+async fn update_config_at<T: Send + 'static>(
     state: &AppState,
-    path: PathBuf,
-    change: impl FnOnce(&mut ConfigFile) -> Result<T, String>,
+    path: Option<PathBuf>,
+    change: impl FnOnce(&mut ConfigFile) -> Result<T, String> + Send + 'static,
 ) -> Result<(T, ProviderConfigSaveResponseDto), String> {
-    // From reading the file to swapping the runtime: a second edit starts from this one's result.
+    let path = path.ok_or_else(|| NO_LOCATION.to_string())?;
+    // From the edit to swapping the runtime, so runtimes are installed in the order the edits
+    // were written.
     let _editing = state.config_edit.lock().await;
-    let mut file = ConfigFile::load(path).map_err(|err| format!("{err:#}"))?;
-    let changed = change(&mut file)?;
-    file.save().map_err(|err| {
-        let message = format!("Saving settings failed: {err:#}");
-        diagnostics::error("settings", &message);
-        message
+    // The config lock may wait for another process, so it is not taken on an async worker.
+    let edited = tauri::async_runtime::spawn_blocking(move || {
+        edit_config(&path, Precondition::None, |file| {
+            change(file).map_err(anyhow::Error::msg)
+        })
+    })
+    .await
+    .map_err(|err| format!("Saving settings failed: {err}"))?
+    .map_err(|err| match err {
+        EditError::Io(_) => {
+            let message = format!("Saving settings failed: {err}");
+            diagnostics::error("settings", &message);
+            message
+        }
+        // The agreed text goes to the pane as it is; the log says what failed.
+        EditError::Unprotectable { .. } => {
+            let message = err.to_string();
+            diagnostics::error("settings", format!("Saving settings failed: {message}"));
+            message
+        }
+        other => other.message(None),
     })?;
     diagnostics::info("settings", "Settings saved, re-running provider checks");
+    for warning in edited.warnings {
+        diagnostics::warn("config", warning);
+    }
 
-    let connections = edited_connections(&file)?;
+    let connections = shown_connections(&edited.file)?;
     let (runtime, checks) = CollectionRuntime::start(&connections);
     tauri::async_runtime::spawn(checks);
     let providers_response = runtime.providers_response();
@@ -169,7 +189,7 @@ async fn update_config_at<T>(
     }
 
     Ok((
-        changed,
+        edited.value,
         ProviderConfigSaveResponseDto {
             snapshot: build_snapshot(&connections, &current_os()),
             providers_response,
@@ -203,9 +223,14 @@ pub(crate) fn save_export(request: ExportRequest) -> Result<(), String> {
     let Some(path) = selected_path else {
         return Ok(());
     };
+    write_export(&path, &file.content)
+}
 
-    let path = ensure_extension(path, extension);
-    std::fs::write(&path, file.content).map_err(|err| format!("Failed to save export: {err}"))
+/// Writes exactly the file the user confirmed in the dialog, which asked before replacing it.
+/// Its name is never changed afterwards: another extension could name a file the user did not
+/// choose and was never asked about.
+fn write_export(path: &std::path::Path, content: &str) -> Result<(), String> {
+    std::fs::write(path, content).map_err(|err| format!("Failed to save export: {err}"))
 }
 
 /// Opens a link from an event in the default browser. Descriptions come from whoever sent the
@@ -229,17 +254,4 @@ fn web_url(raw: &str) -> Result<Url, String> {
         "https" | "http" => Err("The link has no host".to_string()),
         other => Err(format!("Only web links can be opened, not {other}: links")),
     }
-}
-
-fn ensure_extension(mut path: PathBuf, extension: &str) -> PathBuf {
-    let has_expected_extension = path
-        .extension()
-        .and_then(|current| current.to_str())
-        .is_some_and(|current| current.eq_ignore_ascii_case(extension));
-
-    if !has_expected_extension {
-        path.set_extension(extension);
-    }
-
-    path
 }

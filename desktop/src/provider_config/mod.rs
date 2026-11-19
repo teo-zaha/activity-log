@@ -20,11 +20,20 @@ use activity_log_core::{
         },
         provider_registry,
     },
-    settings::{ConfigFile, load_connections},
+    settings::{ConfigFile, load_connections, warn_no_location},
 };
 
-pub(crate) fn load_config() -> Result<ConfigFile, String> {
-    ConfigFile::load(ConfigFile::resolve_path(None)).map_err(|err| format!("{err:#}"))
+/// The settings file, `None` without a settings location.
+pub(crate) fn load_config() -> Result<Option<ConfigFile>, String> {
+    match ConfigFile::resolve_path(None) {
+        Some(path) => ConfigFile::load(path)
+            .map(Some)
+            .map_err(|err| format!("{err:#}")),
+        None => {
+            warn_no_location();
+            Ok(None)
+        }
+    }
 }
 
 /// The connections the app starts with. Problems in single connections go to the Logs pane; a
@@ -36,11 +45,6 @@ pub(crate) fn startup_connections(explicit: Option<&Path>) -> Vec<Connection> {
     })
 }
 
-/// The connections of a file just edited, with its problems logged like at startup.
-pub(crate) fn edited_connections(file: &ConfigFile) -> Result<Vec<Connection>, String> {
-    file.logged_connections().map_err(|err| format!("{err:#}"))
-}
-
 /// The connections the settings pane shows. Its problems were logged when the file was read.
 pub(crate) fn shown_connections(file: &ConfigFile) -> Result<Vec<Connection>, String> {
     file.connections()
@@ -48,7 +52,8 @@ pub(crate) fn shown_connections(file: &ConfigFile) -> Result<Vec<Connection>, St
         .map_err(|err| format!("{err:#}"))
 }
 
-/// Applies the pane's edits to one connection: its label, then each changed value.
+/// Applies the pane's edits to one connection: its label, then each changed value. Runs on the
+/// file as read under the config lock.
 pub(crate) fn apply_save(
     file: &mut ConfigFile,
     request: &ProviderConfigSaveRequestDto,

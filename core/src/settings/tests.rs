@@ -1,4 +1,6 @@
-use super::ConfigFile;
+use std::path::Path;
+
+use super::{ConfigError, ConfigFile};
 use crate::{
     model::{ConnectionId, Source},
     provider::{
@@ -11,7 +13,7 @@ use crate::{
 };
 
 fn file(text: &str) -> ConfigFile {
-    ConfigFile::parse("config.toml", text).unwrap()
+    ConfigFile::parse("config.toml", text.as_bytes()).unwrap()
 }
 
 fn connections(file: &ConfigFile) -> Vec<Connection> {
@@ -126,10 +128,161 @@ fn reports_unknown_fields_without_failing() {
     assert_eq!(resolved.warnings, ["gitlab/work: unknown setting `tokn`"]);
 }
 
+/// B9: one table the app cannot read no longer takes every connection down.
 #[test]
-fn rejects_wsl_outside_git_and_a_kind_that_is_not_a_list() {
-    assert!(file("[[gitlab]]\nwsl = \"NixOS\"\n").connections().is_err());
-    assert!(file("gitlab = \"x\"\n").connections().is_err());
+fn skips_wsl_outside_git_and_a_kind_that_is_not_a_list() {
+    let resolved = file("gitlab = \"x\"\n\n[[jira]]\nwsl = \"NixOS\"\n\n[[git]]\n")
+        .connections()
+        .unwrap();
+
+    assert_eq!(ids(&resolved.connections, Source::Git), ["this-computer"]);
+    assert!(ids(&resolved.connections, Source::Jira).is_empty());
+    assert_eq!(
+        resolved.warnings,
+        [
+            "`gitlab` must be a list of [[gitlab]] tables; it is skipped",
+            "jira: only [[git]] connections can set `wsl`; connection 1 is skipped",
+        ]
+    );
+}
+
+/// B9: a broken table between two good ones is skipped, and an edit of the second good one
+/// changes that table, by its place in the file.
+#[test]
+fn edits_address_tables_by_their_place_in_the_file() {
+    let mut config = file(
+        r#"[[gitlab]]
+label = "First"
+
+[[gitlab]]
+label = "Broken"
+wsl = "NixOS"
+
+[[gitlab]]
+label = "Second"
+"#,
+    );
+    let second = ConnectionId::new(Source::Gitlab, "second");
+    assert_eq!(
+        ids(&connections(&config), Source::Gitlab),
+        ["first", "second"]
+    );
+
+    config.rename(&second, "Second renamed").unwrap();
+    config
+        .set(&second, GITLAB_URL, Some("https://gitlab.com"))
+        .unwrap();
+
+    let text = config.to_string();
+    let broken = text.find("Broken").unwrap();
+    assert!(text[broken..].contains("Second renamed"), "{text}");
+    assert!(!text[..broken].contains("Second renamed"), "{text}");
+    let resolved = connections(&config);
+    assert_eq!(find(&resolved, "gitlab/second").label, "Second renamed");
+    assert_eq!(
+        find(&resolved, "gitlab/first").values().get("GITLAB_URL"),
+        None
+    );
+
+    config.remove(&second).unwrap();
+    assert!(config.to_string().contains("Broken"));
+    assert_eq!(ids(&connections(&config), Source::Gitlab), ["first"]);
+}
+
+/// B10: several hand-written tables of a kind that has one connection: the first is read.
+#[test]
+fn reads_only_the_first_table_of_a_single_connection_kind() {
+    let mut config =
+        file("[[outlook]]\nlabel = \"Mail\"\n\n[[outlook]]\nlabel = \"Other\"\n\n[[system]]\n");
+    let resolved = config.connections().unwrap();
+
+    assert_eq!(ids(&resolved.connections, Source::Outlook), ["mail"]);
+    assert_eq!(
+        resolved.warnings,
+        ["outlook: there can be only one connection; connection 2 is skipped"]
+    );
+    assert!(
+        config
+            .add(&Source::Outlook, None, ConnectionLocation::Local)
+            .is_err()
+    );
+    config
+        .rename(&ConnectionId::new(Source::Outlook, "mail"), "Work mail")
+        .unwrap();
+    let text = config.to_string();
+    assert!(
+        text.contains("Work mail") && text.contains("Other"),
+        "{text}"
+    );
+}
+
+/// B2: a parse error names the place, never the text on the bad line.
+#[test]
+fn a_parse_error_does_not_contain_the_file_text() {
+    let err = ConfigFile::parse(
+        "config.toml",
+        b"[[gitlab]]\nlabel = \"Work\"\ntoken = \"glpat-SECRET\n",
+    )
+    .unwrap_err();
+
+    assert_eq!((err.line, err.column), (3, 22));
+    let shown = format!("{err} {err:?}");
+    assert!(!shown.contains("SECRET"), "{shown}");
+    assert!(std::error::Error::source(&err).is_none());
+    let wrapped = format!("{:#}", anyhow::Error::from(err.clone()));
+    assert!(!wrapped.contains("SECRET"), "{wrapped}");
+    assert!(
+        err.to_string()
+            .starts_with("config.toml is not valid TOML (line 3, column")
+    );
+
+    let load = ConfigFile::parse("config.toml", b"token = \"glpat-SECRET\xff\"\n").unwrap_err();
+    assert_eq!(
+        load,
+        ConfigError {
+            path: "config.toml".into(),
+            line: 1,
+            column: 22,
+            message: "invalid UTF-8".to_string(),
+        }
+    );
+}
+
+#[test]
+fn a_relative_path_is_made_absolute() {
+    let path = ConfigFile::resolve_path(Some(Path::new("config.toml"))).unwrap();
+
+    assert!(path.is_absolute());
+    assert_eq!(path, std::env::current_dir().unwrap().join("config.toml"));
+}
+
+#[test]
+fn malformed_and_repeated_instances_are_read_as_absent() {
+    let resolved = file(
+        r#"[[gitlab]]
+label = "A"
+instance = "0123456789abcdef"
+
+[[gitlab]]
+label = "B"
+instance = "0123456789abcdef"
+
+[[jira]]
+label = "C"
+instance = "NOT-HEX"
+"#,
+    )
+    .connections()
+    .unwrap();
+
+    assert_eq!(resolved.connections.len(), 3);
+    assert_eq!(
+        resolved.warnings,
+        [
+            "gitlab/b: `instance` repeats another connection's; it gets a new one when Activity Log next saves this connection",
+            "jira/c: `instance` is not 16 lowercase hex digits; it gets a new one when Activity Log next saves this connection",
+        ]
+    );
 }
 
 #[test]
@@ -263,26 +416,6 @@ fn writes_values_with_their_toml_type() {
     assert!(text.contains(r#"dirs = ["~/a", "~/b"]"#), "{text}");
     assert!(text.contains("insecure = true"), "{text}");
     assert!(config.set(&git, GITLAB_URL, Some("x")).is_err());
-}
-
-#[test]
-fn saves_where_it_was_loaded_from() {
-    let dir = tempfile::tempdir().unwrap();
-    let path = dir.path().join("nested").join("config.toml");
-    let mut config = ConfigFile::load(&path).unwrap();
-    config
-        .add(&Source::Gitlab, Some("Work"), ConnectionLocation::Local)
-        .unwrap();
-    config.save().unwrap();
-
-    let reloaded = ConfigFile::load(&path).unwrap();
-    assert_eq!(find(&connections(&reloaded), "gitlab/work").label, "Work");
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-        let mode = std::fs::metadata(&path).unwrap().permissions().mode();
-        assert_eq!(mode & 0o777, 0o600);
-    }
 }
 
 #[test]
