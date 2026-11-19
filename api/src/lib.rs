@@ -2,7 +2,11 @@ use std::path::Path;
 
 use activity_log_core::{
     diagnostics,
-    model::{CollectRequest, CollectionFailedResponse, ErrorResponse, LogsResponse},
+    export::render_export_request,
+    model::{
+        CollectRequest, CollectionFailedResponse, ConnectionId, ErrorResponse, ExportRequest,
+        LogsResponse,
+    },
     runtime::{ActivitySnapshot, resolve_collect_options},
     settings::ConfigFile,
 };
@@ -11,8 +15,8 @@ mod reload;
 
 pub use reload::ApiRuntime;
 use rocket::{
-    Build, Rocket, State, delete, fairing::AdHoc, get, http::Status, post, response::status,
-    serde::json::Json,
+    Build, Data, Rocket, State, data::ByteUnit, delete, fairing::AdHoc, get, http::Status, post,
+    response::status, serde::json::Json,
 };
 
 type JsonResponse = status::Custom<Json<serde_json::Value>>;
@@ -63,6 +67,55 @@ async fn post_collect(api: &State<ApiRuntime>, request: Json<CollectRequest>) ->
     }
 }
 
+/// Runs a connection's startup check again; its kind is collected again for the range on screen.
+/// Answers with the sources, this one checking, or 404 for a connection the server does not
+/// have.
+#[post("/api/connections/recheck", format = "json", data = "<request>")]
+async fn post_recheck(api: &State<ApiRuntime>, request: Json<ConnectionId>) -> JsonResponse {
+    match api.recheck(&request).await {
+        Some(providers) => json(Status::Ok, providers),
+        None => json(
+            Status::NotFound,
+            ErrorResponse {
+                error: format!("No source {}", *request),
+            },
+        ),
+    }
+}
+
+/// The entries the dashboard sends can be many meetings with long descriptions, far more than
+/// Rocket's 1 MiB JSON limit; this route alone reads up to `EXPORT_LIMIT`.
+const EXPORT_LIMIT: ByteUnit = ByteUnit::Mebibyte(64);
+
+/// The entries the dashboard shows as a file for the browser to download.
+#[post("/api/export", format = "json", data = "<body>")]
+async fn post_export(body: Data<'_>) -> JsonResponse {
+    let error = |status, error: String| json(status, ErrorResponse { error });
+    let body = match body.open(EXPORT_LIMIT).into_bytes().await {
+        Ok(body) if body.is_complete() => body.into_inner(),
+        Ok(_) => {
+            return error(
+                Status::PayloadTooLarge,
+                format!("An export can hold at most {EXPORT_LIMIT} of entries"),
+            );
+        }
+        Err(err) => {
+            return error(
+                Status::BadRequest,
+                format!("Reading the export failed: {err}"),
+            );
+        }
+    };
+    let request = match serde_json::from_slice::<ExportRequest>(&body) {
+        Ok(request) => request,
+        Err(err) => return error(Status::BadRequest, format!("Not an export request: {err}")),
+    };
+    match render_export_request(&request) {
+        Ok(file) => json(Status::Ok, file),
+        Err(err) => error(Status::BadRequest, format!("{err:#}")),
+    }
+}
+
 #[get("/api/logs")]
 fn get_logs() -> Json<LogsResponse> {
     Json(LogsResponse {
@@ -91,6 +144,8 @@ pub fn build_rocket_with(api: ApiRuntime, start_initial_collection: bool) -> Roc
             get_activity,
             get_providers,
             post_collect,
+            post_recheck,
+            post_export,
             get_logs,
             delete_logs
         ],

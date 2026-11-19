@@ -242,6 +242,12 @@ export type CollectionFailedResponse = { start: string, end: string, error: stri
 
 export type ErrorResponse = { error: string, };
 
+export type OutputFormat = "json" | "markdown";
+
+export type ExportRequest = { format: OutputFormat, start: string, end: string, timeZone: string, entries: Array<ActivityEntry>, };
+
+export type ExportFile = { fileName: string, content: string, };
+
 export type LogLevel = "info" | "warn" | "error";
 
 export type LogEntry = { 

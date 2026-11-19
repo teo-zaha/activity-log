@@ -6,10 +6,10 @@ use std::{
 
 use activity_log_core::{
     collect_activity_detailed_with_provider_runtimes,
+    export::render_export,
     model::{CollectOptions, CollectedActivity, OutputFormat, ProviderInfo, Source},
     provider::inspect_provider_runtimes_with,
     settings::{ConfigFile, load_connections},
-    utils::to_markdown,
 };
 use anyhow::{Result, anyhow};
 use chrono::{Days, Local};
@@ -246,10 +246,7 @@ async fn collect(args: &CollectArgs, config: Option<&Path>) -> Result<()> {
         println!("{line}");
     }
 
-    let content = match format {
-        OutputFormat::Json => serde_json::to_string_pretty(&collected.log)?,
-        OutputFormat::Markdown => to_markdown(&collected.log, &Local),
-    };
+    let content = render_export(&collected.log, format, &Local).content;
 
     if let Some(output) = &request.output_path {
         if let Some(parent) = Path::new(output).parent() {
