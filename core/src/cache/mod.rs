@@ -49,15 +49,19 @@ pub struct CachePolicy {
 impl CachePolicy {
     /// Default for remote APIs. `CACHE_TTL_MINUTES` overrides the recent TTL.
     pub fn api() -> Self {
-        let recent_minutes = env::var("CACHE_TTL_MINUTES")
-            .ok()
-            .and_then(|value| value.parse::<u64>().ok())
-            .unwrap_or(5);
         Self {
-            recent_ttl: Duration::from_secs(recent_minutes * 60),
+            recent_ttl: recent_ttl(env::var("CACHE_TTL_MINUTES").ok().as_deref()),
             settled_ttl: Duration::from_secs(7 * 24 * 60 * 60),
         }
     }
+}
+
+/// `minutes` as a TTL; five minutes when it is not a number of minutes a duration can hold.
+fn recent_ttl(minutes: Option<&str>) -> Duration {
+    minutes
+        .and_then(|value| value.trim().parse::<u64>().ok())
+        .and_then(|minutes| minutes.checked_mul(60))
+        .map_or(Duration::from_secs(5 * 60), Duration::from_secs)
 }
 
 /// Collects `options` for a connection, reusing cached days and fetching only the stale span.
