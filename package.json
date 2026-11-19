@@ -1,6 +1,6 @@
 {
   "name": "activity-log",
-  "version": "0.1.0",
+  "version": "1.0.0",
   "description": "Unified activity tracker across local Git, GitLab and Jira",
   "author": "Teodora Zaharinova <177096303+teo-zaha@users.noreply.github.com>",
   "type": "module",

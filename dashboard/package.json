@@ -1,6 +1,6 @@
 {
   "name": "activity-log-dashboard",
-  "version": "0.1.0",
+  "version": "1.0.0",
   "author": "Teodora Zaharinova <177096303+teo-zaha@users.noreply.github.com>",
   "private": true,
   "scripts": {
