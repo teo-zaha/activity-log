@@ -514,7 +514,7 @@ The docs say so plainly.
 - **The fingerprint stored with the plan** covers the connection's config, `allow` and `agent_allow`, so changing either list voids pending agent requests.
 - **Nothing in a request selects a channel.** The origin comes from the listener (socket = `Agent`, Tauri command = `Desktop`, CLI process = `Cli`).
 
-`agent_allow = [...]` is a per-connection field, reserved and parsed like `allow` (malformed fails closed). Without it, the agent gets **nothing** on that connection, not even reads, because ticket text is what prompt injection rides on. In the settings it is one select per connection, Off / Read only / Read and prepare changes, with Advanced per-action checkboxes (the last option appears once a write exists). Recommended default, pending the user's confirmation: `read` in `agent_allow` also means the agent may be shown that connection's collected activity, so every kind (Git and Outlook too) has the setting, while a kind without actions still implements no actions.
+`agent_allow = [...]` is a per-connection field, reserved and parsed like `allow` (malformed fails closed). Without it, the agent gets **nothing** on that connection, not even reads, because ticket text is what prompt injection rides on. In the settings it is one select per connection, Off / Read only / Read and prepare changes, with Advanced per-action checkboxes (the last option appears once a write exists). Decided (user, 2026-11-18; Q3 in `generic-read-step.md`): `read` in `agent_allow` also means the agent may be shown that connection's collected activity, so every kind (Git and Outlook too) has the setting, while a kind without actions still implements no actions.
 
 #### Agent requests in the desktop
 
@@ -676,7 +676,7 @@ Decision: target the **latest Odoo version** with the JSON-2 API, on **any hosti
 ## 7. UI (dashboard, desktop app)
 
 - **Work items view:** in the sidebar's Work group (direction A), shown in the desktop app when some connection allows `search`.
-  - Connection picker; recommended default, pending confirmation: all connections, narrowed by the picker, as "Search Jira & GitLab…".
+  - Connection picker; decided (user, 2026-11-18; Q1 in `generic-read-step.md`): all connections, narrowed by the picker, as "Search Jira & GitLab…".
   - Filter chips: Assigned to me, Unassigned, Not mine, Created by me, Open/Done.
   - A text box, and a JQL toggle for Jira.
   - The results are a list of `WorkItem`s, separate from the timeline: they are current state, not events. They never mix with entries, filters, export or the timeline search.
@@ -685,7 +685,7 @@ Decision: target the **latest Odoo version** with the JSON-2 API, on **any hosti
   - **Open** in the browser.
   - **Comment…**, **Move to…**, **Assign to me**, **Log time…**.
   - Each action shows only when the connection allows it. When the token lacks the scope, it is disabled with the reason.
-  - Opening a link needs a desktop command that opens only URLs core built (`WorkItem.url`): there is no opener plugin in the app today, and the webview should not get a general one.
+  - Opening a link needs a desktop command that opens only URLs core built (`WorkItem.url`): the app's only opener is `tauri-plugin-opener` called from Rust by `open_url`, and the webview gets no general one (decided, Q2 in `generic-read-step.md`).
 - **New item:** a button in the Work items view and an entry action ("Create ticket from this…" prefills the summary and description). The form comes from `DescribeCreate`: connection, project, type, then the type's fields.
 - **Log time:**
   - Opened from one entry, a selection of entries (multi-select in the day and week views and on the timeline), or a work item. The prefill comes from section 4.

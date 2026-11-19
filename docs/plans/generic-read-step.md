@@ -10,7 +10,7 @@ Status: implementation plan, not built; revised after an independent review (app
 | Design impact  | 2     | The executor, `ActionRequest`/`ActionResponse`, `Capability`, `allow`/`agent_allow` and the `ActionProvider` trait are what every later phase builds on                |
 | Failure impact | 1     | Read-only, so nothing remote changes. What can go wrong: token leaks (redirects, errors), path or query injection through keys, remote text in the webview or terminal |
 | Uncertainty    | 1     | The architecture is reviewed. Some GitLab and Jira Data Center parameters and the CSP's effect on the packaged app are not verified (end of doc)                       |
-| **Total**      | **6** | The defaults under "Decisions for the user" need confirming: Q3 before slice 2, Q2 before slice 6, Q5 before slice 5, Q1 before slice 9, Q4 before any agent transport |
+| **Total**      | **6** | Q1–Q5 under "Decisions for the user" are decided (user, 2026-11-18), all with the recommended defaults                                                                 |
 
 ## What the step delivers
 
@@ -39,7 +39,7 @@ These follow from the reviewed design but narrow or adjust it. Each is recorded 
 
 ## Decisions for the user
 
-The reviewer reached the same answers on Q1–Q4 independently. They are the **recommended defaults, pending your confirmation**; the plan is written with them.
+The reviewer reached the same answers on Q1–Q4 independently. **Decided by the user on 2026-11-18: all five with the recommended defaults**, as recorded under each question; the plan is written with them.
 
 **Q1. Does remote search ask one connection or all of them?** The name you chose, "Search Jira & GitLab…", suggests all; the mockup draws a connection picker.
 
@@ -48,16 +48,20 @@ The reviewer reached the same answers on Q1–Q4 independently. They are the **r
 | **All by default, picker narrows to one; JQL only with one Jira connection (default)** | good            | good        | good | mixed |
 | One connection at a time, as drawn                                                     | mixed           | good        | good | good  |
 
+**Decided:** remote search asks all connections by default, and the picker narrows it to one; JQL only with one Jira connection chosen.
+
 One `Search` per connection that allows search. Each connection keeps its own cursor and its own inline error, so one failing source doesn't hide the others. The list sorts only what is loaded, by `updated`; "Load more" asks each connection that still has a cursor. Every query carries a generation number, and a response for an older generation is dropped. About half a day more in slice 9; core and the contract are the same either way.
 
-**Q2. How does the app open an item in the browser?** There is no opener today, and the webview must not get a general one.
+**Q2. How does the app open an item in the browser?** Today the only opener is the Rust `open_url` command for event links (`tauri-plugin-opener` without a webview permission); the webview must not get a general one.
 
 | Option                                                                            | User experience | Correctness | Risk  | Cost  |
 | --------------------------------------------------------------------------------- | --------------- | ----------- | ----- | ----- |
 | **`tauri-plugin-opener`, called only from Rust, no webview permission (default)** | good            | good        | good  | good  |
 | Own code per OS (`open`, `xdg-open`, `rundll32 url.dll,FileProtocolHandler`)      | good            | mixed       | mixed | mixed |
 
-A new dependency to approve, pinned. The URL is rebuilt from the connection and the parsed ref, `http`/`https` only, same origin as the configured base, without user info (a base URL with `user:pass@` is refused for opening).
+**Decided:** `tauri-plugin-opener`, called only from Rust; the web view gets no permission to open URLs.
+
+The plugin is already a pinned desktop dependency (`tauri-plugin-opener` 2.7.3, used by `open_url`). The URL is rebuilt from the connection and the parsed ref, `http`/`https` only, same origin as the configured base, without user info (a base URL with `user:pass@` is refused for opening).
 
 **Q3. What does AI "Read only" mean on Git, Outlook, Calendar and System connections?** They have no actions, but the agent's `activity` tool (MCP step) shows collected entries, and the design's own test has "allowed Git, denied GitLab".
 
@@ -65,6 +69,8 @@ A new dependency to approve, pinned. The URL is rebuilt from the connection and 
 | ------------------------------------------------------------------------------------------- | --------------- | ----------- | ---- | ----- |
 | **`read` in `agent_allow` means "the agent may be shown this connection's data" (default)** | good            | good        | good | good  |
 | A separate `activity` capability                                                            | mixed           | good        | good | mixed |
+
+**Decided:** `read` in `agent_allow` means the agent may see this connection's data.
 
 Every connection gets the AI select; Read only writes `agent_allow = ["read"]`, plus `search` where the kind implements it. Disclosure and actions stay separate: a Git connection with `read` in its lists still implements no actions, so its kind advertises no capabilities and `Get` on it is `Unsupported`. The policy stays `allow ∩ agent_allow`, so `allow = []` also hides a connection from the agent. Needed before slice 2, since it decides the enum.
 
@@ -75,6 +81,8 @@ Every connection gets the AI select; Read only writes `agent_allow = ["read"]`, 
 | **With the MCP step, and required before any agent transport ships (default)** | good            | good        | good | good  |
 | Now, as slice 11                                                               | good            | good        | good | mixed |
 
+**Decided:** the agent projection comes with the MCP step and is required before any agent transport ships.
+
 Slice 11 is written out below so it moves without being replanned.
 
 **Q5. What does "Done" mean for GitLab merge requests?** Mapping Done to `merged` alone makes closed-unmerged merge requests disappear from both Open and Done.
@@ -83,6 +91,8 @@ Slice 11 is written out below so it moves without being replanned.
 | ------------------------------------------ | --------------- | ----------- | ---- | ----- |
 | **Done = merged or closed (default)**      | good            | good        | good | good  |
 | A separate Merged chip; Done = closed only | mixed           | good        | good | mixed |
+
+**Decided:** for GitLab, Done means merged or closed.
 
 Recommended: Done means "no longer open", like Jira's status category Done (which also covers Won't do). The merged/closed difference shows as the item's status. With the composite cursor (slice 5) this is one more stream (closed merge requests), not new machinery.
 
@@ -110,7 +120,7 @@ No new features. The check and the collector of each remote kind build the clien
   - `Retry-After` 3 s retries once; 30 s doesn't.
 - Behaviour change to note in the commit: collector error messages get shorter.
 
-### Slice 2: `allow` and `agent_allow` in `config.toml` — 1 day (after Q3)
+### Slice 2: `allow` and `agent_allow` in `config.toml` — 1 day (uses Q3)
 
 - `core/src/model/actions/capability.rs`: `Capability` (serde `snake_case`, ts-rs exported).
 - `core/src/provider/connection/mod.rs`: `Access { allow, agent_allow: BTreeSet<Capability> }`, default `{search, read}` and `{}`; `Access::for_origin(Origin)` (`Agent` → `allow ∩ agent_allow`, else `allow`). `Connection` gets it through `with_access()`, so `Connection::new` callers don't change. `Origin { Desktop, Cli, Agent }` in `core/src/model/actions/origin.rs`, Rust only: no request can carry it.
@@ -135,7 +145,7 @@ The generic part, tested with a fake provider.
   - `ActionError { code, message, field, retry_after_seconds }`; `ActionErrorCode { NotFound, Unsupported, NotAllowed, Unavailable, MissingScope, InvalidInput, RateLimited, Unreachable, Timeout, Remote }`
   - `CapabilityGrant { Granted, Missing, Unknown }`; `CapabilityState { capability, allowed, grant, reason }`
 - `core/src/actions/action_provider.rs`: `ActionProvider` with `capabilities()`, `probe(&ActionScope)`, `search(&ActionScope, SearchQuery)`, `get(&ActionScope, &str)`, `item_url(&ActionScope, &str) -> Result<Url, ActionError>`, unimplemented methods `Unsupported`. `ActionScope` carries the connection's context and the `RemoteIdentity` from its check. `ProviderAdapter::actions() -> Option<&dyn ActionProvider>` defaults to `None`.
-- `core/src/actions/mod.rs` + `tests.rs`: `run(caller, &ProviderRuntime, &ActionLimits, ActionRequest) -> ActionResponse`, refusing in this order before any provider code:
+- `core/src/actions/mod.rs` + `tests.rs`: `run(caller, &ProviderRuntime, &ActionLimits, ActionRequest) -> ActionResponse`, refusing in this order before any provider code. _Note (step 0): replaced by `run(caller, &ActionTarget, ActionRequest)` with the same refusal order; see `shared-contracts.md` §2 (`action_target`) and §9._
   1. the kind implements the request's capability → `Unsupported`
   2. `allow` has it → `NotAllowed` ("Search is off for Work Jira")
   3. `Access::for_origin(caller.origin)` has it → `NotAllowed`
@@ -168,7 +178,7 @@ The generic part, tested with a fake provider.
 - Error mapping: 400 on search → `InvalidInput` with Jira's message (bad JQL); 401/403 → `MissingScope`; 404 on get → `NotFound`.
 - Tests with recorded JSON: each filter's JQL; text holding `" OR project = X` and a trailing `\` stays one literal; `native` with a non-empty filter → `InvalidInput`; paging with a server that returns 20 of 50 asked; malformed cursors (`-1`, `1e3`, `٣`, 30 digits) → `InvalidInput`; keys `abc-1`, `ABC-01`, `ABC-1/../../myself`, `ABC-1?x`, `ABC-١`, 101 characters → `InvalidInput` without a request; search and issue mapping including missing assignee and reporter; a fixture whose `self` points elsewhere doesn't change `url`; a `javascript:` base gives no URL; probe answers with the full map, with `false`, and an error.
 
-### Slice 5: GitLab read — 2 days (after Q5)
+### Slice 5: GitLab read — 2 days (uses Q5)
 
 - `core/src/actions/gitlab/mod.rs` + `tests.rs`, `cursor.rs`: `GitLabActions` (`[Search, Read]`), wired in `provider/gitlab/mod.rs`.
 - Keys: `group/subgroup/project#iid` for issues, `…!iid` for merge requests. Path segments of letters, digits, `.`, `_`, `-`; no empty segment, and no segment that is exactly `.` or `..`; the iid a positive number; at most 255 characters. The project path is pushed as **one** segment (`group%2Fapp`), never pre-encoded, so it is never double-encoded.
@@ -187,10 +197,10 @@ The generic part, tested with a fake provider.
   - Probe with `read_api`, `api`, `read_user` only, a granular scope list, 404.
 - Acceptance on a real instance (recorded in the slice's review): NotMe includes unassigned items; closed-unmerged merge requests show under Done.
 
-### Slice 6: Tauri commands, opener and CSP — 1.5 days (after Q2)
+### Slice 6: Tauri commands, opener and CSP — 1.5 days (uses Q2)
 
 - `desktop/src/commands/mod.rs`, using the transport envelope (`tauri-backend-transport.ts` sends `{ request }`):
-  - `run_action(state, request: ActionCall) -> ActionResponse` builds `Caller { origin: Desktop }`, clones the `CollectionRuntime` under a short read guard, **releases the guard**, then awaits `run_action`. A settings save is never blocked by a slow read.
+  - `run_action(state, request: ActionCall) -> ActionResponse` builds `Caller { origin: Desktop }`, clones the `CollectionRuntime` under a short read guard, **releases the guard**, then awaits `run_action`. A settings save is never blocked by a slow read. _Note (step 0): replaced by `Host::action_target` and the `HostActionResponseDto` envelope; see `shared-contracts.md` §9._
   - In-flight reads after a settings swap finish on the runtime they started on: the old connection settings and token, checked against the old `allow`. Their answer is still returned; the dashboard re-runs the visible search when the providers response changes, and drops answers of an older query generation (slice 9). The old runtime is freed when its last read ends.
   - `open_work_item(state, request: WorkItemRef)` gets the URL from core (`actions::item_url`: kind, parsed key, configured base, `http`/`https`, same origin, no user info) and opens it with the opener (Q2).
   - Both registered in `desktop/src/lib.rs`.
@@ -246,7 +256,7 @@ Built before the view that needs it; independent of the backend slices.
 - **Migration:** the `/` handler in `search-bar.component.ts` (`(document:keydown)` → `focusOnSlash`) is removed; the search bar registers `/` through the directive. The local list-navigation handlers (timeline, date index, event detail) stay: they are widget behaviour, not app shortcuts.
 - Tests: no shortcut fires in an input; `whileTyping` does; composition ignored; inactive scope doesn't fire; `/` doesn't focus the background search while the settings dialog is open; hints read ⌘ on macOS and Ctrl elsewhere; the help lists exactly the registry; hint and `aria-keyshortcuts` come from the entry; the search bar's existing `/` behaviour still works.
 
-### Slice 9: Work items view — 3.5 days (after Q1)
+### Slice 9: Work items view — 3.5 days (uses Q1)
 
 - `services/backend/backend-contract.ts`: `runAction` (`run_action`) and `openWorkItem` (`open_work_item`), desktop-only (`http: null`); methods in `backend-client.ts`.
 - `services/types.ts`: `ViewMode` gains `'work-items'`. `models/view-option.ts`: `WORK_OPTIONS` for the sidebar's Work group.
@@ -280,7 +290,7 @@ Built before the view that needs it; independent of the backend slices.
 
 ## Order and total
 
-1 → 2 (after Q3) → 3 → (4 ∥ 5) → (6 ∥ 7) → 9 → 10, with 8 any time before 9; 11 with the MCP step.
+1 → 2 → 3 → (4 ∥ 5) → (6 ∥ 7) → 9 → 10, with 8 any time before 9; 11 with the MCP step.
 
 | Slice | 1   | 2   | 3   | 4   | 5   | 6   | 7   | 8   | 9   | 10  | Total    |
 | ----- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | -------- |
