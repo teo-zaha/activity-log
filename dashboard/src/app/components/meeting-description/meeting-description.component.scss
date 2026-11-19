@@ -1,0 +1,119 @@
+@use '../dashboard-shared' as ui;
+
+:host {
+  display: block;
+  --description-lines: 12;
+}
+
+.description {
+  color: var(--text-primary);
+  font-size: 13px;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+  user-select: text;
+
+  // Cut to a few lines; the last ones fade out when more is hidden.
+  &.clamped {
+    max-height: calc(var(--description-lines) * 1.5em);
+    overflow: hidden;
+  }
+
+  &.clamped.overflowing {
+    mask-image: linear-gradient(to bottom, #000 calc(100% - 3em), transparent);
+  }
+}
+
+.block {
+  margin: 0;
+  // Line breaks inside a paragraph are the organizer's.
+  white-space: pre-line;
+
+  & + & {
+    margin-top: 8px;
+  }
+}
+
+// Images keep their aspect ratio inside the text column.
+.image {
+  display: block;
+  max-width: 100%;
+  max-height: 320px;
+  height: auto;
+  border-radius: var(--radius-xs);
+}
+
+// An image without its data: its alt text, quieter than the text around it.
+.image-placeholder {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--text-tertiary);
+  font-size: 12.5px;
+  --icon-size: 16px;
+}
+
+.heading {
+  font-size: 13.5px;
+  font-weight: 600;
+}
+
+.list {
+  padding-inline-start: 1.4em;
+
+  // The backend nests items by depth in one flat list.
+  > li {
+    margin-inline-start: calc(var(--depth, 0) * 1.25em);
+
+    & + li {
+      margin-top: 2px;
+    }
+  }
+
+  > li[data-depth='1'] {
+    list-style-type: circle;
+  }
+
+  > li:not([data-depth='0'], [data-depth='1']) {
+    list-style-type: square;
+  }
+}
+
+// Numbers count the items of the list itself; nested items keep their bullets.
+ol.list {
+  counter-reset: item;
+  list-style: none;
+
+  > li[data-depth='0'] {
+    counter-increment: item;
+
+    &::marker {
+      content: counter(item) '. ';
+    }
+  }
+
+  > li:not([data-depth='0']) {
+    list-style-type: disc;
+  }
+}
+
+.description-toggle {
+  appearance: none;
+  margin: 6px 0 0;
+  padding: 2px 0;
+  border: 0;
+  background: none;
+  color: var(--accent);
+  font: inherit;
+  font-size: 12.5px;
+  font-weight: 600;
+  cursor: pointer;
+
+  &:hover {
+    color: var(--accent-hover);
+  }
+
+  &:focus-visible {
+    @include ui.focus-ring;
+    border-radius: 4px;
+  }
+}

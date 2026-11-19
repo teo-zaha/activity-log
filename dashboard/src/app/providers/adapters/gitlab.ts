@@ -43,15 +43,6 @@ class GitLabEntryUiAdapter extends EntryUiAdapter<GitLabEntry> {
       styleKey: provider.source,
     })
   }
-
-  markdownSummary(): string {
-    const entry = this.entry
-    return `${entry.type}: ${entry.title || ''}`.trim()
-  }
-
-  markdownMeta(timeLabel: string): string {
-    return timeLabel
-  }
 }
 
 class GitLabProviderAdapter extends ProviderUiAdapterDefinition<

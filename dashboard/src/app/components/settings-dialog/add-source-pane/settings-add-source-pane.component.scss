@@ -19,8 +19,6 @@
   }
 }
 
-@include ui.provider-source-vars('.tile');
-
 .tile {
   display: flex;
   flex: 1;
@@ -97,10 +95,7 @@
   margin-top: auto;
   font-size: 12px;
   font-weight: 600;
-
-  .material-icons {
-    font-size: 16px;
-  }
+  --icon-size: 16px;
 
   &[data-tone='add'] {
     color: var(--accent);
@@ -163,4 +158,77 @@
   color: var(--text-primary);
   font-size: 15px;
   font-weight: 600;
+}
+
+// ── Tablets and phones: one row per kind, one list ──────────────────────────
+
+@include ui.down('tablet') {
+  .add-source {
+    padding-bottom: 24px;
+  }
+
+  .tile-grid {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 0;
+    border: 1px solid var(--hairline);
+    border-radius: var(--radius-md);
+    overflow: hidden;
+
+    > li + li {
+      border-top: 1px solid var(--hairline);
+    }
+  }
+
+  .tile {
+    flex-direction: row;
+    align-items: center;
+    gap: 12px;
+    min-height: 60px;
+    padding: 10px 12px;
+    border: 0;
+    border-radius: 0;
+    --provider-icon-box: 32px;
+    --provider-icon-glyph: 18px;
+    --provider-icon-radius: 9px;
+
+    &:hover:not(:disabled):not(.is-upcoming) {
+      box-shadow: none;
+      transform: none;
+      background: var(--surface-hover);
+    }
+
+    &:focus-visible {
+      box-shadow: inset 0 0 0 2px var(--accent);
+    }
+
+    &[data-state='unsupported'],
+    &.is-upcoming {
+      border-style: none;
+    }
+  }
+
+  .tile-copy {
+    flex: 1;
+    min-width: 0;
+    gap: 2px;
+  }
+
+  .tile-desc {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .tile-state {
+    flex: none;
+    margin: 0;
+  }
+
+  .tile-skeleton {
+    min-height: 60px;
+  }
+
+  .upcoming-grid .tile {
+    padding: 10px 12px;
+  }
 }

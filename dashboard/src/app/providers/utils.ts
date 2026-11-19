@@ -1,4 +1,4 @@
-import type { Source } from '../generated/activity'
+import type { BusyStatus, Source } from '../generated/activity'
 import type { EntryBadgeVm } from './types'
 
 export function formatDuration(durationMinutes: number): string {
@@ -18,11 +18,25 @@ export function toDefinedStrings(values: Array<string | undefined | null | false
   return values.filter((value): value is string => Boolean(value))
 }
 
-export function createBadge(
-  source: Source,
-  label: string,
-  icon: string,
-  badgeClass = `badge-${source}`
-): EntryBadgeVm {
-  return { source, label, icon, badgeClass }
+export function createBadge(source: Source, label: string, icon: string): EntryBadgeVm {
+  return { source, label, icon }
+}
+
+const BUSY_STATUS_LABELS: Record<BusyStatus, string> = {
+  busy: 'Busy',
+  tentative: 'Tentative',
+  free: 'Free',
+  out_of_office: 'Out of office',
+  working_elsewhere: 'Working elsewhere',
+}
+
+export function busyStatusLabel(status: BusyStatus): string {
+  return BUSY_STATUS_LABELS[status]
+}
+
+/** The meetings that get a marker in the timeline and calendar views. */
+export type BusyMarker = 'tentative' | 'free'
+
+export function busyMarkerOf(status: BusyStatus | null): BusyMarker | null {
+  return status === 'tentative' || status === 'free' ? status : null
 }

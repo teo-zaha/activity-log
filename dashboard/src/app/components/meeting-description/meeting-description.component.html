@@ -1,0 +1,62 @@
+<div
+  #body
+  class="description"
+  [class.clamped]="!expanded()"
+  [class.overflowing]="overflowing()"
+  [id]="id"
+>
+  @for (block of blocks(); track $index) {
+    @if (block.kind === 'list') {
+      @if (block.ordered) {
+        <ol class="block list">
+          @for (item of block.items; track $index) {
+            <li [attr.data-depth]="item.depth" [style.--depth]="item.depth">
+              <app-description-runs [segments]="item.segments" />
+            </li>
+          }
+        </ol>
+      } @else {
+        <ul class="block list">
+          @for (item of block.items; track $index) {
+            <li [attr.data-depth]="item.depth" [style.--depth]="item.depth">
+              <app-description-runs [segments]="item.segments" />
+            </li>
+          }
+        </ul>
+      }
+    } @else if (block.kind === 'image') {
+      @if (block.src && !failedImages().has($index)) {
+        <img
+          class="block image"
+          [src]="block.src"
+          [alt]="block.alt ?? 'Image'"
+          loading="lazy"
+          decoding="async"
+          referrerpolicy="no-referrer"
+          (load)="measure()"
+          (error)="imageFailed($index)"
+        />
+      } @else if (block.alt !== '') {
+        <p class="block image-placeholder">
+          <mat-icon aria-hidden="true">image</mat-icon>
+          <span>{{ block.alt ?? 'Image' }}</span>
+        </p>
+      }
+    } @else {
+      <p class="block" [class.heading]="block.kind === 'heading'">
+        <app-description-runs [segments]="block.segments" />
+      </p>
+    }
+  }
+</div>
+@if (overflowing()) {
+  <button
+    type="button"
+    class="description-toggle"
+    [attr.aria-expanded]="expanded()"
+    [attr.aria-controls]="id"
+    (click)="toggle()"
+  >
+    {{ expanded() ? 'Show less' : 'Show more' }}
+  </button>
+}

@@ -14,7 +14,13 @@ import { gitlabAdapter } from './adapters/gitlab'
 import { jiraAdapter } from './adapters/jira'
 import { outlookAdapter } from './adapters/outlook'
 import { systemAdapter } from './adapters/system'
-import type { EntryBySource, EntryUiAdapter, ProviderUiAdapterDefinition } from './types'
+import { jsonEqual } from '../utils/json-equal'
+import {
+  type EntryBySource,
+  type EntryUiAdapter,
+  type ProviderUiAdapterDefinition,
+  entryTrackKey,
+} from './types'
 
 type ProviderAdapterMap = {
   [S in Source]: ProviderUiAdapterDefinition<S, EntryBySource<S>>
@@ -55,4 +61,20 @@ export function createEntryAdapter(entry: ActivityEntry): EntryUiAdapter {
     case 'calendar':
       return calendarAdapter.create(entry)
   }
+}
+
+/**
+ * Adapters for `entries`, keeping those of `previous` whose entries came again unchanged: each
+ * answer of a running collection repeats what is already shown, and kept adapters keep the
+ * work done for them (and their list rows) as they were.
+ */
+export function createEntryAdapters(
+  entries: readonly ActivityEntry[],
+  previous: readonly EntryUiAdapter[]
+): EntryUiAdapter[] {
+  const kept = new Map(previous.map(adapter => [adapter.trackKey, adapter]))
+  return entries.map(entry => {
+    const adapter = kept.get(entryTrackKey(entry))
+    return adapter && jsonEqual(adapter.entry, entry) ? adapter : createEntryAdapter(entry)
+  })
 }

@@ -4,11 +4,15 @@ import type { ResourceRef } from '@angular/core'
 import { TestBed } from '@angular/core/testing'
 import { describe, expect, it, vi } from 'vitest'
 import type { ProviderConfigSaveRequestDto } from '../../generated/activity'
-import { MockBackendTransport, provideMockBackend } from '../../testing/activity-fixtures'
+import type { ExportRequest } from '../../generated/activity'
+import {
+  exportRequest,
+  MockBackendTransport,
+  provideMockBackend,
+} from '../../testing/activity-fixtures'
 import { ActivityBackendClient } from './backend-client'
 import { BackendOperations, type BackendOperation, type ReadOperation } from './backend-contract'
 import { BackendTransport } from './backend-transport'
-import type { ExportRequest } from './export-request'
 import { HttpBackendTransport } from './http-backend-transport'
 import { RuntimeEnvironmentService } from './runtime-environment.service'
 import { TauriBackendTransport } from './tauri-backend-transport'
@@ -72,6 +76,7 @@ class RecordingTransport implements BackendTransport {
   readonly calls: RecordedCall[] = []
   readonly resources: ReadOperation<unknown>[] = []
   readonly exports: ExportRequest[] = []
+  readonly openedUrls: string[] = []
 
   resource<Res>(read: ReadOperation<Res>): ResourceRef<Res | undefined> {
     this.resources.push(read)
@@ -85,6 +90,15 @@ class RecordingTransport implements BackendTransport {
 
   saveExport(request: ExportRequest): Promise<void> {
     this.exports.push(request)
+    return new Promise<void>(() => undefined)
+  }
+
+  openUrl(url: string): Promise<void> {
+    this.openedUrls.push(url)
+    return new Promise<void>(() => undefined)
+  }
+
+  listenForDeepLinks(): Promise<void> {
     return new Promise<void>(() => undefined)
   }
 }
@@ -140,11 +154,20 @@ describe('ActivityBackendClient', () => {
 
   it('export hands the request to saveExport', () => {
     const { client, transport } = setup()
-    const request = { content: '{}', fileName: 'a.json', format: 'json' } as const
+    const request = exportRequest
 
     void client.export(request)
 
     expect(transport.exports).toEqual([request])
+    expect(transport.calls).toEqual([])
+  })
+
+  it('openUrl hands the link to the transport', () => {
+    const { client, transport } = setup()
+
+    void client.openUrl('https://example.org/')
+
+    expect(transport.openedUrls).toEqual(['https://example.org/'])
     expect(transport.calls).toEqual([])
   })
 

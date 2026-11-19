@@ -17,10 +17,6 @@
   @include cal.nav-bar;
 }
 
-.nav-btn {
-  @include cal.nav-button;
-}
-
 .nav-controls {
   @include cal.nav-controls;
 }
@@ -34,7 +30,15 @@
 }
 
 .today-btn {
-  @include cal.today-button;
+  min-width: 64px;
+}
+
+.cal-heading {
+  @include cal.heading;
+}
+
+.cal-meeting-time {
+  @include cal.meeting-time;
 }
 
 .cal-title {
@@ -71,7 +75,7 @@
   display: flex;
   flex-direction: column;
   align-items: center;
-  justify-content: center;
+  justify-content: flex-start;
   padding: 10px 4px;
   gap: 2px;
   border: 0;
@@ -129,10 +133,48 @@
   letter-spacing: 0.5px;
 }
 
+// As tall as today's circle, so the meeting times below line up across the days.
 .day-date {
+  display: flex;
+  align-items: center;
+  min-height: 26px;
   font-size: 15px;
   font-weight: 700;
   color: var(--text-primary);
+}
+
+// Meeting time of the day: busy, then the tentative extra; only the amount on phones.
+.day-meeting-time {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  max-width: 100%;
+  margin-top: 2px;
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1.25;
+  color: var(--text-secondary);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+
+  .mt-tentative {
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    font-weight: 500;
+    color: var(--text-tertiary);
+  }
+
+  @include cal.down('tablet') {
+    .mt-word {
+      display: none;
+    }
+  }
+
+  @include cal.down('phone') {
+    font-size: 10px;
+    letter-spacing: -0.01em;
+  }
 }
 
 // ── All-day banner row ──────────────────────────────────────────────────────
@@ -169,9 +211,9 @@
   align-items: center;
   gap: 4px;
   cursor: pointer;
-  background: var(--badge-outlook-bg);
-  color: var(--badge-outlook-fg);
-  border-left: 3px solid var(--badge-outlook-accent);
+  background: var(--badge-bg);
+  color: var(--badge-fg);
+  border-left: 3px solid var(--badge-accent);
   transition: filter 0.1s ease;
   z-index: 1;
 
@@ -184,9 +226,10 @@
     outline-offset: 2px;
   }
 
+  @include cal.busy-markers;
+
   .cal-event-icon {
-    font-size: 11px;
-    flex-shrink: 0;
+    --icon-size: 11px;
     opacity: 0.85;
   }
 
@@ -260,6 +303,7 @@
 }
 
 @include cal.event-styles;
+@include cal.now-line;
 
 // Sits below the sticky day headers.
 .u-floating-hint {

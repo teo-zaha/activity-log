@@ -1,33 +1,78 @@
 <div class="day-view">
   <!-- Navigation -->
   <div class="cal-nav">
-    <h2 class="cal-title" [class.is-today]="isToday(activity.selectedDay())">
-      {{ formatDayHeader(activity.selectedDay()) }}
-    </h2>
-    <div class="nav-controls">
-      <button class="nav-btn" (click)="activity.navigateDay(-1)" aria-label="Previous day">
-        <span class="material-icons" aria-hidden="true">chevron_left</span>
-      </button>
-      <button class="nav-btn today-btn" (click)="activity.goToToday()">Today</button>
-      <button class="nav-btn" (click)="activity.navigateDay(1)" aria-label="Next day">
-        <span class="material-icons" aria-hidden="true">chevron_right</span>
-      </button>
+    <div class="cal-heading">
+      <h2 class="cal-title" [class.is-today]="isToday(activity.selectedDay())">
+        {{ formatDayHeader(activity.selectedDay()) }}
+      </h2>
+      @if (meetingTimeParts(); as parts) {
+        <p
+          class="cal-meeting-time"
+          title="Meeting time"
+          [attr.aria-label]="'Meetings: ' + meetingTimeLabel()"
+        >
+          <mat-icon>groups</mat-icon>
+          @if (parts.busy) {
+            <span class="mt-busy">{{ parts.busy }}</span>
+          }
+          @if (parts.tentative) {
+            <span class="mt-tentative"
+              >{{ parts.tentative }}<span class="mt-word"> tentative</span></span
+            >
+          }
+        </p>
+      }
     </div>
-    <div class="nav-controls zoom-controls">
-      <button class="nav-btn" (click)="zoomOut()" aria-label="Zoom out">
-        <span class="material-icons" aria-hidden="true">remove</span>
+    <div class="nav-controls">
+      <button
+        appIconButton
+        size="sm"
+        icon="chevron_left"
+        label="Previous day"
+        (click)="activity.navigateDay(-1)"
+      ></button>
+      <button appButton variant="ghost" size="sm" class="today-btn" (click)="activity.goToToday()">
+        Today
       </button>
       <button
-        class="nav-btn zoom-reset-btn"
-        (click)="activity.hourHeight.set(64)"
-        aria-label="Reset zoom"
-        [class.at-default]="activity.hourHeight() === 64"
+        appIconButton
+        size="sm"
+        icon="chevron_right"
+        label="Next day"
+        (click)="activity.navigateDay(1)"
+      ></button>
+    </div>
+    <div class="nav-controls zoom-controls">
+      <button
+        appIconButton
+        size="sm"
+        icon="remove"
+        label="Zoom out"
+        (click)="zoom.zoomOut()"
+        [disabled]="!zoom.canZoomOut()"
+        title="Zoom out (Ctrl + scroll or pinch)"
+      ></button>
+      <button
+        appButton
+        variant="ghost"
+        size="sm"
+        class="zoom-reset-btn"
+        (click)="zoom.reset()"
+        [disabled]="zoom.atDefault()"
+        [attr.aria-label]="'Zoom ' + zoom.percent() + ', reset to 100%'"
+        [title]="zoom.atDefault() ? 'Default zoom' : 'Reset zoom to 100%'"
       >
-        1h
+        {{ zoom.percent() }}
       </button>
-      <button class="nav-btn" (click)="zoomIn()" aria-label="Zoom in">
-        <span class="material-icons" aria-hidden="true">add</span>
-      </button>
+      <button
+        appIconButton
+        size="sm"
+        icon="add"
+        label="Zoom in"
+        (click)="zoom.zoomIn()"
+        [disabled]="!zoom.canZoomIn()"
+        title="Zoom in (Ctrl + scroll or pinch)"
+      ></button>
     </div>
   </div>
 
@@ -42,7 +87,8 @@
             @for (item of allDayEntries(); track item.key) {
               <button
                 type="button"
-                class="cal-allday-bar"
+                [class]="eventClass('cal-allday-bar', item.entry)"
+                [attr.data-src]="item.entry.styleKey"
                 [style.left]="item.left"
                 [style.right]="item.right"
                 [style.width]="item.width"
@@ -51,7 +97,7 @@
                 (click)="selectEntry(item.entry)"
                 [attr.aria-label]="eventAriaLabel(item.entry)"
               >
-                <span class="material-icons cal-event-icon" aria-hidden="true">event</span>
+                <mat-icon class="cal-event-icon">event</mat-icon>
                 <span class="cal-event-title">{{ item.entry.title }}</span>
               </button>
             }
@@ -64,7 +110,7 @@
       <div class="u-floating-hint" role="status"><span>No activity on this day</span></div>
     }
 
-    <div class="cal-grid" [style.height.px]="gridHeight()">
+    <div class="cal-grid" #gridEl [style.height.px]="gridHeight()">
       <!-- Hour labels + lines -->
       @for (hour of hours; track hour) {
         <div
@@ -72,13 +118,20 @@
           [style.top.px]="hour * activity.hourHeight()"
           [style.height.px]="activity.hourHeight()"
         >
-          <span class="hour-label">{{ formatHour(hour) }}</span>
+          <span class="hour-label" [class.is-covered]="nowLine()?.coveredHour === hour">{{
+            formatHour(hour)
+          }}</span>
           <div class="hour-line"></div>
         </div>
       }
 
       <!-- Events column -->
       <div class="events-col">
+        @if (nowLine(); as now) {
+          <div class="now-line" [style.top.px]="now.top" aria-hidden="true">
+            <span class="now-label">{{ now.label }}</span>
+          </div>
+        }
         @for (item of dayLayout(); track item.key) {
           @if (item.kind === 'overflow') {
             <button
@@ -92,13 +145,14 @@
               (click)="selectOverflow(item.entries)"
               [attr.aria-label]="overflowAriaLabel(item.entries)"
             >
-              <span class="material-icons cal-event-icon" aria-hidden="true">more_horiz</span>
+              <mat-icon class="cal-event-icon">more_horiz</mat-icon>
               <span class="cal-event-title">+{{ item.entries.length }}</span>
             </button>
           } @else {
             <button
               type="button"
-              [class]="'cal-event cal-event-' + item.entry.styleKey"
+              [class]="eventClass('cal-event', item.entry)"
+              [attr.data-src]="item.entry.styleKey"
               [style.top.px]="item.top"
               [style.height.px]="item.height"
               [style.left]="item.style.left"
@@ -107,9 +161,7 @@
               (click)="selectEntry(item.entry)"
               [attr.aria-label]="eventAriaLabel(item.entry)"
             >
-              <span class="material-icons cal-event-icon" aria-hidden="true">{{
-                item.entry.entryIcon
-              }}</span
+              <mat-icon class="cal-event-icon">{{ item.entry.entryIcon }}</mat-icon
               ><span class="cal-event-title">{{ item.entry.title }}</span>
             </button>
           }

@@ -31,9 +31,9 @@ const logs: LogEntry[] = [
   },
 ]
 
-async function setup(pollIntervalMs = 60_000): Promise<MockBackendTransport> {
+async function setup(pollIntervalMs = 60_000, entries = logs): Promise<MockBackendTransport> {
   const backend = new MockBackendTransport()
-  backend.logs = [...logs]
+  backend.logs = [...entries]
   await render(SettingsLogsPaneComponent, {
     providers: [
       provideMockBackend(backend),

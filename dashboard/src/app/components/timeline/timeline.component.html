@@ -1,9 +1,12 @@
-<div class="timeline-scroll" #scroller [class.has-day-index]="dayIndex().length > 0">
-  <!-- The rail sits in the sticky top block, so it stays put and is the tab stop after search. -->
+<div class="timeline-scroll" #scroller>
+  <!-- The rail sits in the sticky top block, so it stays put and is the tab stop after the filter. -->
   <div class="timeline-top">
     <app-search-bar
-      placeholder="Search commits, MRs, tickets, meetings…"
-      [(value)]="activity.searchQuery"
+      placeholder="Filter activity…"
+      label="Filter activity"
+      clearLabel="Clear filter"
+      [value]="activity.searchQuery()"
+      (valueChange)="activity.setSearchQuery($event)"
     />
     @if (showDayIndex()) {
       <app-day-index
@@ -38,71 +41,97 @@
         }
       </div>
     } @else if (activity.groupedByDay().length === 0) {
-      <div class="u-empty-state empty-state">
-        <span class="empty-icon" aria-hidden="true">
-          <span class="material-icons">{{ emptyState().icon }}</span>
-        </span>
-        <p class="u-empty-title">{{ emptyState().title }}</p>
-        <p class="u-empty-sub">{{ emptyState().message }}</p>
+      <app-empty-state
+        class="empty-state"
+        [level]="2"
+        [icon]="emptyState().icon"
+        [heading]="emptyState().title"
+      >
+        {{ emptyState().message }}
         @if (emptyState().action === 'clear-search') {
-          <button type="button" class="u-btn" (click)="activity.searchQuery.set('')">
-            Clear search
+          <button appButton emptyStateAction (click)="activity.setSearchQuery('')">
+            Clear filter
           </button>
         }
-      </div>
+      </app-empty-state>
     } @else {
       <p class="timeline-summary" aria-live="polite">{{ summary() }}</p>
       <div class="timeline">
-        @for (group of activity.groupedByDay(); track group.date) {
+        @for (day of days(); track day.date) {
           <section
             #daySection
             class="day-group"
-            [attr.data-day]="group.date"
-            [attr.aria-label]="formatDate(group.date)"
+            [attr.data-day]="day.date"
+            [style.--day-entries]="day.rows.length"
+            [attr.aria-label]="day.label"
           >
             <header class="day-header">
               <h3 class="day-label">
-                @if (relativeDay(group.date); as relative) {
-                  <span class="day-relative">{{ relative }}</span>
+                @if (day.relative) {
+                  <span class="day-relative">{{ day.relative }}</span>
                 }
-                {{ formatDate(group.date) }}
+                {{ day.label }}
               </h3>
-              <span class="day-count">
-                {{ group.entries.length }} {{ group.entries.length === 1 ? 'event' : 'events' }}
-              </span>
+              <span class="day-count">{{ day.count }}</span>
             </header>
-            <ol class="entries">
-              @for (entry of group.entries; track entry.trackKey) {
+            <ol
+              class="entries"
+              [appAutoAnimate]="attached() && nearDays().has(day.date)"
+              [appAutoAnimatePauseOn]="activity.searchQuery()"
+            >
+              @for (row of day.rows; track row.entry.trackKey) {
                 <li>
                   <button
                     type="button"
                     class="entry"
-                    (click)="selectEntry(entry)"
-                    [attr.aria-label]="entryAriaLabel(entry)"
+                    (click)="selectEntry(row.entry)"
+                    [attr.aria-label]="row.ariaLabel"
                   >
-                    <time class="entry-time" [attr.datetime]="entry.timestamp">{{
-                      entry.timeLabel
+                    <time class="entry-time" [attr.datetime]="row.entry.timestamp">{{
+                      row.entry.timeLabel
                     }}</time>
                     <span class="entry-rail" aria-hidden="true">
-                      <span class="entry-dot" [class]="'accent-' + entry.styleKey"></span>
+                      <span class="entry-dot" [attr.data-src]="row.entry.styleKey"></span>
                     </span>
                     <span class="entry-body">
-                      <span class="entry-title">{{ entry.title }}</span>
+                      <span class="entry-title">{{ row.entry.title }}</span>
                       <span class="entry-meta">
-                        <span class="badge" [class]="entry.badge.badgeClass">
-                          <app-provider-icon
-                            class="badge-icon"
-                            [source]="entry.badge.source"
-                            [fallbackIcon]="entry.badge.icon"
-                          />
-                          <span class="badge-label">{{ entry.badge.label }}</span>
+                        <!-- What app-source-badge draws, without its components: one per row. -->
+                        <span class="badge" [attr.data-src]="row.entry.badge.source">
+                          @if (row.logoUrl) {
+                            <img class="icon" [src]="row.logoUrl" alt="" aria-hidden="true" />
+                          } @else {
+                            <span class="icon u-glyph" aria-hidden="true" translate="no">{{
+                              row.entry.badge.icon
+                            }}</span>
+                          }
+                          <span class="label">{{ row.entry.badge.label }}</span>
+                          @if (row.entry.badge.split; as split) {
+                            <span class="split" [attr.data-src]="split.source">{{
+                              split.label
+                            }}</span>
+                          }
                         </span>
-                        @if (entry.meta) {
-                          <span class="entry-meta-text">{{ entry.meta }}</span>
+                        @if (row.busy) {
+                          <span class="busy-tag" [class]="row.busy.className">{{
+                            row.busy.label
+                          }}</span>
+                        }
+                        @if (row.entry.joinUrl) {
+                          <span
+                            class="u-glyph online-mark"
+                            title="Online meeting"
+                            aria-hidden="true"
+                            translate="no"
+                            >videocam</span
+                          >
+                        }
+                        @if (row.entry.meta) {
+                          <span class="entry-meta-text">{{ row.entry.meta }}</span>
                         }
                       </span>
                     </span>
-                    <span class="material-icons entry-chevron" aria-hidden="true"
+                    <span class="u-glyph entry-chevron" aria-hidden="true" translate="no"
                       >chevron_right</span
                     >
                   </button>

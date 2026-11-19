@@ -1,19 +1,24 @@
 import { Service, computed, inject } from '@angular/core'
 import type {
   AddConnectionRequestDto,
+  AddConnectionResponseDto,
   ConnectionId,
+  OutputFormat,
   ProviderConfigSaveRequestDto,
   ProviderConfigSaveResponseDto,
   ProviderConfigSnapshotDto,
 } from '../generated/activity'
-import type { ConnectionKey } from '../providers/connection'
+import type { SettingsSelection } from '../components/settings-dialog/settings-dialog.types'
+import type { ConnectionKey, EntryKey } from '../providers/connection'
 import type { DayGroup } from '../models/day-group'
 import type { EntryUiAdapter } from '../providers/types'
 import { ActivityDataService } from './activity-data.service'
+import { extractBackendErrorMessage } from './backend/error-message'
 import { ActivityExportService } from './activity-export.service'
 import { ActivityViewStateService } from './activity-view-state.service'
 import { ProviderConfigFacade } from './provider-config-facade.service'
 import type { ViewMode } from './types'
+import { localDayRange } from '../utils/local-day'
 
 @Service()
 export class ActivityService {
@@ -26,6 +31,7 @@ export class ActivityService {
   readonly allEntryAdapters = this.data.allEntryAdapters
   readonly providerInfo = this.data.providerInfo
   readonly providers = this.data.providers
+  readonly providersLoaded = this.data.providersLoaded
   readonly unusableProviders = this.data.unusableProviders
   readonly hasNoSources = this.data.hasNoSources
   readonly summary = this.data.summary
@@ -41,30 +47,60 @@ export class ActivityService {
   readonly activeConnections = this.viewState.activeConnections
   readonly currentView = this.viewState.currentView
   readonly selectedDay = this.viewState.selectedDay
-  readonly selectedEntry = this.viewState.selectedEntry
-  readonly selectedEntries = this.viewState.selectedEntries
+  readonly openEventKey = this.viewState.openEventKey
+  readonly openGroupKeys = this.viewState.openGroupKeys
   readonly hourHeight = this.viewState.hourHeight
   readonly weekDays = this.viewState.weekDays
+  readonly settings = this.viewState.settings
   readonly workWeekDays = this.viewState.workWeekDays
 
+  /** Every entry by its `trackKey`, for the details the URL names. */
+  private readonly entryByKey = computed(
+    () => new Map(this.allEntryAdapters().map(entry => [entry.trackKey, entry]))
+  )
+  /** The event whose details are open, once its entry is loaded. */
+  readonly selectedEntry = computed<EntryUiAdapter | null>(() => {
+    const key = this.openEventKey()
+    return key === null ? null : (this.entryByKey().get(key) ?? null)
+  })
+  /** The listed group's events that are loaded; null without a group. */
+  readonly selectedEntries = computed<readonly EntryUiAdapter[] | null>(() => {
+    const keys = this.openGroupKeys()
+    if (keys.length === 0) return null
+    const byKey = this.entryByKey()
+    return keys.flatMap(key => byKey.get(key) ?? [])
+  })
+
+  /** Entries of the connections the source filter shows. */
+  private readonly shownEntries = computed(() => {
+    const active = this.activeConnections()
+    return this.allEntryAdapters().filter(entry => entry.connections.some(key => active.has(key)))
+  })
+
   readonly filteredEntries = computed(() => {
-    const entries = this.allEntryAdapters()
     const from = this.dateFrom()
     const to = this.dateTo()
     const query = this.currentView() === 'list' ? this.searchQuery().toLowerCase() : ''
-    const active = this.activeConnections()
 
-    return entries.filter(entry => {
+    return this.shownEntries().filter(entry => {
       const day = entry.dayKey
       if (from && day < from) return false
       if (to && day > to) return false
-      if (!entry.connections.some(key => active.has(key))) return false
-      if (query) {
-        const haystack = entry.searchTerms.join(' ').toLowerCase()
-        if (!haystack.includes(query)) return false
-      }
+      if (query && !entry.searchText.includes(query)) return false
       return true
     })
+  })
+
+  /**
+   * The entries the calendar views draw: like `filteredEntries`, but a meeting that starts before
+   * the range and runs into it stays, for its blocks and meeting time on the days it covers.
+   */
+  readonly calendarEntries = computed(() => {
+    const from = this.dateFrom()
+    const to = this.dateTo()
+    return this.shownEntries().filter(
+      entry => (!from || entry.lastDayKey >= from) && (!to || entry.dayKey <= to)
+    )
   })
 
   readonly groupedByDay = computed<DayGroup<EntryUiAdapter>[]>(() => {
@@ -106,8 +142,66 @@ export class ActivityService {
     this.viewState.goToToday()
   }
 
-  setView(view: ViewMode): void {
-    this.viewState.setView(view)
+  openEvent(key: EntryKey): Promise<boolean> {
+    return this.viewState.openEvent(key)
+  }
+
+  openGroup(keys: readonly EntryKey[]): Promise<boolean> {
+    return this.viewState.openGroup(keys)
+  }
+
+  showInGroup(key: EntryKey): Promise<boolean> {
+    return this.viewState.showInGroup(key)
+  }
+
+  stepInGroup(key: EntryKey): Promise<boolean> {
+    return this.viewState.stepInGroup(key)
+  }
+
+  backToGroupList(): Promise<boolean> {
+    return this.viewState.backToGroupList()
+  }
+
+  closeDetail(): Promise<boolean> {
+    return this.viewState.closeDetail()
+  }
+
+  setView(view: ViewMode): Promise<boolean> {
+    return this.viewState.setView(view)
+  }
+
+  openDay(day: string): Promise<boolean> {
+    return this.viewState.openDay(day)
+  }
+
+  setSearchQuery(query: string): void {
+    this.viewState.setSearchQuery(query)
+  }
+
+  setDateFrom(day: string): Promise<boolean> {
+    return this.viewState.setDateFrom(day)
+  }
+
+  setDateTo(day: string): Promise<boolean> {
+    return this.viewState.setDateTo(day)
+  }
+
+  /** Moves the open settings to `selection` in place. */
+  showSettings(selection: SettingsSelection): Promise<boolean> {
+    return this.viewState.showSettings(selection)
+  }
+
+  /** Opens `selection` as a page of its own from the settings home. */
+  enterSettings(selection: SettingsSelection): Promise<boolean> {
+    return this.viewState.enterSettings(selection)
+  }
+
+  backToSettingsHome(): Promise<boolean> {
+    return this.viewState.backToSettingsHome()
+  }
+
+  closeSettings(): Promise<boolean> {
+    return this.viewState.closeSettings()
   }
 
   toggleConnection(key: ConnectionKey): void {
@@ -138,28 +232,30 @@ export class ActivityService {
     this.data.dismissCollectionStatus()
   }
 
-  async exportJson(): Promise<void> {
-    this.error.set(null)
-    try {
-      await this.exportService.exportJson(
-        this.meta(),
-        this.filteredEntries(),
-        this.dateFrom(),
-        this.dateTo()
-      )
-    } catch (error) {
-      this.error.set(error instanceof Error ? error.message : 'Export failed: Unknown error')
-    }
+  exportJson(): Promise<void> {
+    return this.exportAs('json')
   }
 
-  async exportMarkdown(): Promise<void> {
+  exportMarkdown(): Promise<void> {
+    return this.exportAs('markdown')
+  }
+
+  /** The entries the list shows, over the chosen local days or else the collected range. */
+  private async exportAs(format: OutputFormat): Promise<void> {
     this.error.set(null)
+    const from = this.dateFrom()
+    const to = this.dateTo()
+    const meta = this.meta()
+    const range = from && to ? localDayRange(from, to) : meta
+    if (!range) {
+      this.error.set('Export failed: nothing has been collected yet')
+      return
+    }
     try {
-      await this.exportService.exportMarkdown(
-        this.dateFrom(),
-        this.dateTo(),
-        this.filteredEntries(),
-        this.groupedByDay()
+      await this.exportService.export(
+        format,
+        this.filteredEntries().map(entry => entry.entry),
+        range
       )
     } catch (error) {
       this.error.set(error instanceof Error ? error.message : 'Export failed: Unknown error')
@@ -176,11 +272,20 @@ export class ActivityService {
     return this.providerConfig.saveProviderConfig(request)
   }
 
-  addConnection(request: AddConnectionRequestDto): Promise<ProviderConfigSaveResponseDto> {
+  addConnection(request: AddConnectionRequestDto): Promise<AddConnectionResponseDto> {
     return this.providerConfig.addConnection(request)
   }
 
   removeConnection(connection: ConnectionId): Promise<ProviderConfigSaveResponseDto> {
     return this.providerConfig.removeConnection(connection)
+  }
+
+  /** Checks a source again and collects it again; a request that fails shows as the error. */
+  async recheckConnection(connection: ConnectionId): Promise<void> {
+    try {
+      await this.data.recheckConnection(connection)
+    } catch (error) {
+      this.error.set(`Checking the source again failed: ${extractBackendErrorMessage(error)}`)
+    }
   }
 }

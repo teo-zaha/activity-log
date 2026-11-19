@@ -1,5 +1,39 @@
 @use './dashboard-shared' as ui;
 
+// ── Source colours ───────────────────────────────────────────────────────────
+// Anything marked `data-src="<source>"` gets that source's colours from the theme as
+// `--badge-bg`, `--badge-fg` and `--badge-accent`, for itself and everything inside it.
+// ICS calendars share Outlook's colours: both are meetings.
+
+$source-colours: (
+  git: git,
+  gitlab: gitlab,
+  jira: jira,
+  outlook: outlook,
+  calendar: outlook,
+  system: system,
+);
+
+@each $source, $theme in $source-colours {
+  [data-src='#{$source}'] {
+    --badge-bg: var(--badge-#{$theme}-bg);
+    --badge-fg: var(--badge-#{$theme}-fg);
+    --badge-accent: var(--badge-#{$theme}-accent);
+  }
+}
+
+// `gitab`: a Git commit that absorbed its GitLab push, drawn in both sources' colours.
+[data-src='gitab'] {
+  --badge-bg: linear-gradient(135deg, var(--badge-git-bg) 50%, var(--badge-gitlab-bg) 50%);
+  --badge-fg: var(--text-primary);
+  --badge-accent: var(--badge-git-accent);
+  --badge-accent-fill: linear-gradient(
+    to bottom,
+    var(--badge-git-accent) 50%,
+    var(--badge-gitlab-accent) 50%
+  );
+}
+
 .u-kicker {
   @include ui.kicker-label;
 }
@@ -34,173 +68,11 @@
   color: var(--text-secondary);
   font-size: 13.5px;
   line-height: 1.5;
+  --icon-size: 18px;
 
-  .material-icons {
-    font-size: 18px;
+  mat-icon {
     color: var(--text-tertiary);
   }
-}
-
-// A status message in the tone of its `data-tone`: info, ok, warn or error. Inline by default;
-// `u-feedback-block` makes it a full-width row, with room for an action at the end.
-
-.u-feedback {
-  display: inline-flex;
-  align-items: flex-start;
-  gap: 8px;
-  max-width: 100%;
-  margin: 0;
-  padding: 7px 10px;
-  border-radius: var(--radius-sm);
-  font-size: 13px;
-  font-weight: 500;
-  line-height: 1.4;
-  @include ui.status-tone($mix: 10%);
-
-  .material-icons {
-    font-size: 17px;
-  }
-}
-
-.u-feedback-text {
-  min-width: 0;
-  overflow-wrap: anywhere;
-}
-
-.u-feedback-block {
-  display: flex;
-  align-items: center;
-
-  .u-feedback-text {
-    flex: 1;
-  }
-}
-
-// ── Empty states ─────────────────────────────────────────────────────────────
-// A dashed panel that explains why there is nothing to show, with an optional action.
-
-.u-empty-state {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 6px;
-  padding: 72px 24px;
-  border: 1px dashed var(--border);
-  border-radius: var(--radius-xl);
-  text-align: center;
-  animation: u-rise 0.3s var(--ease-out);
-
-  .u-btn {
-    margin-top: 12px;
-  }
-}
-
-.u-empty-title {
-  margin: 0;
-  color: var(--text-primary);
-  font-size: 16px;
-  font-weight: 650;
-  overflow-wrap: anywhere;
-}
-
-.u-empty-sub {
-  max-width: 420px;
-  margin: 0;
-  color: var(--text-secondary);
-  font-size: 13.5px;
-  line-height: 1.5;
-}
-
-// ── Buttons ──────────────────────────────────────────────────────────────────
-// Theme-aware buttons shared by the shell, status banners, empty states and settings.
-
-.u-btn {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 6px;
-  height: 36px;
-  padding: 0 14px;
-  border-radius: var(--radius-sm);
-  border: 1px solid var(--border);
-  background: var(--surface);
-  color: var(--text-primary);
-  font:
-    600 13px/1 Inter,
-    sans-serif;
-  white-space: nowrap;
-  cursor: pointer;
-  transition:
-    background-color 0.15s ease,
-    border-color 0.15s ease,
-    color 0.15s ease,
-    box-shadow 0.15s ease,
-    opacity 0.15s ease;
-
-  .material-icons {
-    font-size: 18px;
-  }
-
-  &:hover:not(:disabled) {
-    background: var(--surface-hover);
-    border-color: var(--border-strong);
-  }
-
-  &:focus-visible {
-    @include ui.focus-ring;
-  }
-
-  &:disabled {
-    opacity: 0.55;
-    cursor: not-allowed;
-  }
-}
-
-.u-btn-primary {
-  border-color: transparent;
-  background: var(--btn-primary);
-  color: var(--btn-primary-fg);
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.18),
-    0 1px 2px color-mix(in srgb, var(--btn-primary) 40%, transparent);
-
-  &:hover:not(:disabled) {
-    background: var(--btn-primary-hover);
-    border-color: transparent;
-  }
-
-  &.is-busy:disabled {
-    opacity: 0.85;
-    cursor: progress;
-  }
-}
-
-.u-btn-ghost {
-  border-color: transparent;
-  background: transparent;
-  color: var(--text-secondary);
-
-  &:hover:not(:disabled) {
-    border-color: transparent;
-    color: var(--text-primary);
-  }
-}
-
-// For an action that cannot be undone, such as removing something.
-.u-btn-danger {
-  border-color: transparent;
-  background: var(--status-error-fg);
-  color: #fff;
-
-  &:hover:not(:disabled) {
-    border-color: transparent;
-    background: color-mix(in srgb, var(--status-error-fg) 86%, #000);
-  }
-}
-
-.u-btn-icon {
-  width: 36px;
-  padding: 0;
 }
 
 // ── Skeleton ─────────────────────────────────────────────────────────────────

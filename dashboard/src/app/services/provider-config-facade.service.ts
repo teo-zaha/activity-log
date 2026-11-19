@@ -1,6 +1,7 @@
 import { inject, Service } from '@angular/core'
 import type {
   AddConnectionRequestDto,
+  AddConnectionResponseDto,
   ConnectionId,
   ProviderConfigSaveRequestDto,
   ProviderConfigSaveResponseDto,
@@ -25,7 +26,7 @@ export class ProviderConfigFacade {
   }
 
   /** Adds a connection; the providers list then shows it with its startup check. */
-  addConnection(request: AddConnectionRequestDto): Promise<ProviderConfigSaveResponseDto> {
+  addConnection(request: AddConnectionRequestDto): Promise<AddConnectionResponseDto> {
     return this.changed(this.backend.addConnection(request))
   }
 
@@ -37,9 +38,9 @@ export class ProviderConfigFacade {
    * Shows the sources a settings change answers with, and the collection the backend starts for
    * them: it collects its last range again, so a new source's entries show up by themselves.
    */
-  private async changed(
-    change: Promise<ProviderConfigSaveResponseDto>
-  ): Promise<ProviderConfigSaveResponseDto> {
+  private async changed<Response extends ProviderConfigSaveResponseDto>(
+    change: Promise<Response>
+  ): Promise<Response> {
     const response = await change
     this.data.applyProviders(response.providersResponse.providers, true)
     void this.data.followCollection()

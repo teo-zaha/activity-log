@@ -41,12 +41,36 @@ describe('SearchBarComponent', () => {
     expect(query()).toBe('')
   })
 
+  it('takes a separate accessible name and clear label', async () => {
+    await render(
+      '<app-search-bar placeholder="Filter activity…" label="Filter activity" clearLabel="Clear filter" value="x" />',
+      { imports: [SearchBarComponent] }
+    )
+
+    expect(screen.getByRole('searchbox', { name: 'Filter activity' })).toBeTruthy()
+    expect(screen.getByRole('button', { name: 'Clear filter' })).toBeTruthy()
+  })
+
   it('focuses on "/" without typing it', async () => {
     const query = await setup('')
 
     await userEvent.keyboard('/')
 
     expect(document.activeElement).toBe(screen.getByRole('searchbox'))
+    expect(query()).toBe('')
+  })
+
+  it('leaves "/" alone while the field is out of the document', async () => {
+    const query = await setup('')
+    const field = screen.getByRole('searchbox')
+    const parent = field.parentElement!
+    parent.removeChild(field)
+
+    const slash = new KeyboardEvent('keydown', { key: '/', bubbles: true, cancelable: true })
+    document.body.dispatchEvent(slash)
+
+    expect(slash.defaultPrevented).toBe(false)
+    parent.appendChild(field)
     expect(query()).toBe('')
   })
 })

@@ -1,5 +1,12 @@
 import { describe, expect, it } from 'vitest'
-import { calendarEntryKey, layoutEventsWithOverflow } from './calendar-layout'
+import type { BusyStatus } from '../generated/activity'
+import {
+  calendarEntryKey,
+  calendarEventClass,
+  calendarEventLabel,
+  layoutEventsWithOverflow,
+  nowMarker,
+} from './calendar-layout'
 
 interface TestEntry {
   id: string
@@ -58,7 +65,54 @@ describe('calendar layout', () => {
     expect(layout.some(item => item.kind === 'overflow')).toBe(true)
   })
 
-  it('creates deterministic entry keys', () => {
-    expect(calendarEntryKey(entry('1', 0))).toBe('git:2026-05-18T09:01:00Z:Entry 1:')
+  it('keys an entry by the id the backend gave it', () => {
+    expect(calendarEntryKey({ trackKey: 'git/laptop/abc123' })).toBe('git/laptop/abc123')
+  })
+})
+
+describe('calendarEventClass', () => {
+  it('adds a marker for tentative and free meetings only', () => {
+    const cls = (busyStatus: BusyStatus | null): string =>
+      calendarEventClass('cal-event', { busyStatus })
+
+    expect(cls('tentative')).toBe('cal-event is-tentative')
+    expect(cls('free')).toBe('cal-event is-free')
+    expect(cls('busy')).toBe('cal-event')
+    expect(cls('out_of_office')).toBe('cal-event')
+    expect(cls(null)).toBe('cal-event')
+  })
+})
+
+describe('nowMarker', () => {
+  it('places the line by local wall-clock time', () => {
+    const marker = nowMarker(new Date(2026, 10, 17, 14, 30).getTime(), 64)
+
+    expect(marker).toEqual({ top: 14.5 * 64, label: '14:30', coveredHour: null })
+  })
+
+  it('hides the hour label the time label would overlap, on and around the full hour', () => {
+    const covered = (hours: number, minutes: number, hourHeight = 64): number | null =>
+      nowMarker(new Date(2026, 10, 17, hours, minutes).getTime(), hourHeight).coveredHour
+
+    expect(covered(14, 0)).toBe(14)
+    expect(covered(14, 20)).toBe(14)
+    expect(covered(13, 58)).toBe(14)
+    expect(covered(13, 50)).toBeNull()
+    expect(covered(14, 30)).toBeNull()
+    // Zoomed out, the next hour's label is a few minutes away.
+    expect(covered(14, 52, 32)).toBe(15)
+    expect(covered(14, 30, 32)).toBe(14)
+  })
+})
+
+describe('calendarEventLabel', () => {
+  it('names the status of tentative and free meetings', () => {
+    const label = (busyStatus: BusyStatus | null): string =>
+      calendarEventLabel({ title: 'Sync', busyStatus })
+
+    expect(label('tentative')).toBe('Open event: Sync (tentative)')
+    expect(label('free')).toBe('Open event: Sync (free)')
+    expect(label('busy')).toBe('Open event: Sync')
+    expect(label(null)).toBe('Open event: Sync')
   })
 })

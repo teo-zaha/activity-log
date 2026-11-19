@@ -1,4 +1,4 @@
-@if (activity.selectedEntry() || activity.selectedEntries()) {
+@if (isOpen()) {
   <button
     type="button"
     class="backdrop"
@@ -8,59 +8,122 @@
   ></button>
 
   <aside
+    #flyout
     class="flyout"
+    appAutoAnimate
     role="dialog"
     aria-modal="true"
     [attr.aria-labelledby]="
-      activity.selectedEntry() ? 'event-detail-title' : 'event-detail-overflow-title'
+      detail() ? 'event-detail-title' : pending() ? null : 'event-detail-list-title'
     "
+    [attr.aria-label]="
+      detail()
+        ? null
+        : pending() === 'loading'
+          ? 'Loading the event'
+          : pending()
+            ? 'Event not found'
+            : null
+    "
+    tabindex="-1"
     cdkTrapFocus
     [cdkTrapFocusAutoCapture]="true"
-    (keydown.escape)="close()"
+    (keydown.arrowup)="onArrow($event, -1)"
+    (keydown.arrowdown)="onArrow($event, 1)"
   >
-    <span class="grabber" aria-hidden="true"></span>
+    @if (detail(); as entry) {
+      @let entries = group();
+      @let index = openIndex();
+      @let inGroup = entries !== null && index !== null;
+      @let pageBack = isPhone() && !inGroup;
+      <!-- A single event needs only share and close, floated beside its badges. -->
+      <app-page-header
+        class="flyout-header"
+        [class.is-bare]="!entries"
+        [backLabel]="pageBack ? 'Close event details' : null"
+        [closeLabel]="pageBack ? null : 'Close event details'"
+        (goBack)="close()"
+        (dismiss)="close()"
+      >
+        @if (entries && index !== null) {
+          <button
+            appButton
+            variant="ghost"
+            size="sm"
+            icon="arrow_back"
+            class="flyout-back"
+            (click)="backToList()"
+          >
+            <span class="flyout-back-label">{{ entries.length }} overlapping events</span>
+          </button>
+        }
+        @if (entries && index !== null) {
+          <div pageAction class="flyout-stepper" role="group" aria-label="Overlapping events">
+            <span class="flyout-position" role="status">
+              {{ index + 1 }} of {{ entries.length
+              }}<span class="u-sr-only">: {{ entry.title }}</span>
+            </span>
+            <button
+              appIconButton
+              size="sm"
+              icon="keyboard_arrow_up"
+              label="Previous event"
+              [attr.aria-disabled]="index === 0"
+              (click)="step(-1)"
+            ></button>
+            <button
+              appIconButton
+              size="sm"
+              icon="keyboard_arrow_down"
+              label="Next event"
+              [attr.aria-disabled]="index === entries.length - 1"
+              (click)="step(1)"
+            ></button>
+          </div>
+        }
+        <button
+          pageAction
+          appIconButton
+          icon="share"
+          label="Share link to this event"
+          (click)="shareEntry(entry)"
+        ></button>
+      </app-page-header>
 
-    @if (activity.selectedEntry(); as entry) {
-      <div class="flyout-header">
+      <div class="flyout-body" #body>
         <div class="flyout-badges">
           @for (badge of entry.badges; track badge.source) {
-            <span class="flyout-badge" [class]="badge.badgeClass">
-              <app-provider-icon
-                class="flyout-badge-icon"
-                [source]="badge.source"
-                [fallbackIcon]="badge.icon"
-              />
-              {{ badge.label }}
-            </span>
+            <app-source-badge [source]="badge.source" [label]="badge.label" [icon]="badge.icon" />
           }
         </div>
-        <button
-          type="button"
-          class="flyout-close"
-          (click)="close()"
-          aria-label="Close event details"
-        >
-          <span class="material-icons" aria-hidden="true">close</span>
-        </button>
-      </div>
-
-      <div class="flyout-body">
-        <h2 id="event-detail-title" class="flyout-title">{{ entry.title }}</h2>
+        <h2 id="event-detail-title" class="flyout-title" tabindex="-1" #detailTitle>
+          {{ entry.title }}
+        </h2>
         <p class="flyout-time">
-          <span class="material-icons" aria-hidden="true">schedule</span>
+          <mat-icon>schedule</mat-icon>
           <time [attr.datetime]="entry.timestamp">{{ formatDateTime(entry.timestamp) }}</time>
         </p>
+        @if (entry.joinUrl; as joinUrl) {
+          <a
+            appButton
+            variant="primary"
+            icon="videocam"
+            class="flyout-join"
+            [appExternalLink]="joinUrl"
+          >
+            Join meeting
+          </a>
+        }
 
         @if (entry.detailSections.length) {
           @for (section of entry.detailSections; track section.source) {
             <section class="flyout-section">
-              <h3 class="flyout-section-title flyout-badge" [class]="section.badgeClass">
-                <app-provider-icon
-                  class="flyout-badge-icon"
+              <h3 class="flyout-section-title">
+                <app-source-badge
                   [source]="section.source"
-                  [fallbackIcon]="section.icon"
+                  [label]="section.title"
+                  [icon]="section.icon"
                 />
-                {{ section.title }}
               </h3>
               <dl class="flyout-fields">
                 @for (field of section.fields; track field.label) {
@@ -82,71 +145,100 @@
             }
           </dl>
         }
-      </div>
-    }
 
-    @if (activity.selectedEntries(); as entries) {
-      <div class="flyout-header">
-        <h2 id="event-detail-overflow-title" class="flyout-overflow-count">
-          {{ entries.length }} overlapping events
-        </h2>
-        <button
-          type="button"
-          class="flyout-close"
-          (click)="close()"
-          aria-label="Close event details"
-        >
-          <span class="material-icons" aria-hidden="true">close</span>
-        </button>
-      </div>
-
-      <div class="flyout-body">
-        @for (entry of entries; track entry.trackKey) {
-          <section class="flyout-section">
-            <div class="flyout-section-header">
-              <span class="flyout-badge" [class]="entry.badge.badgeClass">
-                <app-provider-icon
-                  class="flyout-badge-icon"
-                  [source]="entry.badge.source"
-                  [fallbackIcon]="entry.badge.icon"
-                />
-                {{ entry.badge.label }}
-              </span>
-              <h3 class="flyout-section-entry-title">{{ entry.title }}</h3>
-            </div>
-            @if (entry.detailSections.length) {
-              @for (section of entry.detailSections; track section.source) {
-                <div class="flyout-subsection">
-                  <span class="flyout-section-title flyout-badge" [class]="section.badgeClass">
-                    <app-provider-icon
-                      class="flyout-badge-icon"
-                      [source]="section.source"
-                      [fallbackIcon]="section.icon"
-                    />
-                    {{ section.title }}
-                  </span>
-                  <dl class="flyout-fields">
-                    @for (field of section.fields; track field.label) {
-                      <div class="field-row">
-                        <dt class="field-label">{{ field.label }}</dt>
-                        <dd class="field-value">{{ field.value }}</dd>
-                      </div>
-                    }
-                  </dl>
-                </div>
-              }
-            } @else {
-              <dl class="flyout-fields">
-                @for (field of entry.detailFields; track field.label) {
-                  <div class="field-row">
-                    <dt class="field-label">{{ field.label }}</dt>
-                    <dd class="field-value">{{ field.value }}</dd>
-                  </div>
-                }
-              </dl>
-            }
+        @if (entry.descriptionBlocks.length) {
+          <section class="flyout-description" aria-labelledby="event-detail-description-title">
+            <h3 id="event-detail-description-title" class="flyout-description-title">
+              Description
+            </h3>
+            <app-meeting-description [blocks]="entry.descriptionBlocks" />
           </section>
         }
+      </div>
+    } @else if (pending(); as state) {
+      @let listed = !!group()?.length;
+      <app-page-header
+        class="flyout-header"
+        [backLabel]="isPhone() && !listed ? 'Close event details' : null"
+        [closeLabel]="isPhone() && !listed ? null : 'Close event details'"
+        (goBack)="close()"
+        (dismiss)="close()"
+      >
+        @if (listed) {
+          <button
+            appButton
+            variant="ghost"
+            size="sm"
+            icon="arrow_back"
+            class="flyout-back"
+            (click)="backToList()"
+          >
+            <span class="flyout-back-label">{{ group()?.length }} overlapping events</span>
+          </button>
+        }
+      </app-page-header>
+      <div class="flyout-body" role="status">
+        @if (state === 'loading') {
+          <span class="u-sr-only">Loading the event…</span>
+          <span class="u-skeleton status-line is-title"></span>
+          <span class="u-skeleton status-line"></span>
+          <span class="u-skeleton status-line is-short"></span>
+        } @else {
+          <app-empty-state
+            appearance="plain"
+            icon="event_busy"
+            [level]="2"
+            heading="This event is not in the collected range"
+          >
+            It may lie outside the dates collected, or its source no longer reports it.
+          </app-empty-state>
+        }
+      </div>
+    } @else if (group(); as entries) {
+      <app-page-header
+        class="flyout-header"
+        [backLabel]="isPhone() ? 'Close event details' : null"
+        [closeLabel]="isPhone() ? null : 'Close event details'"
+        (goBack)="close()"
+        (dismiss)="close()"
+      >
+        <h2 id="event-detail-list-title" class="flyout-list-title">
+          {{ entries.length }} overlapping events
+        </h2>
+      </app-page-header>
+
+      <div class="flyout-body is-list">
+        <ol class="overlap-list">
+          @for (entry of entries; track entry.trackKey) {
+            <li>
+              <button type="button" class="overlap-row" #row (click)="open($index)">
+                <time class="overlap-time" [attr.datetime]="entry.timestamp">{{
+                  entry.timeLabel
+                }}</time>
+                <span class="overlap-body">
+                  <span class="overlap-title">{{ entry.title }}</span>
+                  <span class="overlap-meta">
+                    <app-source-badge
+                      size="sm"
+                      [source]="entry.badge.source"
+                      [label]="entry.badge.label"
+                      [icon]="entry.badge.icon"
+                      [split]="entry.badge.split"
+                    />
+                    @if (entry.joinUrl) {
+                      <mat-icon class="overlap-online" title="Online meeting">videocam</mat-icon>
+                      <span class="u-sr-only">Online meeting</span>
+                    }
+                    @if (entry.meta) {
+                      <span class="overlap-meta-text">{{ entry.meta }}</span>
+                    }
+                  </span>
+                </span>
+                <mat-icon class="overlap-chevron">chevron_right</mat-icon>
+              </button>
+            </li>
+          }
+        </ol>
       </div>
     }
   </aside>

@@ -1,31 +1,76 @@
 <div class="week-view">
   <!-- Navigation -->
   <div class="cal-nav">
-    <h2 class="cal-title">{{ formatWeekRange(days()) }}</h2>
-    <div class="nav-controls">
-      <button class="nav-btn" (click)="activity.navigateWeek(-1)" aria-label="Previous week">
-        <span class="material-icons" aria-hidden="true">chevron_left</span>
-      </button>
-      <button class="nav-btn today-btn" (click)="activity.goToToday()">Today</button>
-      <button class="nav-btn" (click)="activity.navigateWeek(1)" aria-label="Next week">
-        <span class="material-icons" aria-hidden="true">chevron_right</span>
-      </button>
+    <div class="cal-heading">
+      <h2 class="cal-title">{{ formatWeekRange(days()) }}</h2>
+      @if (weekMeetingTimeParts(); as parts) {
+        <p
+          class="cal-meeting-time"
+          title="Meeting time"
+          [attr.aria-label]="'Meetings this week: ' + weekMeetingTimeLabel()"
+        >
+          <mat-icon>groups</mat-icon>
+          @if (parts.busy) {
+            <span class="mt-busy">{{ parts.busy }}</span>
+          }
+          @if (parts.tentative) {
+            <span class="mt-tentative"
+              >{{ parts.tentative }}<span class="mt-word"> tentative</span></span
+            >
+          }
+        </p>
+      }
     </div>
-    <div class="nav-controls zoom-controls">
-      <button class="nav-btn" (click)="zoomOut()" aria-label="Zoom out">
-        <span class="material-icons" aria-hidden="true">remove</span>
+    <div class="nav-controls">
+      <button
+        appIconButton
+        size="sm"
+        icon="chevron_left"
+        label="Previous week"
+        (click)="activity.navigateWeek(-1)"
+      ></button>
+      <button appButton variant="ghost" size="sm" class="today-btn" (click)="activity.goToToday()">
+        Today
       </button>
       <button
-        class="nav-btn zoom-reset-btn"
-        (click)="activity.hourHeight.set(64)"
-        aria-label="Reset zoom"
-        [class.at-default]="activity.hourHeight() === 64"
+        appIconButton
+        size="sm"
+        icon="chevron_right"
+        label="Next week"
+        (click)="activity.navigateWeek(1)"
+      ></button>
+    </div>
+    <div class="nav-controls zoom-controls">
+      <button
+        appIconButton
+        size="sm"
+        icon="remove"
+        label="Zoom out"
+        (click)="zoom.zoomOut()"
+        [disabled]="!zoom.canZoomOut()"
+        title="Zoom out (Ctrl + scroll or pinch)"
+      ></button>
+      <button
+        appButton
+        variant="ghost"
+        size="sm"
+        class="zoom-reset-btn"
+        (click)="zoom.reset()"
+        [disabled]="zoom.atDefault()"
+        [attr.aria-label]="'Zoom ' + zoom.percent() + ', reset to 100%'"
+        [title]="zoom.atDefault() ? 'Default zoom' : 'Reset zoom to 100%'"
       >
-        1h
+        {{ zoom.percent() }}
       </button>
-      <button class="nav-btn" (click)="zoomIn()" aria-label="Zoom in">
-        <span class="material-icons" aria-hidden="true">add</span>
-      </button>
+      <button
+        appIconButton
+        size="sm"
+        icon="add"
+        label="Zoom in"
+        (click)="zoom.zoomIn()"
+        [disabled]="!zoom.canZoomIn()"
+        title="Zoom in (Ctrl + scroll or pinch)"
+      ></button>
     </div>
   </div>
 
@@ -35,7 +80,8 @@
     <div class="cal-sticky-header">
       <div class="week-col-headers">
         <div class="time-gutter"></div>
-        @for (day of days(); track day) {
+        <!-- A column stays the same weekday across weeks, so moving a week updates it in place. -->
+        @for (day of days(); track $index) {
           <button
             type="button"
             class="day-col-hdr"
@@ -46,6 +92,18 @@
           >
             <span class="day-weekday">{{ formatDayCol(day).weekday }}</span>
             <span class="day-date">{{ formatDayCol(day).date }}</span>
+            @if (dayMeetingTimeParts(day); as parts) {
+              <span class="day-meeting-time" aria-hidden="true">
+                @if (parts.busy) {
+                  <span class="mt-busy">{{ parts.busy }}</span>
+                }
+                @if (parts.tentative) {
+                  <span class="mt-tentative"
+                    >{{ parts.tentative }}<span class="mt-word"> tentative</span></span
+                  >
+                }
+              </span>
+            }
           </button>
         }
       </div>
@@ -58,7 +116,8 @@
             @for (bar of positionedMultiDayLayout(); track bar.key) {
               <button
                 type="button"
-                class="cal-allday-bar"
+                [class]="eventClass('cal-allday-bar', bar.entry)"
+                [attr.data-src]="bar.entry.styleKey"
                 [style.left]="bar.left"
                 [style.width]="bar.width"
                 [style.top.px]="bar.top"
@@ -66,7 +125,7 @@
                 (click)="selectEntry(bar.entry)"
                 [attr.aria-label]="eventAriaLabel(bar.entry)"
               >
-                <span class="material-icons cal-event-icon" aria-hidden="true">event</span>
+                <mat-icon class="cal-event-icon">event</mat-icon>
                 <span class="cal-event-title">{{ bar.entry.title }}</span>
               </button>
             }
@@ -79,7 +138,7 @@
       <div class="u-floating-hint" role="status"><span>No activity in this week</span></div>
     }
 
-    <div class="week-grid" [style.height.px]="gridHeight()">
+    <div class="week-grid" #gridEl [style.height.px]="gridHeight()">
       <!-- Hour lines -->
       @for (hour of hours; track hour) {
         <div
@@ -87,19 +146,27 @@
           [style.top.px]="hour * activity.hourHeight()"
           [style.height.px]="activity.hourHeight()"
         >
-          <span class="hour-label">{{ formatHour(hour) }}</span>
+          <span class="hour-label" [class.is-covered]="nowLine()?.coveredHour === hour">{{
+            formatHour(hour)
+          }}</span>
           <div class="hour-line"></div>
         </div>
       }
 
       <!-- Day columns -->
       <div class="week-body">
-        @for (day of days(); track day) {
+        @if (nowLine(); as now) {
+          <span class="now-label" [style.top.px]="now.top" aria-hidden="true">{{ now.label }}</span>
+        }
+        @for (day of days(); track $index) {
           <div
             class="day-col"
             [class.is-today]="isToday(day)"
             [class.has-allday]="dayHasMultiDayEvent(day)"
           >
+            @if (isToday(day) && nowLine(); as now) {
+              <div class="now-line" [style.top.px]="now.top" aria-hidden="true"></div>
+            }
             @for (item of getLayoutForDay(day); track item.key) {
               @if (item.kind === 'overflow') {
                 <button
@@ -113,13 +180,14 @@
                   (click)="selectOverflow(item.entries)"
                   [attr.aria-label]="overflowAriaLabel(item.entries)"
                 >
-                  <span class="material-icons cal-event-icon" aria-hidden="true">more_horiz</span>
+                  <mat-icon class="cal-event-icon">more_horiz</mat-icon>
                   <span class="cal-event-title">+{{ item.entries.length }}</span>
                 </button>
               } @else {
                 <button
                   type="button"
-                  [class]="'cal-event cal-event-' + item.entry.styleKey"
+                  [class]="eventClass('cal-event', item.entry)"
+                  [attr.data-src]="item.entry.styleKey"
                   [style.top.px]="item.top"
                   [style.height.px]="item.height"
                   [style.left]="item.style.left"
@@ -128,9 +196,7 @@
                   (click)="selectEntry(item.entry)"
                   [attr.aria-label]="eventAriaLabel(item.entry)"
                 >
-                  <span class="material-icons cal-event-icon" aria-hidden="true">{{
-                    item.entry.entryIcon
-                  }}</span
+                  <mat-icon class="cal-event-icon">{{ item.entry.entryIcon }}</mat-icon
                   ><span class="cal-event-title">{{ item.entry.title }}</span>
                 </button>
               }

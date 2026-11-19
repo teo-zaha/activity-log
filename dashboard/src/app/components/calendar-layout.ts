@@ -1,3 +1,7 @@
+import type { BusyStatus } from '../generated/activity'
+import { busyMarkerOf } from '../providers/utils'
+import { clockTime } from '../utils/local-day'
+
 export interface LayoutItem<T> {
   kind: 'event'
   entry: T
@@ -17,14 +21,12 @@ export interface OverflowItem<T> {
 export type CalendarItem<T> = LayoutItem<T> | OverflowItem<T>
 
 export interface CalendarEntryKeyLike {
-  readonly source: string
-  readonly timestamp: string
-  readonly title: string
-  readonly meta?: string
+  /** `EntryUiAdapter.trackKey`: the backend's id, scoped by source and connection. */
+  readonly trackKey: string
 }
 
 export function calendarEntryKey(entry: CalendarEntryKeyLike): string {
-  return `${entry.source}:${entry.timestamp}:${entry.title}:${entry.meta ?? ''}`
+  return entry.trackKey
 }
 
 /**
@@ -175,4 +177,55 @@ export function layoutEventsWithOverflow<T>(
   }
 
   return result
+}
+
+/** `cal-event is-tentative`: the busy marker; the colours come from `data-src`. */
+export function calendarEventClass(
+  base: string,
+  entry: { readonly busyStatus: BusyStatus | null }
+): string {
+  const marker = busyMarkerOf(entry.busyStatus)
+  return marker ? `${base} is-${marker}` : base
+}
+
+/** `Open event: Sync (tentative)`: the marker's meaning for screen readers too. */
+export function calendarEventLabel(entry: {
+  readonly title: string
+  readonly busyStatus: BusyStatus | null
+}): string {
+  const marker = busyMarkerOf(entry.busyStatus)
+  return `Open event: ${entry.title}${marker ? ` (${marker})` : ''}`
+}
+
+export interface NowMarker {
+  readonly top: number
+  readonly label: string
+  /** The hour whose gutter label the current-time label would overlap, hidden; or null. */
+  readonly coveredHour: number | null
+}
+
+/**
+ * The gutter labels, in px from their slot's or line's top: an hour label takes 4–16 px of its
+ * slot, the current-time label 9 px above to 7 px below the line. 2 px apart is still a clash.
+ */
+const HOUR_LABEL = { top: 4, bottom: 16 } as const
+const NOW_LABEL = { above: 9, below: 7 } as const
+const LABEL_GAP = 2
+
+/** Where the current-time line sits in a grid that starts at local midnight. */
+export function nowMarker(now: number, hourHeight: number): NowMarker {
+  const date = new Date(now)
+  const top = (date.getHours() + date.getMinutes() / 60) * hourHeight
+  const hour = Math.floor(top / hourHeight)
+  // The clash zone around an hour is narrower than the smallest zoom's hour, so at most one hour
+  // label clashes: this one or the next.
+  const coveredHour =
+    [hour, hour + 1].find(candidate => {
+      const slot = candidate * hourHeight
+      return (
+        top - NOW_LABEL.above < slot + HOUR_LABEL.bottom + LABEL_GAP &&
+        top + NOW_LABEL.below > slot + HOUR_LABEL.top - LABEL_GAP
+      )
+    }) ?? null
+  return { top, label: clockTime(date.toISOString()), coveredHour }
 }

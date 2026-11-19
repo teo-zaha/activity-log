@@ -10,6 +10,11 @@ const BRAND_ICONS: Partial<Record<Source, string>> = {
   outlook: 'assets/provider-icons/outlook.svg',
 }
 
+/** The logo of `source`, or null when it shows a Material icon instead. */
+export function sourceLogoUrl(source: Source): string | null {
+  return BRAND_ICONS[source] ?? null
+}
+
 /**
  * A source's logo, or its Material icon when it has none. With `size`, it sits in a rounded box
  * in the source's colours; the box takes the colours of an enclosing `[data-src]` when it has no
@@ -35,7 +40,7 @@ export class ProviderIconComponent {
 
   protected readonly logoUrl = computed(() => {
     const source = this.source()
-    return this.iconUrl() ?? (source ? (BRAND_ICONS[source] ?? null) : null)
+    return this.iconUrl() ?? (source ? sourceLogoUrl(source) : null)
   })
   protected readonly icon = computed(() => {
     const source = this.source()

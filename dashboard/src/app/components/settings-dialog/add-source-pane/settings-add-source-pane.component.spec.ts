@@ -48,9 +48,11 @@ const snapshot = (
 async function setup(
   before: ProviderConfigSnapshotDto,
   after: ProviderConfigSnapshotDto,
-  desktop = true
+  desktop = true,
+  created: ConnectionId | undefined = after.connections.at(-1)?.connection
 ): Promise<{ addConnection: ReturnType<typeof vi.fn>; opened: ReturnType<typeof vi.fn> }> {
   const addConnection = vi.fn().mockResolvedValue({
+    created,
     snapshot: after,
     providersResponse: { currentOs: 'windows', providers: providerInfo },
   })
@@ -81,6 +83,24 @@ describe('SettingsAddSourcePaneComponent', () => {
     await userEvent.click(await screen.findByRole('button', { name: 'GitLab' }))
 
     expect(addConnection).toHaveBeenCalledWith({ source: 'gitlab' })
+    expect(opened).toHaveBeenCalledWith('gitlab/gitlab')
+  })
+
+  it('describes each source as the backend declares it', async () => {
+    await setup(snapshot([]), snapshot([]))
+
+    expect((await screen.findByRole('button', { name: 'GitLab' })).textContent).toContain(
+      'What GitLab collects'
+    )
+  })
+
+  it('opens the connection the backend reports as created', async () => {
+    const work = { source: 'gitlab', name: 'work' } as const
+    const created = { source: 'gitlab', name: 'gitlab' } as const
+    const { opened } = await setup(snapshot([work]), snapshot([created, work]), true, created)
+
+    await userEvent.click(await screen.findByRole('button', { name: 'GitLab' }))
+
     expect(opened).toHaveBeenCalledWith('gitlab/gitlab')
   })
 

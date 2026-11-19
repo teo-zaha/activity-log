@@ -2,8 +2,16 @@
 
 // The parent places the rail; `--day-index-width` sets its width per breakpoint.
 :host {
+  // How far the bump behind the previewed day sticks out left of the rail.
+  --bulge-out: 14px;
+  // The magnified day: its size, and how far it moves left into the bump.
+  --preview-size: 20px;
+  --preview-x: calc(var(--bulge-out) / -2);
+  // The rail under the pointer and the bump that grows out of it: one fill, so they read as one.
+  --rail-fill: color-mix(in srgb, var(--surface-hover) 85%, transparent);
+
   display: block;
-  width: var(--day-index-width, 30px);
+  width: var(--day-index-width, 42px);
   border-radius: 999px;
   outline: none;
   cursor: pointer;
@@ -24,7 +32,7 @@
 :host(.is-scrubbing),
 :host(:focus-visible) {
   &::before {
-    background: color-mix(in srgb, var(--surface-hover) 85%, transparent);
+    background: var(--rail-fill);
   }
 }
 
@@ -45,13 +53,24 @@
   display: grid;
   place-items: center;
   color: var(--text-tertiary);
-  font-size: 8.5px;
+  font-size: 9.5px;
   font-weight: 700;
   letter-spacing: 0.08em;
   text-transform: uppercase;
+  white-space: nowrap;
 
   &:first-child {
     flex-basis: 12px;
+  }
+
+  // `Nov ’25` is wider than a month: tighter, and where it still overflows a narrow rail (at the
+  // window edge on phones) it grows to the left.
+  &.has-year {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    font-size: 8.5px;
+    letter-spacing: 0;
   }
 }
 
@@ -59,17 +78,19 @@
   position: relative;
   flex: 1 1 0;
   min-height: 0;
+  // `MAX_DAY_SLOT`: a short span keeps its rows together at the top.
+  max-height: 24px;
   display: grid;
+  // One track as tall as the row, so a magnified number taller than a tight row stays centred on
+  // it instead of growing the track downward.
+  grid-template-rows: minmax(0, 1fr);
   place-items: center;
 }
 
-// `--f` (0 to 1) magnifies the rows near the pointer; transform only, so nothing reflows.
 .face {
   display: grid;
   place-items: center;
-  transform-origin: 70% 50%;
-  transform: translateX(calc(var(--f, 0) * -7px)) scale(calc(1 + var(--f, 0) * 0.7));
-  transition: transform 0.09s ease-out;
+  transition: transform 0.16s var(--ease-out);
 
   > * {
     grid-area: 1 / 1;
@@ -78,10 +99,12 @@
 
 .num {
   color: var(--text-secondary);
-  font-size: 10.5px;
+  font-size: 12px;
   font-weight: 600;
   font-variant-numeric: tabular-nums;
   line-height: 1;
+  // The previewed day grows by its font size, not by scaling, so the number stays sharp.
+  transition: font-size 0.16s var(--ease-out);
 }
 
 .mark {
@@ -128,6 +151,7 @@
     margin-top: -2px;
     border-radius: 50%;
     background: var(--accent);
+    transition: transform 0.16s var(--ease-out);
   }
 }
 
@@ -145,7 +169,7 @@
 
 // Sparse: numbers on Mondays and today only, until the pointer comes near.
 :host([data-density='sparse']) {
-  .day.has-entries:not(.is-keep, .is-near) {
+  .day.has-entries:not(.is-keep, .is-preview) {
     @include entry-dot;
   }
 
@@ -168,6 +192,12 @@
     transform: none;
   }
 
+  // Taller (as in the layout constants) and top-aligned, so the pill on the newest day stays clear.
+  .month:first-child {
+    flex-basis: 24px;
+    place-items: start center;
+  }
+
   .day.has-entries .mark {
     display: block;
     width: calc(2px + var(--w, 0) * 12px);
@@ -183,6 +213,193 @@
   }
 }
 
+// The day a press would land on grows into the bump that sticks out of the rail for it (`.bulge`);
+// the days around it stay as they are. Not on the active day, which the pill shows, nor on rails
+// of bars.
+:host([data-density='full']),
+:host([data-density='sparse']) {
+  .day.is-preview:not(.is-active) {
+    // Into the bump.
+    .face {
+      transform: translateX(var(--preview-x));
+    }
+
+    // Today's dot moves out with the number, into the bump.
+    &.is-today::after {
+      transform: translateX(calc(4px - var(--bulge-out)));
+    }
+
+    .num {
+      color: var(--text-primary);
+      font-size: var(--preview-size);
+      font-weight: 700;
+    }
+  }
+}
+
+// Behind the previewed day, in the colour the rail takes under the pointer, sticking out of its
+// left edge: the day stands out of the rail.
+// `BULGE_HEIGHT` in the component mirrors the height here.
+.bulge {
+  // The concave corners where the bump meets the rail.
+  --fillet: 6px;
+
+  position: absolute;
+  top: 0;
+  // From the rail's edge outwards, so the translucent fills never overlap.
+  left: calc(3px - var(--bulge-out));
+  width: var(--bulge-out);
+  // Up and down from the day's centre; shorter beside the pill.
+  height: calc(var(--half, 15px) * 2);
+  margin-top: calc(var(--half, 15px) * -1);
+  border-radius: 999px 0 0 999px;
+  background: var(--rail-fill);
+  opacity: 0;
+  pointer-events: none;
+  transform: translateY(var(--y, 0px));
+  transition:
+    opacity 0.12s ease,
+    transform 0.16s var(--ease-out),
+    height 0.16s var(--ease-out),
+    margin-top 0.16s var(--ease-out);
+
+  &::before,
+  &::after {
+    content: '';
+    position: absolute;
+    right: 0;
+    width: var(--fillet);
+    height: var(--fillet);
+  }
+
+  &::before {
+    bottom: 100%;
+    background: radial-gradient(
+      circle at 0 0,
+      transparent var(--fillet),
+      var(--rail-fill) calc(var(--fillet) + 0.5px)
+    );
+  }
+
+  &::after {
+    top: 100%;
+    background: radial-gradient(
+      circle at 0 100%,
+      transparent var(--fillet),
+      var(--rail-fill) calc(var(--fillet) + 0.5px)
+    );
+  }
+}
+
+:host(.is-hovering),
+:host(.is-scrubbing) {
+  .bulge {
+    opacity: 1;
+  }
+}
+
+// The pill shows the active day's number; its own row, magnified, would show around the pill.
+.day.is-active .face {
+  visibility: hidden;
+}
+
+// Months: one even row per month, its name, the year where it changes and a bar for how busy
+// the month was. The pill covers the active month and shows its name.
+.month-row {
+  flex: 1 1 0;
+  min-height: 0;
+  display: grid;
+  place-items: center;
+
+  .face {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 2px;
+    transform-origin: 70% 50%;
+    transition: transform 0.16s var(--ease-out);
+  }
+
+  &.is-active .face {
+    visibility: hidden;
+  }
+
+  &.is-empty .face {
+    opacity: 0.5;
+  }
+}
+
+.month-name {
+  color: var(--text-secondary);
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  line-height: 1;
+  text-transform: uppercase;
+  transition: font-size 0.16s var(--ease-out);
+}
+
+.month-year {
+  color: var(--text-tertiary);
+  font-size: 7.5px;
+  font-weight: 600;
+  line-height: 1;
+}
+
+.month-bar {
+  width: calc(3px + var(--w, 0) * 15px);
+  height: 2px;
+  border-radius: 1px;
+  background: color-mix(in srgb, var(--text-tertiary) 70%, transparent);
+}
+
+.month-row.is-empty .month-bar {
+  display: none;
+}
+
+// Thinner months (`monthDensityFor`): January carries the year (`’25`, or `2025` among
+// quarters); in the quarter and year densities a labelled month shows its label alone and the
+// others shrink to a tick as long as their bar.
+.month-row.is-january .month-name {
+  color: var(--text-primary);
+  letter-spacing: 0;
+}
+
+:host([data-density='quarters']),
+:host([data-density='years']) {
+  .month-row:not(.is-tick) .month-bar {
+    display: none;
+  }
+
+  .month-row.is-tick .month-bar {
+    height: 1px;
+  }
+
+  .month-row.is-january .month-name {
+    font-size: 8px;
+    font-variant-numeric: tabular-nums;
+  }
+}
+
+// Years: the ticks right beside a year would touch its label.
+:host([data-density='years']) {
+  .month-row:has(+ .is-january) .month-bar,
+  .month-row.is-january + .month-row .month-bar {
+    visibility: hidden;
+  }
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .month-row.is-preview:not(.is-active) .face {
+    transform: translateX(-5px);
+  }
+}
+
+.month-row.is-preview:not(.is-active) .month-name {
+  color: var(--text-primary);
+  font-size: 12px;
+}
+
 // The active day: one pill that glides with the scroll position.
 .pill {
   position: absolute;
@@ -190,84 +407,89 @@
   right: 3px;
   display: grid;
   place-items: center;
-  width: calc(var(--day-index-width, 30px) - 6px);
-  height: 18px;
-  margin-top: -9px;
+  width: calc(var(--day-index-width, 42px) - 6px);
+  height: var(--pill-h);
+  margin-top: calc(var(--pill-h) / -2);
   border-radius: 999px;
   background: var(--accent);
-  box-shadow: 0 2px 8px color-mix(in srgb, var(--accent) 35%, transparent);
   color: var(--accent-fg);
-  font-size: 10.5px;
+  // As large as a magnified number, so the active day never looks smaller than those near it.
+  // It keeps this size when the pill gets shorter to make room for the day beside it.
+  font-size: 15px;
+  line-height: 1;
   font-weight: 700;
   font-variant-numeric: tabular-nums;
   pointer-events: none;
   transform: translateY(var(--y, 0px));
-  transition: transform 0.16s var(--ease-out);
+  transition-duration: 0.16s;
+  transition-property: transform, width, height, margin-top, font-size;
+  transition-timing-function: var(--ease-out);
+}
+
+// Hovered, the active day sticks out of the rail like any other day, as the pill itself.
+:host([data-density='full']),
+:host([data-density='sparse']) {
+  .pill.is-held {
+    width: calc(var(--day-index-width, 42px) - 6px + var(--bulge-out));
+    height: 30px;
+    margin-top: -15px;
+    font-size: var(--preview-size);
+  }
+}
+
+.pill.is-month {
+  font-size: 10.5px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
 }
 
 :host(.is-scrubbing) .pill {
   transition: none;
 }
 
-// The day a press would land on (or the active day while keyboard-focused).
-.bubble {
-  position: absolute;
-  top: 0;
-  right: calc(var(--day-index-width, 30px) + 8px);
-  padding: 7px 11px 8px;
-  border-radius: 10px;
-  background: var(--tooltip-bg);
-  box-shadow: 0 8px 24px rgb(0 0 0 / 22%);
-  color: var(--tooltip-fg);
-  white-space: nowrap;
-  pointer-events: none;
-  opacity: 0;
-  transform: translateY(calc(var(--y, 0px) - 50%));
-  transition: opacity 0.12s ease;
+// Months thinner than the pill: a bare marker at the rail's edge, and the month keeps its label.
+.pill.is-bare {
+  right: auto;
+  left: 1px;
+  width: 3px;
+}
 
-  &::after {
-    content: '';
-    position: absolute;
-    top: 50%;
-    right: -4px;
-    width: 8px;
-    height: 8px;
-    margin-top: -4px;
-    border-radius: 1px;
-    background: var(--tooltip-bg);
-    transform: rotate(45deg);
+:host(.has-bare-pill) .month-row.is-active {
+  .face {
+    visibility: visible;
   }
 
-  b {
-    display: block;
-    font-size: 12.5px;
-    font-weight: 650;
-    letter-spacing: -0.005em;
+  .month-name {
+    color: var(--accent);
   }
 
-  span {
-    display: block;
-    margin-top: 2px;
-    font-size: 11px;
-    font-variant-numeric: tabular-nums;
-    opacity: 0.72;
+  .month-bar {
+    background: var(--accent);
   }
 }
 
-:host(.is-hovering),
-:host(.is-scrubbing),
-:host(:focus-visible) {
-  .bubble {
-    opacity: 1;
+// Phone: the rail lies over the list's right edge, on a quiet backing of its own.
+@include ui.down('phone') {
+  // The rail is narrow here, and the finger covers the day it presses: the day shows in the bump
+  // beside the rail, centred on it and no larger than the bump holds.
+  :host {
+    --bulge-out: 26px;
+    --preview-size: 15px;
+    --preview-x: calc(3px - var(--bulge-out) / 2 - var(--day-index-width, 42px) / 2);
+  }
+
+  :host::before {
+    background: color-mix(in srgb, var(--surface) 88%, transparent);
+    box-shadow: 0 0 0 1px color-mix(in srgb, var(--hairline) 70%, transparent);
   }
 }
 
-// Phone: no numbers at rest (month labels, dots and the pill only); pressing shows a larger
-// bubble left of the finger.
+// Phone: no numbers at rest (month labels, dots and the pill only); the days near the finger
+// show theirs.
 @include ui.down('phone') {
   :host([data-density='full']),
   :host([data-density='sparse']) {
-    .day.has-entries:not(.is-near) {
+    .day.has-entries:not(.is-preview) {
       @include entry-dot;
     }
   }
@@ -275,37 +497,28 @@
   .month {
     font-size: 7.5px;
     letter-spacing: 0.04em;
+
+    &.has-year {
+      font-size: 7px;
+      letter-spacing: -0.02em;
+    }
   }
 
+  // Thinner still beside a magnified day (`--pill-h`), as on wider rails; the text keeps its size.
   .pill {
-    height: 16px;
-    margin-top: -8px;
+    height: min(16px, var(--pill-h));
+    margin-top: calc(min(16px, var(--pill-h)) / -2);
     font-size: 9.5px;
-  }
-
-  .bubble {
-    right: calc(var(--day-index-width, 22px) + 14px);
-    padding: 10px 14px;
-    border-radius: 14px;
-
-    b {
-      font-size: 16px;
-    }
-
-    span {
-      font-size: 12.5px;
-    }
   }
 }
 
 @media (prefers-reduced-motion: reduce) {
   .face,
+  .num,
+  .day.is-today::after,
+  .month-name,
   .pill,
-  .bubble {
+  .bulge {
     transition: none;
-  }
-
-  .face {
-    transform: none;
   }
 }

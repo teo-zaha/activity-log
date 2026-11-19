@@ -27,20 +27,17 @@ class GitEntryUiAdapter extends EntryUiAdapter<GitEntry> {
               source: provider.source,
               title: provider.label,
               icon: provider.providerIcon,
-              badgeClass: `badge-${provider.source}`,
               fields: detailFields,
             },
             {
               source: gitlabAdapter.source,
               title: gitlabAdapter.label,
               icon: gitlabAdapter.providerIcon,
-              badgeClass: `badge-${gitlabAdapter.source}`,
               fields: mergedGitlabEntry.detailFields,
             },
           ]
-    const badge = entry.gitlabEvent
-      ? createBadge(provider.source, 'git/lab', 'commit', 'badge-gitab')
-      : createBadge(provider.source, provider.label, 'commit')
+    const badge = createBadge(provider.source, provider.label, 'commit')
+    if (entry.gitlabEvent) badge.split = { source: gitlabAdapter.source, label: 'Lab' }
     const badges = entry.gitlabEvent
       ? [
           createBadge(provider.source, provider.label, provider.providerIcon),
@@ -70,15 +67,6 @@ class GitEntryUiAdapter extends EntryUiAdapter<GitEntry> {
       detailSections,
       styleKey: entry.gitlabEvent ? 'gitab' : provider.source,
     })
-  }
-
-  markdownSummary(): string {
-    const entry = this.entry
-    return `\`${entry.repo}\` ${entry.message}`
-  }
-
-  markdownMeta(timeLabel: string): string {
-    return timeLabel
   }
 }
 

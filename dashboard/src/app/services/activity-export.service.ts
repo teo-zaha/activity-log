@@ -1,67 +1,34 @@
 import { inject, Service } from '@angular/core'
-import type { ActivityLog } from '../generated/activity'
-import type { DayGroup } from '../models/day-group'
-import type { ExportedActivityLog } from '../models/exported-activity-log'
-import type { EntryUiAdapter } from '../providers/types'
+import type { ActivityEntry, OutputFormat } from '../generated/activity'
 import { ActivityBackendClient } from './backend/backend-client'
 import { extractBackendErrorMessage } from './backend/error-message'
-import { longDayLabel } from '../utils/local-day'
 
+/** The range `[start, end)` an export covers, as RFC 3339 instants. */
+export interface ExportRange {
+  readonly start: string
+  readonly end: string
+}
+
+/** Hands the shown entries to the backend, which renders the file in the browser's time zone. */
 @Service()
 export class ActivityExportService {
   private readonly backend = inject(ActivityBackendClient)
 
-  async exportJson(
-    meta: ActivityLog['meta'] | null,
-    entries: readonly EntryUiAdapter[],
-    dateFrom: string,
-    dateTo: string
+  async export(
+    format: OutputFormat,
+    entries: readonly ActivityEntry[],
+    range: ExportRange
   ): Promise<void> {
     try {
-      const payload: ExportedActivityLog = {
-        meta,
-        entries: entries.map(entry => entry.entry),
-      }
       await this.backend.export({
-        content: JSON.stringify(payload, null, 2),
-        fileName: `${this.exportFileNameBase(dateFrom, dateTo)}.json`,
-        format: 'json',
+        format,
+        start: range.start,
+        end: range.end,
+        timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+        entries: [...entries],
       })
     } catch (error) {
       throw new Error(`Export failed: ${extractBackendErrorMessage(error)}`)
     }
-  }
-
-  async exportMarkdown(
-    dateFrom: string,
-    dateTo: string,
-    entries: readonly EntryUiAdapter[],
-    groupedByDay: readonly DayGroup<EntryUiAdapter>[]
-  ): Promise<void> {
-    try {
-      const from = dateFrom || 'all'
-      const to = dateTo || 'all'
-      let markdown = `# Activity Summary - ${from} to ${to}\n\nTotal: ${entries.length} events\n\n`
-
-      for (const { date, entries: dayEntries } of groupedByDay) {
-        markdown += `## ${longDayLabel(date)}\n\n`
-        for (const entry of dayEntries) {
-          markdown += `- **[${entry.source}]** ${entry.markdownSummary()} (${entry.markdownMeta(entry.timeLabel)})\n`
-        }
-        markdown += '\n'
-      }
-
-      await this.backend.export({
-        content: markdown,
-        fileName: `${this.exportFileNameBase(dateFrom, dateTo)}.md`,
-        format: 'markdown',
-      })
-    } catch (error) {
-      throw new Error(`Export failed: ${extractBackendErrorMessage(error)}`)
-    }
-  }
-
-  private exportFileNameBase(dateFrom: string, dateTo: string): string {
-    return `activity-${dateFrom || 'all'}-${dateTo || 'all'}`
   }
 }

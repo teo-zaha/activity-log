@@ -1,8 +1,27 @@
 import { Component, ElementRef, afterNextRender, computed, inject, viewChild } from '@angular/core'
+import { MatIconModule } from '@angular/material/icon'
+import { IconButtonComponent } from '../button/icon-button.component'
+import { ButtonComponent } from '../button/button.component'
 import { ActivityService } from '../../services/activity.service'
 import type { EntryUiAdapter } from '../../providers/types'
-import { calendarEntryKey, layoutEventsWithOverflow } from '../calendar-layout'
-import { dateOfKey, dayKeyOf, todayKey } from '../../utils/local-day'
+import {
+  calendarEntryKey,
+  calendarEventClass,
+  calendarEventLabel,
+  layoutEventsWithOverflow,
+  nowMarker,
+} from '../calendar-layout'
+import { injectMinuteClock } from '../../utils/clock'
+import { dateOfKey, dayKeyOf, keysWithin } from '../../utils/local-day'
+import {
+  type MeetingTime,
+  NO_MEETING_TIME,
+  meetingTimeByDay,
+  meetingTimeLabel,
+  meetingTimeParts,
+  sumMeetingTime,
+} from '../../utils/meeting-time'
+import { injectCalendarZoom } from '../calendar-zoom'
 
 const HOUR_START = 0
 const HOUR_END = 23
@@ -53,6 +72,7 @@ interface PositionedWeekOverflow {
 
 @Component({
   selector: 'app-week-view',
+  imports: [IconButtonComponent, ButtonComponent, MatIconModule],
   templateUrl: './week-view.component.html',
   styleUrl: './week-view.component.scss',
 })
@@ -60,6 +80,10 @@ export class WeekViewComponent {
   protected readonly activity = inject(ActivityService)
 
   private readonly scrollEl = viewChild.required<ElementRef<HTMLElement>>('scrollEl')
+  private readonly gridEl = viewChild.required<ElementRef<HTMLElement>>('gridEl')
+  protected readonly zoom = injectCalendarZoom(this.scrollEl, this.gridEl)
+  private readonly now = injectMinuteClock()
+  private readonly today = computed(() => dayKeyOf(this.now()))
 
   protected readonly hours = Array.from(
     { length: HOUR_END - HOUR_START + 1 },
@@ -98,8 +122,37 @@ export class WeekViewComponent {
   }
 
   protected isToday(dateStr: string): boolean {
-    return dateStr === todayKey()
+    return dateStr === this.today()
   }
+
+  /** The current-time line, while today is one of the shown days. */
+  protected readonly nowLine = computed(() =>
+    this.days().includes(this.today()) ? nowMarker(this.now(), this.activity.hourHeight()) : null
+  )
+
+  /** Only for the collected days: a day outside the range has meetings that were not read. */
+  private readonly meetingTimes = computed(() =>
+    meetingTimeByDay(
+      this.activity.calendarEntries(),
+      keysWithin(this.days(), this.activity.dateFrom(), this.activity.dateTo())
+    )
+  )
+
+  private readonly weekMeetingTime = computed(() => sumMeetingTime(this.meetingTimes().values()))
+
+  protected readonly weekMeetingTimeParts = computed(() => meetingTimeParts(this.weekMeetingTime()))
+
+  protected readonly weekMeetingTimeLabel = computed(() => meetingTimeLabel(this.weekMeetingTime()))
+
+  private meetingTimeOf(day: string): MeetingTime {
+    return this.meetingTimes().get(day) ?? NO_MEETING_TIME
+  }
+
+  protected dayMeetingTimeParts(day: string): ReturnType<typeof meetingTimeParts> {
+    return meetingTimeParts(this.meetingTimeOf(day))
+  }
+
+  protected readonly eventClass = calendarEventClass
 
   protected isSelectedDay(dateStr: string): boolean {
     return dateStr === this.activity.selectedDay()
@@ -113,12 +166,9 @@ export class WeekViewComponent {
 
   // ── Multi-day event support ───────────────────────────────────────────────
 
+  /** A meeting that runs past midnight; one that ends at midnight stays a block. */
   private isMultiDayEvent(e: EntryUiAdapter): boolean {
-    if (e.source !== 'outlook' && e.source !== 'calendar') return false
-    const durationMinutes = e.calendarDurationMinutes
-    if (durationMinutes == null) return false
-    const endMs = new Date(e.timestamp).getTime() + durationMinutes * 60000
-    return dayKeyOf(endMs) > e.dayKey
+    return (e.source === 'outlook' || e.source === 'calendar') && e.lastDayKey > e.dayKey
   }
 
   readonly multiDayLayout = computed<MultiDayBar[]>(() => {
@@ -128,19 +178,15 @@ export class WeekViewComponent {
     const weekEnd = days[days.length - 1]
 
     // Collect multi-day events overlapping this week
-    const events = this.activity.filteredEntries().filter(e => {
-      if (!this.isMultiDayEvent(e)) return false
-      const endMs = new Date(e.timestamp).getTime() + (e.calendarDurationMinutes ?? 0) * 60000
-      return e.dayKey <= weekEnd && dayKeyOf(endMs) > weekStart
-    })
+    const events = this.activity
+      .calendarEntries()
+      .filter(e => this.isMultiDayEvent(e) && e.dayKey <= weekEnd && e.lastDayKey >= weekStart)
 
     // Determine column span for each event (clipped to visible week)
     const bars: Omit<MultiDayBar, 'row'>[] = events.map(ev => {
-      const endMs = new Date(ev.timestamp).getTime() + (ev.calendarDurationMinutes ?? 0) * 60000
-      const endDay = dayKeyOf(endMs)
       const startDay = ev.dayKey
       const clippedStart = startDay < weekStart ? weekStart : startDay
-      const clippedEnd = endDay > weekEnd ? weekEnd : dayKeyOf(endMs - 1)
+      const clippedEnd = ev.lastDayKey > weekEnd ? weekEnd : ev.lastDayKey
       const startCol = days.indexOf(clippedStart)
       const endCol = days.indexOf(clippedEnd)
       return {
@@ -272,26 +318,16 @@ export class WeekViewComponent {
     return 20
   }
 
-  protected zoomOut(): void {
-    this.activity.hourHeight.update(h => Math.max(32, h - 16))
-  }
-  protected zoomIn(): void {
-    this.activity.hourHeight.update(h => Math.min(192, h + 16))
-  }
-
   protected selectDay(dateStr: string): void {
-    this.activity.selectedDay.set(dateStr)
-    this.activity.setView('day')
+    void this.activity.openDay(dateStr)
   }
 
   protected selectEntry(entry: EntryUiAdapter): void {
-    this.activity.selectedEntries.set(null)
-    this.activity.selectedEntry.set(entry)
+    void this.activity.openEvent(entry.trackKey)
   }
 
   protected selectOverflow(entries: EntryUiAdapter[]): void {
-    this.activity.selectedEntry.set(null)
-    this.activity.selectedEntries.set(entries)
+    void this.activity.openGroup(entries.map(entry => entry.trackKey))
   }
 
   protected formatHour(h: number): string {
@@ -299,7 +335,7 @@ export class WeekViewComponent {
   }
 
   protected eventAriaLabel(entry: EntryUiAdapter): string {
-    return `Open event: ${entry.title}`
+    return calendarEventLabel(entry)
   }
 
   protected overflowAriaLabel(entries: readonly EntryUiAdapter[]): string {
@@ -307,6 +343,8 @@ export class WeekViewComponent {
   }
 
   protected dayAriaLabel(day: string): string {
-    return `Open day view for ${this.formatDayCol(day).weekday} ${this.formatDayCol(day).date}`
+    const label = `Open day view for ${this.formatDayCol(day).weekday} ${this.formatDayCol(day).date}`
+    const meetings = meetingTimeLabel(this.meetingTimeOf(day))
+    return meetings ? `${label}, meetings ${meetings}` : label
   }
 }

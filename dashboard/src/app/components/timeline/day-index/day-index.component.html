@@ -1,35 +1,72 @@
+@if (bulge(); as bulge) {
+  <div
+    class="bulge"
+    [style.--y.px]="bulge.y"
+    [style.--half.px]="bulge.half"
+    aria-hidden="true"
+  ></div>
+}
+
 <div class="track" #track aria-hidden="true">
-  @for (item of items(); track item.key) {
-    @if (item.kind === 'month') {
-      <div class="month">{{ item.label }}</div>
-    } @else {
+  <!-- Nothing until the track is measured, see `measured`. -->
+  @if (measured() && showsMonths()) {
+    @for (mark of monthMarks(); track mark.row.key) {
       <div
-        class="day"
-        [class.has-entries]="item.count > 0"
-        [class.is-empty]="item.count === 0"
-        [class.is-weekend]="item.isWeekend"
-        [class.is-today]="item.isToday"
-        [class.is-keep]="item.isMonday || item.isToday"
-        [class.is-near]="(magnification().get(item.key) ?? 0) > 0.45"
-        [style.--f]="magnification().get(item.key) ?? null"
-        [style.--w]="item.weight"
+        class="month-row"
+        [class.is-empty]="mark.row.count === 0"
+        [class.is-tick]="mark.label === null"
+        [class.is-january]="mark.row.key.endsWith('-01')"
+        [class.is-active]="mark.row.key === activeMonth()"
+        [class.is-preview]="mark.row.key === previewMonth()"
+        [style.--w]="mark.row.weight"
       >
         <span class="face">
-          <span class="mark"></span>
-          <span class="num">{{ item.dayOfMonth }}</span>
+          @if (mark.label) {
+            <span class="month-name">{{ mark.label }}</span>
+          }
+          @if (density() === 'months' && mark.row.year) {
+            <span class="month-year">{{ mark.row.year }}</span>
+          }
+          <span class="month-bar"></span>
         </span>
       </div>
+    }
+  } @else if (measured()) {
+    @for (item of items(); track item.key) {
+      @if (item.kind === 'month') {
+        <div class="month" [class.has-year]="item.label.length > 3">{{ item.label }}</div>
+      } @else {
+        <div
+          class="day"
+          [class.has-entries]="item.count > 0"
+          [class.is-empty]="item.count === 0"
+          [class.is-weekend]="item.isWeekend"
+          [class.is-today]="item.isToday"
+          [class.is-active]="item.key === activeDay()"
+          [class.is-preview]="item.key === previewKey()"
+          [class.is-keep]="item.isMonday || item.isToday"
+          [style.--w]="item.weight"
+        >
+          <span class="face">
+            <span class="mark"></span>
+            <span class="num">{{ item.dayOfMonth }}</span>
+          </span>
+        </div>
+      }
     }
   }
 </div>
 
 @if (pill(); as pill) {
-  <div class="pill" [style.--y]="pill.y + 'px'" aria-hidden="true">{{ pill.label }}</div>
-}
-
-@if (bubble(); as bubble) {
-  <div class="bubble" [style.--y]="bubble.y + 'px'" aria-hidden="true">
-    <b>{{ bubble.label }}</b>
-    <span>{{ bubble.count }}</span>
+  <div
+    class="pill"
+    [class.is-month]="showsMonths()"
+    [class.is-bare]="pill.label === null"
+    [class.is-held]="holdsPill()"
+    [style.--y]="pill.y + 'px'"
+    [style.--pill-h]="pill.height + 'px'"
+    aria-hidden="true"
+  >
+    {{ pill.label }}
   </div>
 }

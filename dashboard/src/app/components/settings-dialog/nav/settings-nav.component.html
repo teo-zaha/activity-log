@@ -1,0 +1,68 @@
+<nav class="settings-nav" aria-label="Settings sections">
+  @if (home()) {
+    <app-page-header class="home-header">
+      <h2 class="home-title" tabindex="-1" cdkFocusInitial>Settings</h2>
+    </app-page-header>
+  } @else {
+    <p class="nav-title">Settings</p>
+  }
+
+  <div class="nav-body">
+    <div class="nav-group">
+      @for (section of sections; track section.id) {
+        <button
+          type="button"
+          class="nav-item"
+          [class.active]="!home() && selection() === section.id"
+          [attr.aria-current]="!home() && selection() === section.id ? 'page' : null"
+          (click)="selected.emit(section.id)"
+        >
+          <span class="nav-icon"
+            ><mat-icon>{{ section.icon }}</mat-icon></span
+          >
+          <span class="nav-name">{{ section.label }}</span>
+          @if (home() && section.id === 'general') {
+            <span class="nav-value">{{ themeLabel() }}</span>
+          }
+          <mat-icon class="nav-chevron">chevron_right</mat-icon>
+        </button>
+      }
+    </div>
+
+    <h3 class="nav-group-label">Sources</h3>
+    <div class="nav-group" appAutoAnimate>
+      @for (provider of providers(); track provider.key) {
+        @let id = connectionSelection(provider.key);
+        <button
+          type="button"
+          class="nav-item source-item"
+          [class.active]="!home() && selection() === id"
+          [attr.aria-current]="!home() && selection() === id ? 'page' : null"
+          [attr.data-status]="provider.info.status"
+          (click)="selected.emit(id)"
+          [matTooltip]="provider.tooltip ?? ''"
+          [matTooltipDisabled]="home() || !provider.tooltip"
+          matTooltipPosition="right"
+        >
+          <app-provider-icon [source]="provider.info.connection.source" size="sm" />
+          <span class="nav-copy">
+            <span class="nav-name">{{ provider.label }}</span>
+            <span class="source-status">{{ statusText(provider) }}</span>
+          </span>
+          <app-status-dot [status]="provider.info.status" size="sm" [glow]="false" />
+          <mat-icon class="nav-chevron">chevron_right</mat-icon>
+        </button>
+      }
+      <button
+        type="button"
+        class="nav-item add-item"
+        [class.active]="!home() && selection() === 'add'"
+        [attr.aria-current]="!home() && selection() === 'add' ? 'page' : null"
+        (click)="selected.emit('add')"
+      >
+        <span class="nav-icon"><mat-icon>add</mat-icon></span>
+        <span class="nav-name">Add source</span>
+      </button>
+    </div>
+  </div>
+</nav>

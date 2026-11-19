@@ -1,14 +1,4 @@
-import type { Source, SupportedOs } from '../generated/activity'
-
-/** What a source collects, shown on its tile when adding one. */
-export const SOURCE_DESCRIPTIONS: Readonly<Record<Source, string>> = {
-  git: 'Commits from your repositories',
-  gitlab: 'Merge requests, pushes, comments and reviews',
-  jira: 'Issues assigned to or reported by you',
-  outlook: 'Meetings from the Outlook desktop app',
-  calendar: 'Events from an ICS calendar link or .ics file',
-  system: 'When this computer started and shut down',
-}
+import type { SupportedOs } from '../generated/activity'
 
 /** Sources that cannot be added yet; shown as disabled tiles. */
 export interface UpcomingSource {

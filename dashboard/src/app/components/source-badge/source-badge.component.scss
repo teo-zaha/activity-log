@@ -1,0 +1,17 @@
+@use '../dashboard-shared' as ui;
+
+// Colours come from the `[data-src]` map in `_dashboard-utilities.scss`; the look is shared with
+// the timeline rows, which draw the same badge without this component.
+:host {
+  @include ui.source-badge;
+}
+
+:host([data-size='sm']) {
+  @include ui.source-badge-sm;
+}
+
+@include ui.down('phone') {
+  :host(.icon-only-on-phone) {
+    @include ui.source-badge-icon-only;
+  }
+}

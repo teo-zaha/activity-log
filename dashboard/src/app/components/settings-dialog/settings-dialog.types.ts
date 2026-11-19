@@ -2,7 +2,11 @@ import type { ProviderInfo } from '../../generated/activity'
 import type { ConnectionKey } from '../../providers/connection'
 import type { Theme } from '../../services/theme.service'
 
-export type SettingsSelection = 'general' | 'logs' | 'add' | `connection:${ConnectionKey}`
+/**
+ * A settings page. `home` is the phone's list of sections; wider screens list them beside the
+ * page and show General for it.
+ */
+export type SettingsSelection = 'home' | 'general' | 'logs' | 'add' | `connection:${ConnectionKey}`
 
 export function connectionSelection(key: ConnectionKey): SettingsSelection {
   return `connection:${key}`
@@ -13,7 +17,7 @@ export type SettingsTarget = ConnectionKey | 'add'
 
 /** The settings sections that are not sources, in the order the navigation lists them. */
 export const SETTINGS_SECTIONS = [
-  { id: 'general', label: 'General', icon: 'tune' },
+  { id: 'general', label: 'Appearance', icon: 'palette' },
   { id: 'logs', label: 'Logs', icon: 'receipt_long' },
 ] as const satisfies readonly { id: SettingsSelection; label: string; icon: string }[]
 
@@ -30,8 +34,4 @@ export interface SettingsProviderRow {
 export interface SettingsThemeOption {
   readonly id: Theme
   readonly label: string
-}
-
-export interface SettingsDialogData {
-  readonly initialSelection: SettingsSelection
 }

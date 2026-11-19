@@ -9,23 +9,36 @@
   // Lets the day index size itself to the visible height (`cqh`) from inside the scroller.
   container-type: size;
   --day-header-top: 64px;
-  --day-index-width: 30px;
+  --day-index-width: 42px;
   --day-index-gap: 4px;
+  // A day's height before it is first drawn: its header and padding, and one row per entry.
+  --day-chrome-estimate: 54px;
+  --entry-estimate: 66px;
 }
 
+// A column, so the list (or its empty state) fills the height under the filter field.
 .timeline-scroll {
   flex: 1;
   min-height: 0;
+  display: flex;
+  flex-direction: column;
   overflow-y: auto;
   // Room for the scrollbar is kept from the start, so the list does not shift sideways when
-  // a long range makes it appear.
+  // a long range makes it appear or a filter makes it go.
   scrollbar-gutter: stable;
   // Keyboard focus never ends up under the search bar or a day header.
   scroll-padding-top: calc(var(--day-header-top) + 56px);
+  // The day index lives in this strip; the list centres in what is left. Kept while the index
+  // is hidden (one day, or a list that fits), so filtering never moves the list or the field.
+  padding-right: calc(var(--day-index-width) + var(--day-index-gap));
 
-  // The day index lives in this strip; the list centres in what is left.
-  &.has-day-index {
-    padding-right: calc(var(--day-index-width) + var(--day-index-gap));
+  // WebKit and Chromium draw the styled scrollbar (`::-webkit-scrollbar` in styles.scss). WebKit
+  // makes a stable gutter as wide as its own scrollbar, not the styled one, so the list would
+  // still move when the scrollbar comes and goes: there the styled track (transparent, and
+  // without a thumb while nothing overflows) is always kept instead.
+  @supports selector(::-webkit-scrollbar) {
+    overflow-y: scroll;
+    scrollbar-gutter: auto;
   }
 }
 
@@ -46,10 +59,14 @@
 }
 
 .timeline-wrap {
+  flex: 1 0 auto;
+  display: flex;
+  flex-direction: column;
   width: 100%;
   max-width: var(--content-max-width);
   margin: 0 auto;
-  padding: 0 28px 40px;
+  // Less on the right: the day index is the next thing there.
+  padding: 0 12px 40px 28px;
 }
 
 .timeline-summary {
@@ -65,9 +82,23 @@
 // Padding, not margin, and a header without a negative top margin (it would collapse through
 // the section): sections tile the list and each starts at its header, so the day index's
 // tracking line just under the sticky header always crosses exactly one section.
+//
+// Days off screen skip style, layout and paint, so long ranges stay quick to scroll and filter.
+// Until a day is first drawn it takes the height its entries would (`--day-entries`, set per
+// day); after that, the height it had. The inline padding keeps the day header's 4 px overhang
+// inside the paint clip that skipping brings.
 .day-group {
-  padding-bottom: 18px;
-  animation: u-rise 0.32s var(--ease-out) both;
+  margin-inline: -4px;
+  padding: 0 4px 18px;
+  content-visibility: auto;
+  contain-intrinsic-block-size: auto
+    calc(var(--day-chrome-estimate) + var(--day-entries, 1) * var(--entry-estimate));
+}
+
+// Only the first days rise in, and without a lasting fill: a finished animation kept on every
+// day makes each frame of a long range slow.
+.day-group:nth-child(-n + 6) {
+  animation: u-rise 0.32s var(--ease-out) backwards;
 }
 
 // Stays under the sticky search bar while its day scrolls by; the next day's header pushes it
@@ -118,6 +149,11 @@
 // ── Entries ──────────────────────────────────────────────────────────────────
 
 .entries {
+  // Where the rail column's centre is, from the row's left edge: its padding, the time column,
+  // the gap and half the rail column (`.entry`).
+  --rail-centre: calc(16px + 44px + 14px + 6px);
+
+  position: relative;
   margin: 0;
   padding: 0;
   list-style: none;
@@ -126,20 +162,22 @@
   background: var(--surface);
   overflow: hidden;
 
+  // The line through the dots: one for the list, from the first dot down, so rows that come and
+  // go (sliding and fading as they animate) never break it. Below the last dot the last row
+  // covers it, see `.entry-rail`.
+  &::before {
+    content: '';
+    position: absolute;
+    top: 18px;
+    bottom: 0;
+    left: var(--rail-centre);
+    width: 2px;
+    transform: translateX(-50%);
+    background: var(--hairline);
+  }
+
   > li + li {
     border-top: 1px solid var(--hairline);
-  }
-
-  > li:first-child .entry-rail::before {
-    top: 18px;
-  }
-
-  > li:last-child .entry-rail::before {
-    bottom: calc(100% - 18px);
-  }
-
-  > li:only-child .entry-rail::before {
-    display: none;
   }
 }
 
@@ -163,9 +201,15 @@
     background: color-mix(in srgb, var(--surface-hover) 65%, transparent);
 
     .entry-chevron {
-      opacity: 1;
+      color: var(--text-primary);
       transform: none;
     }
+  }
+
+  // A press shows at once, also where nothing hovers first.
+  &:active {
+    background: var(--surface-hover);
+    transition: none;
   }
 
   &:focus-visible {
@@ -173,7 +217,7 @@
     box-shadow: inset 0 0 0 2px var(--accent);
 
     .entry-chevron {
-      opacity: 1;
+      color: var(--text-primary);
       transform: none;
     }
   }
@@ -192,31 +236,38 @@
   position: relative;
   align-self: stretch;
   margin: -12px 0;
+}
 
-  &::before {
-    content: '';
-    position: absolute;
-    top: 0;
-    bottom: 0;
-    left: 50%;
-    width: 2px;
-    transform: translateX(-50%);
-    background: var(--hairline);
-  }
+// The last row ends the list's line at its dot, in the row's own colour.
+.entries > li:last-child .entry-rail::after {
+  content: '';
+  position: absolute;
+  top: 18px;
+  bottom: 0;
+  left: 50%;
+  width: 4px;
+  transform: translateX(-50%);
+  background: var(--surface);
+  transition: background-color 0.15s ease;
+}
+
+// The hover colour of `.entry`, on the list's surface.
+.entries > li:last-child .entry:hover .entry-rail::after {
+  background: color-mix(in srgb, var(--surface-hover) 65%, var(--surface));
 }
 
 .entry-dot {
   position: absolute;
+  z-index: 1;
   top: 18px;
   left: 50%;
   width: 10px;
   height: 10px;
   border-radius: 999px;
   transform: translate(-50%, 0);
+  background: var(--badge-accent-fill, var(--badge-accent));
   box-shadow: 0 0 0 3px var(--surface);
 }
-
-@include ui.provider-accent-variants('.accent');
 
 .entry-body {
   display: flex;
@@ -250,26 +301,62 @@
   white-space: nowrap;
 }
 
+// The source badge, drawn as `app-source-badge size="sm" iconOnlyOnPhone` draws it; its icon as
+// `app-provider-icon` draws a logo or a glyph.
 .badge {
-  @include ui.provider-badge-base($padding: 1px 7px 1px 5px, $font-size: 10px);
-  gap: 4px;
-  letter-spacing: 0.05em;
+  @include ui.source-badge;
+  @include ui.source-badge-sm;
+
+  .icon {
+    flex-shrink: 0;
+    width: 1em;
+    height: 1em;
+  }
+
+  img.icon {
+    display: block;
+  }
+
+  @include ui.down('phone') {
+    @include ui.source-badge-icon-only;
+  }
 }
 
-.badge-icon {
-  font-size: 11px;
+// Tentative and free meetings: a quiet tag beside the source badge, styled like the blocks
+// in the calendar views (hatched, outlined).
+.busy-tag {
+  flex-shrink: 0;
+  padding: 0 6px;
+  border: 1px dashed color-mix(in srgb, var(--badge-outlook-accent) 55%, transparent);
+  border-radius: 999px;
+  color: var(--text-secondary);
+  font-size: 10.5px;
+  font-weight: 600;
+  line-height: 16px;
+
+  &.is-tentative {
+    border-style: solid;
+    background: repeating-linear-gradient(
+      135deg,
+      color-mix(in srgb, currentColor 14%, transparent) 0 3px,
+      transparent 3px 6px
+    );
+  }
 }
 
-@include ui.provider-badge-variants('.badge');
+.online-mark {
+  --icon-size: 15px;
+  color: var(--text-tertiary);
+}
 
+// Always there, as in the details' list of overlapping events, so every row says it opens,
+// with a pointer or without one; it comes forward on hover and focus.
 .entry-chevron {
   align-self: center;
   color: var(--text-tertiary);
-  font-size: 20px;
-  opacity: 0;
-  transform: translateX(-4px);
+  transform: translateX(-3px);
   transition:
-    opacity 0.15s ease,
+    color 0.15s ease,
     transform 0.15s ease;
 }
 
@@ -328,23 +415,11 @@
 
 // ── Empty state ──────────────────────────────────────────────────────────────
 
+// Fills the height under the filter field, its content centred in it.
 .empty-state {
+  flex: 1 0 auto;
+  justify-content: center;
   margin-top: 8px;
-}
-
-.empty-icon {
-  display: grid;
-  place-items: center;
-  width: 56px;
-  height: 56px;
-  margin-bottom: 10px;
-  border-radius: 18px;
-  background: var(--accent-soft);
-  color: var(--accent);
-
-  .material-icons {
-    font-size: 28px;
-  }
 }
 
 // ── Responsive ───────────────────────────────────────────────────────────────
@@ -352,11 +427,11 @@
 @include ui.down('tablet') {
   :host {
     --day-header-top: 58px;
-    --day-index-width: 28px;
+    --day-index-width: 36px;
   }
 
   .timeline-wrap {
-    padding: 0 16px 32px;
+    padding: 0 8px 32px 16px;
   }
 }
 
@@ -364,20 +439,24 @@
   :host {
     --day-header-top: 48px;
     --day-index-width: 22px;
+    // Titles wrap to two lines here.
+    --entry-estimate: 74px;
   }
 
   .timeline-wrap {
-    padding: 0 10px 24px;
+    padding: 0 6px 24px 10px;
   }
 
   .entries {
+    --rail-centre: calc(10px + 38px + 10px + 5px);
+
     border-radius: var(--radius-md);
   }
 
   .entry {
-    grid-template-columns: 38px 10px minmax(0, 1fr);
+    grid-template-columns: 38px 10px minmax(0, 1fr) 16px;
     column-gap: 10px;
-    padding: 12px 12px 12px 10px;
+    padding: 12px 8px 12px 10px;
   }
 
   .entry-title {
@@ -385,18 +464,6 @@
     -webkit-line-clamp: 2;
     -webkit-box-orient: vertical;
     white-space: normal;
-  }
-
-  .entry-chevron {
-    display: none;
-  }
-
-  .badge-label {
-    @include ui.visually-hidden;
-  }
-
-  .badge {
-    padding: 3px;
   }
 
   .empty-state {

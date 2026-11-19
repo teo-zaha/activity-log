@@ -1,7 +1,11 @@
 import { resource, type Provider, type ResourceRef } from '@angular/core'
 import type {
   ActivityLog,
+  BusyStatus,
+  ExportRequest,
   LogEntry,
+  MeetingWeight,
+  ProviderConfigSaveResponseDto,
   ProviderInfo,
   ProvidersResponse,
   Source,
@@ -14,7 +18,6 @@ import {
 } from '../services/backend/backend-contract'
 import type { ConnectionKey } from '../providers/connection'
 import { BackendTransport } from '../services/backend/backend-transport'
-import type { ExportRequest } from '../services/backend/export-request'
 
 export const providerInfo: ProviderInfo[] = [
   {
@@ -111,8 +114,12 @@ export class MockBackendTransport implements BackendTransport {
   /** When set, a providers answer waits for it; the answer is the response as of the request. */
   providersGate: Promise<void> | null = null
   collectResponse: ActivityResponse = activityLog
+  /** Answers to the next collect requests, before `collectResponse`. */
+  collectResponses: ActivityResponse[] = []
   collectError: Error | null = null
   exports: ExportRequest[] = []
+  /** Every link passed to `openUrl`, in order. */
+  openedUrls: string[] = []
   /** Every request passed to `call`, in order. */
   requests: unknown[] = []
   logs: LogEntry[] = []
@@ -136,6 +143,22 @@ export class MockBackendTransport implements BackendTransport {
     return Promise.resolve()
   }
 
+  /** Hands `deepLinks` to the listener the way the desktop shell would. */
+  deepLinks: string[] = []
+  listenForDeepLinks(open: (link: string) => void): Promise<void> {
+    for (const link of this.deepLinks) open(link)
+    return Promise.resolve()
+  }
+
+  openUrl(url: string): Promise<void> {
+    this.openedUrls.push(url)
+    return Promise.resolve()
+  }
+
+  private saveResponse(): ProviderConfigSaveResponseDto {
+    return { snapshot: { kinds: [], connections: [] }, providersResponse: this.providersResponse }
+  }
+
   private respond(operation: BackendOperation<unknown, unknown>): Promise<unknown> {
     switch (operation) {
       case BackendOperations.activity:
@@ -145,17 +168,23 @@ export class MockBackendTransport implements BackendTransport {
         const response = this.providersResponse
         return (this.providersGate ?? Promise.resolve()).then(() => response)
       }
+      case BackendOperations.recheckConnection:
+        return Promise.resolve(this.providersResponse)
       case BackendOperations.saveProviderConfig:
-      case BackendOperations.addConnection:
       case BackendOperations.removeConnection:
+        return Promise.resolve(this.saveResponse())
+      case BackendOperations.addConnection:
         return Promise.resolve({
-          snapshot: { kinds: [], connections: [] },
-          providersResponse: this.providersResponse,
+          created: this.providersResponse.providers.at(-1)?.connection ?? {
+            source: 'gitlab',
+            name: 'default',
+          },
+          ...this.saveResponse(),
         })
       case BackendOperations.collect:
         return this.collectError
           ? Promise.reject(this.collectError)
-          : Promise.resolve(this.collectResponse)
+          : Promise.resolve(this.collectResponses.shift() ?? this.collectResponse)
       case BackendOperations.logs:
         return this.logsError
           ? Promise.reject(this.logsError)
@@ -177,4 +206,26 @@ export function provideMockBackend(backend: MockBackendTransport): Provider {
 /** Connection keys for the default connection of each kind. */
 export function connectionSet(...sources: Source[]): Set<ConnectionKey> {
   return new Set(sources.map((source): ConnectionKey => `${source}/default`))
+}
+
+/** The weight the backend sends with a busy status (core `MeetingWeight::of`), for fixtures. */
+export function meetingWeightOf(status: BusyStatus | undefined): MeetingWeight {
+  switch (status) {
+    case 'tentative':
+      return 'tentative'
+    case 'free':
+    case 'out_of_office':
+      return 'none'
+    default:
+      return 'busy'
+  }
+}
+
+/** What the dashboard sends to export the fixture log as Markdown. */
+export const exportRequest: ExportRequest = {
+  format: 'markdown',
+  start: activityLog.meta.start,
+  end: activityLog.meta.end,
+  timeZone: 'Europe/Berlin',
+  entries: activityLog.entries,
 }
