@@ -1,3 +1,4 @@
+pub(crate) mod api;
 mod config;
 
 pub use config::*;
@@ -5,8 +6,9 @@ pub use config::*;
 use crate::{
     collect::gitlab::collect_gitlab,
     model::{IntoActivityEntries, Source, SupportedOs},
-    provider::provider_check_result::ProviderCheckResult,
+    provider::{provider_check_result::ProviderCheckResult, remote_api::identity_check},
 };
+use api::GitLabApi;
 
 crate::provider! {
     GitLabProvider(Source::Gitlab, &[SupportedOs::Windows, SupportedOs::Macos, SupportedOs::Linux], GitLabConfig, cache: crate::cache::CachePolicy::api()) {
@@ -17,31 +19,11 @@ crate::provider! {
                     return ProviderCheckResult::unavailable("GitLab config resolution failed");
                 }
             };
-
-            let client = match crate::provider::http_client_builder().build() {
-                Ok(client) => client,
-                Err(_) => {
-                    return ProviderCheckResult::unavailable("GitLab client setup failed");
-                }
+            let api = match GitLabApi::new(config) {
+                Ok(api) => api,
+                Err(err) => return err.check_result(GitLabApi::SERVICE),
             };
-            let url = format!("{}/api/v4/user", config.url.trim_end_matches('/'));
-            let response = client
-                .get(url)
-                .header("PRIVATE-TOKEN", config.token.as_str())
-                .send()
-                .await;
-
-            match response {
-                Ok(response) if response.status().is_success() => ProviderCheckResult::available(),
-                Ok(response) if response.status() == reqwest::StatusCode::UNAUTHORIZED => {
-                    ProviderCheckResult::unavailable("GitLab credentials invalid")
-                }
-                Ok(response) => ProviderCheckResult::unavailable(format!(
-                    "GitLab unavailable ({})",
-                    response.status()
-                )),
-                Err(_) => ProviderCheckResult::unavailable("GitLab unreachable"),
-            }
+            identity_check(GitLabApi::SERVICE, api.current_user().await)
         }
 
         async fn collect(&self, _current_os, options, context) {

@@ -604,6 +604,11 @@ async fn startup_checks_that_hang_report_a_timeout() {
 
     assert_eq!(result.status, crate::model::ProviderStatus::Unavailable);
     assert_eq!(result.problem, Some(ProviderProblem::TimedOut));
+    assert_eq!(
+        result.identity,
+        crate::model::IdentityEvidence::None,
+        "a check that timed out read nothing"
+    );
     assert!(
         result
             .reason

@@ -1,51 +1,49 @@
-use anyhow::{Result, anyhow};
+use anyhow::{Result, anyhow, bail};
 use chrono::{DateTime, Days};
 use serde_json::Value;
 
 use crate::{
     model::{CollectOptions, GitLabEntry, GitLabType},
-    provider::{gitlab::GitLabConfig, provider_context::ProviderContext},
+    provider::{
+        gitlab::{GitLabConfig, api::GitLabApi},
+        provider_context::ProviderContext,
+        remote_api::is_path_segment,
+    },
 };
+
+const PAGE_SIZE: usize = 100;
 
 pub async fn collect_gitlab(
     options: &CollectOptions,
     context: &ProviderContext,
 ) -> Result<Vec<GitLabEntry>> {
     let config = context.config::<GitLabConfig>()?;
+    if !is_path_segment(&config.user) {
+        bail!("GITLAB_USER must be a GitLab user name");
+    }
 
-    let client = crate::provider::http_client_builder().build()?;
+    let api = GitLabApi::new(config).map_err(|err| anyhow!(err.reason(GitLabApi::SERVICE)))?;
 
     // `after` and `before` take dates and exclude them; widen by a day on each side and
     // keep only the events inside the exact range below.
     let (first, last) = options.utc_days();
-    let after = first - Days::new(1);
-    let before = last + Days::new(1);
+    let after = (first - Days::new(1)).format("%Y-%m-%d").to_string();
+    let before = (last + Days::new(1)).format("%Y-%m-%d").to_string();
 
     let mut entries = Vec::new();
     let mut page = 1;
 
     loop {
-        let url = format!(
-            "{}/api/v4/users/{}/events?after={}&before={}&per_page=100&page={page}",
-            config.url.trim_end_matches('/'),
-            config.user,
-            after.format("%Y-%m-%d"),
-            before.format("%Y-%m-%d"),
-        );
-
-        let response = client
-            .get(&url)
-            .header("PRIVATE-TOKEN", config.token.as_str())
-            .send()
-            .await?;
-
-        if !response.status().is_success() {
-            let status = response.status();
-            let body = response.text().await.unwrap_or_default();
-            return Err(anyhow!("GitLab API {status}: {body}"));
-        }
-
-        let events = response.json::<Vec<Value>>().await?;
+        let mut url = api.endpoint(&["users", &config.user, "events"]);
+        url.query_pairs_mut()
+            .append_pair("after", &after)
+            .append_pair("before", &before)
+            .append_pair("per_page", &PAGE_SIZE.to_string())
+            .append_pair("page", &page.to_string());
+        let events = api
+            .get_json::<Vec<Value>>(url)
+            .await
+            .map_err(|err| anyhow!(err.message(GitLabApi::SERVICE)))?;
         if events.is_empty() {
             break;
         }
@@ -55,7 +53,7 @@ pub async fn collect_gitlab(
                 .is_ok_and(|at| options.contains(at.to_utc()))
         }));
 
-        if events.len() < 100 {
+        if events.len() < PAGE_SIZE {
             break;
         }
         page += 1;

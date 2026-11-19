@@ -8,8 +8,8 @@ use futures::{
 use crate::{
     diagnostics,
     model::{
-        ActivityEntry, CollectOptions, ConnectionId, LogLevel, ProviderInfo, ProviderProblem,
-        ProviderStatus, ProvidersResponse,
+        ActivityEntry, CollectOptions, ConnectionId, IdentityEvidence, LogLevel, ProviderInfo,
+        ProviderProblem, ProviderStatus, ProvidersResponse,
     },
     utils::now_iso,
 };
@@ -32,6 +32,7 @@ pub struct ProviderRuntime {
     adapter: Arc<dyn ProviderAdapter>,
     context: ProviderContext,
     info: ProviderInfo,
+    identity: IdentityEvidence,
 }
 
 impl ProviderRuntime {
@@ -39,7 +40,7 @@ impl ProviderRuntime {
         // Resolve provider config once so startup checks and later collections use the same input.
         let mut context =
             ProviderContext::for_connection(connection, adapter.config_requirements());
-        let info = diagnostics::in_connection(
+        let (info, identity) = diagnostics::in_connection(
             connection.id.clone(),
             build_provider_info(adapter.as_ref(), connection, &mut context),
         )
@@ -49,6 +50,7 @@ impl ProviderRuntime {
             adapter,
             context,
             info,
+            identity,
         }
     }
 
@@ -66,6 +68,11 @@ impl ProviderRuntime {
 
     pub fn info(&self) -> &ProviderInfo {
         &self.info
+    }
+
+    /// Whose token the startup check saw.
+    pub fn identity(&self) -> &IdentityEvidence {
+        &self.identity
     }
 
     pub fn info_owned(&self) -> ProviderInfo {
@@ -147,7 +154,7 @@ async fn build_provider_info(
     adapter: &dyn ProviderAdapter,
     connection: &Connection,
     context: &mut ProviderContext,
-) -> ProviderInfo {
+) -> (ProviderInfo, IdentityEvidence) {
     let current_os = current_os();
     let requirements = adapter.config_requirements();
     let started = std::time::Instant::now();
@@ -196,7 +203,10 @@ async fn build_provider_info(
     };
     diagnostics::record(level, connection.id.to_string(), summary);
 
-    provider_info(adapter, connection, status, result.problem, result.reason)
+    (
+        provider_info(adapter, connection, status, result.problem, result.reason),
+        result.identity,
+    )
 }
 
 fn unavailable(problem: ProviderProblem, reason: impl Into<String>) -> ProviderCheckResult {
@@ -226,11 +236,25 @@ fn provider_info(
     }
 }
 
+tokio::task_local! {
+    /// When the running startup check is cut off.
+    static CHECK_DEADLINE: tokio::time::Instant;
+}
+
+/// Time left before the running startup check is cut off; `None` outside a check.
+pub(crate) fn check_time_left() -> Option<Duration> {
+    CHECK_DEADLINE
+        .try_with(|deadline| deadline.saturating_duration_since(tokio::time::Instant::now()))
+        .ok()
+}
+
 pub(crate) async fn with_startup_timeout(
     check: impl Future<Output = ProviderCheckResult>,
     timeout: Duration,
 ) -> ProviderCheckResult {
-    tokio::time::timeout(timeout, check)
+    let deadline = tokio::time::Instant::now() + timeout;
+    CHECK_DEADLINE
+        .scope(deadline, tokio::time::timeout_at(deadline, check))
         .await
         .unwrap_or_else(|_| {
             unavailable(
