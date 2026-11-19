@@ -34,6 +34,9 @@ pub struct Connection {
     pub label: String,
     pub location: ConnectionLocation,
     values: Arc<ConnectionValues>,
+    /// The table's reserved `instance` id, when it has a readable one: a removed and re-added
+    /// connection has another, a legacy table none until it is first written.
+    instance: Option<String>,
 }
 
 impl std::fmt::Debug for Connection {
@@ -43,6 +46,7 @@ impl std::fmt::Debug for Connection {
             .field("id", &self.id)
             .field("label", &self.label)
             .field("location", &self.location)
+            .field("instance", &self.instance)
             .finish()
     }
 }
@@ -59,7 +63,17 @@ impl Connection {
             label: label.into(),
             location,
             values: Arc::new(values),
+            instance: None,
         }
+    }
+
+    pub fn with_instance(mut self, instance: Option<String>) -> Self {
+        self.instance = instance;
+        self
+    }
+
+    pub fn instance(&self) -> Option<&str> {
+        self.instance.as_deref()
     }
 
     pub fn source(&self) -> &Source {
@@ -67,6 +81,10 @@ impl Connection {
     }
 
     pub fn values(&self) -> &ConnectionValues {
+        &self.values
+    }
+
+    pub(crate) fn shared_values(&self) -> &Arc<ConnectionValues> {
         &self.values
     }
 }
@@ -90,7 +108,7 @@ pub fn slug(label: &str) -> String {
 }
 
 /// A connection's config values by key (`GITLAB_TOKEN`); `None` is a value cleared on purpose.
-#[derive(Default)]
+#[derive(Default, PartialEq, Eq)]
 pub struct ConnectionValues(BTreeMap<String, Option<String>>);
 
 impl ConnectionValues {

@@ -2,11 +2,10 @@ use std::{sync::mpsc, time::Duration};
 
 use activity_log_core::{
     diagnostics,
-    runtime::CollectionRuntime,
     settings::{ConfigFile, NO_LOCATION},
 };
 
-use super::{update_config_at, web_url, write_export};
+use super::{update_config, web_url, write_export};
 use crate::app_state::AppState;
 
 fn labels(path: &std::path::Path) -> Vec<String> {
@@ -31,14 +30,14 @@ async fn settings_commands_that_arrive_together_both_apply() {
         .ok()
         .unwrap()
         .map(|c| c.id);
-    let state = AppState::new(CollectionRuntime::start(&[]).0);
+    let state = AppState::start(Some(path.clone()));
     let (first_loaded, first_has_loaded) = mpsc::channel();
     let (second_loaded, second_has_loaded) = mpsc::channel();
 
     let first = tokio::spawn({
-        let (state, path) = (state.clone(), path.clone());
+        let state = state.clone();
         async move {
-            update_config_at(&state, Some(path), move |file| {
+            update_config(&state, move |file| {
                 first_loaded.send(()).unwrap();
                 // Gives the second command every chance to read the file before this one saves.
                 let _ = second_has_loaded.recv_timeout(Duration::from_millis(300));
@@ -48,15 +47,28 @@ async fn settings_commands_that_arrive_together_both_apply() {
         }
     });
     first_has_loaded.recv().unwrap();
-    update_config_at(&state, Some(path.clone()), move |file| {
+    update_config(&state, move |file| {
         let _ = second_loaded.send(());
         file.rename(&b, "B changed").map_err(|err| err.to_string())
     })
     .await
     .unwrap();
-    first.await.unwrap().unwrap();
+    let (_, first) = first.await.unwrap().unwrap();
 
     assert_eq!(labels(&path), ["A changed", "B changed"]);
+    // What the app shows is the file as it ends, whichever save answered last.
+    let shown = |providers: &activity_log_core::model::ProvidersResponse| {
+        providers
+            .providers
+            .iter()
+            .map(|info| info.label.clone())
+            .collect::<Vec<_>>()
+    };
+    assert_eq!(
+        shown(&state.host.providers_response()),
+        ["A changed", "B changed"]
+    );
+    assert_eq!(shown(&first.providers_response).len(), 2);
 }
 
 #[test]
@@ -84,9 +96,9 @@ fn opens_only_web_links() {
 /// Without a settings location a save fails with the message, and nothing is written.
 #[tokio::test]
 async fn a_save_without_a_settings_location_writes_nothing() {
-    let state = AppState::new(CollectionRuntime::start(&[]).0);
+    let state = AppState::start(None);
 
-    let refused = update_config_at(&state, None, |file| {
+    let refused = update_config(&state, |file| {
         file.rename(&"gitlab/work".parse().unwrap(), "Work")
             .map_err(|err| err.to_string())
     })
@@ -102,9 +114,9 @@ async fn a_busy_settings_file_is_reported_and_left_alone() {
     std::fs::write(&path, "[[git]]\n").unwrap();
     let held = std::fs::File::create(dir.path().join("config.toml.lock")).unwrap();
     held.lock().unwrap();
-    let state = AppState::new(CollectionRuntime::start(&[]).0);
+    let state = AppState::start(Some(path.clone()));
 
-    let refused = update_config_at(&state, Some(path.clone()), |file| {
+    let refused = update_config(&state, |file| {
         file.rename(&"git/this-computer".parse().unwrap(), "Laptop")
             .map_err(|err| err.to_string())
     })
@@ -123,9 +135,9 @@ async fn config_problems_after_an_edit_reach_the_logs() {
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("config.toml");
     std::fs::write(&path, "[[gitlab]]\nlabel = \"Edited\"\nurll = \"x\"\n").unwrap();
-    let state = AppState::new(CollectionRuntime::start(&[]).0);
+    let state = AppState::start(Some(path));
 
-    let (_, saved) = update_config_at(&state, Some(path), |file| {
+    let (_, saved) = update_config(&state, |file| {
         file.rename(&"gitlab/edited".parse().unwrap(), "Edited")
             .map_err(|err| err.to_string())
     })
@@ -172,9 +184,9 @@ async fn an_unprotectable_location_is_reported_with_the_agreed_text() {
     let shared = dir.path().join("shared");
     std::fs::create_dir(&shared).unwrap();
     std::fs::set_permissions(&shared, std::fs::Permissions::from_mode(0o1777)).unwrap();
-    let state = AppState::new(CollectionRuntime::start(&[]).0);
+    let state = AppState::start(Some(shared.join("config.toml")));
 
-    let refused = update_config_at(&state, Some(shared.join("config.toml")), |file| {
+    let refused = update_config(&state, |file| {
         file.add(
             &activity_log_core::model::Source::Git,
             None,
@@ -192,4 +204,37 @@ async fn an_unprotectable_location_is_reported_with_the_agreed_text() {
             std::fs::canonicalize(&shared).unwrap().display()
         )
     );
+}
+
+/// B66: the save answers with the connection it added checking, however fast its check ends
+/// on the other worker.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_save_answers_with_the_added_connection_checking() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("config.toml");
+    let state = AppState::start(Some(path));
+
+    for label in ["Team", "Home", "Club"] {
+        let (created, saved) = update_config(&state, move |file| {
+            file.add(
+                &activity_log_core::model::Source::Calendar,
+                Some(label),
+                activity_log_core::provider::connection::ConnectionLocation::Local,
+            )
+            .map_err(|err| err.to_string())
+        })
+        .await
+        .unwrap();
+
+        let added = saved
+            .providers_response
+            .providers
+            .iter()
+            .find(|info| info.connection == created)
+            .unwrap();
+        assert_eq!(
+            added.status,
+            activity_log_core::model::ProviderStatus::Checking
+        );
+    }
 }

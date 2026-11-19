@@ -3,7 +3,7 @@ use ts_rs::TS;
 
 use crate::model::common::{provider_info::ProviderInfo, supported_os::SupportedOs};
 
-#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
 #[ts(export, rename_all = "camelCase")]
 pub struct ProvidersResponse {

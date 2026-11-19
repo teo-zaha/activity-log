@@ -113,6 +113,12 @@ fn with_log<R>(f: impl FnOnce(&mut LogBuffer) -> R) -> R {
 
 pub fn record(level: LogLevel, scope: impl Into<String>, message: impl Into<String>) {
     let (scope, message) = (connection_scope(scope.into()), message.into());
+    // Writing to stderr can block; the host's state lock must never wait for it.
+    #[cfg(test)]
+    assert!(
+        !crate::runtime::host::state_lock_held(),
+        "logged under the host state lock: [{scope}] {message}"
+    );
     if level >= LogLevel::Warn {
         eprintln!("  [{scope}] {message}");
     }

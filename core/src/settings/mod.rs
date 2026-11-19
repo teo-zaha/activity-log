@@ -248,12 +248,10 @@ impl ConfigFile {
                 self.entries_with_warnings(&adapter.id(), &instances, &mut resolved.warnings);
             for entry in entries {
                 let values = entry_values(adapter.as_ref(), &entry, &mut resolved.warnings);
-                resolved.connections.push(Connection::new(
-                    entry.id,
-                    entry.label,
-                    entry.location,
-                    values,
-                ));
+                resolved.connections.push(
+                    Connection::new(entry.id, entry.label, entry.location, values)
+                        .with_instance(entry.instance),
+                );
             }
         }
         Ok(resolved)

@@ -1,10 +1,7 @@
 //! The settings pane's view of `config.toml`: connections with their fields, and the edits it
 //! sends back. The file is shared with the CLI and the API server.
 
-use std::path::Path;
-
 use activity_log_core::{
-    diagnostics,
     model::{
         AddConnectionRequestDto, ConnectionId, ProviderConfigConnectionStateDto,
         ProviderConfigFieldStateDto, ProviderConfigFieldValueDto, ProviderConfigSaveRequestDto,
@@ -20,7 +17,7 @@ use activity_log_core::{
         },
         provider_registry,
     },
-    settings::{ConfigFile, load_connections, warn_no_location},
+    settings::{ConfigFile, warn_no_location},
 };
 
 /// The settings file, `None` without a settings location.
@@ -34,15 +31,6 @@ pub(crate) fn load_config() -> Result<Option<ConfigFile>, String> {
             Ok(None)
         }
     }
-}
-
-/// The connections the app starts with. Problems in single connections go to the Logs pane; a
-/// broken file must not keep the app from opening, where it can be fixed.
-pub(crate) fn startup_connections(explicit: Option<&Path>) -> Vec<Connection> {
-    load_connections(explicit).unwrap_or_else(|err| {
-        diagnostics::error("settings", format!("Reading settings failed: {err:#}"));
-        Vec::new()
-    })
 }
 
 /// The connections the settings pane shows. Its problems were logged when the file was read.

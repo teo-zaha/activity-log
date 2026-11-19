@@ -2,17 +2,15 @@ use activity_log_core::{
     diagnostics,
     export::render_export_request,
     model::{
-        AddConnectionRequestDto, AddConnectionResponseDto, CollectRequest,
-        CollectionFailedResponse, ConnectionId, ExportRequest, LogsResponse,
-        ProviderConfigSaveRequestDto, ProviderConfigSaveResponseDto, ProviderConfigSnapshotDto,
-        ProvidersResponse,
+        ActivityState, AddConnectionRequestDto, AddConnectionResponseDto, CollectRequest,
+        ConnectionId, ExportRequest, LogsResponse, ProviderConfigSaveRequestDto,
+        ProviderConfigSaveResponseDto, ProviderConfigSnapshotDto, ProvidersResponse,
     },
     provider::current_os,
-    runtime::{ActivitySnapshot, CollectionRuntime, resolve_collect_options},
-    settings::{ConfigFile, EditError, NO_LOCATION, Precondition, edit_config},
+    runtime::resolve_collect_options,
+    settings::{ConfigFile, EditError, Precondition},
 };
 use rfd::FileDialog;
-use std::path::PathBuf;
 use tauri::Url;
 use tauri_plugin_opener::OpenerExt;
 
@@ -25,15 +23,13 @@ use crate::{
 mod tests;
 
 /// A running collection answers with the log of what is in so far, like a finished one.
-fn activity_response(snapshot: ActivitySnapshot) -> Result<serde_json::Value, String> {
-    match snapshot {
-        ActivitySnapshot::Running(log) | ActivitySnapshot::Ready(log) => {
+fn activity_response(state: ActivityState) -> Result<serde_json::Value, String> {
+    match state {
+        ActivityState::Running { log } | ActivityState::Ready { log } => {
             Ok(serde_json::to_value(&*log).unwrap())
         }
-        ActivitySnapshot::Failed { options, message } => {
-            Ok(serde_json::to_value(CollectionFailedResponse::new(&options, message)).unwrap())
-        }
-        ActivitySnapshot::Empty => Err("No data yet".to_string()),
+        ActivityState::Failed { failure } => Ok(serde_json::to_value(failure).unwrap()),
+        ActivityState::Empty => Err("No data yet".to_string()),
     }
 }
 
@@ -41,14 +37,14 @@ fn activity_response(snapshot: ActivitySnapshot) -> Result<serde_json::Value, St
 pub(crate) async fn get_activity(
     state: tauri::State<'_, AppState>,
 ) -> Result<serde_json::Value, String> {
-    activity_response(state.runtime.read().await.activity_snapshot())
+    activity_response(state.host.activity())
 }
 
 #[tauri::command]
 pub(crate) async fn get_providers(
     state: tauri::State<'_, AppState>,
 ) -> Result<ProvidersResponse, String> {
-    Ok(state.runtime.read().await.providers_response())
+    Ok(state.host.providers_response())
 }
 
 /// Starts the collection and answers at once; `get_activity` shows it filling up.
@@ -58,13 +54,7 @@ pub(crate) async fn collect(
     request: CollectRequest,
 ) -> Result<serde_json::Value, String> {
     let options = resolve_collect_options(&request).map_err(str::to_string)?;
-    // Started under the lock, so a settings save cannot swap the runtime in between.
-    let runtime = state.runtime.read().await;
-    let (snapshot, task) = runtime.start_collection(options);
-    if let Some(task) = task {
-        tauri::async_runtime::spawn(task);
-    }
-    activity_response(snapshot)
+    activity_response(state.host.collect(options))
 }
 
 /// Runs a connection's startup check again and collects its kind again for the range on
@@ -74,14 +64,10 @@ pub(crate) async fn recheck_connection(
     state: tauri::State<'_, AppState>,
     request: ConnectionId,
 ) -> Result<ProvidersResponse, String> {
-    let runtime = state.runtime.read().await;
-    let task = runtime
+    state
+        .host
         .recheck(&request)
-        .ok_or_else(|| format!("No source {request}"))?;
-    // Before the task runs, so the answer shows the connection checking however fast it is.
-    let response = runtime.providers_response();
-    tauri::async_runtime::spawn(task);
-    Ok(response)
+        .ok_or_else(|| format!("No source {request}"))
 }
 
 /// Async, so reading the file and listing WSL distributions (the registry) never holds the
@@ -135,75 +121,47 @@ pub(crate) async fn remove_connection(
     Ok(saved)
 }
 
-/// Edits `config.toml` through the config lock and re-runs the startup checks of every
-/// connection in the background; the response lists the connections as checking. The new
-/// runtime takes over the collection the old one was showing. Answers with what `change`
-/// returned and the new settings.
+/// Edits `config.toml` (see `Host::edit`) and installs it: the checks of every connection run
+/// again in the background, and only the kinds the edit affects are collected again. The
+/// response lists the connections as installed, the ones checked again as checking. Answers
+/// with what `change` returned and the new settings.
 async fn update_config<T: Send + 'static>(
     state: &AppState,
     change: impl FnOnce(&mut ConfigFile) -> Result<T, String> + Send + 'static,
 ) -> Result<(T, ProviderConfigSaveResponseDto), String> {
-    update_config_at(state, ConfigFile::resolve_path(None), change).await
-}
-
-async fn update_config_at<T: Send + 'static>(
-    state: &AppState,
-    path: Option<PathBuf>,
-    change: impl FnOnce(&mut ConfigFile) -> Result<T, String> + Send + 'static,
-) -> Result<(T, ProviderConfigSaveResponseDto), String> {
-    let path = path.ok_or_else(|| NO_LOCATION.to_string())?;
-    // From the edit to swapping the runtime, so runtimes are installed in the order the edits
-    // were written.
-    let _editing = state.config_edit.lock().await;
-    // The config lock may wait for another process, so it is not taken on an async worker.
-    let edited = tauri::async_runtime::spawn_blocking(move || {
-        edit_config(&path, Precondition::None, |file| {
+    let edit = state
+        .host
+        .edit(Precondition::None, |file| {
             change(file).map_err(anyhow::Error::msg)
         })
-    })
-    .await
-    .map_err(|err| format!("Saving settings failed: {err}"))?
-    .map_err(|err| match err {
-        EditError::Io(_) => {
-            let message = format!("Saving settings failed: {err}");
-            diagnostics::error("settings", &message);
-            message
-        }
-        // The agreed text goes to the pane as it is; the log says what failed.
-        EditError::Unprotectable { .. } => {
-            let message = err.to_string();
-            diagnostics::error("settings", format!("Saving settings failed: {message}"));
-            message
-        }
-        other => other.message(None),
-    })?;
+        .await
+        .map_err(|err| match err {
+            EditError::Io(_) => {
+                let message = format!("Saving settings failed: {err}");
+                diagnostics::error("settings", &message);
+                message
+            }
+            // The agreed text goes to the pane as it is; the log says what failed.
+            EditError::Unprotectable { .. } => {
+                let message = err.to_string();
+                diagnostics::error("settings", format!("Saving settings failed: {message}"));
+                message
+            }
+            other => other.message(None),
+        })?;
     diagnostics::info("settings", "Settings saved, re-running provider checks");
-    for warning in edited.warnings {
-        diagnostics::warn("config", warning);
-    }
 
-    let connections = shown_connections(&edited.file)?;
-    let (runtime, checks) = CollectionRuntime::start(&connections);
-    tauri::async_runtime::spawn(checks);
-    let providers_response = runtime.providers_response();
-    {
-        let mut current = state.runtime.write().await;
-        if let Some(task) = runtime.take_over(&current) {
-            tauri::async_runtime::spawn(task);
-        }
-        *current = runtime;
-    }
-
+    let connections = edit.connections;
     // Off the async workers: it lists WSL distributions from the registry.
     let snapshot =
         tauri::async_runtime::spawn_blocking(move || build_snapshot(&connections, &current_os()))
             .await
             .map_err(|err| format!("Reading settings failed: {err}"))?;
     Ok((
-        edited.value,
+        edit.value,
         ProviderConfigSaveResponseDto {
             snapshot,
-            providers_response,
+            providers_response: edit.providers,
         },
     ))
 }

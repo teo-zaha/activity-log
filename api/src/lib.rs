@@ -1,19 +1,14 @@
-use std::path::Path;
+use std::{path::Path, sync::Arc};
 
 use activity_log_core::{
     diagnostics,
     export::render_export_request,
     model::{
-        CollectRequest, CollectionFailedResponse, ConnectionId, ErrorResponse, ExportRequest,
-        LogsResponse,
+        ActivityState, CollectRequest, ConnectionId, ErrorResponse, ExportRequest, LogsResponse,
     },
-    runtime::{ActivitySnapshot, CollectionRuntime, resolve_collect_options},
-    settings::{ConfigFile, warn_no_location},
+    runtime::{BadConfig, Host, RunSpawner, resolve_collect_options},
+    settings::ConfigFile,
 };
-
-mod reload;
-
-pub use reload::ApiRuntime;
 use rocket::{
     Build, Data, Rocket, State, data::ByteUnit, delete, fairing::AdHoc, get, http::Status, post,
     response::status, serde::json::Json,
@@ -26,15 +21,13 @@ fn json(status: Status, body: impl serde::Serialize) -> JsonResponse {
 }
 
 /// A running collection answers 202 with the log of what is in so far.
-fn activity_response(snapshot: ActivitySnapshot) -> JsonResponse {
-    match snapshot {
-        ActivitySnapshot::Running(log) => json(Status::Accepted, &*log),
-        ActivitySnapshot::Ready(log) => json(Status::Ok, &*log),
+fn activity_response(state: ActivityState) -> JsonResponse {
+    match state {
+        ActivityState::Running { log } => json(Status::Accepted, &*log),
+        ActivityState::Ready { log } => json(Status::Ok, &*log),
         // The state of the last collection, not a failed request: its range stays readable.
-        ActivitySnapshot::Failed { options, message } => {
-            json(Status::Ok, CollectionFailedResponse::new(&options, message))
-        }
-        ActivitySnapshot::Empty => json(
+        ActivityState::Failed { failure } => json(Status::Ok, failure),
+        ActivityState::Empty => json(
             Status::ServiceUnavailable,
             ErrorResponse {
                 error: "No data yet".to_string(),
@@ -43,21 +36,29 @@ fn activity_response(snapshot: ActivitySnapshot) -> JsonResponse {
     }
 }
 
+// Each request first installs a config file changed since the last look, as the timer does
+// between requests.
+
 #[get("/api/activity")]
-async fn get_activity(api: &State<ApiRuntime>) -> JsonResponse {
-    activity_response(api.runtime().await.activity_snapshot())
+async fn get_activity(host: &State<Host>) -> JsonResponse {
+    host.reload_if_changed().await;
+    activity_response(host.activity())
 }
 
 #[get("/api/providers")]
-async fn get_providers(api: &State<ApiRuntime>) -> Json<serde_json::Value> {
-    Json(serde_json::to_value(api.runtime().await.providers_response()).unwrap())
+async fn get_providers(host: &State<Host>) -> Json<serde_json::Value> {
+    host.reload_if_changed().await;
+    Json(serde_json::to_value(host.providers_response()).unwrap())
 }
 
 /// Starts the collection and answers at once; `GET /api/activity` shows it filling up.
 #[post("/api/collect", format = "json", data = "<request>")]
-async fn post_collect(api: &State<ApiRuntime>, request: Json<CollectRequest>) -> JsonResponse {
+async fn post_collect(host: &State<Host>, request: Json<CollectRequest>) -> JsonResponse {
     match resolve_collect_options(&request) {
-        Ok(options) => activity_response(api.start_collection(options).await),
+        Ok(options) => {
+            host.reload_if_changed().await;
+            activity_response(host.collect(options))
+        }
         Err(message) => json(
             Status::BadRequest,
             ErrorResponse {
@@ -71,8 +72,9 @@ async fn post_collect(api: &State<ApiRuntime>, request: Json<CollectRequest>) ->
 /// Answers with the sources, this one checking, or 404 for a connection the server does not
 /// have.
 #[post("/api/connections/recheck", format = "json", data = "<request>")]
-async fn post_recheck(api: &State<ApiRuntime>, request: Json<ConnectionId>) -> JsonResponse {
-    match api.recheck(&request).await {
+async fn post_recheck(host: &State<Host>, request: Json<ConnectionId>) -> JsonResponse {
+    host.reload_if_changed().await;
+    match host.recheck(&request) {
         Some(providers) => json(Status::Ok, providers),
         None => json(
             Status::NotFound,
@@ -129,46 +131,57 @@ fn delete_logs() -> Status {
     Status::NoContent
 }
 
-/// The server for the connections in `config` (or the default config file).
-/// Without a settings location it serves no sources and watches no file.
+/// The server for the connections in `config` (or the default config file), which it watches
+/// for changes. Without a settings location it serves no sources and watches no file. A file
+/// that cannot be read or parsed stops it with the error, which names the place and never the
+/// file's text.
 pub async fn build_rocket(config: Option<&Path>) -> anyhow::Result<Rocket<Build>> {
-    let api = match ConfigFile::resolve_path(config) {
-        Some(path) => {
-            println!("Reading connections from {}", path.display());
-            ApiRuntime::from_config(path).await?
-        }
-        None => {
-            warn_no_location();
-            ApiRuntime::fixed(CollectionRuntime::start(&[]).0)
-        }
-    };
-    Ok(build_rocket_with(api, true))
+    let path = ConfigFile::resolve_path(config);
+    if let Some(path) = &path {
+        println!("Reading connections from {}", path.display());
+    }
+    let host = Host::start(path, spawner(), BadConfig::Fail)?;
+    Ok(build_rocket_with(host, true))
 }
 
-pub fn build_rocket_with(api: ApiRuntime, start_initial_collection: bool) -> Rocket<Build> {
-    let rocket = rocket::build().manage(api).mount(
-        "/",
-        rocket::routes![
-            get_activity,
-            get_providers,
-            post_collect,
-            post_recheck,
-            post_export,
-            get_logs,
-            delete_logs
-        ],
-    );
+/// Runs host work on Rocket's runtime.
+pub fn spawner() -> RunSpawner {
+    Arc::new(|work| {
+        tokio::spawn(work);
+    })
+}
 
-    if start_initial_collection {
-        rocket.attach(AdHoc::on_liftoff("initial-collection", |rocket| {
+pub fn build_rocket_with(host: Host, start_initial_collection: bool) -> Rocket<Build> {
+    rocket::build()
+        .manage(host)
+        .mount(
+            "/",
+            rocket::routes![
+                get_activity,
+                get_providers,
+                post_collect,
+                post_recheck,
+                post_export,
+                get_logs,
+                delete_logs
+            ],
+        )
+        .attach(AdHoc::on_liftoff("host", move |rocket| {
             Box::pin(async move {
-                let api = rocket.state::<ApiRuntime>().expect("API runtime");
-                api.start_initial_collection().await;
+                let host = rocket.state::<Host>().expect("host");
+                tokio::spawn(host.watch_config());
+                if start_initial_collection {
+                    host.start_initial_collection();
+                }
             })
         }))
-    } else {
-        rocket
-    }
+        .attach(AdHoc::on_shutdown("host", |rocket| {
+            Box::pin(async move {
+                if let Some(host) = rocket.state::<Host>() {
+                    host.shutdown();
+                }
+            })
+        }))
 }
 
 #[cfg(test)]

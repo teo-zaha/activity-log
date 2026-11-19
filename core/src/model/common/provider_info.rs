@@ -7,7 +7,7 @@ use crate::model::common::{
 };
 
 /// One connection and the result of its startup check.
-#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
 #[ts(export, rename_all = "camelCase")]
 pub struct ProviderInfo {

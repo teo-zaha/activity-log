@@ -4,28 +4,35 @@ use std::{
 };
 
 use activity_log_core::model::{
-    ActivityLog, ActivityLogMeta, CollectOptions, CollectedActivitySummary,
-    CollectionFailedResponse, ConnectionId, ErrorResponse, ExportFile, LogsResponse, ProviderInfo,
-    ProviderStatus, Source, SupportedOs,
+    CollectOptions, CollectionFailedResponse, ConnectionId, ErrorResponse, ExportFile,
+    LogsResponse, ProviderInfo, ProviderStatus, Source, SupportedOs,
 };
 use activity_log_core::provider::connection::{Connection, ConnectionLocation, ConnectionValues};
-use activity_log_core::runtime::{CollectionRuntime, Collector, CollectorFuture, Progress};
+use activity_log_core::runtime::{
+    Collector, Host, Outcome, Plan, RunReport, Slot, Stored, Superseded,
+};
 use rocket::{http::Status, local::asynchronous::Client};
 use tokio::sync::Notify;
 
-use crate::{ApiRuntime, build_rocket_with};
+use crate::{build_rocket_with, spawner};
 
-fn fixture_log() -> ActivityLog {
-    ActivityLog {
-        meta: ActivityLogMeta {
-            generated: "2026-03-25T10:00:00Z".to_string(),
-            start: "2026-03-01T00:00:00Z".to_string(),
-            end: "2026-03-26T00:00:00Z".to_string(),
-            pending: Vec::new(),
-        },
-        summary: CollectedActivitySummary::default(),
-        entries: Vec::new(),
+/// Settles every planned connection with no entries.
+async fn settle(plans: Vec<(ConnectionId, Plan)>) -> RunReport {
+    let mut slots = Vec::new();
+    for (id, plan) in plans {
+        let slot = match plan {
+            Plan::Collect { check, .. } => match check.await {
+                Ok(checked) => Slot::Settled(Outcome::Collected(Stored {
+                    key: checked.key,
+                    entries: Vec::new().into(),
+                })),
+                Err(Superseded) => Slot::Skipped,
+            },
+            Plan::Keep(outcome) => Slot::Kept(outcome),
+        };
+        slots.push((id, slot));
     }
+    RunReport { slots }
 }
 
 fn fixture_providers() -> Vec<ProviderInfo> {
@@ -56,32 +63,26 @@ fn fixture_providers() -> Vec<ProviderInfo> {
 }
 
 fn collector_ok() -> Collector {
-    Arc::new(
-        |_options: CollectOptions, _carried, _scope, _progress: Progress| -> CollectorFuture {
-            Box::pin(async { Ok(fixture_log()) })
-        },
-    )
+    Arc::new(|_options, plans, _progress| Box::pin(async move { Ok(settle(plans).await) }))
 }
 
 /// Finishes once `release` is notified.
 fn collector_held(release: &Arc<Notify>) -> Collector {
     let release = release.clone();
-    Arc::new(
-        move |_options, _carried, _scope, _progress| -> CollectorFuture {
-            let release = release.clone();
-            Box::pin(async move {
-                release.notified().await;
-                Ok(fixture_log())
-            })
-        },
-    )
+    Arc::new(move |_options, plans, _progress| {
+        let release = release.clone();
+        Box::pin(async move {
+            release.notified().await;
+            Ok(settle(plans).await)
+        })
+    })
 }
 
 const MARCH_FIRST_WEEK: &str = r#"{"start":"2026-03-01T00:00:00Z","end":"2026-03-06T00:00:00Z"}"#;
 
 async fn client(collector: Collector) -> Client {
-    let runtime = CollectionRuntime::new(collector, fixture_providers());
-    Client::tracked(build_rocket_with(ApiRuntime::fixed(runtime), false))
+    let host = Host::with_collector(collector, fixture_providers(), spawner());
+    Client::tracked(build_rocket_with(host, false))
         .await
         .unwrap()
 }
@@ -175,10 +176,9 @@ async fn a_collect_of_another_range_replaces_the_running_one() {
 
 #[rocket::async_test]
 async fn reports_a_failed_collection_with_its_range() {
-    let collector: Collector =
-        Arc::new(|_options, _carried, _scope, _progress| -> CollectorFuture {
-            Box::pin(async { Err(anyhow::anyhow!("Jira credentials invalid")) })
-        });
+    let collector: Collector = Arc::new(|_options, _plans, _progress| {
+        Box::pin(async { Err(anyhow::anyhow!("Jira credentials invalid")) })
+    });
     let client = client(collector).await;
 
     let collect = post_collect(&client, MARCH_FIRST_WEEK).await;
@@ -204,15 +204,13 @@ async fn post_collect_rejects_plain_dates() {
 async fn post_collect_passes_the_exact_range_to_the_collector() {
     let captured = Arc::new(Mutex::new(None));
     let collector_capture = Arc::clone(&captured);
-    let collector: Collector = Arc::new(
-        move |options: CollectOptions, _carried, _scope, _progress| -> CollectorFuture {
-            let collector_capture = Arc::clone(&collector_capture);
-            Box::pin(async move {
-                *collector_capture.lock().unwrap() = Some(options);
-                Ok(fixture_log())
-            })
-        },
-    );
+    let collector: Collector = Arc::new(move |options: CollectOptions, plans, _progress| {
+        let collector_capture = Arc::clone(&collector_capture);
+        Box::pin(async move {
+            *collector_capture.lock().unwrap() = Some(options);
+            Ok(settle(plans).await)
+        })
+    });
     let client = client(collector).await;
 
     post_collect(
@@ -412,11 +410,12 @@ async fn recheck_answers_with_the_connection_checking_and_404_for_an_unknown_one
         ConnectionLocation::Local,
         ConnectionValues::default(),
     );
-    let (runtime, checks) = CollectionRuntime::start(&[calendar]);
-    checks.await;
-    let client = Client::tracked(build_rocket_with(ApiRuntime::fixed(runtime), false))
-        .await
-        .unwrap();
+    let client = Client::tracked(build_rocket_with(
+        Host::fixed(&[calendar], spawner()),
+        false,
+    ))
+    .await
+    .unwrap();
 
     let response = client
         .post("/api/connections/recheck")
@@ -435,4 +434,48 @@ async fn recheck_answers_with_the_connection_checking_and_404_for_an_unknown_one
         .dispatch()
         .await;
     assert_eq!(response.status(), Status::NotFound);
+}
+
+/// A file that does not parse stops the server with the place, never the text on the bad line.
+#[rocket::async_test]
+async fn a_config_file_that_does_not_parse_stops_the_server_without_its_text() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("config.toml");
+    std::fs::write(&path, "[[gitlab]]\ntoken = \"glpat-STARTUP-SECRET\n").unwrap();
+
+    let message = format!(
+        "{:#}",
+        crate::build_rocket(Some(&path)).await.err().unwrap()
+    );
+
+    assert!(message.contains("line 2, column"), "{message}");
+    assert!(!message.contains("STARTUP-SECRET"), "{message}");
+}
+
+/// The CLI or the desktop app changed the file: the next request already sees it.
+#[rocket::async_test]
+async fn a_request_sees_a_config_file_changed_since_the_last_one() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("config.toml");
+    std::fs::write(&path, "").unwrap();
+    let host = Host::start(
+        Some(path.clone()),
+        spawner(),
+        activity_log_core::runtime::BadConfig::Fail,
+    )
+    .unwrap();
+    let client = Client::tracked(build_rocket_with(host, false))
+        .await
+        .unwrap();
+
+    std::fs::write(&path, "[[calendar]]\nlabel = \"Team\"\n").unwrap();
+    let body: serde_json::Value = client
+        .get("/api/providers")
+        .dispatch()
+        .await
+        .into_json()
+        .await
+        .unwrap();
+
+    assert_eq!(body["providers"][0]["connection"]["source"], "calendar");
 }
