@@ -45,6 +45,7 @@ mod write;
 
 pub use external::{ExternalEdit, ExternalEditError, edit_externally, editor_command};
 pub use precondition::{Conflict, ConflictKind, EditBase, FieldId, Precondition};
+pub(crate) use write::lock_wait;
 pub use write::{EditError, Edited, edit_config};
 
 #[cfg(test)]

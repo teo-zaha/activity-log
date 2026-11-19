@@ -137,7 +137,7 @@ fn user_uuid() -> io::Result<[u8; 16]> {
 
 /// The number of entries of an ACL, for tests.
 #[cfg(test)]
-pub(super) fn acl_entry_count(path: &Path) -> io::Result<usize> {
+pub(crate) fn acl_entry_count(path: &Path) -> io::Result<usize> {
     let path = CString::new(path.as_os_str().as_bytes()).unwrap();
     Ok(entries(unsafe { acl_get_file(path.as_ptr(), ACL_TYPE_EXTENDED) })?.len())
 }

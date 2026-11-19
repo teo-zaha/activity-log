@@ -153,7 +153,7 @@ async fn cached(
         &ConnectionId::new(Source::Jira, "default"),
         &options,
         policy,
-        Utc.with_ymd_and_hms(2026, 3, 4, 12, 0, 0).unwrap(),
+        || Utc.with_ymd_and_hms(2026, 3, 4, 12, 0, 0).unwrap(),
         |span| async move {
             let issue = issue("2026-02-01T08:00:00Z", updated, "2026-02-01T08:00:00Z");
             Ok(map_jira_issues(&[issue], &span).into_activity_entries())
