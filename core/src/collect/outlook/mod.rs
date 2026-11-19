@@ -4,7 +4,7 @@ use chrono::{DateTime, Utc};
 use serde_json::Value;
 
 use super::meeting_text::meeting_text;
-#[cfg(any(target_os = "windows", test))]
+#[cfg(any(target_os = "windows", target_os = "macos", test))]
 use crate::model::BusyStatus;
 use crate::model::{
     CollectOptions, MeetingWeight, OutlookEntry, SupportedOs,
@@ -124,23 +124,115 @@ impl OutlookFallback {
     }
 }
 
+/// The events of the macOS script's answer (`OutlookColumns`), times as RFC 3339 UTC in whole
+/// seconds, the way they have always been written (event ids end with them), and the
+/// properties Outlook would not give.
 #[cfg(any(target_os = "macos", test))]
-pub(crate) fn parse_raw_outlook_events(stdout: &str) -> Result<Vec<RawOutlookEvent>> {
-    let stdout = stdout.trim();
-    if stdout.is_empty() || stdout == "[]" {
-        return Ok(Vec::new());
-    }
+pub(crate) fn parse_outlook_columns(stdout: &str) -> Result<(Vec<RawOutlookEvent>, Vec<String>)> {
+    use anyhow::{anyhow, bail};
+    use chrono::SecondsFormat;
 
-    let parsed = serde_json::from_str::<Value>(stdout)?;
-    if let Some(array) = parsed.as_array() {
-        array
-            .iter()
-            .cloned()
-            .map(serde_json::from_value)
-            .collect::<Result<Vec<RawOutlookEvent>, _>>()
-            .map_err(Into::into)
-    } else {
-        Ok(vec![serde_json::from_value::<RawOutlookEvent>(parsed)?])
+    use crate::model::outlook::outlook_columns::OutlookColumns;
+
+    let columns = serde_json::from_str::<OutlookColumns>(stdout.trim())?;
+    let count = columns.start.len();
+    let lengths = [
+        Some(columns.subject.len()),
+        Some(columns.end.len()),
+        columns.id.as_ref().map(Vec::len),
+        columns.location.as_ref().map(Vec::len),
+        columns.organizer.as_ref().map(Vec::len),
+        columns.is_organizer.as_ref().map(Vec::len),
+        columns.busy_status.as_ref().map(Vec::len),
+        columns.body.as_ref().map(Vec::len),
+    ];
+    if lengths.into_iter().flatten().any(|len| len != count) {
+        bail!("Outlook answered lists of different lengths");
+    }
+    let time = |seconds: f64| {
+        DateTime::<Utc>::from_timestamp(seconds.round() as i64, 0)
+            .map(|at| at.to_rfc3339_opts(SecondsFormat::Secs, true))
+            .ok_or_else(|| anyhow!("Outlook answered a time out of range"))
+    };
+    // The script checks that the lists line up by the events' ids and starts. An event whose
+    // id is missing or repeated in the read is told apart only by its start and subject: events
+    // sharing both could have traded their other properties, which are left out for them.
+    let ids = (0..count)
+        .map(|index| match columns.id.as_ref().map(|ids| &ids[index]) {
+            Some(Value::String(id)) => Some(id.clone()),
+            Some(Value::Number(id)) => Some(id.to_string()),
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+    let mut id_counts = std::collections::HashMap::<&str, usize>::new();
+    for id in ids.iter().flatten() {
+        *id_counts.entry(id.as_str()).or_default() += 1;
+    }
+    let identified = |index: usize| ids[index].as_deref().is_some_and(|id| id_counts[id] == 1);
+    let key = |index: usize| {
+        (
+            columns.start[index].to_bits(),
+            columns.subject[index].as_deref(),
+        )
+    };
+    let mut keys = std::collections::HashMap::<_, usize>::new();
+    for index in (0..count).filter(|&index| !identified(index)) {
+        *keys.entry(key(index)).or_default() += 1;
+    }
+    let unaligned = (0..count)
+        .map(|index| !identified(index) && keys[&key(index)] > 1)
+        .collect::<Vec<_>>();
+    let ambiguous = unaligned.iter().filter(|unaligned| **unaligned).count();
+    if ambiguous > 0 {
+        crate::diagnostics::warn(
+            "outlook",
+            format!(
+                "{ambiguous} events without an id of their own share their start and subject with another: they come without location, organizer, busy status and description"
+            ),
+        );
+    }
+    let item = |column: &Option<Vec<Option<String>>>, index: usize| {
+        column
+            .as_ref()
+            .filter(|_| !unaligned[index])
+            .and_then(|values| values[index].clone())
+    };
+    let events = (0..count)
+        .map(|index| {
+            Ok(RawOutlookEvent {
+                id: ids[index].clone(),
+                subject: columns.subject[index].clone(),
+                start: time(columns.start[index])?,
+                end: time(columns.end[index])?,
+                location: item(&columns.location, index),
+                organizer: item(&columns.organizer, index),
+                is_organizer: columns
+                    .is_organizer
+                    .as_ref()
+                    .filter(|_| !unaligned[index])
+                    .and_then(|flags| flags[index]),
+                // Only the default calendar is read.
+                is_default_calendar: Some(true),
+                busy_status: item(&columns.busy_status, index)
+                    .as_deref()
+                    .and_then(busy_status_from_mac),
+                body: item(&columns.body, index),
+            })
+        })
+        .collect::<Result<Vec<_>>>()?;
+    Ok((events, columns.unread))
+}
+
+/// Outlook for Mac's `free busy status`, as the script writes it.
+#[cfg(any(target_os = "macos", test))]
+pub(crate) fn busy_status_from_mac(name: &str) -> Option<BusyStatus> {
+    match name.trim().to_ascii_lowercase().as_str() {
+        "free" => Some(BusyStatus::Free),
+        "tentative" => Some(BusyStatus::Tentative),
+        "busy" => Some(BusyStatus::Busy),
+        "out of office" => Some(BusyStatus::OutOfOffice),
+        "working elsewhere" => Some(BusyStatus::WorkingElsewhere),
+        _ => None,
     }
 }
 
