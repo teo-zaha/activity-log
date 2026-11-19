@@ -6,6 +6,7 @@ pub mod git;
 pub mod gitlab;
 pub mod jira;
 pub mod outlook;
+pub mod runtime;
 pub mod system;
 
 pub use activity::{
@@ -45,4 +46,7 @@ pub use git::git_entry::GitEntry;
 pub use gitlab::{gitlab_entry::GitLabEntry, gitlab_entry_type::GitLabType};
 pub use jira::{jira_entry::JiraEntry, jira_entry_type::JiraEntryType};
 pub use outlook::outlook_entry::OutlookEntry;
+pub use runtime::{
+    activity_state::ActivityState, run_end::RunEnd, run_id::RunId, run_outcome::RunOutcome,
+};
 pub use system::{system_entry::SystemEntry, system_entry_type::SystemEntryType};

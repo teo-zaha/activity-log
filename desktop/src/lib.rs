@@ -8,11 +8,10 @@ mod window_state;
 
 use std::time::{Duration, Instant};
 
-use activity_log_core::runtime::CollectionRuntime;
-use tauri::{Manager, Runtime, WebviewWindow};
+use activity_log_core::settings::ConfigFile;
+use tauri::{Manager, RunEvent, Runtime, WebviewWindow};
 
 use app_state::AppState;
-use provider_config::startup_connections;
 
 pub fn run() {
     tauri::Builder::default()
@@ -52,22 +51,26 @@ pub fn run() {
                 devtools::open_if_asked(&window);
                 after_show(window);
             }
-            let connections = startup_connections(None);
             // The startup checks can take seconds (WSL starting, a large disk, a slow host), so
             // they run in the background: until its own check finishes a source is listed as
             // checking, and the first collection reads each source as soon as it is checked.
-            let (runtime, checks) = CollectionRuntime::start(&connections);
-            let initial = runtime.initial_collection_task();
-            app.manage(AppState::new(runtime));
-            tauri::async_runtime::spawn(checks);
-            if let Some(task) = initial {
-                tauri::async_runtime::spawn(task);
-            }
+            let state = AppState::start(ConfigFile::resolve_path(None));
+            state.host.start_initial_collection();
+            // Edits from the CLI apply within a few seconds.
+            tauri::async_runtime::spawn(state.host.watch_config());
+            app.manage(state);
 
             Ok(())
         })
-        .run(tauri::generate_context!())
-        .expect("error while running tauri application");
+        .build(tauri::generate_context!())
+        .expect("error while building tauri application")
+        .run(|app, event| {
+            if let RunEvent::Exit = event
+                && let Some(state) = app.try_state::<AppState>()
+            {
+                state.host.shutdown();
+            }
+        });
 }
 
 /// How long the hidden window waits for the dashboard to show it.

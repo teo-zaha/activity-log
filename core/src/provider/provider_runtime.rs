@@ -9,7 +9,7 @@ use crate::{
     diagnostics,
     model::{
         ActivityEntry, CollectOptions, ConnectionId, IdentityEvidence, LogLevel, ProviderInfo,
-        ProviderProblem, ProviderStatus, ProvidersResponse,
+        ProviderProblem, ProviderStatus, ProvidersResponse, Source, SupportedOs,
     },
     utils::now_iso,
 };
@@ -53,6 +53,23 @@ impl ProviderRuntime {
             context,
             info,
             identity,
+        }
+    }
+
+    /// A runtime that only reports `info`, for a host built from a fixed list of checked
+    /// providers: it is never checked again and collects nothing.
+    pub fn from_info(info: ProviderInfo) -> Self {
+        let connection = Connection::new(
+            info.connection.clone(),
+            info.label.clone(),
+            ConnectionLocation::Local,
+            Default::default(),
+        );
+        Self {
+            adapter: Arc::new(Recorded(info.connection.source.clone())),
+            context: ProviderContext::for_connection(&connection, &[]),
+            info,
+            identity: IdentityEvidence::None,
         }
     }
 
@@ -146,6 +163,40 @@ impl ProviderRuntime {
     }
 }
 
+/// The adapter of [`ProviderRuntime::from_info`].
+struct Recorded(Source);
+
+impl ProviderAdapter for Recorded {
+    fn id(&self) -> Source {
+        self.0.clone()
+    }
+
+    fn supported_os(&self) -> &'static [SupportedOs] {
+        &[]
+    }
+
+    fn description(&self) -> &'static str {
+        ""
+    }
+
+    fn startup_check(
+        &self,
+        _current_os: SupportedOs,
+        _context: ProviderContext,
+    ) -> BoxFuture<'_, ProviderCheckResult> {
+        Box::pin(async { ProviderCheckResult::available() })
+    }
+
+    fn collect(
+        &self,
+        _current_os: SupportedOs,
+        _options: CollectOptions,
+        _context: ProviderContext,
+    ) -> BoxFuture<'_, anyhow::Result<Vec<ActivityEntry>>> {
+        Box::pin(async { Ok(Vec::new()) })
+    }
+}
+
 /// One runtime per connection, in connection order.
 pub async fn inspect_provider_runtimes_with(connections: &[Connection]) -> Vec<ProviderRuntime> {
     join_all(
@@ -171,6 +222,14 @@ pub fn start_check(
     let adapter = provider_registry()
         .into_iter()
         .find(|adapter| adapter.id() == *connection.source())?;
+    Some(start_check_with(adapter, connection))
+}
+
+/// `start_check` with the adapter given.
+pub(crate) fn start_check_with(
+    adapter: Arc<dyn ProviderAdapter>,
+    connection: &Connection,
+) -> (ProviderInfo, BoxFuture<'static, ProviderRuntime>) {
     let checking = provider_info(
         adapter.as_ref(),
         connection,
@@ -180,7 +239,7 @@ pub fn start_check(
     );
     let connection = connection.clone();
     let check = async move { ProviderRuntime::inspect(adapter, &connection).await };
-    Some((checking, check.boxed()))
+    (checking, check.boxed())
 }
 
 pub fn providers_response_from_runtimes(runtimes: &[ProviderRuntime]) -> ProvidersResponse {

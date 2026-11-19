@@ -9,7 +9,7 @@ use futures::{FutureExt, future::BoxFuture};
 use tokio::sync::Notify;
 
 use crate::{
-    Plan, collect_activity_detailed_with_provider_runtimes, collect_planned, collect_progressively,
+    collect_activity_detailed_with_provider_runtimes, collect_planned, collect_progressively,
     model::{
         ActivityEntry, ActivityLog, CollectOptions, ConnectionCount, ConnectionId, Source,
         SupportedOs, SystemEntry, SystemEntryType,
@@ -22,9 +22,10 @@ use crate::{
         provider_check_result::ProviderCheckResult,
         provider_context::ProviderContext,
     },
+    runtime::{Checked, CollectionKey, Outcome, Plan, RunReport, Slot, Stored},
 };
 
-fn git(repo: &Path, args: &[&str]) {
+pub(crate) fn git(repo: &Path, args: &[&str]) {
     let status = Command::new("git")
         .args(args)
         .current_dir(repo)
@@ -35,7 +36,7 @@ fn git(repo: &Path, args: &[&str]) {
     assert!(status.success(), "git {args:?}");
 }
 
-fn repo(email: Option<&str>, commits: &[(&str, &str)]) -> tempfile::TempDir {
+pub(crate) fn repo(email: Option<&str>, commits: &[(&str, &str)]) -> tempfile::TempDir {
     let dir = tempfile::tempdir().unwrap();
     git(dir.path(), &["init", "-q", "-b", "main"]);
     git(dir.path(), &["config", "user.name", "Me"]);
@@ -277,7 +278,7 @@ async fn a_fast_connection_is_reported_while_a_slow_one_still_collects() {
         .iter()
         .map(|runtime| (runtime.id().clone(), std::future::ready(runtime.clone())))
         .collect();
-    let collected = collect_progressively(march(), connections, &[], |log| {
+    let collected = collect_progressively(march(), connections, |log| {
         reported.lock().unwrap().push(log);
         release.notify_one();
     })
@@ -325,7 +326,7 @@ async fn a_blocked_startup_check_does_not_delay_another_connection() {
         (fake_id("checked-late"), late_check.boxed()),
         (fake_id("fast"), std::future::ready(fast).boxed()),
     ];
-    let collected = collect_progressively(march(), connections, &[], |log| {
+    let collected = collect_progressively(march(), connections, |log| {
         reported.lock().unwrap().push(log);
         checked.notify_one();
     })
@@ -373,7 +374,7 @@ async fn git_commits_appear_once_their_email_is_found() {
         (side.id().clone(), std::future::ready(side).boxed()),
         (ConnectionId::new(Source::Git, "work"), work_check.boxed()),
     ];
-    let collected = collect_progressively(march(), connections, &[], |log| {
+    let collected = collect_progressively(march(), connections, |log| {
         reported.lock().unwrap().push(log);
         checked.notify_one();
     })
@@ -396,21 +397,38 @@ fn carried_entry(name: &str) -> ActivityEntry {
     })
 }
 
+fn stored(entries: Vec<ActivityEntry>) -> Stored {
+    Stored {
+        key: CollectionKey::UNKEYED,
+        entries: entries.into(),
+    }
+}
+
+fn collect_plan(runtime: &ProviderRuntime, carried: Option<Stored>) -> (ConnectionId, Plan) {
+    let check = std::future::ready(Ok(Checked {
+        runtime: runtime.clone(),
+        key: CollectionKey::UNKEYED,
+    }))
+    .boxed();
+    (runtime.id().clone(), Plan::Collect { check, carried })
+}
+
 #[tokio::test]
 async fn pending_connections_show_their_carried_entries_until_they_are_in() {
     let release = Arc::new(Notify::new());
     let runtimes = fake_runtimes(&release, &["slow", "broken", "off", "fast"]).await;
     assert!(!runtimes[2].usable());
-    let carried =
-        ["slow", "broken", "off", "fast"].map(|name| (fake_id(name), vec![carried_entry(name)]));
+    let plans = runtimes
+        .iter()
+        .map(|runtime| {
+            let name = runtime.id().name.clone();
+            collect_plan(runtime, Some(stored(vec![carried_entry(&name)])))
+        })
+        .collect();
     let reported = Mutex::new(Vec::new());
 
-    let connections = runtimes
-        .iter()
-        .map(|runtime| (runtime.id().clone(), std::future::ready(runtime.clone())))
-        .collect();
-    let collected = collect_progressively(march(), connections, &carried, |log| {
-        reported.lock().unwrap().push(log);
+    let report = collect_planned(march(), plans, |report: RunReport| {
+        reported.lock().unwrap().push(report.project(march()).log);
         release.notify_one();
     })
     .await;
@@ -438,7 +456,7 @@ async fn pending_connections_show_their_carried_entries_until_they_are_in() {
             .any(|partial| labels(partial).contains(&"old slow")),
         "the slow connection shows its carried entry while it collects"
     );
-    assert_eq!(labels(&collected.log), ["slow", "fast"]);
+    assert_eq!(labels(&report.project(march()).log), ["slow", "fast"]);
 }
 
 #[tokio::test]
@@ -507,29 +525,37 @@ async fn a_commit_two_clones_of_one_connection_hold_is_not_numbered() {
 }
 
 #[tokio::test]
-async fn a_planned_collection_keeps_what_it_does_not_collect_and_names_what_failed() {
+async fn a_planned_collection_keeps_what_it_does_not_collect_and_reports_what_failed() {
     let release = Arc::new(Notify::new());
     let runtimes = fake_runtimes(&release, &["fast", "broken"]).await;
-    let mut plans = vec![(fake_id("kept"), Plan::Keep(vec![carried_entry("kept")]))];
-    plans.extend(runtimes.iter().map(|runtime| {
-        (
-            runtime.id().clone(),
-            Plan::Collect(std::future::ready(runtime.clone())),
-        )
-    }));
+    let kept = Outcome::Collected(stored(vec![carried_entry("kept")]));
+    let mut plans = vec![(fake_id("kept"), Plan::Keep(kept))];
+    plans.extend(runtimes.iter().map(|runtime| collect_plan(runtime, None)));
     // Counted without entries, as the log it is kept from counted it.
-    plans.push((fake_id("quiet"), Plan::Keep(Vec::new())));
+    plans.push((
+        fake_id("quiet"),
+        Plan::Keep(Outcome::Collected(stored(Vec::new()))),
+    ));
 
-    let collection = collect_planned(march(), plans, &[], |_| {}).await;
+    let report = collect_planned(march(), plans, |_| {}).await;
 
-    let log = &collection.activity.log;
+    let log = report.project(march()).log;
     assert_eq!(
-        counts(log),
+        counts(&log),
         [("kept", 1), ("fast", 1), ("broken", 0), ("quiet", 0)]
     );
     assert!(log.meta.pending.is_empty());
+    let failed = report
+        .slots
+        .iter()
+        .filter_map(|(id, slot)| match slot {
+            Slot::Settled(Outcome::Failed { message, .. }) => Some((id.clone(), message.clone())),
+            _ => None,
+        })
+        .collect::<Vec<_>>();
     assert_eq!(
-        collection.failed,
+        failed,
         [(fake_id("broken"), "unreachable host".to_string())]
     );
+    assert!(matches!(report.slots[0].1, Slot::Kept(_)));
 }

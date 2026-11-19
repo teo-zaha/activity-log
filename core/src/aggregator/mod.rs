@@ -199,51 +199,9 @@ pub fn make_ids_unique(entries: &mut [ActivityEntry]) -> usize {
     renamed
 }
 
-/// The entries of `log` by connection, as the connections collected them: a git commit that
-/// absorbed a GitLab push gives the push back to its GitLab connection. Connections keep the
-/// order in which their first entry appears.
-pub fn entries_by_connection(log: &ActivityLog) -> Vec<ConnectionEntries> {
-    let mut by_connection = Vec::<ConnectionEntries>::new();
-    let mut push = |entry: ActivityEntry| {
-        let id = ConnectionId::new(entry.source(), entry.connection());
-        match by_connection.iter_mut().find(|(other, _)| *other == id) {
-            Some((_, entries)) => entries.push(entry),
-            None => by_connection.push((id, vec![entry])),
-        }
-    };
-    for entry in &log.entries {
-        match entry {
-            ActivityEntry::Git(commit) if commit.gitlab_event.is_some() => {
-                let mut commit = commit.clone();
-                let push_event = commit.gitlab_event.take().expect("checked above");
-                push(ActivityEntry::Git(commit));
-                push(ActivityEntry::GitLab(*push_event));
-            }
-            other => push(other.clone()),
-        }
-    }
-    by_connection
-}
-
-/// What a collection of `options` carries from `shown`, the log on screen when it starts, for
-/// its connections that are not in yet. Collecting the same range again keeps everything:
-/// meetings are collected by overlap, so one that began before the range is still in it. For
-/// another range, an entry stays if it falls inside; a meeting if it overlaps.
-pub fn carry_over(shown: &ActivityLog, options: CollectOptions) -> Vec<ConnectionEntries> {
-    let same_range = parse_timestamp(&shown.meta.start).map(|at| at.to_utc())
-        == Some(options.start)
-        && parse_timestamp(&shown.meta.end).map(|at| at.to_utc()) == Some(options.end);
-    let mut carried = entries_by_connection(shown);
-    if !same_range {
-        for (_, entries) in &mut carried {
-            entries.retain(|entry| within(entry, options));
-        }
-        carried.retain(|(_, entries)| !entries.is_empty());
-    }
-    carried
-}
-
-fn within(entry: &ActivityEntry, options: CollectOptions) -> bool {
+/// Whether a carried entry belongs to a collection of `options`: an entry if it falls inside,
+/// a meeting if it overlaps.
+pub(crate) fn within(entry: &ActivityEntry, options: CollectOptions) -> bool {
     let Some(start) = parse_timestamp(entry.timestamp()).map(|at| at.to_utc()) else {
         return false;
     };

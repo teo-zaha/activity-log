@@ -1,12 +1,12 @@
 use chrono::{TimeZone, Utc};
 
 use super::{
-    carried_for, carry_over, collect_activity_from_results, compare_timestamps_desc,
-    entries_by_connection, make_ids_unique, merge_git_with_gitlab,
+    carried_for, collect_activity_from_results, compare_timestamps_desc, make_ids_unique,
+    merge_git_with_gitlab, within,
 };
 use crate::model::{
-    ActivityEntry, ActivityLog, CalendarEntry, CollectOptions, ConnectionId, GitEntry, GitLabEntry,
-    GitLabType, MeetingWeight, Source,
+    ActivityEntry, CalendarEntry, CollectOptions, ConnectionId, GitEntry, GitLabEntry, GitLabType,
+    MeetingWeight, Source,
 };
 
 #[test]
@@ -154,44 +154,6 @@ fn hashes(entries: &[ActivityEntry]) -> Vec<(String, bool)> {
         .collect()
 }
 
-fn a_log(entries: Vec<(ConnectionId, Vec<ActivityEntry>)>) -> ActivityLog {
-    collect_activity_from_results(march(), entries, Vec::new(), Vec::new()).log
-}
-
-#[test]
-fn a_log_taken_apart_by_connection_builds_the_same_log_again() {
-    let log = a_log(vec![
-        (
-            id(Source::Git, "laptop"),
-            vec![
-                commit_in("laptop", "abc123", "2026-03-10T10:00:00Z"),
-                commit_in("laptop", "def456", "2026-03-11T10:00:00Z"),
-            ],
-        ),
-        (
-            id(Source::Gitlab, "work"),
-            vec![push("abc123"), push_at("fff000", "2026-03-12T10:00:00Z")],
-        ),
-        (
-            id(Source::Calendar, "team"),
-            vec![meeting("2026-03-09T08:00:00Z", 60)],
-        ),
-    ]);
-    assert_eq!(log.summary.merged_count, 1);
-
-    let rebuilt = a_log(entries_by_connection(&log));
-
-    assert_eq!(
-        serde_json::to_value(&rebuilt.entries).unwrap(),
-        serde_json::to_value(&log.entries).unwrap()
-    );
-    let gitlab = entries_by_connection(&log)
-        .into_iter()
-        .find(|(id, _)| id.source == Source::Gitlab)
-        .unwrap();
-    assert_eq!(gitlab.1.len(), 2, "the folded push is given back to GitLab");
-}
-
 #[test]
 fn a_carried_commit_a_finished_connection_has_is_shown_once() {
     let laptop = id(Source::Git, "laptop");
@@ -265,51 +227,31 @@ fn only_pending_connections_carry() {
 }
 
 #[test]
-fn collecting_the_same_range_again_keeps_a_meeting_that_began_before_it() {
-    let shown = a_log(vec![(
-        id(Source::Calendar, "team"),
-        vec![meeting("2026-02-28T23:00:00Z", 120)],
-    )]);
-
-    let carried = carry_over(&shown, march());
-
-    assert_eq!(carried.len(), 1);
-    assert_eq!(carried[0].1.len(), 1);
+fn a_meeting_that_began_before_the_range_is_within_it() {
+    assert!(within(&meeting("2026-02-28T23:00:00Z", 120), march()));
 }
 
 #[test]
 fn another_range_keeps_what_falls_inside_and_meetings_that_overlap_it() {
-    let shown = a_log(vec![
-        (
-            id(Source::Calendar, "team"),
-            vec![
-                // From the evening before into the new range.
-                meeting("2026-03-09T23:00:00Z", 120),
-                // Ended before it.
-                meeting("2026-03-09T20:00:00Z", 60),
-            ],
-        ),
-        (
-            id(Source::Git, "laptop"),
-            vec![
-                commit_in("laptop", "in", "2026-03-10T10:00:00Z"),
-                commit_in("laptop", "out", "2026-03-09T10:00:00Z"),
-            ],
-        ),
-    ]);
     let later = CollectOptions {
         start: Utc.with_ymd_and_hms(2026, 3, 10, 0, 0, 0).unwrap(),
         ..march()
     };
+    let entries = [
+        // From the evening before into the new range.
+        meeting("2026-03-09T23:00:00Z", 120),
+        // Ended before it.
+        meeting("2026-03-09T20:00:00Z", 60),
+        commit_in("laptop", "in", "2026-03-10T10:00:00Z"),
+        commit_in("laptop", "out", "2026-03-09T10:00:00Z"),
+    ];
 
-    let carried = carry_over(&shown, later);
-
-    let timestamps = carried
+    let timestamps = entries
         .iter()
-        .flat_map(|(_, entries)| entries)
+        .filter(|entry| within(entry, later))
         .map(|entry| entry.timestamp().to_string())
         .collect::<Vec<_>>();
-    assert_eq!(timestamps, ["2026-03-10T10:00:00Z", "2026-03-09T23:00:00Z"]);
+    assert_eq!(timestamps, ["2026-03-09T23:00:00Z", "2026-03-10T10:00:00Z"]);
 }
 
 #[test]
@@ -432,47 +374,4 @@ fn a_push_folds_into_one_commit_even_when_two_clones_have_it() {
         .count();
     assert_eq!(folded, 1, "the push shows once");
     assert!(merged.remaining_gitlab.is_empty());
-}
-
-/// Rebuilding a log from its parts (a recheck of another source does) keeps the same push
-/// folded and the same one visible.
-#[test]
-fn two_pushes_of_one_commit_keep_their_places_when_the_log_is_rebuilt() {
-    let with_id = |id: &str, at: &str| {
-        let ActivityEntry::GitLab(mut push) = push_at("abc123", at) else {
-            unreachable!()
-        };
-        push.id = id.to_string();
-        ActivityEntry::GitLab(push)
-    };
-    let log = a_log(vec![
-        (
-            id(Source::Git, "laptop"),
-            vec![commit_in("laptop", "abc123", "2026-03-10T10:00:00Z")],
-        ),
-        (
-            id(Source::Gitlab, "work"),
-            vec![
-                with_id("push-a", "2026-03-10T12:00:00Z"),
-                with_id("push-b", "2026-03-10T11:00:00Z"),
-            ],
-        ),
-    ]);
-    let placement = |log: &ActivityLog| {
-        log.entries
-            .iter()
-            .map(|entry| match entry {
-                ActivityEntry::Git(commit) => {
-                    format!("folded {}", commit.gitlab_event.as_ref().unwrap().id)
-                }
-                other => format!("visible {}", other.id()),
-            })
-            .collect::<Vec<_>>()
-    };
-
-    let mut rebuilt = log.clone();
-    for _ in 0..3 {
-        rebuilt = a_log(entries_by_connection(&rebuilt));
-        assert_eq!(placement(&rebuilt), placement(&log));
-    }
 }
