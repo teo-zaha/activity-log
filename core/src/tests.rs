@@ -9,7 +9,7 @@ use futures::{FutureExt, future::BoxFuture};
 use tokio::sync::Notify;
 
 use crate::{
-    collect_activity_detailed_with_provider_runtimes, collect_progressively,
+    Plan, collect_activity_detailed_with_provider_runtimes, collect_planned, collect_progressively,
     model::{
         ActivityEntry, ActivityLog, CollectOptions, ConnectionCount, ConnectionId, Source,
         SupportedOs, SystemEntry, SystemEntryType,
@@ -155,7 +155,8 @@ fn march() -> CollectOptions {
 }
 
 /// A source whose connections each collect one entry labelled with their name: `slow` only
-/// once `release` is notified, and `broken` never.
+/// once `release` is notified, and `broken` never; `off` fails its startup check and `twice`
+/// collects its entry twice, as a source that repeats itself would.
 struct FakeSource {
     release: Arc<Notify>,
 }
@@ -176,9 +177,18 @@ impl ProviderAdapter for FakeSource {
     fn startup_check(
         &self,
         _current_os: SupportedOs,
-        _context: ProviderContext,
+        context: ProviderContext,
     ) -> BoxFuture<'_, ProviderCheckResult> {
-        Box::pin(async { ProviderCheckResult::available() })
+        let off = context
+            .connection()
+            .is_some_and(|connection| connection.id.name == "off");
+        Box::pin(async move {
+            if off {
+                ProviderCheckResult::unavailable("switched off")
+            } else {
+                ProviderCheckResult::available()
+            }
+        })
     }
 
     fn collect(
@@ -197,14 +207,16 @@ impl ProviderAdapter for FakeSource {
                 "broken" => anyhow::bail!("unreachable host"),
                 _ => 5,
             };
-            Ok(vec![ActivityEntry::System(SystemEntry {
+            let copies = if name == "twice" { 2 } else { 1 };
+            let entry = ActivityEntry::System(SystemEntry {
                 source: "system".to_string(),
                 connection: String::new(),
                 id: name.clone(),
                 entry_type: SystemEntryType::Unlock,
                 timestamp: format!("2026-03-0{day}T09:00:00+00:00"),
                 label: name,
-            })])
+            });
+            Ok(vec![entry; copies])
         })
     }
 }
@@ -265,7 +277,7 @@ async fn a_fast_connection_is_reported_while_a_slow_one_still_collects() {
         .iter()
         .map(|runtime| (runtime.id().clone(), std::future::ready(runtime.clone())))
         .collect();
-    let collected = collect_progressively(march(), connections, |log| {
+    let collected = collect_progressively(march(), connections, &[], |log| {
         reported.lock().unwrap().push(log);
         release.notify_one();
     })
@@ -313,7 +325,7 @@ async fn a_blocked_startup_check_does_not_delay_another_connection() {
         (fake_id("checked-late"), late_check.boxed()),
         (fake_id("fast"), std::future::ready(fast).boxed()),
     ];
-    let collected = collect_progressively(march(), connections, |log| {
+    let collected = collect_progressively(march(), connections, &[], |log| {
         reported.lock().unwrap().push(log);
         checked.notify_one();
     })
@@ -361,7 +373,7 @@ async fn git_commits_appear_once_their_email_is_found() {
         (side.id().clone(), std::future::ready(side).boxed()),
         (ConnectionId::new(Source::Git, "work"), work_check.boxed()),
     ];
-    let collected = collect_progressively(march(), connections, |log| {
+    let collected = collect_progressively(march(), connections, &[], |log| {
         reported.lock().unwrap().push(log);
         checked.notify_one();
     })
@@ -371,4 +383,153 @@ async fn git_commits_appear_once_their_email_is_found() {
     assert!(reported[0].entries.is_empty(), "{:?}", reported[0].entries);
     assert_eq!(reported[0].meta.pending.len(), 1);
     assert_eq!(collected.log.entries.len(), 2);
+}
+
+fn carried_entry(name: &str) -> ActivityEntry {
+    ActivityEntry::System(SystemEntry {
+        source: "system".to_string(),
+        connection: name.to_string(),
+        id: format!("old {name}"),
+        entry_type: SystemEntryType::Lock,
+        timestamp: "2026-03-02T09:00:00+00:00".to_string(),
+        label: format!("old {name}"),
+    })
+}
+
+#[tokio::test]
+async fn pending_connections_show_their_carried_entries_until_they_are_in() {
+    let release = Arc::new(Notify::new());
+    let runtimes = fake_runtimes(&release, &["slow", "broken", "off", "fast"]).await;
+    assert!(!runtimes[2].usable());
+    let carried =
+        ["slow", "broken", "off", "fast"].map(|name| (fake_id(name), vec![carried_entry(name)]));
+    let reported = Mutex::new(Vec::new());
+
+    let connections = runtimes
+        .iter()
+        .map(|runtime| (runtime.id().clone(), std::future::ready(runtime.clone())))
+        .collect();
+    let collected = collect_progressively(march(), connections, &carried, |log| {
+        reported.lock().unwrap().push(log);
+        release.notify_one();
+    })
+    .await;
+
+    let reported = reported.into_inner().unwrap();
+    assert!(!reported.is_empty());
+    for partial in &reported {
+        for label in labels(partial) {
+            if let Some(name) = label.strip_prefix("old ") {
+                assert!(
+                    partial.meta.pending.contains(&fake_id(name)),
+                    "{label} is shown though its connection settled"
+                );
+            }
+        }
+        assert!(
+            counts(partial)
+                .iter()
+                .all(|(name, _)| !partial.meta.pending.contains(&fake_id(name)))
+        );
+    }
+    assert!(
+        reported
+            .iter()
+            .any(|partial| labels(partial).contains(&"old slow")),
+        "the slow connection shows its carried entry while it collects"
+    );
+    assert_eq!(labels(&collected.log), ["slow", "fast"]);
+}
+
+#[tokio::test]
+async fn entries_a_source_repeats_get_ids_of_their_own_and_one_warning() {
+    let release = Arc::new(Notify::new());
+    let runtimes = fake_runtimes(&release, &["twice", "fast"]).await;
+
+    let collected = collect_activity_detailed_with_provider_runtimes(march(), &runtimes).await;
+
+    let mut ids = collected
+        .log
+        .entries
+        .iter()
+        .map(|entry| (entry.connection().to_string(), entry.id().to_string()))
+        .collect::<Vec<_>>();
+    ids.sort();
+    assert_eq!(
+        ids,
+        [
+            ("fast".to_string(), "fast".to_string()),
+            ("twice".to_string(), "twice".to_string()),
+            ("twice".to_string(), "twice#2".to_string()),
+        ]
+    );
+    let warnings = crate::diagnostics::entries()
+        .into_iter()
+        .filter(|entry| entry.scope == "system/twice" && entry.message.contains("Numbered"))
+        .count();
+    assert_eq!(warnings, 1);
+}
+
+/// Two clones of one repository in one connection: Git lists the commit once, so its id is not
+/// numbered and nothing is reported.
+#[tokio::test]
+async fn a_commit_two_clones_of_one_connection_hold_is_not_numbered() {
+    let original = repo(Some("me@example.com"), &[("me@example.com", "Shared work")]);
+    let parent = tempfile::tempdir().unwrap();
+    for name in ["one", "two"] {
+        git(
+            parent.path(),
+            &["clone", "-q", &original.path().display().to_string(), name],
+        );
+        git(
+            &parent.path().join(name),
+            &["config", "user.email", "me@example.com"],
+        );
+    }
+    let runtimes =
+        inspect_provider_runtimes_with(&[git_connection("both-clones", parent.path())]).await;
+
+    let collected = collect_activity_detailed_with_provider_runtimes(march(), &runtimes).await;
+
+    let ids = collected
+        .log
+        .entries
+        .iter()
+        .map(|entry| entry.id().to_string())
+        .collect::<Vec<_>>();
+    assert_eq!(ids.len(), 1, "{ids:?}");
+    assert!(!ids[0].contains('#'));
+    assert!(
+        !crate::diagnostics::entries()
+            .iter()
+            .any(|entry| entry.scope == "git/both-clones" && entry.message.contains("Numbered"))
+    );
+}
+
+#[tokio::test]
+async fn a_planned_collection_keeps_what_it_does_not_collect_and_names_what_failed() {
+    let release = Arc::new(Notify::new());
+    let runtimes = fake_runtimes(&release, &["fast", "broken"]).await;
+    let mut plans = vec![(fake_id("kept"), Plan::Keep(vec![carried_entry("kept")]))];
+    plans.extend(runtimes.iter().map(|runtime| {
+        (
+            runtime.id().clone(),
+            Plan::Collect(std::future::ready(runtime.clone())),
+        )
+    }));
+    // Counted without entries, as the log it is kept from counted it.
+    plans.push((fake_id("quiet"), Plan::Keep(Vec::new())));
+
+    let collection = collect_planned(march(), plans, &[], |_| {}).await;
+
+    let log = &collection.activity.log;
+    assert_eq!(
+        counts(log),
+        [("kept", 1), ("fast", 1), ("broken", 0), ("quiet", 0)]
+    );
+    assert!(log.meta.pending.is_empty());
+    assert_eq!(
+        collection.failed,
+        [(fake_id("broken"), "unreachable host".to_string())]
+    );
 }

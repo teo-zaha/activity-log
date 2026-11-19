@@ -11,7 +11,6 @@ import type { ActivityResponse } from './backend/backend-contract'
 import { ActivityBackendClient } from './backend/backend-client'
 import { extractBackendErrorMessage } from './backend/error-message'
 import { ActivityViewStateService } from './activity-view-state.service'
-import { withCarriedEntries } from '../utils/carry-over'
 import { dayKeyOf, lastDayKeyBefore, localDayRange } from '../utils/local-day'
 import type { CollectionOperation, CollectionStatus, ProviderViewModel } from './types'
 
@@ -41,8 +40,6 @@ export class ActivityDataService {
   /** Numbers the provider requests, so an answer older than the list on screen is dropped. */
   private providerRequests = 0
   private shownProviderRequest = 0
-  /** What was on screen when the running collection began, see `withCarriedEntries`. */
-  private previousEntries: readonly ActivityEntry[] = []
   /** Nothing is set up yet: the dashboard asks for a first source instead of showing views. */
   readonly hasNoSources = computed(() => this.providersLoaded() && this.providerInfo().length === 0)
   readonly summary = signal<CollectedActivitySummary | null>(null)
@@ -96,9 +93,9 @@ export class ActivityDataService {
     this.providerViewModels().filter(p => !p.info.usable && !isChecking(p.info))
   )
 
-  /** Shows `log`; a partial one is filled up with what was shown for its pending connections. */
+  /** Shows `log`; a partial one already holds what was shown for its pending connections. */
   loadLog(log: ActivityLog): void {
-    this.allEntries.set(withCarriedEntries(log, this.previousEntries))
+    this.allEntries.set(log.entries)
     this.summary.set(log.summary)
     this.meta.set(log.meta)
     this.showRange(log.meta)
@@ -157,7 +154,6 @@ export class ActivityDataService {
     this.isLoading.set(true)
     this.error.set(null)
     if (!keepSelection) this.viewState.clearSelection()
-    this.previousEntries = this.allEntries()
     this.collectionStatus.set({ kind: 'collecting', operation, startedAt: Date.now() })
   }
 
@@ -168,7 +164,6 @@ export class ActivityDataService {
 
   private finish(): void {
     this.isLoading.set(false)
-    this.previousEntries = []
     if (this.collectionStatus().kind === 'collecting') {
       this.collectionStatus.set({ kind: 'idle' })
     }

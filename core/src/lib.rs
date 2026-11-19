@@ -15,7 +15,7 @@ mod tests;
 
 use std::{collections::BTreeMap, future::Future, sync::Arc};
 
-use aggregator::collect_activity_from_results;
+use aggregator::{carried_for, collect_activity_from_results, make_ids_unique};
 use futures::{FutureExt, StreamExt, future::BoxFuture, stream::FuturesUnordered};
 use model::{ActivityEntry, ActivityLog, CollectOptions, CollectedActivity, ConnectionId, Source};
 use provider::{
@@ -35,7 +35,22 @@ pub async fn collect_activity_detailed_with_provider_runtimes(
         .iter()
         .map(|runtime| (runtime.id().clone(), std::future::ready(runtime.clone())))
         .collect();
-    collect_progressively(options, connections, |_| {}).await
+    collect_progressively(options, connections, &[], |_| {}).await
+}
+
+/// What a collection does with one connection.
+pub enum Plan<Check> {
+    /// Collects it once its startup check (this future) ends.
+    Collect(Check),
+    /// Lists these entries for it, as an earlier collection found them.
+    Keep(Vec<ActivityEntry>),
+}
+
+/// The result of `collect_planned`.
+pub struct Collection {
+    pub activity: CollectedActivity,
+    /// The connections whose collection failed, with the error.
+    pub failed: Vec<(ConnectionId, String)>,
 }
 
 enum Step {
@@ -50,7 +65,9 @@ enum Slot {
     /// Its startup check found it unusable.
     Skipped,
     Done(Vec<ActivityEntry>),
-    Failed,
+    Failed(String),
+    /// Not collected: what an earlier collection found stays.
+    Kept(Vec<ActivityEntry>),
 }
 
 /// What the usable connections of one kind share during a collection.
@@ -63,13 +80,35 @@ struct Kind {
 
 /// Collects every connection as soon as its startup check (the future next to its id) ends, so
 /// a slow check or a slow source holds back only itself. `on_progress` gets the log of what is
-/// there each time a connection settles while others are pending; the complete result is
-/// returned.
+/// there each time a connection settles while others are pending, with the `carried` entries of
+/// those still pending (see `aggregator::carry_over`); the complete result is returned.
 pub async fn collect_progressively<'a, Check>(
     options: CollectOptions,
     connections: Vec<(ConnectionId, Check)>,
+    carried: &[ConnectionEntries],
     on_progress: impl Fn(ActivityLog),
 ) -> CollectedActivity
+where
+    Check: Future<Output = ProviderRuntime> + Send + 'a,
+{
+    let plans = connections
+        .into_iter()
+        .map(|(id, check)| (id, Plan::Collect(check)))
+        .collect();
+    collect_planned(options, plans, carried, on_progress)
+        .await
+        .activity
+}
+
+/// `collect_progressively` for connections that may keep what an earlier collection found
+/// (`Plan::Keep`) instead of being collected, such as after a connection is checked again. Also
+/// names the connections whose collection failed.
+pub async fn collect_planned<'a, Check>(
+    options: CollectOptions,
+    connections: Vec<(ConnectionId, Plan<Check>)>,
+    carried: &[ConnectionEntries],
+    on_progress: impl Fn(ActivityLog),
+) -> Collection
 where
     Check: Future<Output = ProviderRuntime> + Send + 'a,
 {
@@ -81,18 +120,23 @@ where
             options.end.to_rfc3339()
         ),
     );
-    let (ids, checks): (Vec<_>, Vec<_>) = connections.into_iter().unzip();
-    let mut slots = ids.iter().map(|_| Slot::Pending).collect::<Vec<_>>();
+    let (ids, plans): (Vec<_>, Vec<_>) = connections.into_iter().unzip();
+    let mut slots = Vec::with_capacity(plans.len());
+    let mut steps = FuturesUnordered::<BoxFuture<'a, Step>>::new();
+    for (index, plan) in plans.into_iter().enumerate() {
+        match plan {
+            Plan::Collect(check) => {
+                slots.push(Slot::Pending);
+                steps.push(
+                    check
+                        .map(move |runtime| Step::Checked(index, Box::new(runtime)))
+                        .boxed(),
+                );
+            }
+            Plan::Keep(entries) => slots.push(Slot::Kept(entries)),
+        }
+    }
     let mut kinds = BTreeMap::<Source, Kind>::new();
-    let mut steps = checks
-        .into_iter()
-        .enumerate()
-        .map(|(index, check)| {
-            check
-                .map(move |runtime| Step::Checked(index, Box::new(runtime)))
-                .boxed()
-        })
-        .collect::<FuturesUnordered<BoxFuture<'a, Step>>>();
 
     while let Some(step) = steps.next().await {
         let index = match step {
@@ -121,18 +165,29 @@ where
                 slots[index] = Slot::Done(entries);
                 index
             }
-            Step::Collected(index, Err(_)) => {
-                slots[index] = Slot::Failed;
+            Step::Collected(index, Err(err)) => {
+                slots[index] = Slot::Failed(format!("{err:#}"));
                 index
             }
         };
         finish_kind(&ids[index].source, &ids, &slots, &mut kinds);
         if slots.iter().any(|slot| matches!(slot, Slot::Pending)) {
-            on_progress(collected_so_far(options, &ids, &slots, &kinds).log);
+            on_progress(collected_so_far(options, &ids, &slots, &kinds, carried).log);
         }
     }
 
-    collected_so_far(options, &ids, &slots, &kinds)
+    let failed = ids
+        .iter()
+        .zip(&slots)
+        .filter_map(|(id, slot)| match slot {
+            Slot::Failed(message) => Some((id.clone(), message.clone())),
+            _ => None,
+        })
+        .collect();
+    Collection {
+        activity: collected_so_far(options, &ids, &slots, &kinds, carried),
+        failed,
+    }
 }
 
 async fn collect_connection(
@@ -187,6 +242,17 @@ fn finish_kind(
     kind.finished = kind
         .adapter
         .finish_kind(kind.state.as_ref(), done, complete);
+    // After `finish_kind`, which drops what a kind lists once (a commit two clones hold), so
+    // only ids a source really repeats are numbered; reported once, on the complete pass.
+    for (id, entries) in &mut kind.finished {
+        let renamed = make_ids_unique(entries);
+        if renamed > 0 && complete {
+            diagnostics::warn(
+                id.to_string(),
+                format!("Numbered {renamed} entries whose id an earlier entry has"),
+            );
+        }
+    }
 }
 
 fn collected_so_far(
@@ -194,6 +260,7 @@ fn collected_so_far(
     ids: &[ConnectionId],
     slots: &[Slot],
     kinds: &BTreeMap<Source, Kind>,
+    carried: &[ConnectionEntries],
 ) -> CollectedActivity {
     let mut results = Vec::new();
     let mut pending = Vec::new();
@@ -202,7 +269,8 @@ fn collected_so_far(
             Slot::Pending => pending.push(id.clone()),
             Slot::Skipped => {}
             // A failed connection is still listed in the summary, with no entries.
-            Slot::Failed => results.push((id.clone(), Vec::new())),
+            Slot::Failed(_) => results.push((id.clone(), Vec::new())),
+            Slot::Kept(entries) => results.push((id.clone(), entries.clone())),
             Slot::Done(_) => {
                 let entries = kinds
                     .get(&id.source)
@@ -213,5 +281,6 @@ fn collected_so_far(
             }
         }
     }
-    collect_activity_from_results(options, results, pending)
+    let carried = carried_for(carried, &pending, &results);
+    collect_activity_from_results(options, results, pending, carried)
 }

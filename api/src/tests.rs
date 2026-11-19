@@ -56,7 +56,7 @@ fn fixture_providers() -> Vec<ProviderInfo> {
 
 fn collector_ok() -> Collector {
     Arc::new(
-        |_options: CollectOptions, _progress: Progress| -> CollectorFuture {
+        |_options: CollectOptions, _carried, _scope, _progress: Progress| -> CollectorFuture {
             Box::pin(async { Ok(fixture_log()) })
         },
     )
@@ -65,13 +65,15 @@ fn collector_ok() -> Collector {
 /// Finishes once `release` is notified.
 fn collector_held(release: &Arc<Notify>) -> Collector {
     let release = release.clone();
-    Arc::new(move |_options, _progress| -> CollectorFuture {
-        let release = release.clone();
-        Box::pin(async move {
-            release.notified().await;
-            Ok(fixture_log())
-        })
-    })
+    Arc::new(
+        move |_options, _carried, _scope, _progress| -> CollectorFuture {
+            let release = release.clone();
+            Box::pin(async move {
+                release.notified().await;
+                Ok(fixture_log())
+            })
+        },
+    )
 }
 
 const MARCH_FIRST_WEEK: &str = r#"{"start":"2026-03-01T00:00:00Z","end":"2026-03-06T00:00:00Z"}"#;
@@ -139,7 +141,20 @@ async fn a_running_collection_answers_202_with_its_pending_connections() {
 }
 
 #[rocket::async_test]
-async fn a_second_collect_answers_202_with_the_running_range() {
+async fn a_second_collect_of_the_same_range_answers_202_with_the_running_one() {
+    let release = Arc::new(Notify::new());
+    let client = client(collector_held(&release)).await;
+    post_collect(&client, MARCH_FIRST_WEEK).await;
+
+    let second = post_collect(&client, MARCH_FIRST_WEEK).await;
+
+    assert_eq!(second.status(), Status::Accepted);
+    let second: serde_json::Value = second.into_json().await.unwrap();
+    assert_eq!(second["meta"]["start"], "2026-03-01T00:00:00+00:00");
+}
+
+#[rocket::async_test]
+async fn a_collect_of_another_range_replaces_the_running_one() {
     let release = Arc::new(Notify::new());
     let client = client(collector_held(&release)).await;
     post_collect(&client, MARCH_FIRST_WEEK).await;
@@ -152,14 +167,17 @@ async fn a_second_collect_answers_202_with_the_running_range() {
 
     assert_eq!(second.status(), Status::Accepted);
     let second: serde_json::Value = second.into_json().await.unwrap();
-    assert_eq!(second["meta"]["start"], "2026-03-01T00:00:00+00:00");
+    assert_eq!(second["meta"]["start"], "2026-02-01T00:00:00+00:00");
+    let running = activity_with_status(&client, Status::Accepted).await;
+    assert_eq!(running["meta"]["start"], "2026-02-01T00:00:00+00:00");
 }
 
 #[rocket::async_test]
 async fn reports_a_failed_collection_with_its_range() {
-    let collector: Collector = Arc::new(|_options, _progress| -> CollectorFuture {
-        Box::pin(async { Err(anyhow::anyhow!("Jira credentials invalid")) })
-    });
+    let collector: Collector =
+        Arc::new(|_options, _carried, _scope, _progress| -> CollectorFuture {
+            Box::pin(async { Err(anyhow::anyhow!("Jira credentials invalid")) })
+        });
     let client = client(collector).await;
 
     let collect = post_collect(&client, MARCH_FIRST_WEEK).await;
@@ -186,7 +204,7 @@ async fn post_collect_passes_the_exact_range_to_the_collector() {
     let captured = Arc::new(Mutex::new(None));
     let collector_capture = Arc::clone(&captured);
     let collector: Collector = Arc::new(
-        move |options: CollectOptions, _progress| -> CollectorFuture {
+        move |options: CollectOptions, _carried, _scope, _progress| -> CollectorFuture {
             let collector_capture = Arc::clone(&collector_capture);
             Box::pin(async move {
                 *collector_capture.lock().unwrap() = Some(options);
