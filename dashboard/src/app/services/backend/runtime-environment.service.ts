@@ -19,13 +19,19 @@ export class RuntimeEnvironmentService {
     const { getCurrentWindow } = await import('@tauri-apps/api/window')
     const appWindow = getCurrentWindow()
 
+    // Reads can overlap and answer out of order; only the latest one counts.
+    let latest = 0
     const applyFullscreenClass = async (): Promise<void> => {
-      document.documentElement.classList.toggle('fullscreen', await appWindow.isFullscreen())
+      const read = ++latest
+      const fullscreen = await appWindow.isFullscreen()
+      if (read === latest) document.documentElement.classList.toggle('fullscreen', fullscreen)
     }
 
-    await applyFullscreenClass()
+    // Listening first: the desktop app restores fullscreen just after the window shows, maybe
+    // between the first read and the listener.
     await appWindow.onResized(() => {
       void applyFullscreenClass()
     })
+    await applyFullscreenClass()
   }
 }

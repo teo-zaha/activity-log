@@ -23,6 +23,22 @@
         // The Windows window has no title bar (tauri.windows.conf.json): the header is one, and
         // the app draws the window buttons (WindowControlsComponent).
         root.classList.toggle('frameless', tauri && navigator.userAgent.includes('Windows'))
+        // The desktop app shows no right-click menu outside text fields. Until WindowChromeService
+        // takes over (it says so with this event), this covers the splash; it is no Signality
+        // listener because Angular has not started.
+        if (tauri) {
+          const block = event => {
+            const target = event.composedPath()[0]
+            const field = target instanceof Element && target.closest('input, textarea')
+            if (!field && !target?.isContentEditable) event.preventDefault()
+          }
+          document.addEventListener('contextmenu', block)
+          document.addEventListener(
+            'activity-log:context-menu',
+            () => document.removeEventListener('contextmenu', block),
+            { once: true }
+          )
+        }
       })()
     </script>
     <link rel="icon" type="image/svg+xml" href="favicon.svg" />

@@ -523,6 +523,8 @@ pnpm desktop:dev      # development
 pnpm desktop:build    # debug build / packaging
 ```
 
+The window opens at its last size and position, maximized or fullscreen as it was; on a screen that is no longer connected the OS places it. Right-click shows the Cut, Copy and Paste menu only in text fields and on selected text. `ACTIVITY_LOG_DEVTOOLS=1 pnpm desktop:dev` opens the web inspector.
+
 **Windows installer from macOS/Linux**
 
 Cross-builds the NSIS installer for `x86_64-pc-windows-msvc` with [cargo-xwin](https://github.com/rust-cross/cargo-xwin) (Microsoft CRT/SDK are downloaded on first run). The `windows` flake shell provides the Rust target, cargo-xwin, LLVM (`clang-cl`, `lld-link`, `llvm-rc`) and NSIS:

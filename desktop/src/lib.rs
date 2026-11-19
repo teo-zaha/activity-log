@@ -1,13 +1,15 @@
 mod app_state;
 mod commands;
 mod deep_link;
+mod devtools;
 mod provider_config;
 mod window_chrome;
+mod window_state;
 
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use activity_log_core::runtime::CollectionRuntime;
-use tauri::{AppHandle, Manager, Runtime};
+use tauri::{Manager, Runtime, WebviewWindow};
 
 use app_state::AppState;
 use provider_config::startup_connections;
@@ -19,6 +21,7 @@ pub fn run() {
             deep_link::show_main_window(app);
         }))
         .plugin(tauri_plugin_deep_link::init())
+        .plugin(window_state::plugin())
         // Only `open_url` opens links, with its own check; the plugin's commands stay without a
         // permission and its click interception is off.
         .plugin(
@@ -44,7 +47,11 @@ pub fn run() {
         ])
         .setup(move |app| {
             deep_link::setup(app.handle());
-            show_window_fallback(app.handle().clone());
+            if let Some(window) = app.get_webview_window(deep_link::MAIN_WINDOW) {
+                window_state::restore_before_show(&window);
+                devtools::open_if_asked(&window);
+                after_show(window);
+            }
             let connections = startup_connections(None);
             // The startup checks can take seconds (WSL starting, a large disk, a slow host), so
             // they run in the background: until its own check finishes a source is listed as
@@ -65,16 +72,21 @@ pub fn run() {
 
 /// How long the hidden window waits for the dashboard to show it.
 const SHOW_WINDOW_FALLBACK: Duration = Duration::from_secs(2);
+const SHOW_POLL: Duration = Duration::from_millis(50);
 
 /// The window starts hidden and `index.html` shows it as soon as its splash is styled, so there
-/// is no blank frame first. If the page never gets that far, show the window anyway.
-fn show_window_fallback<R: Runtime>(app: AppHandle<R>) {
+/// is no blank frame first. If the page never gets that far, show the window anyway. Once it is
+/// on screen it goes fullscreen if it was.
+fn after_show<R: Runtime>(window: WebviewWindow<R>) {
     std::thread::spawn(move || {
-        std::thread::sleep(SHOW_WINDOW_FALLBACK);
-        if let Some(window) = app.get_webview_window(deep_link::MAIN_WINDOW)
-            && !window.is_visible().unwrap_or(false)
-        {
-            let _ = window.show();
+        let deadline = Instant::now() + SHOW_WINDOW_FALLBACK;
+        while !window.is_visible().unwrap_or(false) {
+            if Instant::now() >= deadline {
+                let _ = window.show();
+                break;
+            }
+            std::thread::sleep(SHOW_POLL);
         }
+        window_state::restore_fullscreen(&window);
     });
 }
