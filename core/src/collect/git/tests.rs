@@ -489,3 +489,84 @@ async fn reads_a_repository_once_however_many_worktrees_it_has() {
     assert_eq!(entries.len(), 1, "{entries:?}");
     assert_eq!(entries[0].repo, "project");
 }
+
+/// Folders that each look like a repository, for the walk.
+fn folders_with_repos(count: usize) -> TempDir {
+    let root = tempdir().unwrap();
+    for index in 0..count {
+        fs::create_dir_all(root.path().join(format!("group/repo-{index}/.git"))).unwrap();
+    }
+    root
+}
+
+#[test]
+fn a_walk_ends_once_it_is_cancelled() {
+    use std::{
+        ops::ControlFlow,
+        sync::atomic::{AtomicBool, Ordering},
+    };
+
+    let root = folders_with_repos(20);
+    let cancelled = AtomicBool::new(false);
+    let mut visited = 0;
+
+    let walked = super::visit_git_dir_input(root.path(), &cancelled, &mut |_| {
+        visited += 1;
+        // The run is stopped while the walk is at its second repository.
+        if visited == 2 {
+            cancelled.store(true, Ordering::Relaxed);
+        }
+        ControlFlow::Continue(())
+    });
+
+    assert!(walked.is_break());
+    assert_eq!(visited, 2);
+}
+
+// Several threads: the test waits on the blocking work while a worker runs and drops it.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn dropping_a_collection_stops_its_blocking_work() {
+    use std::sync::{atomic::Ordering, mpsc};
+
+    let (started, has_started) = mpsc::channel();
+    let (ended, has_ended) = mpsc::channel();
+    let work = tokio::spawn(super::blocking_until_dropped(move |cancelled| {
+        started.send(()).unwrap();
+        let mut steps = 0_u64;
+        while !cancelled.load(Ordering::Relaxed) {
+            steps += 1;
+            std::thread::sleep(std::time::Duration::from_millis(1));
+        }
+        ended.send(steps).unwrap();
+    }));
+    has_started
+        .recv_timeout(std::time::Duration::from_secs(5))
+        .unwrap();
+
+    // What `Abortable` and the collection timeout do to the run waiting for it.
+    work.abort();
+
+    let steps = has_ended
+        .recv_timeout(std::time::Duration::from_secs(5))
+        .expect("the blocking work saw it was no longer awaited");
+    assert!(steps < 5_000);
+}
+
+#[tokio::test]
+async fn a_cancelled_local_collection_reads_no_repository() {
+    use std::sync::atomic::AtomicBool;
+
+    let root = folders_with_repos(3);
+    let config = GitConfig {
+        dirs: Some(vec![root.path().to_path_buf()]),
+    };
+
+    let error = super::collect_local_repos(
+        &options("2026-03-01", "2026-03-31"),
+        &config,
+        &AtomicBool::new(true),
+    )
+    .unwrap_err();
+
+    assert!(error.to_string().starts_with("Stopped"));
+}

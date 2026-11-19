@@ -3,10 +3,13 @@ use std::{
     fs,
     ops::ControlFlow,
     path::{Path, PathBuf},
-    sync::Mutex,
+    sync::{
+        Arc, Mutex,
+        atomic::{AtomicBool, Ordering},
+    },
 };
 
-use anyhow::{Result, anyhow};
+use anyhow::{Result, anyhow, bail};
 use chrono::{DateTime, FixedOffset, Utc};
 use gix::{
     ObjectId, Repository,
@@ -190,9 +193,10 @@ pub(crate) async fn collect_git(
     let options = *options;
     let config = config.clone();
     let connection = diagnostics::current_connection();
-    tokio::task::spawn_blocking(move || {
+    blocking_until_dropped(move |cancelled| {
         diagnostics::in_connection_sync(connection, || match location {
-            ConnectionLocation::Local => collect_local_repos(&options, &config),
+            ConnectionLocation::Local => collect_local_repos(&options, &config, cancelled),
+            // The `wsl.exe` script cannot be stopped from here; it ends on its own.
             ConnectionLocation::Wsl(distro) => {
                 let target = WslTarget {
                     distro,
@@ -202,16 +206,43 @@ pub(crate) async fn collect_git(
             }
         })
     })
-    .await
-    .map_err(|err| anyhow!("Git collection task failed: {err}"))?
+    .await?
 }
 
-/// The basic implementation: repositories on this machine's file system, read with gix.
+/// Sets its flag when dropped: the future waiting for blocking work is gone.
+struct CancelOnDrop(Arc<AtomicBool>);
+
+impl Drop for CancelOnDrop {
+    fn drop(&mut self) {
+        self.0.store(true, Ordering::Relaxed);
+    }
+}
+
+/// Runs `work` on a blocking thread with a flag that is set once nobody waits for it any more:
+/// the collection was stopped (another range, a settings change) or timed out. Dropping the
+/// future cannot stop the thread, so `work` checks the flag and ends early.
+pub(crate) async fn blocking_until_dropped<T: Send + 'static>(
+    work: impl FnOnce(&AtomicBool) -> T + Send + 'static,
+) -> Result<T> {
+    let cancelled = Arc::new(AtomicBool::new(false));
+    let _cancel_on_drop = CancelOnDrop(cancelled.clone());
+    tokio::task::spawn_blocking(move || work(&cancelled))
+        .await
+        .map_err(|err| anyhow!("Git collection task failed: {err}"))
+}
+
+/// The basic implementation: repositories on this machine's file system, read with gix. Stops
+/// between repositories and commits once `cancelled` is set.
 pub(crate) fn collect_local_repos(
     options: &CollectOptions,
     config: &GitConfig,
+    cancelled: &AtomicBool,
 ) -> Result<RepoCommits> {
-    let dirs = resolve_git_repos(config)?;
+    let stopped = || anyhow!("Stopped: the collection was replaced or timed out");
+    let dirs = resolve_git_repos(config, cancelled)?;
+    if cancelled.load(Ordering::Relaxed) {
+        return Err(stopped());
+    }
     let mut repos = Vec::new();
     let mut via_cli = 0;
     let mut seen = HashSet::new();
@@ -219,6 +250,9 @@ pub(crate) fn collect_local_repos(
     diagnostics::info("git", format!("Scanning {} repositories", dirs.len()));
 
     for repo_path in dirs {
+        if cancelled.load(Ordering::Relaxed) {
+            return Err(stopped());
+        }
         let repo = match open_repo_strict(&repo_path) {
             Ok(repo) => repo,
             Err(err) => {
@@ -242,16 +276,20 @@ pub(crate) fn collect_local_repos(
             via_cli += 1;
             Some(email)
         });
-        let commits = collect_repo_entries(&repo, &repo_name, options).unwrap_or_else(|err| {
-            diagnostics::warn(
-                "git",
-                format!(
-                    "Skipped {}: reading history failed: {err}",
-                    repo_path.display()
-                ),
-            );
-            Vec::new()
-        });
+        let commits = match collect_repo_entries(&repo, &repo_name, options, cancelled) {
+            Ok(commits) => commits,
+            Err(_) if cancelled.load(Ordering::Relaxed) => return Err(stopped()),
+            Err(err) => {
+                diagnostics::warn(
+                    "git",
+                    format!(
+                        "Skipped {}: reading history failed: {err}",
+                        repo_path.display()
+                    ),
+                );
+                Vec::new()
+            }
+        };
         repos.push(RepoHistory {
             label: repo_name,
             email,
@@ -320,11 +358,18 @@ fn git_cli_user_email(repo_path: &Path) -> Option<String> {
 }
 
 /// Local repositories: the configured folders (an empty list means none), or else the home
-/// folder.
-pub(crate) fn resolve_git_repos(config: &GitConfig) -> Result<Vec<PathBuf>> {
-    resolve_git_repos_with_home_root(config, default_git_root())
+/// folder, found until `cancelled` is set.
+pub(crate) fn resolve_git_repos(
+    config: &GitConfig,
+    cancelled: &AtomicBool,
+) -> Result<Vec<PathBuf>> {
+    Ok(resolve_git_repos_from_roots_until(
+        &git_roots(config, default_git_root())?,
+        cancelled,
+    ))
 }
 
+#[cfg(test)]
 pub(crate) fn resolve_git_repos_with_home_root(
     config: &GitConfig,
     home_root: Option<PathBuf>,
@@ -332,13 +377,22 @@ pub(crate) fn resolve_git_repos_with_home_root(
     Ok(resolve_git_repos_from_roots(&git_roots(config, home_root)?))
 }
 
+#[cfg(test)]
 pub(crate) fn resolve_git_repos_from_roots(roots: &[PathBuf]) -> Vec<PathBuf> {
+    resolve_git_repos_from_roots_until(roots, &AtomicBool::new(false))
+}
+
+/// The repositories under `roots`, found until `cancelled` is set.
+fn resolve_git_repos_from_roots_until(roots: &[PathBuf], cancelled: &AtomicBool) -> Vec<PathBuf> {
     let mut repos = BTreeSet::new();
     for root in roots {
-        let _ = visit_git_dir_input(root, &mut |repo| {
+        let found = visit_git_dir_input(root, cancelled, &mut |repo| {
             repos.insert(repo);
             ControlFlow::Continue(())
         });
+        if found.is_break() {
+            break;
+        }
     }
     repos.into_iter().collect()
 }
@@ -359,7 +413,7 @@ pub(crate) fn visit_git_repos(
     visit: &mut impl FnMut(PathBuf) -> ControlFlow<()>,
 ) -> Result<()> {
     for root in git_roots(config, default_git_root())? {
-        if visit_git_dir_input(&root, visit).is_break() {
+        if visit_git_dir_input(&root, &AtomicBool::new(false), visit).is_break() {
             break;
         }
     }
@@ -371,6 +425,7 @@ fn collect_repo_entries(
     repo: &Repository,
     repo_name: &str,
     options: &CollectOptions,
+    cancelled: &AtomicBool,
 ) -> Result<Vec<GitEntry>> {
     let head = head_target(repo);
     let tips = reachable_ref_tips(repo)?;
@@ -387,6 +442,9 @@ fn collect_repo_entries(
         .all()?;
 
     for item in walk {
+        if cancelled.load(Ordering::Relaxed) {
+            bail!("Stopped while reading {repo_name}");
+        }
         let item = item?;
         let commit = item.id().object()?.into_commit();
         let decoded = commit.decode()?;
@@ -449,20 +507,23 @@ fn head_target(repo: &Repository) -> Option<(ObjectId, String)> {
     Some((commit.id, branch))
 }
 
+/// Visits `path` or the repositories under it; a set `cancelled` ends the walk like a break.
 fn visit_git_dir_input(
     path: &Path,
+    cancelled: &AtomicBool,
     visit: &mut impl FnMut(PathBuf) -> ControlFlow<()>,
 ) -> ControlFlow<()> {
     if path.join(".git").exists() {
         return visit(path.to_path_buf());
     }
-    visit_repos(path, 0, 4, visit)
+    visit_repos(path, 0, 4, cancelled, visit)
 }
 
 fn visit_repos(
     root: &Path,
     depth: usize,
     max_depth: usize,
+    cancelled: &AtomicBool,
     visit: &mut impl FnMut(PathBuf) -> ControlFlow<()>,
 ) -> ControlFlow<()> {
     if depth >= max_depth {
@@ -473,6 +534,9 @@ fn visit_repos(
     };
 
     for entry in entries.flatten() {
+        if cancelled.load(Ordering::Relaxed) {
+            return ControlFlow::Break(());
+        }
         let path = entry.path();
         let Ok(metadata) = entry.metadata() else {
             continue;
@@ -484,7 +548,7 @@ fn visit_repos(
         if path.join(".git").exists() {
             visit(path)?;
         } else {
-            visit_repos(&path, depth + 1, max_depth, visit)?;
+            visit_repos(&path, depth + 1, max_depth, cancelled, visit)?;
         }
     }
     ControlFlow::Continue(())
