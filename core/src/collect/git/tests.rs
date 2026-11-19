@@ -541,3 +541,100 @@ async fn a_cancelled_local_collection_reads_no_repository() {
 
     assert!(error.to_string().starts_with("Stopped"));
 }
+
+/// A commit recorded before it was authored (a clock off, a rebase that keeps the dates), and
+/// one in the range that only a commit recorded before the range leads to: both are work of
+/// the range. History is pruned by commit time, so it is read with a margin before the range.
+#[tokio::test]
+async fn finds_authored_work_whose_commit_time_is_before_the_range() {
+    let repo = init_repo();
+    set_repo_email(repo.path(), "me@example.com");
+    let commit_at =
+        |file: &str, subject: &str, authored: DateTime<Utc>, committed: DateTime<Utc>| {
+            fs::write(repo.path().join(file), subject).unwrap();
+            run_git(repo.path(), &["add", "."]);
+            run_git_with_env(
+                repo.path(),
+                &["commit", "-m", subject],
+                &[
+                    ("GIT_AUTHOR_EMAIL", "me@example.com".to_string()),
+                    ("GIT_AUTHOR_DATE", git_time(authored)),
+                    ("GIT_COMMITTER_EMAIL", "me@example.com".to_string()),
+                    ("GIT_COMMITTER_DATE", git_time(committed)),
+                ],
+            );
+        };
+    commit_at(
+        "a.txt",
+        "In the range",
+        utc_time(2026, 3, 10, 9, 0, 0),
+        utc_time(2026, 3, 10, 9, 0, 0),
+    );
+    // Its child, the branch's tip, was recorded with an older date.
+    commit_at(
+        "b.txt",
+        "Recorded early",
+        utc_time(2026, 3, 11, 9, 0, 0),
+        utc_time(2026, 3, 1, 9, 0, 0),
+    );
+
+    let config = GitConfig::with_dirs(vec![repo.path().to_path_buf()]);
+    let entries = collect(&options("2026-03-10", "2026-03-12"), &config)
+        .await
+        .unwrap();
+
+    let subjects = entries
+        .iter()
+        .map(|entry| entry.message.as_str())
+        .collect::<Vec<_>>();
+    assert_eq!(subjects, ["Recorded early", "In the range"]);
+}
+
+/// A branch tip recorded long before the range (more than the margin) still leads to the
+/// commits behind it, and counts by its own author time.
+#[tokio::test]
+async fn a_tip_recorded_long_before_the_range_still_leads_to_its_history() {
+    let repo = init_repo();
+    set_repo_email(repo.path(), "me@example.com");
+    for (file, subject, authored, committed) in [
+        (
+            "a.txt",
+            "Parent in the range",
+            utc_time(2026, 3, 10, 9, 0, 0),
+            utc_time(2026, 3, 10, 9, 0, 0),
+        ),
+        (
+            "b.txt",
+            "Tip recorded in February",
+            utc_time(2026, 3, 11, 9, 0, 0),
+            utc_time(2026, 2, 1, 9, 0, 0),
+        ),
+    ] {
+        fs::write(repo.path().join(file), subject).unwrap();
+        run_git(repo.path(), &["add", "."]);
+        run_git_with_env(
+            repo.path(),
+            &["commit", "-m", subject],
+            &[
+                ("GIT_AUTHOR_EMAIL", "me@example.com".to_string()),
+                ("GIT_AUTHOR_DATE", git_time(authored)),
+                ("GIT_COMMITTER_EMAIL", "me@example.com".to_string()),
+                ("GIT_COMMITTER_DATE", git_time(committed)),
+            ],
+        );
+    }
+
+    let config = GitConfig::with_dirs(vec![repo.path().to_path_buf()]);
+    let entries = collect(&options("2026-03-10", "2026-03-12"), &config)
+        .await
+        .unwrap();
+
+    let subjects = entries
+        .iter()
+        .map(|entry| entry.message.as_str())
+        .collect::<Vec<_>>();
+    assert_eq!(
+        subjects,
+        ["Tip recorded in February", "Parent in the range"]
+    );
+}
