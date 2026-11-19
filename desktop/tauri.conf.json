@@ -18,11 +18,19 @@
         "minWidth": 760,
         "minHeight": 620,
         "acceptFirstMouse": true,
+        "visible": false,
         "resizable": true,
         "hiddenTitle": true,
         "titleBarStyle": "Overlay"
       }
     ]
+  },
+  "plugins": {
+    "deep-link": {
+      "desktop": {
+        "schemes": ["activity-log"]
+      }
+    }
   },
   "bundle": {
     "active": true,

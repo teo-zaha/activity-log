@@ -1,4 +1,5 @@
 use activity_log_core::{
+    diagnostics,
     model::{
         AddConnectionRequestDto, ConnectionId, ProviderConfigConnectionStateDto,
         ProviderConfigFieldValueDto, ProviderConfigSaveRequestDto, ProviderConfigSaveValueDto,
@@ -8,7 +9,10 @@ use activity_log_core::{
     settings::ConfigFile,
 };
 
-use super::{apply_add, apply_save, build_snapshot, provider_config_key_label};
+use super::{
+    apply_add, apply_save, build_snapshot, edited_connections, provider_config_key_label,
+    startup_connections,
+};
 
 const OS: SupportedOs = SupportedOs::Macos;
 
@@ -252,4 +256,42 @@ fn adds_wsl_git_connections_with_home_as_the_default_folder() {
             items: vec!["~".to_string()],
         }
     );
+}
+
+fn logged(needle: &str) -> bool {
+    diagnostics::entries()
+        .iter()
+        .any(|entry| entry.scope == "config" && entry.message.contains(needle))
+}
+
+#[test]
+fn config_problems_at_startup_reach_the_logs() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("config.toml");
+    std::fs::write(&path, "[[gitlab]]\nlabel = \"Startup\"\ntokn = \"x\"\n").unwrap();
+
+    let connections = startup_connections(Some(&path));
+
+    assert_eq!(connections.len(), 1);
+    assert!(logged("gitlab/startup: unknown setting `tokn`"));
+}
+
+#[test]
+fn a_broken_config_at_startup_is_logged_and_starts_empty() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("config.toml");
+    std::fs::write(&path, "gitlab = \"x\"\n").unwrap();
+
+    assert!(startup_connections(Some(&path)).is_empty());
+    assert!(diagnostics::entries().iter().any(
+        |entry| entry.scope == "settings" && entry.message.contains("Reading settings failed")
+    ));
+}
+
+#[test]
+fn config_problems_after_an_edit_reach_the_logs() {
+    let config = file("[[gitlab]]\nlabel = \"Edited\"\nurll = \"x\"\n");
+
+    assert_eq!(edited_connections(&config).unwrap().len(), 1);
+    assert!(logged("gitlab/edited: unknown setting `urll`"));
 }

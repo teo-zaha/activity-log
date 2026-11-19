@@ -2,7 +2,7 @@ use std::{sync::mpsc, time::Duration};
 
 use activity_log_core::{runtime::CollectionRuntime, settings::ConfigFile};
 
-use super::update_config_at;
+use super::{update_config_at, web_url};
 use crate::app_state::AppState;
 
 fn labels(path: &std::path::Path) -> Vec<String> {
@@ -53,4 +53,26 @@ async fn settings_commands_that_arrive_together_both_apply() {
     first.await.unwrap().unwrap();
 
     assert_eq!(labels(&path), ["A changed", "B changed"]);
+}
+
+#[test]
+fn opens_only_web_links() {
+    for link in [
+        "https://teams.microsoft.com/l/meetup-join/abc",
+        " http://example.org/path?q=1 ",
+    ] {
+        assert!(web_url(link).is_ok(), "{link}");
+    }
+    for link in [
+        "file:///etc/passwd",
+        "javascript:alert(1)",
+        "mailto:someone@example.org",
+        "ms-teams://join",
+        "C:\\Windows\\notepad.exe",
+        "/Applications/Calculator.app",
+        "not a link",
+        "",
+    ] {
+        assert!(web_url(link).is_err(), "{link}");
+    }
 }

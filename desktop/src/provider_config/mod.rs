@@ -1,7 +1,10 @@
 //! The settings pane's view of `config.toml`: connections with their fields, and the edits it
 //! sends back. The file is shared with the CLI and the API server.
 
+use std::path::Path;
+
 use activity_log_core::{
+    diagnostics,
     model::{
         AddConnectionRequestDto, ConnectionId, ProviderConfigConnectionStateDto,
         ProviderConfigFieldStateDto, ProviderConfigFieldValueDto, ProviderConfigSaveRequestDto,
@@ -17,14 +20,29 @@ use activity_log_core::{
         },
         provider_registry,
     },
-    settings::ConfigFile,
+    settings::{ConfigFile, load_connections},
 };
 
 pub(crate) fn load_config() -> Result<ConfigFile, String> {
     ConfigFile::load(ConfigFile::resolve_path(None)).map_err(|err| format!("{err:#}"))
 }
 
-pub(crate) fn resolve_connections(file: &ConfigFile) -> Result<Vec<Connection>, String> {
+/// The connections the app starts with. Problems in single connections go to the Logs pane; a
+/// broken file must not keep the app from opening, where it can be fixed.
+pub(crate) fn startup_connections(explicit: Option<&Path>) -> Vec<Connection> {
+    load_connections(explicit).unwrap_or_else(|err| {
+        diagnostics::error("settings", format!("Reading settings failed: {err:#}"));
+        Vec::new()
+    })
+}
+
+/// The connections of a file just edited, with its problems logged like at startup.
+pub(crate) fn edited_connections(file: &ConfigFile) -> Result<Vec<Connection>, String> {
+    file.logged_connections().map_err(|err| format!("{err:#}"))
+}
+
+/// The connections the settings pane shows. Its problems were logged when the file was read.
+pub(crate) fn shown_connections(file: &ConfigFile) -> Result<Vec<Connection>, String> {
     file.connections()
         .map(|resolved| resolved.connections)
         .map_err(|err| format!("{err:#}"))
