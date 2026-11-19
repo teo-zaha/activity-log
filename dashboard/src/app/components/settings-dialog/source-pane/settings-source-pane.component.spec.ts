@@ -1,7 +1,9 @@
+import { TestBed } from '@angular/core/testing'
 import { render, screen, within } from '@testing-library/angular'
 import userEvent from '@testing-library/user-event'
 import { describe, expect, it, vi } from 'vitest'
 import type {
+  ConnectionId,
   ProviderConfigConnectionStateDto,
   ProviderConfigFieldStateDto,
   ProviderConfigSaveRequestDto,
@@ -13,6 +15,7 @@ import { RuntimeEnvironmentService } from '../../../services/backend/runtime-env
 import { providerInfo } from '../../../testing/activity-fixtures'
 import type { SettingsProviderRow } from '../settings-dialog.types'
 import { SettingsSourcePaneComponent } from './settings-source-pane.component'
+import { SourceDrafts } from './source-drafts.service'
 
 const row = (index: 0 | 1): SettingsProviderRow => ({
   info: providerInfo[index],
@@ -86,6 +89,7 @@ interface Setup {
   saveProviderConfig: ReturnType<
     typeof vi.fn<(request: ProviderConfigSaveRequestDto) => Promise<ProviderConfigSaveResponseDto>>
   >
+  recheckConnection: ReturnType<typeof vi.fn<(connection: ConnectionId) => Promise<void>>>
 }
 
 async function setup(
@@ -93,6 +97,7 @@ async function setup(
     desktop?: boolean
     provider?: SettingsProviderRow
     load?: () => Promise<ProviderConfigSnapshotDto>
+    drafts?: SourceDrafts
   } = {}
 ): Promise<Setup> {
   const loadProviderConfig = vi.fn<() => Promise<ProviderConfigSnapshotDto>>(
@@ -100,19 +105,27 @@ async function setup(
   )
   const saveProviderConfig =
     vi.fn<(request: ProviderConfigSaveRequestDto) => Promise<ProviderConfigSaveResponseDto>>()
+  const recheckConnection = vi.fn<(connection: ConnectionId) => Promise<void>>(() =>
+    Promise.resolve()
+  )
   const { rerender } = await render(SettingsSourcePaneComponent, {
     inputs: { provider: options.provider ?? row(1) },
     providers: [
-      { provide: ActivityService, useValue: { loadProviderConfig, saveProviderConfig } },
+      {
+        provide: ActivityService,
+        useValue: { loadProviderConfig, saveProviderConfig, recheckConnection },
+      },
       {
         provide: RuntimeEnvironmentService,
         useValue: { isTauri: (): boolean => options.desktop ?? true },
       },
+      ...(options.drafts ? [{ provide: SourceDrafts, useValue: options.drafts }] : []),
     ],
   })
   return {
     loadProviderConfig,
     saveProviderConfig,
+    recheckConnection,
     switchProvider: provider => rerender({ partialUpdate: true, inputs: { provider } }),
   }
 }
@@ -139,6 +152,66 @@ describe('SettingsSourcePaneComponent', () => {
     expect(screen.getByText('Set')).toBeTruthy()
     expect(screen.getByRole('button', { name: 'Save settings' })).toHaveProperty('disabled', true)
     expect(loadProviderConfig).toHaveBeenCalledTimes(1)
+  })
+
+  it('titles the health card by the problem the startup check reported', async () => {
+    await setup({
+      provider: {
+        ...row(1),
+        info: {
+          ...providerInfo[1],
+          status: 'unavailable',
+          usable: false,
+          reason: 'Startup check timed out after 15s',
+          problem: 'timedOut',
+        },
+      },
+    })
+
+    expect(await screen.findByRole('heading', { name: 'Startup check timed out' })).toBeTruthy()
+    expect(screen.getByText('timer_off')).toBeTruthy()
+  })
+
+  it('checks a failed source again from its health card', async () => {
+    const failed = {
+      ...providerInfo[1],
+      status: 'unavailable',
+      usable: false,
+      reason: 'Startup check timed out after 15s',
+      problem: 'timedOut',
+    } as const
+    const { recheckConnection, switchProvider } = await setup({
+      provider: { ...row(1), info: failed },
+    })
+
+    await userEvent.click(await screen.findByRole('button', { name: 'Check again' }))
+    expect(recheckConnection).toHaveBeenCalledWith(failed.connection)
+
+    // Nothing to check again on a source that works or cannot run on this OS.
+    await switchProvider(row(1))
+    expect(screen.queryByRole('button', { name: 'Check again' })).toBeNull()
+    await switchProvider({
+      ...row(1),
+      info: { ...failed, problem: 'unsupported', reason: 'OS not supported' },
+    })
+    expect(screen.queryByRole('button', { name: 'Check again' })).toBeNull()
+  })
+
+  it('does not guess a timeout from the wording of a reason', async () => {
+    await setup({
+      provider: {
+        ...row(1),
+        info: {
+          ...providerInfo[1],
+          status: 'unavailable',
+          usable: false,
+          reason: 'The server timed out the token',
+          problem: 'failed',
+        },
+      },
+    })
+
+    expect(await screen.findByRole('heading', { name: 'Not available' })).toBeTruthy()
   })
 
   it('offers the label and removal for a source without settings of its own', async () => {
@@ -177,6 +250,21 @@ describe('SettingsSourcePaneComponent', () => {
     await userEvent.type(baseUrl, 'https://jira.internal')
     expect(screen.queryByText('Enter a valid URL.')).toBeNull()
     expect(screen.getByRole('button', { name: 'Save settings' })).toHaveProperty('disabled', false)
+  })
+
+  it('enables Save and Discard only while there are changes, and Discard drops them', async () => {
+    await setup()
+    const maxResults = await screen.findByLabelText('Max results')
+    expect(screen.getByRole('button', { name: 'Discard' })).toHaveProperty('disabled', true)
+    expect(screen.getByRole('button', { name: 'Save settings' })).toHaveProperty('disabled', true)
+
+    await userEvent.clear(maxResults)
+    await userEvent.type(maxResults, '25')
+    expect(screen.getByRole('button', { name: 'Discard' })).toHaveProperty('disabled', false)
+
+    await userEvent.click(screen.getByRole('button', { name: 'Discard' }))
+    expect(screen.getByLabelText('Max results')).toHaveProperty('value', '50')
+    expect(screen.getByRole('button', { name: 'Discard' })).toHaveProperty('disabled', true)
   })
 
   it('saves only the changes and applies the returned snapshot', async () => {
@@ -272,7 +360,18 @@ describe('SettingsSourcePaneComponent', () => {
     await userEvent.type(maxResults, '-')
 
     expect(await screen.findByText('Enter a whole number.')).toBeTruthy()
-    expect(screen.getByRole('button', { name: 'Save settings' })).toHaveProperty('disabled', true)
+    expect(
+      screen.queryByRole('button', { name: 'Save settings' })?.hasAttribute('disabled') ?? true
+    ).toBe(true)
+  })
+
+  it('offers Clear and the saved placeholder only for secrets, not for saved plain values', async () => {
+    await setup()
+    const baseUrl = await screen.findByLabelText('Base URL')
+
+    expect(baseUrl).toHaveProperty('placeholder', '')
+    expect(screen.queryByRole('button', { name: 'Clear saved Base URL' })).toBeNull()
+    expect(screen.getByRole('button', { name: 'Clear saved API token' })).toBeTruthy()
   })
 
   it('masks every secret, so clearing one and typing again stays a plain string', async () => {
@@ -306,7 +405,7 @@ describe('SettingsSourcePaneComponent', () => {
     })
   })
 
-  it('starts every source from its own saved values, without leftovers', async () => {
+  it('starts every source from its own values, and keeps unsaved edits for when it is back', async () => {
     const gitFields: ProviderConfigFieldStateDto[] = [
       {
         key: 'gitRoot',
@@ -342,12 +441,58 @@ describe('SettingsSourcePaneComponent', () => {
 
     await switchProvider(row(1))
 
+    // The edit the save failed for is still there, and still unsaved; the error is not.
+    expect(await screen.findByLabelText('Base URL')).toHaveProperty(
+      'value',
+      'https://jira.internal'
+    )
+    expect(screen.getByRole('button', { name: 'Discard' })).toHaveProperty('disabled', false)
+    expect(screen.queryByRole('alert')).toBeNull()
+
+    await userEvent.click(screen.getByRole('button', { name: 'Discard' }))
+    await switchProvider(row(0))
+    await switchProvider(row(1))
     expect(await screen.findByLabelText('Base URL')).toHaveProperty(
       'value',
       'https://jira.example.com'
     )
-    expect(screen.queryByRole('alert')).toBeNull()
-    expect(screen.getByRole('button', { name: 'Save settings' })).toHaveProperty('disabled', true)
+    expect(screen.getByRole('button', { name: 'Discard' })).toHaveProperty('disabled', true)
+  })
+
+  it('keeps unsaved edits once the pane is gone, until they are saved', async () => {
+    const { saveProviderConfig } = await setup()
+    const drafts = TestBed.inject(SourceDrafts)
+    const maxResults = await screen.findByLabelText('Max results')
+    await userEvent.clear(maxResults)
+    await userEvent.type(maxResults, '25')
+    expect(drafts.get('jira/default')?.values).toMatchObject({ maxResults: '25' })
+
+    saveProviderConfig.mockResolvedValue(
+      saveResponse(
+        jiraFields.map(field => (field.key === 'maxResults' ? { ...field, value: '25' } : field))
+      )
+    )
+    await userEvent.click(screen.getByRole('button', { name: 'Save settings' }))
+    expect(await screen.findByText('Jira saved')).toBeTruthy()
+    expect(drafts.get('jira/default')).toBeUndefined()
+  })
+
+  it('shows the edits left in a draft when the pane opens', async () => {
+    const drafts = new SourceDrafts()
+    drafts.set('jira/default', {
+      label: 'Jira',
+      values: { baseUrl: 'https://jira.internal' },
+      lists: {},
+      resets: [],
+    })
+    await setup({ drafts })
+
+    expect(await screen.findByLabelText('Base URL')).toHaveProperty(
+      'value',
+      'https://jira.internal'
+    )
+    expect(screen.getByLabelText('Max results')).toHaveProperty('value', '50')
+    expect(screen.getByRole('button', { name: 'Discard' })).toHaveProperty('disabled', false)
   })
 
   describe('list fields', () => {
@@ -487,8 +632,10 @@ describe('SettingsSourcePaneComponent connections', () => {
     })
   })
 
-  it('removes a connection after confirming', async () => {
+  it('removes a connection after confirming, with its unsaved edits', async () => {
     const { removeConnection, removed } = await setupConnections()
+    await userEvent.type(screen.getByLabelText('Label'), ' 2')
+    expect(TestBed.inject(SourceDrafts).get('jira/default')).toBeDefined()
 
     await userEvent.click(screen.getByRole('button', { name: 'Remove source' }))
     const dialog = await screen.findByRole('alertdialog')
@@ -501,6 +648,7 @@ describe('SettingsSourcePaneComponent connections', () => {
     )
     expect(removed).toHaveBeenCalled()
     expect(await screen.findByText('Jira removed')).toBeTruthy()
+    expect(TestBed.inject(SourceDrafts).get('jira/default')).toBeUndefined()
   })
 
   it('keeps a connection when removing is cancelled', async () => {

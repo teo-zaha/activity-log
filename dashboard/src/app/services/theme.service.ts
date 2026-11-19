@@ -1,5 +1,6 @@
 import { computed, effect, Service } from '@angular/core'
-import { persistedSignal } from '../utils/persisted-signal'
+import { mediaQuery } from '@signality/core/browser/media-query'
+import { storage } from '@signality/core/browser/storage'
 
 export type Theme =
   'light' | 'green' | 'lilac' | 'solarized' | 'dim' | 'dark' | 'midnight' | 'mocha'
@@ -17,9 +18,25 @@ export const THEMES: { id: Theme; label: string }[] = [
 
 const DARK_THEMES: Theme[] = ['dark', 'dim', 'midnight', 'mocha']
 
+/** What the device prefers, for as long as no theme has been chosen. */
+const DEVICE_DARK_QUERY = '(prefers-color-scheme: dark)'
+
 @Service()
 export class ThemeService {
-  readonly theme = persistedSignal<Theme>('theme', 'light')
+  /**
+   * The theme picked in the settings; `null` until one is, and then nothing is stored. An
+   * unknown stored theme, say from an older version, counts as none.
+   */
+  private readonly chosen = storage<Theme | null>('theme', null, {
+    serializer: {
+      read: stored => THEMES.find(option => option.id === stored)?.id ?? null,
+      write: theme => theme ?? '',
+    },
+  })
+  private readonly deviceDark = mediaQuery(DEVICE_DARK_QUERY)
+
+  /** The chosen theme, else Dark or Light as the device is, following it while it changes. */
+  readonly theme = computed<Theme>(() => this.chosen() ?? (this.deviceDark() ? 'dark' : 'light'))
 
   readonly isDark = computed(() => DARK_THEMES.includes(this.theme()))
 
@@ -32,11 +49,7 @@ export class ThemeService {
   }
 
   setTheme(t: Theme): void {
-    this.theme.set(t)
-  }
-
-  toggle(): void {
-    this.theme.update(t => (t === 'light' ? 'dark' : 'light'))
+    this.chosen.set(t)
   }
 
   private applyTheme(t: Theme): void {

@@ -1,5 +1,6 @@
 import { Component, inject } from '@angular/core'
 import { MAT_DIALOG_DATA, MatDialog, MatDialogModule } from '@angular/material/dialog'
+import { ButtonComponent } from '../button/button.component'
 import { firstValueFrom } from 'rxjs'
 
 export interface ConfirmDialogData {
@@ -29,7 +30,7 @@ export async function confirmAction(dialog: MatDialog, data: ConfirmDialogData):
 
 @Component({
   selector: 'app-confirm-dialog',
-  imports: [MatDialogModule],
+  imports: [ButtonComponent, MatDialogModule],
   templateUrl: './confirm-dialog.component.html',
   styleUrl: './confirm-dialog.component.scss',
 })

@@ -1,0 +1,20 @@
+// Fills the main content in place of the view (`app.component.scss` hides it). Moving between the
+// list and a section slides (`styles.scss`).
+.settings-page {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  // The main content's corners, also on the snapshot that slides.
+  border-radius: var(--radius-lg) var(--radius-lg) 0 0;
+  overflow: hidden;
+  view-transition-name: settings-page;
+
+  &:focus {
+    outline: none;
+  }
+
+  > app-settings-dialog {
+    flex: 1;
+    min-width: 0;
+  }
+}
