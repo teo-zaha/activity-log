@@ -84,14 +84,20 @@ impl Folder {
         Ok(Some(bytes))
     }
 
+    pub(super) fn check_private(&self) -> Result<(), PrivateFileError> {
+        if !folder_is_private(self.fd.as_fd())? {
+            return Err(PrivateFileError::Unprotectable {
+                location: self.path.clone(),
+            });
+        }
+        os::check_file_system(self.fd.as_fd(), &self.path)
+    }
+
     pub(super) fn staging(&self, target_name: &str) -> Result<Staging, PrivateFileError> {
         let unprotectable = || PrivateFileError::Unprotectable {
             location: self.path.clone(),
         };
-        if !folder_is_private(self.fd.as_fd())? {
-            return Err(unprotectable());
-        }
-        os::check_file_system(self.fd.as_fd(), &self.path)?;
+        self.check_private()?;
 
         for _ in 0..ATTEMPTS {
             let name = staging_name(target_name);

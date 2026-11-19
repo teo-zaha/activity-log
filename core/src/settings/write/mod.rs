@@ -318,7 +318,8 @@ pub(super) fn resolve(path: &Path) -> Result<PathBuf, EditError> {
     Ok(path)
 }
 
-fn lock_wait() -> Duration {
+/// How long a writer of a shared file (settings, cache) waits for another one.
+pub(crate) fn lock_wait() -> Duration {
     lock_wait_from(std::env::var(LOCK_WAIT_VARIABLE).ok().as_deref())
 }
 

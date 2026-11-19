@@ -127,14 +127,25 @@ impl Folder {
         Ok(Some(bytes))
     }
 
+    pub(super) fn check_private(&self) -> Result<(), PrivateFileError> {
+        self.check_private_for(&user_sid()?)
+    }
+
+    fn check_private_for(&self, sid: &str) -> Result<(), PrivateFileError> {
+        if !keeps_acls(&self.handle)? || !folder_is_private(&self.handle, sid)? {
+            return Err(PrivateFileError::Unprotectable {
+                location: self.path.clone(),
+            });
+        }
+        Ok(())
+    }
+
     pub(super) fn staging(&self, target_name: &str) -> Result<Staging, PrivateFileError> {
         let unprotectable = || PrivateFileError::Unprotectable {
             location: self.path.clone(),
         };
         let sid = user_sid()?;
-        if !keeps_acls(&self.handle)? || !folder_is_private(&self.handle, &sid)? {
-            return Err(unprotectable());
-        }
+        self.check_private_for(&sid)?;
         for _ in 0..ATTEMPTS {
             let path = self.path.join(staging_name(target_name));
             match create_folder(&path, &sid) {

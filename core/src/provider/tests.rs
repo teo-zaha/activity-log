@@ -10,13 +10,15 @@ use std::{
 };
 
 use crate::{
+    cache::CachePolicy,
     collect::git::{
         GitCollection, RepoCommits, RepoHistory, resolve_git_repos_from_roots,
         resolve_git_repos_with_home_root,
     },
     diagnostics,
     model::{
-        ActivityEntry, CollectOptions, ConnectionId, GitEntry, ProviderProblem, Source, SupportedOs,
+        ActivityEntry, CollectOptions, ConnectionId, GitEntry, IdentityEvidence, ProviderProblem,
+        RemoteIdentity, Source, SupportedOs,
     },
     provider::{
         connection::{Connection, ConnectionLocation, ConnectionValues},
@@ -637,18 +639,285 @@ fn cache_fingerprint_separates_accounts_but_ignores_secrets() {
         ProviderConfigKey::required("USER", ProviderConfigValueType::String),
         ProviderConfigKey::required("TOKEN", ProviderConfigValueType::Password),
     ];
-    let fingerprint = |user: &str, token: &str| {
+    let fingerprint = |url: &str, user: &str, token: &str| {
         let mut source = TestConfigSource::default();
-        source
-            .values
-            .insert("URL".into(), "https://gitlab.example".into());
+        source.values.insert("URL".into(), url.into());
         source.values.insert("USER".into(), user.into());
         source.values.insert("TOKEN".into(), token.into());
         ProviderConfig::resolve(&source, KEYS).fingerprint(KEYS)
     };
+    let url = "https://gitlab.example";
 
-    assert_eq!(fingerprint("alice", "one"), fingerprint("alice", "two"));
-    assert_ne!(fingerprint("alice", "one"), fingerprint("bob", "one"));
+    assert_eq!(
+        fingerprint(url, "alice", "one"),
+        fingerprint(url, "alice", "two")
+    );
+    assert_ne!(
+        fingerprint(url, "alice", "one"),
+        fingerprint(url, "bob", "one")
+    );
+    // The endpoint counts, not its spelling; a context path is part of it.
+    assert_eq!(
+        fingerprint("https://GitLab.Example:443/git//", "alice", "one"),
+        fingerprint("https://gitlab.example/git", "alice", "one")
+    );
+    assert_ne!(
+        fingerprint("https://gitlab.example/git", "alice", "one"),
+        fingerprint(url, "alice", "one")
+    );
+    assert_ne!(
+        fingerprint("https://gitlab.example:8443", "alice", "one"),
+        fingerprint(url, "alice", "one")
+    );
+    for credentials in [
+        "https://me:secret@gitlab.example",
+        "https://me@gitlab.example",
+        "https://gitlab.example/?private_token=secret",
+        "https://gitlab.example/#secret",
+    ] {
+        assert_eq!(
+            fingerprint(credentials, "alice", "one"),
+            Err("URL"),
+            "{credentials}"
+        );
+    }
+
+    const LIST_KEYS: &[ProviderConfigKey] = &[ProviderConfigKey::optional_url("URLS").list_of()];
+    let list = |urls: &str| {
+        let mut source = TestConfigSource::default();
+        source.values.insert("URLS".into(), urls.into());
+        ProviderConfig::resolve(&source, LIST_KEYS).fingerprint(LIST_KEYS)
+    };
+    assert_eq!(
+        list(r#"["https://A.example/", "https://b.example"]"#),
+        list(r#"["https://a.example", "https://b.example//"]"#)
+    );
+    assert_eq!(
+        list(r#"["https://a.example", "https://b.example/?private_token=secret"]"#),
+        Err("URLS")
+    );
+}
+
+static CACHED_KEYS: &[ProviderConfigKey] = &[
+    ProviderConfigKey::required("URL", ProviderConfigValueType::Url),
+    ProviderConfigKey::required("TOKEN", ProviderConfigValueType::Password),
+];
+
+/// A remote kind with the day cache, whose check names `identity` and whose collect counts
+/// its calls.
+struct CachedTestProvider {
+    identity: IdentityEvidence,
+    fetches: Arc<AtomicUsize>,
+}
+
+impl ProviderAdapter for CachedTestProvider {
+    fn id(&self) -> Source {
+        Source::Jira
+    }
+
+    fn description(&self) -> &'static str {
+        "A cached source for tests"
+    }
+
+    fn supported_os(&self) -> &'static [SupportedOs] {
+        &[SupportedOs::Windows, SupportedOs::Macos, SupportedOs::Linux]
+    }
+
+    fn config_binding(&self) -> Option<ConfigBinding> {
+        Some(ConfigBinding {
+            requirements: CACHED_KEYS,
+            resolve: noop_resolve,
+        })
+    }
+
+    fn cache_policy(&self) -> Option<CachePolicy> {
+        Some(CachePolicy {
+            recent_ttl: std::time::Duration::from_secs(60 * 60),
+            settled_ttl: std::time::Duration::from_secs(60 * 60),
+        })
+    }
+
+    fn startup_check(
+        &self,
+        _current_os: SupportedOs,
+        _context: ProviderContext,
+    ) -> BoxFuture<'_, ProviderCheckResult> {
+        let result = ProviderCheckResult::available().with_identity(self.identity.clone());
+        Box::pin(async move { result })
+    }
+
+    fn collect(
+        &self,
+        _current_os: SupportedOs,
+        _options: CollectOptions,
+        _context: ProviderContext,
+    ) -> BoxFuture<'_, anyhow::Result<Vec<ActivityEntry>>> {
+        self.fetches.fetch_add(1, Ordering::SeqCst);
+        Box::pin(async { Ok(Vec::new()) })
+    }
+}
+
+fn verified(id: &str) -> IdentityEvidence {
+    IdentityEvidence::Verified(RemoteIdentity {
+        id: id.to_string(),
+        username: format!("{id}-name"),
+    })
+}
+
+async fn cached_runtime(
+    name: &str,
+    url: &str,
+    token: &str,
+    identity: IdentityEvidence,
+) -> (ProviderRuntime, Arc<AtomicUsize>) {
+    let fetches = Arc::new(AtomicUsize::new(0));
+    let connection = Connection::new(
+        ConnectionId::new(Source::Jira, name),
+        "Jira",
+        ConnectionLocation::Local,
+        ConnectionValues::new(
+            [("URL", url), ("TOKEN", token)]
+                .into_iter()
+                .map(|(key, value)| (key.to_string(), Some(value.to_string())))
+                .collect(),
+        ),
+    );
+    let adapter = CachedTestProvider {
+        identity,
+        fetches: fetches.clone(),
+    };
+    let runtime = ProviderRuntime::inspect(Arc::new(adapter), &connection).await;
+    assert!(runtime.usable());
+    (runtime, fetches)
+}
+
+fn last_week() -> CollectOptions {
+    let end = chrono::Utc::now();
+    CollectOptions {
+        start: end - chrono::Duration::days(7),
+        end,
+    }
+}
+
+fn file_names(dir: &std::path::Path) -> Vec<String> {
+    let mut names: Vec<String> = fs::read_dir(dir)
+        .unwrap()
+        .map(|entry| entry.unwrap().file_name().into_string().unwrap())
+        .filter(|name| name.ends_with(".json"))
+        .collect();
+    names.sort();
+    names
+}
+
+/// B4: the cache scope is the safe fingerprint and the verified principal. Pinned, so a change
+/// that would make every user refetch, or mix principals, shows here.
+#[tokio::test]
+async fn the_cache_file_is_named_by_the_endpoint_and_the_verified_principal() {
+    let url = "https://jira.example/jira";
+    let (runtime, _) = cached_runtime("work", url, "token-1", verified("JIRAUSER1")).await;
+    let scope = runtime.cache_scope().unwrap();
+
+    assert_eq!(
+        crate::cache::file_name(runtime.id(), scope),
+        "jira-work-dd1291907c1aaadf.json"
+    );
+    let (other, _) = cached_runtime("work", url, "token-1", verified("JIRAUSER2")).await;
+    assert_ne!(other.cache_scope().unwrap(), scope);
+    let (spelled, _) = cached_runtime(
+        "work",
+        "https://JIRA.example/jira/",
+        "token-2",
+        verified("JIRAUSER1"),
+    )
+    .await;
+    assert_eq!(spelled.cache_scope().unwrap(), scope);
+}
+
+/// The stated guarantee: the cache is per principal, not per token. Two tokens of one account
+/// share a file; another account behind the same URL gets its own.
+#[tokio::test]
+async fn two_tokens_of_one_principal_share_a_cache_file_and_two_principals_do_not() {
+    let dir = tempdir().unwrap();
+    let url = "https://jira.example";
+    for (token, identity) in [
+        ("token-1", verified("alice")),
+        ("token-2", verified("alice")),
+        ("token-3", verified("bob")),
+    ] {
+        let (runtime, _) = cached_runtime("default", url, token, identity).await;
+        runtime
+            .collect_in(dir.path(), last_week(), None)
+            .await
+            .unwrap();
+    }
+
+    assert_eq!(
+        file_names(dir.path()).len(),
+        2,
+        "{:?}",
+        file_names(dir.path())
+    );
+    // The second token of alice found her days and fetched nothing.
+    let (again, fetches) = cached_runtime("default", url, "token-2", verified("alice")).await;
+    again
+        .collect_in(dir.path(), last_week(), None)
+        .await
+        .unwrap();
+    assert_eq!(fetches.load(Ordering::SeqCst), 0);
+}
+
+/// Without a verified principal, or with credentials in the URL, a connection is collected
+/// directly: no file is read or written and no log line holds the credential.
+#[tokio::test]
+async fn uncached_connections_touch_no_file_and_log_no_credential() {
+    let cases = [
+        ("unnamed", "https://jira.example", IdentityEvidence::Unnamed),
+        ("unchecked", "https://jira.example", IdentityEvidence::None),
+        (
+            "userinfo",
+            "https://me:pa55word@jira.example",
+            verified("alice"),
+        ),
+        (
+            "query",
+            "https://jira.example/?private_token=pa55word",
+            verified("alice"),
+        ),
+    ];
+    for (name, url, identity) in cases {
+        let dir = tempdir().unwrap();
+        let (runtime, fetches) = cached_runtime(name, url, "token-1", identity).await;
+
+        runtime
+            .collect_in(dir.path(), last_week(), None)
+            .await
+            .unwrap();
+        runtime
+            .collect_in(dir.path(), last_week(), None)
+            .await
+            .unwrap();
+
+        assert_eq!(fs::read_dir(dir.path()).unwrap().count(), 0, "{name}");
+        assert_eq!(fetches.load(Ordering::SeqCst), 2, "{name}: both collect");
+        let scope = runtime.id().to_string();
+        let lines: Vec<String> = diagnostics::entries()
+            .into_iter()
+            .filter(|entry| entry.scope == scope)
+            .map(|entry| entry.message)
+            .collect();
+        assert!(
+            lines.iter().any(|line| line.starts_with("Not cached: ")),
+            "{name}: {lines:?}"
+        );
+        assert!(
+            lines.iter().all(|line| !line.contains("pa55word")),
+            "{name}: {lines:?}"
+        );
+        assert!(
+            lines.iter().all(|line| !line.contains("cache ")),
+            "{name}: no cache file was tried: {lines:?}"
+        );
+    }
 }
 
 #[test]

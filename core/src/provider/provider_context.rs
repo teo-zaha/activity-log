@@ -14,7 +14,6 @@ use crate::provider::{
 pub struct ProviderContext {
     config: ProviderConfig,
     typed: Option<Arc<dyn Any + Send + Sync>>,
-    cache_scope: u64,
     connection: Option<Connection>,
     collection_state: Option<CollectionState>,
 }
@@ -29,12 +28,9 @@ impl fmt::Debug for ProviderContext {
 
 impl ProviderContext {
     pub fn resolve(source: &dyn ConfigSource, requirements: &[ProviderConfigKey]) -> Self {
-        let config = ProviderConfig::resolve(source, requirements);
-        let cache_scope = config.fingerprint(requirements);
         Self {
-            config,
+            config: ProviderConfig::resolve(source, requirements),
             typed: None,
-            cache_scope,
             connection: None,
             collection_state: None,
         }
@@ -84,8 +80,12 @@ impl ProviderContext {
             .ok_or_else(|| anyhow!("Config not resolved or wrong type"))
     }
 
-    pub(crate) fn cache_scope(&self) -> u64 {
-        self.cache_scope
+    /// See [`ProviderConfig::fingerprint`].
+    pub(crate) fn fingerprint(
+        &self,
+        requirements: &[ProviderConfigKey],
+    ) -> Result<u64, &'static str> {
+        self.config.fingerprint(requirements)
     }
 
     pub fn missing_required_keys<'a>(&self, requirements: &'a [ProviderConfigKey]) -> Vec<&'a str> {

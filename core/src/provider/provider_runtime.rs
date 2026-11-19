@@ -1,4 +1,4 @@
-use std::{future::Future, sync::Arc, time::Duration};
+use std::{future::Future, path::Path, sync::Arc, time::Duration};
 
 use futures::{
     FutureExt,
@@ -13,6 +13,8 @@ use crate::{
     },
     utils::now_iso,
 };
+
+use crate::cache::Uncached;
 
 use super::{
     connection::{Connection, ConnectionLocation},
@@ -79,27 +81,65 @@ impl ProviderRuntime {
         self.info.clone()
     }
 
+    /// The day cache's scope for this connection: its safe fingerprint and the principal the
+    /// check verified. Two tokens of one account share it; without a verified identity, or with
+    /// a URL holding credentials, the connection is not cached.
+    pub(crate) fn cache_scope(&self) -> Result<u64, Uncached> {
+        let fingerprint = self
+            .context
+            .fingerprint(self.adapter.config_requirements())
+            .map_err(Uncached::Url)?;
+        match &self.identity {
+            IdentityEvidence::Verified(identity) => Ok(crate::utils::fnv1a(
+                format!("{fingerprint:016x}\n{}", identity.id).into_bytes(),
+            )),
+            _ => Err(Uncached::Unverified),
+        }
+    }
+
     /// Collects this connection; `state` is its kind's state for this collection.
     pub async fn collect(
         &self,
         options: CollectOptions,
         state: Option<CollectionState>,
     ) -> anyhow::Result<Vec<ActivityEntry>> {
+        self.collect_in(&crate::cache::cache_dir(), options, state)
+            .await
+    }
+
+    /// [`Self::collect`] with the day cache in `cache_dir`.
+    pub(crate) async fn collect_in(
+        &self,
+        cache_dir: &Path,
+        options: CollectOptions,
+        state: Option<CollectionState>,
+    ) -> anyhow::Result<Vec<ActivityEntry>> {
         let current_os = current_os();
         let context = self.context.clone().with_collection_state(state);
+        let fetch = |span| {
+            self.adapter
+                .collect(current_os.clone(), span, context.clone())
+        };
         let collect = async {
-            match self.adapter.cache_policy() {
-                Some(policy) => {
+            let Some(policy) = self.adapter.cache_policy() else {
+                return fetch(options).await;
+            };
+            match self.cache_scope() {
+                Ok(scope) => {
                     crate::cache::collect_with_day_cache(
+                        cache_dir,
                         self.id(),
-                        self.context.cache_scope(),
+                        scope,
                         &options,
                         policy,
-                        |span| self.adapter.collect(current_os, span, context.clone()),
+                        fetch,
                     )
                     .await
                 }
-                None => self.adapter.collect(current_os, options, context).await,
+                Err(uncached) => {
+                    uncached.log(&self.id().to_string());
+                    fetch(options).await
+                }
             }
         };
         diagnostics::in_connection(self.id().clone(), collect).await

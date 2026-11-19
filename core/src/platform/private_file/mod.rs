@@ -33,6 +33,9 @@ use unix as imp;
 #[cfg(target_os = "windows")]
 use windows as imp;
 
+#[cfg(all(test, target_os = "macos"))]
+pub(crate) use macos::acl_entry_count;
+
 #[derive(Debug)]
 pub enum PrivateFileError {
     /// The location cannot hold private files: a file system without permissions or ACLs that
@@ -86,6 +89,13 @@ impl Folder {
         self.0.read(name)
     }
 
+    /// Whether this folder can keep files private: owned by the user, no other account may
+    /// add, rename or delete entries, and a file system that enforces it. Checked again by
+    /// [`Self::staging`]; a reader of private data checks it before trusting what it reads.
+    pub fn check_private(&self) -> Result<(), PrivateFileError> {
+        self.0.check_private()
+    }
+
     /// A staging folder in this folder for replacing `target_name`, after checking that this
     /// folder can keep files private: owned by the user, no other account may add, rename or
     /// delete entries, and a file system that enforces it.
@@ -102,7 +112,10 @@ pub struct Staging(imp::Staging);
 /// A folder beside `target` (same file system) in which only the current user can open or
 /// create anything, verified before it is returned. Every later operation goes through handles
 /// to it and to the target's folder, never through a path.
-#[allow(dead_code, reason = "the cache writer (step 3) publishes through it")]
+#[allow(
+    dead_code,
+    reason = "writers stage through the folder they locked and read with (`Folder::staging`)"
+)]
 pub fn private_staging(target: &Path) -> Result<Staging, PrivateFileError> {
     let name = target
         .file_name()

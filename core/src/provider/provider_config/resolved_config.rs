@@ -53,27 +53,30 @@ impl ProviderConfig {
     }
 
     /// Stable hash of the non-secret values, used to keep caches of different accounts apart.
-    /// Passwords and tokens are left out so they never influence file names on disk.
-    pub fn fingerprint(&self, requirements: &[ProviderConfigKey]) -> u64 {
-        // FNV-1a: stable across Rust versions, unlike `DefaultHasher`.
-        let mut hash: u64 = 0xcbf2_9ce4_8422_2325;
+    /// Passwords and tokens are left out so they never influence file names on disk; URLs count
+    /// as their endpoint (see [`canonical_endpoint`]). `Err` names a URL setting that holds
+    /// credentials, a query or a fragment: such a connection is not cached.
+    pub fn fingerprint(&self, requirements: &[ProviderConfigKey]) -> Result<u64, &'static str> {
+        let mut text = String::new();
         for key in requirements
             .iter()
             .filter(|key| key.value_type() != ProviderConfigValueType::Password)
         {
             let value = self.values.get(key.name).map(String::as_str).unwrap_or("");
-            for byte in key
-                .name
-                .bytes()
-                .chain(*b"=")
-                .chain(value.bytes())
-                .chain(*b"\n")
-            {
-                hash ^= u64::from(byte);
-                hash = hash.wrapping_mul(0x0000_0100_0000_01b3);
-            }
+            let value = match key.shape {
+                ProviderConfigShape::Single(ProviderConfigValueType::Url) => {
+                    canonical_endpoint(value).ok_or(key.name)?
+                }
+                ProviderConfigShape::List(ProviderConfigValueType::Url) => parse_config_list(value)
+                    .iter()
+                    .map(|item| canonical_endpoint(item).ok_or(key.name))
+                    .collect::<Result<Vec<_>, _>>()?
+                    .join("\n"),
+                _ => value.to_string(),
+            };
+            text.push_str(&format!("{}={value}\n", key.name));
         }
-        hash
+        Ok(crate::utils::fnv1a(text.into_bytes()))
     }
 
     pub fn first_invalid_key<'a>(
@@ -86,6 +89,29 @@ impl ProviderConfig {
                 .is_some_and(|value| !provider_config_key_accepts(**key, value))
         })
     }
+}
+
+/// A URL as the endpoint it names: scheme, lowercase host, port, and the path without trailing
+/// slashes (a context path such as `/jira` kept). `None` for a URL with a user name, password,
+/// query or fragment. A value that is no URL is kept as written; it is never collected.
+fn canonical_endpoint(value: &str) -> Option<String> {
+    let Ok(url) = Url::parse(value.trim()) else {
+        return Some(value.to_string());
+    };
+    if !url.username().is_empty()
+        || url.password().is_some()
+        || url.query().is_some()
+        || url.fragment().is_some()
+    {
+        return None;
+    }
+    let host = url.host_str().unwrap_or_default().to_lowercase();
+    let port = url
+        .port()
+        .map(|port| format!(":{port}"))
+        .unwrap_or_default();
+    let path = url.path().trim_end_matches('/');
+    Some(format!("{}://{host}{port}{path}", url.scheme()))
 }
 
 /// Whether `value` is valid for `key`: for a list, every item must match the value type.

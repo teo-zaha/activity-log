@@ -417,6 +417,10 @@ Git history is read in-process. The `git` command is only asked for `user.email`
 
 GitLab and Jira opt into a per-day disk cache. Each collection serves the days it already has and fetches only missing or stale days. Today, yesterday and any day fetched before it ended stay fresh for `CACHE_TTL_MINUTES`. Days fetched more than an hour after they ended are "settled" and stay fresh for 7 days. Files live under `activity-log/cache` in the OS cache directory (`%LOCALAPPDATA%` on Windows, `~/Library/Caches` on macOS, `$XDG_CACHE_HOME` or `~/.cache` on Linux) unless `ACTIVITY_LOG_CACHE_DIR` is set.
 
+Each file belongs to one connection and one account: the account the startup check names for the token (Jira `/myself`, GitLab `/user`), together with the connection's settings other than the token, with the URL counted as its address (the host's case and trailing slashes do not matter; a context path such as `/jira` does, in its own case). Two tokens of the same account share a file; another account behind the same URL gets its own. A connection whose check does not say whose token it is, or whose URL has a query or fragment, is collected without the cache, with a line in the Logs pane; a URL with a user name or password is not collected at all (the check asks to remove them). Cache files are owner-only. A cache folder that cannot keep them private (a drive that does not keep permissions, such as FAT or exFAT, or a folder other accounts can write to) is neither read nor written; the app logs "… cannot keep cached activity private; collecting without a cache" once and uses the cache again as soon as the folder is private. Several processes (the desktop app, the API server, the CLI) can share the folder: each fetches without waiting, then adds the days it fetched to the file, keeping a day another process fetched later; a file it cannot read, or one written by a later version, is left as it is.
+
+Since the cache files are named by the account, GitLab and Jira days are fetched once again after this update. Files of older versions are no longer read; they can be deleted from the cache folder.
+
 </details>
 
 <details>

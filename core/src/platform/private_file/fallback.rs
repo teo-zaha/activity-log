@@ -32,6 +32,12 @@ impl Folder {
         }
     }
 
+    pub(super) fn check_private(&self) -> Result<(), PrivateFileError> {
+        Err(PrivateFileError::Unprotectable {
+            location: self.0.clone(),
+        })
+    }
+
     pub(super) fn staging(&self, _target_name: &str) -> Result<Staging, PrivateFileError> {
         Err(PrivateFileError::Unprotectable {
             location: self.0.clone(),
