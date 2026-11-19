@@ -5,9 +5,10 @@ use std::{
 
 use activity_log_core::model::{
     ActivityLog, ActivityLogMeta, CollectOptions, CollectedActivitySummary,
-    CollectionFailedResponse, ConnectionId, LogsResponse, ProviderInfo, ProviderStatus, Source,
-    SupportedOs,
+    CollectionFailedResponse, ConnectionId, ErrorResponse, ExportFile, LogsResponse, ProviderInfo,
+    ProviderStatus, Source, SupportedOs,
 };
+use activity_log_core::provider::connection::{Connection, ConnectionLocation, ConnectionValues};
 use activity_log_core::runtime::{CollectionRuntime, Collector, CollectorFuture, Progress};
 use rocket::{http::Status, local::asynchronous::Client};
 use tokio::sync::Notify;
@@ -269,4 +270,169 @@ async fn logs_can_be_read_and_cleared() {
         .await
         .expect("logs json");
     assert!(!logged(body));
+}
+
+async fn post_export<'a>(
+    client: &'a Client,
+    body: &'a str,
+) -> rocket::local::asynchronous::LocalResponse<'a> {
+    client
+        .post("/api/export")
+        .header(rocket::http::ContentType::JSON)
+        .body(body)
+        .dispatch()
+        .await
+}
+
+#[rocket::async_test]
+async fn exports_the_entries_it_is_sent_as_a_file() {
+    let client = client(collector_ok()).await;
+
+    let response = post_export(
+        &client,
+        r#"{"format":"markdown","start":"2026-03-01T23:00:00Z","end":"2026-03-02T23:00:00Z","timeZone":"Europe/Berlin","entries":[]}"#,
+    )
+    .await;
+
+    assert_eq!(response.status(), Status::Ok);
+    let file: ExportFile = response.into_json().await.expect("export json");
+    assert_eq!(file.file_name, "activity-2026-03-02-2026-03-02.md");
+    assert!(file.content.contains("Total: 0 events"));
+}
+
+#[rocket::async_test]
+async fn rejects_an_export_in_an_unknown_zone() {
+    let client = client(collector_ok()).await;
+
+    let response = post_export(
+        &client,
+        r#"{"format":"json","start":"2026-03-01T23:00:00Z","end":"2026-03-02T23:00:00Z","timeZone":"Local","entries":[]}"#,
+    )
+    .await;
+
+    assert_eq!(response.status(), Status::BadRequest);
+    let body: ErrorResponse = response.into_json().await.expect("error json");
+    assert_eq!(body.error, r#"Unknown time zone "Local""#);
+}
+
+/// A week of meetings with long descriptions, as the dashboard sends it: past Rocket's 1 MiB JSON
+/// default, with Outlook and Calendar entries the untagged `ActivityEntry` must tell apart.
+fn many_meetings() -> String {
+    let description = "Agenda and notes. ".repeat(220);
+    let meeting = |source: &str, index: usize| {
+        let mut entry = serde_json::json!({
+            "source": source,
+            "connection": "default",
+            "id": format!("{source}-{index}"),
+            "timestamp": format!("2026-03-02T{:02}:{:02}:00Z", 8 + index % 10, index % 60),
+            "title": format!("{source} meeting {index}"),
+            "durationMinutes": 30,
+            "meetingWeight": "busy",
+            "description": description,
+            "descriptionSegments": [{ "kind": "text", "text": description }],
+        });
+        if source == "outlook" {
+            entry["isOrganizer"] = serde_json::Value::Bool(false);
+        }
+        entry
+    };
+    let entries = (0..150)
+        .flat_map(|index| [meeting("outlook", index), meeting("calendar", index)])
+        .collect::<Vec<_>>();
+    serde_json::json!({
+        "format": "markdown",
+        "start": "2026-03-01T23:00:00Z",
+        "end": "2026-03-08T23:00:00Z",
+        "timeZone": "Europe/Berlin",
+        "entries": entries,
+    })
+    .to_string()
+}
+
+#[rocket::async_test]
+async fn exports_more_entries_than_the_default_json_limit_allows() {
+    let client = client(collector_ok()).await;
+    let body = many_meetings();
+    assert!(body.len() > 1024 * 1024, "the body is {} bytes", body.len());
+
+    let response = post_export(&client, &body).await;
+
+    assert_eq!(response.status(), Status::Ok);
+    let file: ExportFile = response.into_json().await.expect("export json");
+    assert!(file.content.contains("Total: 300 events"));
+    assert_eq!(
+        file.content
+            .matches("**[outlook]** outlook meeting")
+            .count(),
+        150
+    );
+    assert_eq!(
+        file.content
+            .matches("**[calendar]** calendar meeting")
+            .count(),
+        150
+    );
+}
+
+#[rocket::async_test]
+async fn rejects_a_body_that_is_not_an_export_request() {
+    let client = client(collector_ok()).await;
+
+    let response = post_export(&client, r#"{"format":"pdf"}"#).await;
+
+    assert_eq!(response.status(), Status::BadRequest);
+    let body: ErrorResponse = response.into_json().await.expect("error json");
+    assert!(
+        body.error.starts_with("Not an export request"),
+        "{}",
+        body.error
+    );
+}
+
+#[rocket::async_test]
+async fn post_collect_rejects_a_range_of_centuries() {
+    let client = client(collector_ok()).await;
+
+    let response = post_collect(
+        &client,
+        r#"{"start":"1000-01-01T00:00:00Z","end":"9999-12-31T00:00:00Z"}"#,
+    )
+    .await;
+
+    assert_eq!(response.status(), Status::BadRequest);
+    let body: ErrorResponse = response.into_json().await.expect("error json");
+    assert_eq!(body.error, "A range can span at most 10 years (3653 days)");
+}
+
+#[rocket::async_test]
+async fn recheck_answers_with_the_connection_checking_and_404_for_an_unknown_one() {
+    let calendar = Connection::new(
+        ConnectionId::new(Source::Calendar, "team"),
+        "Team",
+        ConnectionLocation::Local,
+        ConnectionValues::default(),
+    );
+    let (runtime, checks) = CollectionRuntime::start(&[calendar]);
+    checks.await;
+    let client = Client::tracked(build_rocket_with(ApiRuntime::fixed(runtime), false))
+        .await
+        .unwrap();
+
+    let response = client
+        .post("/api/connections/recheck")
+        .header(rocket::http::ContentType::JSON)
+        .body(r#"{"source":"calendar","name":"team"}"#)
+        .dispatch()
+        .await;
+    assert_eq!(response.status(), Status::Ok);
+    let body: serde_json::Value = response.into_json().await.unwrap();
+    assert_eq!(body["providers"][0]["status"], "checking");
+
+    let response = client
+        .post("/api/connections/recheck")
+        .header(rocket::http::ContentType::JSON)
+        .body(r#"{"source":"calendar","name":"other"}"#)
+        .dispatch()
+        .await;
+    assert_eq!(response.status(), Status::NotFound);
 }

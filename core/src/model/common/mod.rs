@@ -5,6 +5,8 @@ pub mod collect_request;
 pub mod collection_failed_response;
 pub mod connection_id;
 pub mod error_response;
+pub mod export_file;
+pub mod export_request;
 pub mod output_format;
 pub mod provider_config_connection_state_dto;
 pub mod provider_config_field_state_dto;

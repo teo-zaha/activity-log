@@ -3,13 +3,14 @@ use ts_rs::{Config, TS};
 use crate::model::{
     ActivityEntry, ActivityLog, ActivityLogMeta, AddConnectionRequestDto, AddConnectionResponseDto,
     BusyStatus, CalendarEntry, CollectRequest, CollectedActivitySummary, CollectionFailedResponse,
-    ConnectionCount, ConnectionId, DescriptionBlock, ErrorResponse, GitEntry, GitLabEntry,
-    GitLabType, JiraEntry, JiraEntryType, ListItem, LogEntry, LogLevel, LogsResponse,
-    MeetingWeight, OutlookEntry, ProviderConfigConnectionStateDto, ProviderConfigFieldStateDto,
-    ProviderConfigFieldValueDto, ProviderConfigSaveRequestDto, ProviderConfigSaveResponseDto,
-    ProviderConfigSaveValueDto, ProviderConfigSnapshotDto, ProviderConfigValueDto,
-    ProviderConfigValueTypeDto, ProviderInfo, ProviderKindDto, ProviderProblem, ProviderStatus,
-    ProvidersResponse, Source, SupportedOs, SystemEntry, SystemEntryType, TextSegment,
+    ConnectionCount, ConnectionId, DescriptionBlock, ErrorResponse, ExportFile, ExportRequest,
+    GitEntry, GitLabEntry, GitLabType, JiraEntry, JiraEntryType, ListItem, LogEntry, LogLevel,
+    LogsResponse, MeetingWeight, OutlookEntry, OutputFormat, ProviderConfigConnectionStateDto,
+    ProviderConfigFieldStateDto, ProviderConfigFieldValueDto, ProviderConfigSaveRequestDto,
+    ProviderConfigSaveResponseDto, ProviderConfigSaveValueDto, ProviderConfigSnapshotDto,
+    ProviderConfigValueDto, ProviderConfigValueTypeDto, ProviderInfo, ProviderKindDto,
+    ProviderProblem, ProviderStatus, ProvidersResponse, Source, SupportedOs, SystemEntry,
+    SystemEntryType, TextSegment,
 };
 
 pub fn activity_typescript() -> String {
@@ -56,6 +57,9 @@ pub fn activity_typescript() -> String {
         export_decl::<CollectRequest>(&cfg),
         export_decl::<CollectionFailedResponse>(&cfg),
         export_decl::<ErrorResponse>(&cfg),
+        export_decl::<OutputFormat>(&cfg),
+        export_decl::<ExportRequest>(&cfg),
+        export_decl::<ExportFile>(&cfg),
         export_decl::<LogLevel>(&cfg),
         export_decl::<LogEntry>(&cfg),
         export_decl::<LogsResponse>(&cfg),
