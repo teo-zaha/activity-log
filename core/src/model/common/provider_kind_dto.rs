@@ -10,6 +10,8 @@ use crate::model::common::{source::Source, supported_os::SupportedOs};
 pub struct ProviderKindDto {
     pub source: Source,
     pub label: String,
+    /// What the kind collects, in a few words.
+    pub description: String,
     /// Whether more than one connection of the kind can be added.
     pub multiple: bool,
     pub supported_os: Vec<SupportedOs>,

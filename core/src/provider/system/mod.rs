@@ -72,5 +72,9 @@ crate::provider! {
             let entries = collect_system(&options, current_os).await?;
             Ok(entries.into_activity_entries())
         }
+
+        fn description(&self) -> &'static str {
+            "When this computer started and shut down"
+        }
     }
 }

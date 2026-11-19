@@ -15,7 +15,9 @@ use crate::{
         resolve_git_repos_with_home_root,
     },
     diagnostics,
-    model::{ActivityEntry, CollectOptions, ConnectionId, GitEntry, Source, SupportedOs},
+    model::{
+        ActivityEntry, CollectOptions, ConnectionId, GitEntry, ProviderProblem, Source, SupportedOs,
+    },
     provider::{
         connection::{Connection, ConnectionLocation, ConnectionValues},
         current_os,
@@ -112,6 +114,10 @@ impl ProviderAdapter for TestProvider {
         Source::Git
     }
 
+    fn description(&self) -> &'static str {
+        "A source for tests"
+    }
+
     fn supported_os(&self) -> &'static [SupportedOs] {
         self.supported_os
     }
@@ -165,6 +171,7 @@ async fn missing_required_config_skips_startup_check() {
         runtime.info().reason.as_deref(),
         Some("Git is not configured")
     );
+    assert_eq!(runtime.info().problem, Some(ProviderProblem::NotConfigured));
 }
 
 #[tokio::test]
@@ -188,6 +195,7 @@ async fn unsupported_os_is_derived_from_provider_metadata() {
 
     assert_eq!(calls.load(Ordering::SeqCst), 0);
     assert_eq!(runtime.info().reason.as_deref(), Some("OS not supported"));
+    assert_eq!(runtime.info().problem, Some(ProviderProblem::Unsupported));
 }
 
 #[tokio::test]
@@ -213,6 +221,7 @@ async fn startup_check_runs_with_resolved_config() {
 
     assert_eq!(calls.load(Ordering::SeqCst), 1);
     assert!(runtime.info().usable);
+    assert_eq!(runtime.info().problem, None);
 }
 
 #[tokio::test]
@@ -308,6 +317,10 @@ struct TypedTestProvider {
 impl ProviderAdapter for TypedTestProvider {
     fn id(&self) -> Source {
         Source::Git
+    }
+
+    fn description(&self) -> &'static str {
+        "A source for tests"
     }
 
     fn supported_os(&self) -> &'static [SupportedOs] {
@@ -590,6 +603,7 @@ async fn startup_checks_that_hang_report_a_timeout() {
     .await;
 
     assert_eq!(result.status, crate::model::ProviderStatus::Unavailable);
+    assert_eq!(result.problem, Some(ProviderProblem::TimedOut));
     assert!(
         result
             .reason
@@ -792,4 +806,17 @@ async fn a_provisional_git_pass_keeps_a_subset_and_logs_nothing() {
         );
     })
     .await;
+}
+
+#[test]
+fn a_check_that_reports_a_problem_is_a_failure() {
+    assert_eq!(
+        ProviderCheckResult::degraded("slow").problem,
+        Some(ProviderProblem::Failed)
+    );
+    assert_eq!(
+        ProviderCheckResult::unavailable("down").problem,
+        Some(ProviderProblem::Failed)
+    );
+    assert_eq!(ProviderCheckResult::available().problem, None);
 }

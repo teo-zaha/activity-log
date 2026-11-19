@@ -67,6 +67,10 @@ crate::provider! {
                 .into_activity_entries())
         }
 
+        fn description(&self) -> &'static str {
+            "Commits from your repositories"
+        }
+
         fn instances(&self) -> Instances {
             Instances::Multiple
         }

@@ -1,4 +1,5 @@
 pub mod add_connection_request_dto;
+pub mod add_connection_response_dto;
 pub mod collect_options;
 pub mod collect_request;
 pub mod collection_failed_response;
@@ -16,6 +17,7 @@ pub mod provider_config_value_dto;
 pub mod provider_config_value_type_dto;
 pub mod provider_info;
 pub mod provider_kind_dto;
+pub mod provider_problem;
 pub mod provider_status;
 pub mod providers_response;
 pub mod source;

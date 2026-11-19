@@ -77,6 +77,11 @@ fn snapshot_lists_kinds_and_connections() {
         .find(|kind| kind.source == Source::Gitlab)
         .unwrap();
     assert!(gitlab.multiple && gitlab.supported);
+    assert_eq!(
+        gitlab.description,
+        "Merge requests, pushes, comments and reviews"
+    );
+    assert!(empty.kinds.iter().all(|kind| !kind.description.is_empty()));
     let on_linux = build_snapshot(&[], &SupportedOs::Linux);
     let outlook = on_linux
         .kinds

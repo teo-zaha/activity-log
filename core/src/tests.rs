@@ -165,6 +165,10 @@ impl ProviderAdapter for FakeSource {
         Source::System
     }
 
+    fn description(&self) -> &'static str {
+        "A source for tests"
+    }
+
     fn supported_os(&self) -> &'static [SupportedOs] {
         &[SupportedOs::Windows, SupportedOs::Macos, SupportedOs::Linux]
     }

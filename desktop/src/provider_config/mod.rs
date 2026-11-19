@@ -136,6 +136,7 @@ pub(crate) fn build_snapshot(
             let source = adapter.id();
             ProviderKindDto {
                 label: source.label().to_string(),
+                description: adapter.description().to_string(),
                 multiple: adapter.instances() == Instances::Multiple,
                 supported_os: adapter.supported_os().to_vec(),
                 supported: adapter.supported_os().contains(current_os),

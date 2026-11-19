@@ -169,6 +169,7 @@ fn lists_connections_in_columns() {
             usable,
             supported_os: Vec::new(),
             reason: reason.map(str::to_string),
+            problem: None,
             checked_at: String::new(),
         }
     };

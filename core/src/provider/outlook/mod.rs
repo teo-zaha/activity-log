@@ -52,5 +52,9 @@ crate::provider! {
             let entries = collect_outlook(&options, current_os).await?;
             Ok(entries.into_activity_entries())
         }
+
+        fn description(&self) -> &'static str {
+            "Meetings from the Outlook desktop app"
+        }
     }
 }

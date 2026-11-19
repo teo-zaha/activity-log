@@ -23,7 +23,9 @@ use self::{
     outlook::OutlookProvider, provider_adapter::ProviderAdapter, system::SystemProvider,
 };
 
-pub use provider_runtime::{ProviderRuntime, inspect_provider_runtimes_with, start_checks};
+pub use provider_runtime::{
+    ProviderRuntime, inspect_provider_runtimes_with, start_check, start_checks,
+};
 
 /// HTTP client defaults for remote providers; reqwest has no timeouts by default.
 pub(crate) fn http_client_builder() -> reqwest::ClientBuilder {

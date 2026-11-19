@@ -1,14 +1,15 @@
 use ts_rs::{Config, TS};
 
 use crate::model::{
-    ActivityEntry, ActivityLog, ActivityLogMeta, AddConnectionRequestDto, CalendarEntry,
-    CollectRequest, CollectedActivitySummary, CollectionFailedResponse, ConnectionCount,
-    ConnectionId, ErrorResponse, GitEntry, GitLabEntry, GitLabType, JiraEntry, JiraEntryType,
-    LogEntry, LogLevel, LogsResponse, OutlookEntry, ProviderConfigConnectionStateDto,
-    ProviderConfigFieldStateDto, ProviderConfigFieldValueDto, ProviderConfigSaveRequestDto,
-    ProviderConfigSaveResponseDto, ProviderConfigSaveValueDto, ProviderConfigSnapshotDto,
-    ProviderConfigValueDto, ProviderConfigValueTypeDto, ProviderInfo, ProviderKindDto,
-    ProviderStatus, ProvidersResponse, Source, SupportedOs, SystemEntry, SystemEntryType,
+    ActivityEntry, ActivityLog, ActivityLogMeta, AddConnectionRequestDto, AddConnectionResponseDto,
+    CalendarEntry, CollectRequest, CollectedActivitySummary, CollectionFailedResponse,
+    ConnectionCount, ConnectionId, ErrorResponse, GitEntry, GitLabEntry, GitLabType, JiraEntry,
+    JiraEntryType, LogEntry, LogLevel, LogsResponse, OutlookEntry,
+    ProviderConfigConnectionStateDto, ProviderConfigFieldStateDto, ProviderConfigFieldValueDto,
+    ProviderConfigSaveRequestDto, ProviderConfigSaveResponseDto, ProviderConfigSaveValueDto,
+    ProviderConfigSnapshotDto, ProviderConfigValueDto, ProviderConfigValueTypeDto, ProviderInfo,
+    ProviderKindDto, ProviderProblem, ProviderStatus, ProvidersResponse, Source, SupportedOs,
+    SystemEntry, SystemEntryType,
 };
 
 pub fn activity_typescript() -> String {
@@ -18,6 +19,7 @@ pub fn activity_typescript() -> String {
         export_decl::<ConnectionId>(&cfg),
         export_decl::<SupportedOs>(&cfg),
         export_decl::<ProviderStatus>(&cfg),
+        export_decl::<ProviderProblem>(&cfg),
         export_decl::<ProviderInfo>(&cfg),
         export_decl::<ProvidersResponse>(&cfg),
         export_decl::<ProviderConfigValueTypeDto>(&cfg),
@@ -31,6 +33,7 @@ pub fn activity_typescript() -> String {
         export_decl::<ProviderConfigSaveRequestDto>(&cfg),
         export_decl::<ProviderConfigSaveResponseDto>(&cfg),
         export_decl::<AddConnectionRequestDto>(&cfg),
+        export_decl::<AddConnectionResponseDto>(&cfg),
         export_decl::<GitLabType>(&cfg),
         export_decl::<JiraEntryType>(&cfg),
         export_decl::<SystemEntryType>(&cfg),

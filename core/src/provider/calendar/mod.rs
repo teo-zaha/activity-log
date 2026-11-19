@@ -31,6 +31,10 @@ crate::provider! {
             Ok(entries.into_activity_entries())
         }
 
+        fn description(&self) -> &'static str {
+            "Events from an ICS calendar link or .ics file"
+        }
+
         fn instances(&self) -> Instances {
             Instances::Multiple
         }
