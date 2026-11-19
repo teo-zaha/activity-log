@@ -4,7 +4,7 @@ use crate::model::SystemEntryType;
 
 use super::{
     WINDOWS_SYSTEM_EVENTS,
-    macos::parse_last_output,
+    macos::{parse_last_output, parse_power_log},
     map_windows_events,
     windows::{build_event_query, parse_event_xml},
 };
@@ -184,4 +184,178 @@ fn macos_last_output_stops_at_the_first_entry_before_the_range() {
 
     assert_eq!(entries.len(), 1);
     assert_eq!(entries[0].entry_type, SystemEntryType::Boot);
+}
+
+/// A synthetic `pmset -g log`: the type column padded to 20 characters and a tab, as macOS
+/// writes it.
+fn power_line(time: &str, kind: &str, details: &str) -> String {
+    format!("{time} {kind:<20}\t{details}")
+}
+
+fn power_log() -> String {
+    [
+        "Time stamp                Domain              Message".to_string(),
+        power_line("2026-11-09 08:00:00 +0100", "Sleep", "Entering Sleep state due to 'Idle Sleep':TCPKeepAlive=active Using AC (Charge:80%) 2 secs"),
+        power_line("2026-11-10 07:59:00 +0100", "Sleep", "Entering Sleep state due to 'Idle Sleep':TCPKeepAlive=active Using Batt (Charge:79%) 2 secs"),
+        power_line("2026-11-10 09:00:00 +0100", "Sleep", "Entering Sleep state due to 'Clamshell Sleep':TCPKeepAlive=active Using Batt (Charge:78%) 3 secs"),
+        power_line("2026-11-10 09:05:00 +0100", "Wake Requests", "[*process=dasd request=SleepService deltaSecs=600 wakeAt=2026-11-10 09:15:00]"),
+        power_line("2026-11-10 09:15:00 +0100", "DarkWake", "DarkWake from Deep Idle [CDN] : due to RTC/Maintenance Using AC (Charge:78%) 10 secs"),
+        power_line("2026-11-10 09:15:10 +0100", "Sleep", "Entering Sleep state due to 'Maintenance Sleep':TCPKeepAlive=active Using AC (Charge:78%) 4 secs"),
+        power_line("2026-11-10 09:30:00 +0100", "Sleep", "Entering Sleep state due to 'Sleep Service Back to Sleep':TCPKeepAlive=active Using AC (Charge:78%) 1 secs"),
+        power_line("2026-11-10 09:40:00 +0100", "Sleep", "Entering DarkWake state due to 'Notification Wake Back to Sleep':TCPKeepAlive=active Using AC (Charge:78%) 1 secs"),
+        power_line("2026-11-10 10:00:00 +0100", "Wake", "Wake from Deep Idle [CDNVA] : due to smc.sysState.Wake(0x1) lid SMC.OutboxNotEmpty Using AC (Charge:78%)"),
+        power_line("2026-11-10 10:00:01 +0100", "WakeDetails", "DriverReason:smc.sysState.Wake - DriverDetails: lid"),
+        power_line("2026-11-10 10:00:02 +0100", "WakeTime", "WakeTime: 1.2 sec"),
+        power_line("2026-11-10 12:00:00 -0500", "Wake", "DarkWake to FullWake from Deep Idle [CDNVA] : due to UserActivity Assertion Using BATT (Charge:70%)"),
+        power_line("2026-11-10 18:30:00 +0100", "Wake", "DarkWake to FullWake from Deep Idle [CDNVA] : due to HID Activity Using AC (Charge:70%)"),
+        power_line("2026-11-10 19:00:00 +0100", "Wake", "Wake from Deep Idle [CDNVA] : due to smc.sysState.Wake(0x1) pwrbtn SMC.OutboxNotEmpty Using AC"),
+        power_line("2026-11-10 20:00:00 +0100", "Wake", "DarkWake to FullWake from Deep Idle [CDNVAP] : due to Notification Using AC (Charge:70%) 3 secs"),
+        power_line("2026-11-10 21:00:00 +0100", "Wake", "Wake from Deep Idle [CDNVA] : due to smc.sysState.Wake(0x1) wifibt SMC.OutboxNotEmpty Using AC"),
+        power_line("2026-11-10 22:00:00 +0100", "Sleep", "Entering Sleep state due to 'Software Sleep pid=1':TCPKeepAlive=active Using AC"),
+        power_line("2026-11-10 22:30:00 +0100", "Sleep", "Entering Sleep state due to 'Thermal Emergency Sleep':TCPKeepAlive=active"),
+        "  Total Sleep/Wakes since boot at 2026-11-01 08:00:00 +0100 :12".to_string(),
+        power_line("2026-11-11 00:00:00 +0100", "Sleep", "Entering Sleep state due to 'Idle Sleep':TCPKeepAlive=active Using AC (Charge:70%) 2 secs"),
+        power_line("2026-11-11 01:00:00 +0100", "Wake", "Wake from Deep Idle [CDNVA] : due to smc.sysState.Wake(0x1) lid"),
+    ]
+    .join("\n")
+}
+
+/// 10 November in UTC+1.
+fn tenth_of_november() -> (chrono::DateTime<Utc>, chrono::DateTime<Utc>) {
+    (
+        Utc.with_ymd_and_hms(2026, 11, 9, 23, 0, 0).unwrap(),
+        Utc.with_ymd_and_hms(2026, 11, 10, 23, 0, 0).unwrap(),
+    )
+}
+
+#[test]
+fn reads_user_sleeps_and_full_wakes_from_the_power_log() {
+    let (start, end) = tenth_of_november();
+    let entries = parse_power_log(&power_log(), start, end);
+
+    let read = entries
+        .iter()
+        .map(|entry| {
+            (
+                entry.entry_type.clone(),
+                entry.timestamp.as_str(),
+                entry.label.as_str(),
+            )
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(
+        read,
+        [
+            (
+                SystemEntryType::Sleep,
+                "2026-11-10T06:59:00+00:00",
+                "Sleep (idle)"
+            ),
+            (
+                SystemEntryType::Sleep,
+                "2026-11-10T08:00:00+00:00",
+                "Sleep (lid closed)"
+            ),
+            (
+                SystemEntryType::Wake,
+                "2026-11-10T09:00:00+00:00",
+                "Wake (lid opened)"
+            ),
+            // Its own offset: noon at UTC-5 is 17:00 UTC.
+            (
+                SystemEntryType::Wake,
+                "2026-11-10T17:00:00+00:00",
+                "Wake (user activity)"
+            ),
+            (
+                SystemEntryType::Wake,
+                "2026-11-10T17:30:00+00:00",
+                "Wake (keyboard or mouse)"
+            ),
+            (
+                SystemEntryType::Wake,
+                "2026-11-10T18:00:00+00:00",
+                "Wake (power button)"
+            ),
+            (
+                SystemEntryType::Wake,
+                "2026-11-10T19:00:00+00:00",
+                "Wake (notification)"
+            ),
+            (SystemEntryType::Wake, "2026-11-10T20:00:00+00:00", "Wake"),
+            (
+                SystemEntryType::Sleep,
+                "2026-11-10T21:00:00+00:00",
+                "Sleep (requested)"
+            ),
+            // A reason without a label of its own reads as itself.
+            (
+                SystemEntryType::Sleep,
+                "2026-11-10T21:30:00+00:00",
+                "Sleep (thermal emergency)"
+            ),
+        ]
+    );
+    assert_eq!(entries[1].id, "sleep/2026-11-10T08:00:00+00:00");
+}
+
+#[test]
+fn leaves_out_maintenance_sleeps_dark_wakes_and_wake_bookkeeping() {
+    let (start, end) = tenth_of_november();
+    let labels = parse_power_log(&power_log(), start, end)
+        .into_iter()
+        .map(|entry| entry.label)
+        .collect::<Vec<_>>();
+
+    assert!(!labels.iter().any(|label| label.contains("maintenance")));
+    assert!(!labels.iter().any(|label| label.contains("back to")));
+    // Nothing from 09:05 to 09:40 (wake requests, the dark wake, maintenance and back-to-sleep).
+    let quiet_hour = parse_power_log(
+        &power_log(),
+        Utc.with_ymd_and_hms(2026, 11, 10, 8, 1, 0).unwrap(),
+        Utc.with_ymd_and_hms(2026, 11, 10, 8, 59, 0).unwrap(),
+    );
+    assert!(quiet_hour.is_empty(), "{quiet_hour:?}");
+    // WakeDetails and WakeTime right after the wake add nothing.
+    let after_wake = parse_power_log(
+        &power_log(),
+        Utc.with_ymd_and_hms(2026, 11, 10, 9, 0, 0).unwrap(),
+        Utc.with_ymd_and_hms(2026, 11, 10, 9, 1, 0).unwrap(),
+    );
+    assert_eq!(after_wake.len(), 1);
+}
+
+#[test]
+fn stops_at_the_first_sleep_or_wake_after_the_range() {
+    use super::macos::{PowerLine, classify_power_line};
+
+    let (start, end) = tenth_of_november();
+    let line = power_line(
+        "2026-11-11 00:00:00 +0100",
+        "Sleep",
+        "Entering Sleep state due to 'Idle Sleep':TCPKeepAlive=active",
+    );
+    assert!(matches!(
+        classify_power_line(&line, start, end),
+        PowerLine::AfterRange
+    ));
+    let before = power_line(
+        "2026-11-09 08:00:00 +0100",
+        "Wake",
+        "Wake from Deep Idle : due to lid",
+    );
+    assert!(matches!(
+        classify_power_line(&before, start, end),
+        PowerLine::Skip
+    ));
+    for junk in [
+        "",
+        "Time stamp                Domain",
+        "2026-11-10 not a time Sleep \tEntering Sleep state",
+    ] {
+        assert!(
+            matches!(classify_power_line(junk, start, end), PowerLine::Skip),
+            "{junk}"
+        );
+    }
 }
