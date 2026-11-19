@@ -5,7 +5,8 @@ use crate::model::{
 };
 
 use super::{
-    OutlookFallback, busy_status_from_com, normalize_outlook_events, parse_raw_outlook_events,
+    OutlookFallback, busy_status_from_com, busy_status_from_mac, normalize_outlook_events,
+    parse_outlook_columns,
 };
 
 /// Whole UTC days `since..=until`.
@@ -18,29 +19,6 @@ fn options(since: &str, until: &str) -> CollectOptions {
             .unwrap()
             .and_utc(),
     }
-}
-
-#[test]
-fn parses_outlook_event_arrays() {
-    let events = parse_raw_outlook_events(
-        r#"[{"subject":"Planning","start":"2026-03-25T08:00:00Z","end":"2026-03-25T08:30:00Z","location":"Room 1","organizer":"Alex","is_organizer":true}]"#,
-    )
-    .unwrap();
-
-    assert_eq!(events.len(), 1);
-    assert_eq!(events[0].subject.as_deref(), Some("Planning"));
-}
-
-#[test]
-fn parses_empty_outlook_payloads_as_no_events() {
-    assert!(parse_raw_outlook_events("").unwrap().is_empty());
-    assert!(parse_raw_outlook_events("   ").unwrap().is_empty());
-    assert!(parse_raw_outlook_events("[]").unwrap().is_empty());
-}
-
-#[test]
-fn errors_on_malformed_outlook_json() {
-    assert!(parse_raw_outlook_events(r#"{"subject":"broken""#).is_err());
 }
 
 #[test]
@@ -62,17 +40,6 @@ fn excludes_outlook_events_with_unparseable_dates() {
     );
 
     assert!(normalized.is_empty());
-}
-
-#[test]
-fn parses_outlook_single_object_payloads() {
-    let events = parse_raw_outlook_events(
-        r#"{"subject":"1:1","start":"2026-03-25T09:00:00Z","end":"2026-03-25T09:45:00Z","location":null,"organizer":"Taylor","is_organizer":false}"#,
-    )
-    .unwrap();
-
-    assert_eq!(events.len(), 1);
-    assert_eq!(events[0].organizer.as_deref(), Some("Taylor"));
 }
 
 #[test]
@@ -308,17 +275,6 @@ fn cleans_the_body_into_a_description_and_a_join_link() {
 }
 
 #[test]
-fn reads_an_optional_body_from_the_script_payload() {
-    let events = parse_raw_outlook_events(
-        r#"[{"subject":"A","start":"2026-03-25T09:00:00Z","end":"2026-03-25T09:30:00Z","body":"Agenda"},{"subject":"B","start":"2026-03-25T10:00:00Z","end":"2026-03-25T10:30:00Z"}]"#,
-    )
-    .unwrap();
-
-    assert_eq!(events[0].body.as_deref(), Some("Agenda"));
-    assert_eq!(events[1].body, None);
-}
-
-#[test]
 fn names_an_occurrence_by_outlooks_id_and_its_start() {
     let event = |id: Option<&str>, start: &str| RawOutlookEvent {
         id: id.map(str::to_string),
@@ -344,4 +300,185 @@ fn names_an_occurrence_by_outlooks_id_and_its_start() {
     assert_eq!(normalized[0].id, "040000008200E0/2026-03-25T09:00:00Z");
     assert_eq!(normalized[1].id, "040000008200E0/2026-03-26T09:00:00Z");
     assert!(normalized[2].id.starts_with("h:"));
+}
+
+fn parse_outlook_columns_events(
+    stdout: &str,
+) -> anyhow::Result<Vec<crate::model::outlook::raw_outlook_event::RawOutlookEvent>> {
+    parse_outlook_columns(stdout).map(|(events, _)| events)
+}
+
+#[test]
+fn says_which_properties_outlook_would_not_give() {
+    let (_, unread) = parse_outlook_columns(&format!(
+        r#"{{"subject":["A"],"start":[{NINE}],"end":[{NINE}],"unread":["busy_status","body"]}}"#
+    ))
+    .unwrap();
+    assert_eq!(unread, ["busy_status", "body"]);
+}
+
+/// 2026-03-25T09:00:00Z and 09:30 as the script writes them, seconds since 1970.
+const NINE: f64 = 1_774_429_200.0;
+
+#[test]
+fn reads_the_scripts_lists_as_events() {
+    let events = parse_outlook_columns_events(&format!(
+        r#"{{"id":[12,13],"subject":["Planning",null],"start":[{NINE},{}],"end":[{},{}],
+            "location":["Room 1",null],"organizer":["Alex",null],"is_organizer":[true,false],
+            "busy_status":["tentative","out of office"],"body":["Agenda",null]}}"#,
+        NINE + 3600.0,
+        NINE + 1800.0,
+        NINE + 5400.0,
+    ))
+    .unwrap();
+
+    assert_eq!(events.len(), 2);
+    assert_eq!(events[0].id.as_deref(), Some("12"));
+    assert_eq!(events[0].subject.as_deref(), Some("Planning"));
+    // The spelling event ids have always ended with.
+    assert_eq!(events[0].start, "2026-03-25T09:00:00Z");
+    assert_eq!(events[0].end, "2026-03-25T09:30:00Z");
+    assert_eq!(events[0].location.as_deref(), Some("Room 1"));
+    assert_eq!(events[0].organizer.as_deref(), Some("Alex"));
+    assert_eq!(events[0].is_organizer, Some(true));
+    assert_eq!(events[0].busy_status, Some(BusyStatus::Tentative));
+    assert_eq!(events[0].body.as_deref(), Some("Agenda"));
+    assert_eq!(events[1].subject, None);
+    assert_eq!(events[1].busy_status, Some(BusyStatus::OutOfOffice));
+    assert_eq!(events[1].body, None);
+}
+
+#[test]
+fn lists_outlook_would_not_give_are_left_out() {
+    let events = parse_outlook_columns_events(&format!(
+        r#"{{"subject":["Planning"],"start":[{NINE}],"end":[{}]}}"#,
+        NINE + 1800.0
+    ))
+    .unwrap();
+
+    let [event] = events.as_slice() else {
+        panic!("one event, got {events:?}");
+    };
+    assert_eq!(
+        (&event.id, &event.organizer, &event.busy_status, &event.body),
+        (&None, &None, &None, &None)
+    );
+}
+
+#[test]
+fn an_empty_calendar_has_no_events_and_broken_answers_fail() {
+    assert!(
+        parse_outlook_columns_events(r#"{"subject":[],"start":[],"end":[]}"#)
+            .unwrap()
+            .is_empty()
+    );
+    assert!(parse_outlook_columns_events(r#"{"subject":["broken""#).is_err());
+    // Lists that do not line up would pair one event's subject with another's time.
+    assert!(
+        parse_outlook_columns_events(&format!(
+            r#"{{"subject":["A","B"],"start":[{NINE}],"end":[{NINE}]}}"#
+        ))
+        .is_err()
+    );
+}
+
+#[test]
+fn reads_outlook_for_macs_busy_names_and_weighs_them_as_on_windows() {
+    for (name, status) in [
+        ("free", BusyStatus::Free),
+        ("tentative", BusyStatus::Tentative),
+        ("busy", BusyStatus::Busy),
+        ("out of office", BusyStatus::OutOfOffice),
+        ("working elsewhere", BusyStatus::WorkingElsewhere),
+    ] {
+        assert_eq!(busy_status_from_mac(name), Some(status), "{name}");
+    }
+    assert_eq!(busy_status_from_mac("«constant ****fbst»"), None);
+
+    let events = parse_outlook_columns_events(&format!(
+        r#"{{"subject":["Lunch"],"start":[{NINE}],"end":[{}],"busy_status":["free"],
+            "body":["Join: https://teams.microsoft.com/meet/123456789?p=abc"]}}"#,
+        NINE + 1800.0
+    ))
+    .unwrap();
+    let normalized = normalize_outlook_events(events, &options("2026-03-25", "2026-03-25"));
+    assert_eq!(
+        normalized[0].meeting_weight,
+        MeetingWeight::of(Some(BusyStatus::Free))
+    );
+    assert_eq!(
+        normalized[0].join_url.as_deref(),
+        Some("https://teams.microsoft.com/meet/123456789?p=abc")
+    );
+}
+
+/// Without ids the lists line up by start and subject only: two events that share both could
+/// trade their other properties, so those are left out for them.
+#[test]
+fn events_that_cannot_be_told_apart_without_ids_lose_what_could_be_swapped() {
+    let (events, _) = parse_outlook_columns(&format!(
+        r#"{{"subject":["Sync","Sync","Other"],"start":[{NINE},{NINE},{NINE}],"end":[{e},{e},{e}],
+            "location":["Room A","Room B","Room C"],"organizer":["Ann","Bob","Cat"],
+            "is_organizer":[true,false,true],"busy_status":["busy","free","busy"],
+            "body":["A's notes","B's notes","C's notes"]}}"#,
+        e = NINE + 1800.0
+    ))
+    .unwrap();
+
+    for event in &events[..2] {
+        assert_eq!(
+            (
+                &event.location,
+                &event.organizer,
+                &event.is_organizer,
+                &event.busy_status,
+                &event.body
+            ),
+            (&None, &None, &None, &None, &None)
+        );
+    }
+    assert_eq!(events[2].location.as_deref(), Some("Room C"));
+    assert_eq!(events[2].body.as_deref(), Some("C's notes"));
+    assert!(
+        crate::diagnostics::entries()
+            .iter()
+            .any(|log| { log.scope == "outlook" && log.message.contains("2 events") })
+    );
+
+    // With ids, the same rows keep everything.
+    let (events, _) = parse_outlook_columns(&format!(
+        r#"{{"id":[1,2],"subject":["Sync","Sync"],"start":[{NINE},{NINE}],"end":[{NINE},{NINE}],
+            "location":["Room A","Room B"]}}"#
+    ))
+    .unwrap();
+    assert_eq!(events[1].location.as_deref(), Some("Room B"));
+}
+
+/// An id that is missing or repeated in the read tells its event apart from no other: such
+/// events fall back to start and subject.
+#[test]
+fn missing_or_repeated_ids_count_as_no_id() {
+    for ids in ["[null,null,27]", "[13,13,27]"] {
+        let (events, _) = parse_outlook_columns(&format!(
+            r#"{{"id":{ids},"subject":["Sync","Sync","Other"],"start":[{NINE},{NINE},{NINE}],
+                "end":[{NINE},{NINE},{NINE}],"location":["Room A","Room B","Room C"],
+                "body":["A's notes","B's notes","C's notes"]}}"#
+        ))
+        .unwrap();
+        for event in &events[..2] {
+            assert_eq!((&event.location, &event.body), (&None, &None), "{ids}");
+        }
+        assert_eq!(events[2].location.as_deref(), Some("Room C"), "{ids}");
+    }
+
+    let (events, _) = parse_outlook_columns(&format!(
+        r#"{{"id":[13,14],"subject":["Sync","Sync"],"start":[{NINE},{NINE}],"end":[{NINE},{NINE}],
+            "location":["Room A","Room B"]}}"#
+    ))
+    .unwrap();
+    assert_eq!(
+        events[1].location.as_deref(),
+        Some("Room B"),
+        "distinct ids keep everything"
+    );
 }
