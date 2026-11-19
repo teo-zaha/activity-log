@@ -46,12 +46,7 @@ const WSL: &str = "wsl";
 /// The connections from the config file at `explicit` (or the default path). Problems in single
 /// connections are logged, not returned.
 pub fn load_connections(explicit: Option<&Path>) -> Result<Vec<Connection>> {
-    let file = ConfigFile::load(ConfigFile::resolve_path(explicit))?;
-    let resolved = file.connections()?;
-    for warning in &resolved.warnings {
-        crate::diagnostics::warn("config", warning.clone());
-    }
-    Ok(resolved.connections)
+    ConfigFile::load(ConfigFile::resolve_path(explicit))?.logged_connections()
 }
 
 /// The connections file and its path.
@@ -120,6 +115,15 @@ impl ConfigFile {
         Ok(())
     }
 
+    /// Every connection, with the problems in single connections logged instead of returned.
+    pub fn logged_connections(&self) -> Result<Vec<Connection>> {
+        let resolved = self.connections()?;
+        for warning in resolved.warnings {
+            crate::diagnostics::warn("config", warning);
+        }
+        Ok(resolved.connections)
+    }
+
     /// Every connection of every provider kind, in the file's order.
     pub fn connections(&self) -> Result<ResolvedConnections> {
         let mut resolved = ResolvedConnections {
@@ -127,7 +131,7 @@ impl ConfigFile {
             warnings: Vec::new(),
         };
         for adapter in provider_registry() {
-            for entry in self.entries(&adapter.id())? {
+            for entry in self.entries_with_warnings(&adapter.id(), &mut resolved.warnings)? {
                 let values = entry_values(adapter.as_ref(), &entry, &mut resolved.warnings);
                 resolved.connections.push(Connection::new(
                     entry.id,
@@ -235,6 +239,18 @@ impl ConfigFile {
 
     /// The connections of a kind as written in the file.
     fn entries(&self, source: &Source) -> Result<Vec<Entry>> {
+        self.entries_with_warnings(source, &mut Vec::new())
+    }
+
+    /// The connections of a kind with unique ids. Names are compared as slugs, explicit names
+    /// first so a table without one never takes them; a repeated name is numbered (`work-2`) in
+    /// file order and reported, rather than failing every connection. The next edit writes the
+    /// numbered name into the file.
+    fn entries_with_warnings(
+        &self,
+        source: &Source,
+        warnings: &mut Vec<String>,
+    ) -> Result<Vec<Entry>> {
         let Some(item) = self.doc.get(source.as_ref()) else {
             return Ok(Vec::new());
         };
@@ -248,14 +264,18 @@ impl ConfigFile {
             ),
         };
 
-        // Explicit names first, so a table without one never takes them.
-        let mut taken = tables
+        let explicit = tables
             .iter()
-            .filter_map(|table| table.get(NAME).and_then(Item::as_str))
-            .map(str::to_string)
-            .collect::<BTreeSet<_>>();
+            .map(|table| table.get(NAME).and_then(Item::as_str).map(slug))
+            .collect::<Vec<_>>();
+        let mut taken = BTreeSet::new();
+        let first_claims = explicit
+            .iter()
+            .map(|name| name.as_ref().is_some_and(|name| taken.insert(name.clone())))
+            .collect::<Vec<_>>();
+
         let mut entries = Vec::new();
-        for table in tables {
+        for ((table, explicit), first_claim) in tables.into_iter().zip(explicit).zip(first_claims) {
             let location = match table.get(WSL).and_then(Item::as_str) {
                 Some(distro) if *source == Source::Git => {
                     ConnectionLocation::Wsl(distro.to_string())
@@ -269,8 +289,17 @@ impl ConfigFile {
                 .map(str::trim)
                 .filter(|label| !label.is_empty())
                 .map_or_else(|| base_label(source, &location), str::to_string);
-            let name = match table.get(NAME).and_then(Item::as_str) {
-                Some(name) => slug(name),
+            let name = match explicit {
+                Some(name) if first_claim => name,
+                Some(name) => {
+                    let numbered = numbered(&name, &taken, "-");
+                    warnings.push(format!(
+                        "{source}: more than one connection is named `{name}`; \
+                         the one labelled \"{label}\" is read as `{numbered}`"
+                    ));
+                    taken.insert(numbered.clone());
+                    numbered
+                }
                 None => {
                     let name = numbered(&slug(&label), &taken, "-");
                     taken.insert(name.clone());

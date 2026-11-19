@@ -284,3 +284,67 @@ fn saves_where_it_was_loaded_from() {
         assert_eq!(mode & 0o777, 0o600);
     }
 }
+
+#[test]
+fn an_explicit_name_and_a_label_with_the_same_slug_get_different_ids() {
+    let resolved = connections(&file(
+        r#"
+[[gitlab]]
+label = "Work"
+
+[[gitlab]]
+name = "Work"
+label = "Work account"
+"#,
+    ));
+
+    assert_eq!(ids(&resolved, Source::Gitlab), ["work-2", "work"]);
+    assert_eq!(find(&resolved, "gitlab/work").label, "Work account");
+}
+
+#[test]
+fn numbers_repeated_explicit_names_and_reports_them() {
+    let resolved = file(
+        r#"
+[[gitlab]]
+name = "work"
+label = "First"
+
+[[gitlab]]
+name = "Work"
+label = "Second"
+
+[[gitlab]]
+name = "work-2"
+label = "Third"
+"#,
+    )
+    .connections()
+    .unwrap();
+
+    assert_eq!(
+        ids(&resolved.connections, Source::Gitlab),
+        ["work", "work-3", "work-2"]
+    );
+    assert_eq!(
+        resolved.warnings,
+        [
+            r#"gitlab: more than one connection is named `work`; the one labelled "Second" is read as `work-3`"#
+        ]
+    );
+}
+
+#[test]
+fn an_edit_writes_the_numbered_name_of_a_repeated_one() {
+    let mut config = file("[[gitlab]]\nname = \"work\"\n\n[[gitlab]]\nname = \"work\"\n");
+    let second = "gitlab/work-2".parse::<ConnectionId>().unwrap();
+    config.rename(&second, "Second").unwrap();
+
+    let resolved = config.connections().unwrap();
+    assert!(resolved.warnings.is_empty());
+    assert_eq!(
+        ids(&resolved.connections, Source::Gitlab),
+        ["work", "work-2"]
+    );
+    assert_eq!(find(&resolved.connections, "gitlab/work-2").label, "Second");
+}
