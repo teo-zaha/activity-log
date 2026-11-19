@@ -68,6 +68,16 @@ mat-progress-bar.top-loader {
   @include ui.panel-shell($radius: var(--radius-xl));
 }
 
+// Lays its content out as the main content's own. Under the settings tab
+// (`SettingsPageHostComponent`) the view stays alive, unseen and out of the tab order.
+.view {
+  display: contents;
+
+  &.under-settings {
+    visibility: hidden;
+  }
+}
+
 @include ui.down('tablet') {
   .shell {
     gap: 8px;
@@ -83,7 +93,7 @@ mat-progress-bar.top-loader {
   .shell {
     flex-direction: column;
     gap: 0;
-    padding: 0 0 calc(64px + env(safe-area-inset-bottom));
+    padding: 0 0 var(--phone-nav-height);
   }
 
   .main-content {

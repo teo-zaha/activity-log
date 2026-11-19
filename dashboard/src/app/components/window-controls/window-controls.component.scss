@@ -1,0 +1,67 @@
+// The red of the system's close button, in every theme.
+$close-red: #c42b1c;
+
+// The size of the system's caption buttons; `--window-controls-*` in styles.scss keeps the room
+// the rest of the app leaves for them.
+:host {
+  position: fixed;
+  top: 0;
+  right: 0;
+  // Over dialogs, pages and overlays, as the system's buttons would be.
+  z-index: 1100;
+  display: flex;
+  height: var(--window-controls-height);
+}
+
+.control {
+  display: grid;
+  place-items: center;
+  width: 46px;
+  height: 100%;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--text-primary);
+  cursor: default;
+  transition:
+    background-color 0.1s ease,
+    color 0.1s ease;
+
+  // `is-hovered` and `is-pressed`: the maximize button under the window that shows the snap
+  // layouts, which keeps the pointer from the page.
+  &:hover,
+  &.is-hovered {
+    background: color-mix(in srgb, var(--text-primary) 8%, transparent);
+  }
+
+  &:active,
+  &.is-pressed {
+    background: color-mix(in srgb, var(--text-primary) 5%, transparent);
+  }
+
+  &:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: -2px;
+  }
+}
+
+// As the system dims its buttons in a window in the background, until the pointer is on one.
+:host(.is-inactive) .control:not(:hover, .is-hovered) {
+  color: var(--text-tertiary);
+}
+
+.close:hover,
+.close:active {
+  background: $close-red;
+  color: #fff;
+}
+
+.close:active {
+  background: color-mix(in srgb, $close-red 90%, transparent);
+}
+
+.glyph {
+  font-family: 'Segoe Fluent Icons', 'Segoe MDL2 Assets', sans-serif;
+  font-size: 10px;
+  line-height: 1;
+}

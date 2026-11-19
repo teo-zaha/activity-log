@@ -1,4 +1,9 @@
-import { Component, computed, effect, inject, signal } from '@angular/core'
+import { Component, computed, inject, signal } from '@angular/core'
+import { MatIconModule } from '@angular/material/icon'
+import { interval } from '@signality/core/scheduling/interval'
+import { AutoAnimateDirective } from '../auto-animate/auto-animate.directive'
+import { ButtonComponent } from '../button/button.component'
+import { IconButtonComponent } from '../button/icon-button.component'
 import { ActivityService } from '../../services/activity.service'
 import { SettingsDialogLauncher } from '../settings-dialog/settings-dialog-launcher.service'
 
@@ -14,6 +19,9 @@ interface CollectionBannerVm {
 
 @Component({
   selector: 'app-collection-status',
+  imports: [AutoAnimateDirective, ButtonComponent, IconButtonComponent, MatIconModule],
+  // The toast comes and goes as the host's child.
+  hostDirectives: [AutoAnimateDirective],
   templateUrl: './collection-status.component.html',
   styleUrl: './collection-status.component.scss',
 })
@@ -72,12 +80,11 @@ export class CollectionStatusComponent {
   })
 
   constructor() {
-    effect(onCleanup => {
-      if (this.activity.collectionStatus().kind !== 'collecting') return
-      this.now.set(Date.now())
-      const timer = setInterval(() => this.now.set(Date.now()), 1000)
-      onCleanup(() => clearInterval(timer))
-    })
+    // Ticks only while collecting: an interval of 0 stops it.
+    interval(
+      () => this.now.set(Date.now()),
+      computed(() => (this.activity.collectionStatus().kind === 'collecting' ? 1000 : 0))
+    )
   }
 
   protected retry(): void {

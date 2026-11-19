@@ -1,5 +1,6 @@
 @use '@angular/material' as mat;
 @use './app/components/dashboard-utilities';
+@use './splash';
 
 @import '@fontsource/inter/300.css';
 @import '@fontsource/inter/400.css';
@@ -17,25 +18,29 @@
     url('material-icons/iconfont/material-icons.woff') format('woff');
 }
 
-.material-icons {
+// Every icon is a `<mat-icon>` (hidden from assistive tech unless it says otherwise). Its box is
+// one em square and its size comes from `--icon-size`, set on the icon or any ancestor, so the
+// glyph sits on the centre line of the text or button around it. `mat-icon.mat-icon` outranks
+// MatIcon's own `.mat-icon { width: 24px; height: 24px }`, which is injected after this sheet.
+// `.u-glyph` draws the same icon from a plain element, for lists that repeat one per row.
+mat-icon.mat-icon,
+.u-glyph {
   font-family: 'Material Icons';
   font-weight: normal;
   font-style: normal;
-  font-size: 24px;
+  font-size: var(--icon-size, 20px);
   line-height: 1;
   letter-spacing: normal;
   text-transform: none;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
+  display: inline-grid;
+  place-items: center;
   inline-size: 1em;
-  min-inline-size: 1em;
   block-size: 1em;
   overflow: hidden;
   white-space: nowrap;
   word-wrap: normal;
   direction: ltr;
-  flex-shrink: 0;
+  flex: none;
   user-select: none;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
@@ -43,48 +48,64 @@
   font-feature-settings: 'liga';
 }
 
-// ── M3 Themes ───────────────────────────────────────────────────────────────
-
-$light-theme: mat.define-theme(
-  (
-    color: (
-      theme-type: light,
-      primary: mat.$azure-palette,
-    ),
-    typography: (
-      brand-family: 'Inter',
-      plain-family: 'Inter',
-    ),
-    density: (
-      scale: -1,
-    ),
-  )
-);
-
-$dark-theme: mat.define-theme(
-  (
-    color: (
-      theme-type: dark,
-      primary: mat.$azure-palette,
-    ),
-    typography: (
-      brand-family: 'Inter',
-      plain-family: 'Inter',
-    ),
-    density: (
-      scale: -1,
-    ),
-  )
-);
+// ── Material ─────────────────────────────────────────────────────────────────
+// Material components read the `--mat-sys-*` system variables. They are fed from the app's own
+// theme tokens below, so dialogs, menus, select panels, the datepicker, tooltips and snack bars
+// follow whichever of the app's themes is active instead of a fixed Material palette.
 
 html {
   color-scheme: light;
-  @include mat.all-component-themes($light-theme);
+  @include mat.theme(
+    (
+      color: (
+        primary: mat.$azure-palette,
+        theme-type: color-scheme,
+      ),
+      typography: (
+        brand-family: 'Inter',
+        plain-family: 'Inter',
+      ),
+      density: -1,
+    )
+  );
+  @include mat.theme-overrides(
+    (
+      primary: var(--accent),
+      on-primary: var(--accent-fg),
+      primary-container: color-mix(in srgb, var(--accent) 16%, var(--surface)),
+      on-primary-container: var(--text-primary),
+      secondary-container: color-mix(in srgb, var(--accent) 14%, var(--surface)),
+      on-secondary-container: var(--text-primary),
+      tertiary: var(--accent),
+      on-tertiary: var(--accent-fg),
+      background: var(--bg),
+      on-background: var(--text-primary),
+      surface: var(--surface),
+      on-surface: var(--text-primary),
+      surface-variant: var(--surface-alt),
+      on-surface-variant: var(--text-secondary),
+      surface-bright: var(--surface),
+      surface-dim: var(--bg),
+      surface-container-lowest: var(--surface),
+      surface-container-low: var(--surface),
+      surface-container: var(--surface),
+      surface-container-high: var(--surface),
+      surface-container-highest: var(--surface-alt),
+      inverse-surface: var(--tooltip-bg),
+      inverse-on-surface: var(--tooltip-fg),
+      inverse-primary: var(--accent),
+      outline: var(--border),
+      outline-variant: var(--border-subtle),
+      error: var(--error-fg),
+      on-error: var(--surface),
+      error-container: var(--error-bg),
+      on-error-container: var(--error-fg),
+    )
+  );
 }
 
 html.dark {
   color-scheme: dark;
-  @include mat.all-component-colors($dark-theme);
 }
 
 // ── Design tokens ────────────────────────────────────────────────────────────
@@ -616,6 +637,12 @@ html[data-theme='mocha'],
   --chip-jira: #94e2d5;
   --chip-outlook: #89b4fa;
   --chip-system: #f2cdcd;
+
+  // Status text in Catppuccin's own green, yellow and red: the light theme's darker ones fall
+  // under 4.5:1 on these surfaces.
+  --status-ok-fg: #a6e3a1;
+  --status-warn-fg: #f9e2af;
+  --status-error-fg: #f38ba8;
 }
 
 // ── Base ─────────────────────────────────────────────────────────────────────
@@ -657,12 +684,15 @@ body {
   --scrollbar-thumb-active: color-mix(in srgb, var(--accent) 70%, transparent);
 }
 
-// ── Tooltips ─────────────────────────────────────────────────────────────────
-// Inverse of the page in every theme: dark on light themes, light on dark ones.
+// ── Tooltips and small popups ────────────────────────────────────────────────
+// A raised surface of the active theme: a little lighter than the page on dark themes, a little
+// darker on light ones, with the theme's text, a hairline border and a soft shadow.
 
 :root {
-  --tooltip-bg: var(--text-primary);
-  --tooltip-fg: var(--surface);
+  --tooltip-bg: color-mix(in srgb, var(--surface) 90%, var(--text-primary) 10%);
+  --tooltip-fg: var(--text-primary);
+  --tooltip-border: color-mix(in srgb, var(--border) 75%, transparent);
+  --tooltip-shadow: 0 8px 24px rgb(0 0 0 / 22%);
 }
 
 // WebKit (macOS WKWebView) and Chromium (Windows WebView2): the pill shape needs these.
@@ -699,6 +729,112 @@ body {
   * {
     scrollbar-width: thin;
     scrollbar-color: var(--scrollbar-thumb) transparent;
+  }
+}
+
+// ── View transitions ─────────────────────────────────────────────────────────
+// Router navigations between views (`view-transitions.ts`): only the main content moves, the
+// header and sidebar stay still. `data-view-transition` on <html> says how it moves.
+
+#main-content {
+  view-transition-name: main-content;
+}
+
+::view-transition-old(root),
+::view-transition-new(root) {
+  animation: none;
+}
+
+// The old view fades out quickly; the new one fades in while rising a little.
+::view-transition-group(main-content) {
+  animation-duration: 280ms;
+  animation-timing-function: var(--ease-out);
+}
+
+html[data-view-transition='switch'] {
+  &::view-transition-old(main-content) {
+    animation: vt-fade-out 120ms ease-out both;
+  }
+
+  &::view-transition-new(main-content) {
+    animation: vt-rise-in 280ms var(--ease-out) both;
+  }
+}
+
+@keyframes vt-fade-out {
+  to {
+    opacity: 0;
+  }
+}
+
+@keyframes vt-rise-in {
+  from {
+    opacity: 0;
+    transform: translateY(12px);
+  }
+}
+
+// On a phone the event details and the settings are pages (`event-detail`, `settings-page`): they
+// slide in from the right and back out. The view underneath does not move, so it is not
+// snapshotted on its own; a long timeline would cost more to draw than the slide takes.
+html[data-view-transition^='page'] #main-content {
+  view-transition-name: none;
+}
+
+::view-transition-group(event-detail),
+::view-transition-group(settings-page) {
+  animation-duration: 240ms;
+  animation-timing-function: var(--ease-out);
+}
+
+html[data-view-transition='page-in'] {
+  &::view-transition-old(event-detail),
+  &::view-transition-old(settings-page) {
+    animation: vt-page-to-left 240ms var(--ease-out) both;
+  }
+
+  &::view-transition-new(event-detail),
+  &::view-transition-new(settings-page) {
+    animation: vt-page-from-right 240ms var(--ease-out) both;
+  }
+}
+
+html[data-view-transition='page-out'] {
+  &::view-transition-old(event-detail),
+  &::view-transition-old(settings-page) {
+    animation: vt-page-to-right 240ms var(--ease-out) both;
+  }
+
+  &::view-transition-new(event-detail),
+  &::view-transition-new(settings-page) {
+    animation: vt-page-from-left 240ms var(--ease-out) both;
+  }
+}
+
+@keyframes vt-page-from-right {
+  from {
+    transform: translateX(100%);
+  }
+}
+
+@keyframes vt-page-to-right {
+  to {
+    transform: translateX(100%);
+  }
+}
+
+// The page underneath only dims: it stays opaque, or the view below would show through it.
+@keyframes vt-page-to-left {
+  to {
+    transform: translateX(-30%);
+    filter: brightness(0.92);
+  }
+}
+
+@keyframes vt-page-from-left {
+  from {
+    transform: translateX(-30%);
+    filter: brightness(0.92);
   }
 }
 
@@ -870,6 +1006,8 @@ mat-card {
   --mat-tooltip-supporting-text-size: 12px;
 
   .mdc-tooltip__surface {
+    border: 1px solid var(--tooltip-border);
+    box-shadow: var(--tooltip-shadow);
     white-space: pre-line;
   }
 }
@@ -907,4 +1045,20 @@ mat-card {
   .mat-mdc-snack-bar-label {
     font-weight: 600;
   }
+}
+
+// Room for the window buttons the app draws where the window has no title bar (Windows,
+// WindowControlsComponent): three 46 × 32 px caption buttons.
+:root {
+  --window-controls-width: 0px;
+  --window-controls-height: 0px;
+  // A dialog keeps 16 px from the window's edges and, centred, clear of the buttons.
+  --dialog-max-height: calc(100dvh - 32px - 2 * var(--window-controls-height));
+  // The phone's bottom bar with the views and Settings (`SidebarComponent`).
+  --phone-nav-height: calc(64px + env(safe-area-inset-bottom));
+}
+
+html.frameless {
+  --window-controls-width: 138px;
+  --window-controls-height: 32px;
 }

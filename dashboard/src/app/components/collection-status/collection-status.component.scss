@@ -8,13 +8,23 @@
   pointer-events: none;
 }
 
+// The pill and the toast are centred without a transform: AutoAnimate's enter and leave
+// animations set one of their own.
+.live-region {
+  position: absolute;
+  inset: 0;
+}
+
 // ── Collecting (the window-level top loader draws the progress line) ─────────
 
 .sync-pill {
   position: absolute;
   bottom: 16px;
-  left: 50%;
-  display: inline-flex;
+  left: 0;
+  right: 0;
+  display: flex;
+  width: fit-content;
+  margin-inline: auto;
   align-items: center;
   gap: 8px;
   max-width: calc(100% - 32px);
@@ -26,19 +36,10 @@
   box-shadow: var(--panel-shadow-strong);
   font-size: 12.5px;
   font-weight: 600;
-  transform: translateX(-50%);
-  animation: pill-in 0.22s var(--ease-out);
-}
-
-@keyframes pill-in {
-  from {
-    opacity: 0;
-    transform: translate(-50%, 6px);
-  }
 }
 
 .sync-icon {
-  font-size: 16px;
+  --icon-size: 16px;
   color: var(--accent);
 }
 
@@ -66,24 +67,20 @@
 .toast {
   position: absolute;
   bottom: 16px;
-  left: 50%;
+  left: 0;
+  right: 0;
   display: flex;
   align-items: center;
   gap: 12px;
   width: min(640px, calc(100% - 32px));
+  margin-inline: auto;
   padding: 10px 10px 10px 14px;
   border-radius: var(--radius-md);
   border: 1px solid color-mix(in srgb, currentColor 22%, transparent);
   box-shadow: var(--panel-shadow-strong);
   pointer-events: auto;
-  transform: translateX(-50%);
-  animation: pill-in 0.22s var(--ease-out);
   // Opaque tint so the timeline underneath does not show through.
   @include ui.status-tone($mix: 10%);
-}
-
-.toast-icon {
-  font-size: 20px;
 }
 
 .toast-copy {
@@ -111,21 +108,6 @@
   align-items: center;
   gap: 6px;
   flex-shrink: 0;
-
-  .u-btn {
-    height: 32px;
-  }
-
-  .u-btn-icon {
-    width: 32px;
-  }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .sync-pill,
-  .toast {
-    animation: none;
-  }
 }
 
 @include ui.down('phone') {
