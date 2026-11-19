@@ -1,5 +1,4 @@
 use serde::{Deserialize, Serialize};
-use serde_json::Value;
 use ts_rs::TS;
 
 use crate::model::gitlab::gitlab_entry_type::GitLabType;
@@ -13,6 +12,9 @@ pub struct GitLabEntry {
     /// The name of the connection within its kind, such as `oss`; set by the runtime.
     #[serde(default)]
     pub connection: String,
+    /// The source's own id for the entry (a commit hash, an event id), unique within its
+    /// connection: `source`, `connection` and `id` identify an entry.
+    pub id: String,
     #[serde(rename = "type")]
     #[ts(rename = "type")]
     pub entry_type: GitLabType,
@@ -37,6 +39,8 @@ pub struct GitLabEntry {
     #[serde(skip_serializing_if = "Option::is_none")]
     #[ts(optional)]
     pub note_resolved: Option<bool>,
-    #[ts(type = "Record<string, unknown>")]
-    pub raw: Value,
+    /// The commit a `pushedTo` event pushed (`push_data.commit_to`); it folds into that commit.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub pushed_commit: Option<String>,
 }

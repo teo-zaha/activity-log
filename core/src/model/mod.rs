@@ -16,7 +16,10 @@ pub use activity::{
     collected_activity_summary::{CollectedActivitySummary, ConnectionCount},
     merge_result::MergeResult,
 };
-pub use calendar::calendar_entry::CalendarEntry;
+pub use calendar::{
+    busy_status::BusyStatus, calendar_entry::CalendarEntry, description_block::DescriptionBlock,
+    list_item::ListItem, meeting_weight::MeetingWeight, text_segment::TextSegment,
+};
 pub use common::{
     add_connection_request_dto::AddConnectionRequestDto,
     add_connection_response_dto::AddConnectionResponseDto, collect_options::CollectOptions,

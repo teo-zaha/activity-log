@@ -66,7 +66,13 @@ tell application "Microsoft Outlook"
       set organizerFlag to is organizer of eventRef
     end try
 
+    set eventId to missing value
+    try
+      set eventId to id of eventRef
+    end try
+
     set eventRecord to current application's NSMutableDictionary's dictionary()
+    (eventRecord's setObject:(my jsonTextValue(eventId)) forKey:"id")
     (eventRecord's setObject:(my jsonTextValue(subject of eventRef)) forKey:"subject")
     (eventRecord's setObject:(my isoTextForDate(start time of eventRef)) forKey:"start")
     (eventRecord's setObject:(my isoTextForDate(end time of eventRef)) forKey:"end")

@@ -1,15 +1,26 @@
 use chrono::{DateTime, TimeZone, Utc};
 
-use crate::{
-    collect::gitlab::commit_to_sha,
-    model::{
-        ActivityEntry, ActivityLog, CalendarEntry, GitEntry, GitLabEntry, GitLabType, JiraEntry,
-        MergeResult, OutlookEntry, SystemEntry,
-    },
+use crate::model::{
+    ActivityEntry, ActivityLog, CalendarEntry, GitEntry, GitLabEntry, GitLabType, JiraEntry,
+    MergeResult, OutlookEntry, SystemEntry,
 };
 
 pub fn now_iso() -> String {
     Utc::now().to_rfc3339()
+}
+
+/// An id for an entry whose source has none: FNV-1a over `parts`, which stays the same across
+/// runs and Rust versions (unlike `DefaultHasher`).
+pub fn stable_id(parts: &[&str]) -> String {
+    let mut hash: u64 = 0xcbf2_9ce4_8422_2325;
+    for (index, part) in parts.iter().enumerate() {
+        let separator = (index > 0).then_some(0x1f_u8);
+        for byte in separator.into_iter().chain(part.bytes()) {
+            hash ^= u64::from(byte);
+            hash = hash.wrapping_mul(0x0100_0000_01b3);
+        }
+    }
+    format!("h:{hash:016x}")
 }
 
 /// Folds each GitLab push into the git commit it pushed, so the change shows once. A push whose
@@ -30,7 +41,7 @@ pub fn merge_git_with_gitlab(
         .cloned()
         .map(|mut entry| {
             if let Some((sha, gitlab_event)) = gitlab_by_commit.get_key_value(entry.hash.as_str()) {
-                entry.gitlab_event = Some((*gitlab_event).clone());
+                entry.gitlab_event = Some(Box::new((*gitlab_event).clone()));
                 folded.insert(*sha);
             }
             entry
@@ -52,7 +63,7 @@ pub fn merge_git_with_gitlab(
 /// Only GitLab push events have a commit SHA we can safely correlate with local git history.
 fn push_sha(entry: &GitLabEntry) -> Option<&str> {
     (entry.entry_type == GitLabType::PushedTo)
-        .then(|| commit_to_sha(entry))
+        .then_some(entry.pushed_commit.as_deref())
         .flatten()
 }
 

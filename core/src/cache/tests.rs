@@ -37,6 +37,7 @@ fn entry(d: u32) -> ActivityEntry {
     ActivityEntry::System(SystemEntry {
         source: "system".to_string(),
         connection: String::new(),
+        id: format!("day {d}"),
         entry_type: SystemEntryType::Boot,
         timestamp: at(d, 12).to_rfc3339(),
         label: format!("day {d}"),
@@ -195,4 +196,36 @@ async fn propagates_fetch_errors() {
     .await;
 
     assert_eq!(result.unwrap_err().to_string(), "offline");
+}
+
+/// Files written before entries had ids and GitLab pushes named their commit (version 3) are
+/// read again from the API, without a warning that the file is unreadable.
+#[tokio::test]
+async fn refetches_days_from_a_file_of_an_older_version() {
+    let (_dir, path) = cache_path();
+    let calls = RefCell::new(Vec::new());
+    collect(&path, range(10, 10), at(20, 9), &calls).await;
+    let current: serde_json::Value =
+        serde_json::from_str(&fs::read_to_string(&path).unwrap()).unwrap();
+    let mut older = current.clone();
+    older["version"] = serde_json::json!(3);
+    // Version 3 entries had no `id`.
+    for day in older["days"].as_object_mut().unwrap().values_mut() {
+        for entry in day["entries"].as_array_mut().unwrap() {
+            entry["entry"].as_object_mut().unwrap().remove("id");
+        }
+    }
+    assert_ne!(older, current);
+    fs::write(&path, older.to_string()).unwrap();
+
+    let entries = collect(&path, range(10, 10), at(20, 9), &calls).await;
+
+    assert_eq!(labels(&entries), ["day 10"]);
+    assert_eq!(calls.borrow().len(), 2, "the older file must not be served");
+    let scope = ConnectionId::new(Source::Jira, "default").to_string();
+    assert!(
+        !crate::diagnostics::entries().iter().any(
+            |entry| entry.scope == scope && entry.message.contains(&path.display().to_string())
+        )
+    );
 }

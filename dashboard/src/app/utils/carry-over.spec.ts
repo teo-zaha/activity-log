@@ -8,6 +8,7 @@ function commit(connection: string, hash: string, timestamp: string): GitEntry {
   return {
     source: 'git',
     connection,
+    id: hash,
     timestamp,
     repo: 'activity-log',
     hash,
@@ -86,11 +87,12 @@ describe('withCarriedEntries', () => {
     const push = (commitTo: string): ActivityEntry => ({
       source: 'gitlab',
       connection: 'work',
+      id: commitTo,
       type: 'pushedTo',
       timestamp: '2026-05-18T09:05:00Z',
       title: 'activity-log',
       targetType: 'Project',
-      raw: { push_data: { commit_to: commitTo } },
+      pushedCommit: commitTo,
     })
     const [pushed, unmatched] = [push('carried'), push('elsewhere')]
     const previous = [commit('laptop', 'carried', '2026-05-18T09:00:00Z')]

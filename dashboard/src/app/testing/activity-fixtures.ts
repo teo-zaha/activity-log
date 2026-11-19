@@ -68,6 +68,7 @@ export const activityLog: ActivityLog = {
     {
       source: 'git',
       connection: 'default',
+      id: 'abcdef123456',
       timestamp: '2026-05-18T09:00:00Z',
       repo: 'activity-log',
       hash: 'abcdef123456',
@@ -78,6 +79,7 @@ export const activityLog: ActivityLog = {
     {
       source: 'jira',
       connection: 'default',
+      id: 'AL-1:updated',
       type: 'issueUpdated',
       timestamp: '2026-05-18T10:00:00Z',
       key: 'AL-1',

@@ -200,6 +200,7 @@ impl ProviderAdapter for FakeSource {
             Ok(vec![ActivityEntry::System(SystemEntry {
                 source: "system".to_string(),
                 connection: String::new(),
+                id: name.clone(),
                 entry_type: SystemEntryType::Unlock,
                 timestamp: format!("2026-03-0{day}T09:00:00+00:00"),
                 label: name,

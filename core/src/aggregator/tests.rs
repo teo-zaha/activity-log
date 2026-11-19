@@ -1,5 +1,4 @@
 use chrono::{TimeZone, Utc};
-use serde_json::json;
 
 use super::{collect_activity_from_results, compare_timestamps_desc};
 use crate::model::{
@@ -25,6 +24,7 @@ fn push(commit_to: &str) -> ActivityEntry {
     ActivityEntry::GitLab(GitLabEntry {
         source: "gitlab".to_string(),
         connection: "work".to_string(),
+        id: commit_to.to_string(),
         entry_type: GitLabType::PushedTo,
         timestamp: "2026-03-10T10:05:00Z".to_string(),
         title: "repo".to_string(),
@@ -35,7 +35,7 @@ fn push(commit_to: &str) -> ActivityEntry {
         note_body: None,
         note_file: None,
         note_resolved: None,
-        raw: json!({ "push_data": { "commit_to": commit_to } }),
+        pushed_commit: Some(commit_to.to_string()),
     })
 }
 

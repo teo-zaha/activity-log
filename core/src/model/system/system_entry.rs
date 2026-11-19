@@ -11,6 +11,9 @@ pub struct SystemEntry {
     /// The name of the connection within its kind, such as `oss`; set by the runtime.
     #[serde(default)]
     pub connection: String,
+    /// The source's own id for the entry (a commit hash, an event id), unique within its
+    /// connection: `source`, `connection` and `id` identify an entry.
+    pub id: String,
     #[serde(rename = "type")]
     #[ts(rename = "type")]
     pub entry_type: SystemEntryType,

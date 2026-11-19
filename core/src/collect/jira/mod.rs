@@ -77,6 +77,7 @@ fn map_jira_issues(issues: &[JiraIssue], options: &CollectOptions) -> Vec<JiraEn
             entries.push(JiraEntry {
                 source: "jira".to_string(),
                 connection: String::new(),
+                id: format!("{}:created", issue.key),
                 entry_type: JiraEntryType::IssueCreated,
                 timestamp: created.to_rfc3339(),
                 key: issue.key.clone(),
@@ -103,6 +104,15 @@ fn map_jira_issues(issues: &[JiraIssue], options: &CollectOptions) -> Vec<JiraEn
                     entries.push(JiraEntry {
                         source: "jira".to_string(),
                         connection: String::new(),
+                        id: match &history.id {
+                            Some(history_id) => format!("{}:status:{history_id}", issue.key),
+                            None => format!(
+                                "{}:status:{}:{}",
+                                issue.key,
+                                changed.to_rfc3339(),
+                                item.to_string.as_deref().unwrap_or_default()
+                            ),
+                        },
                         entry_type: JiraEntryType::StatusChanged,
                         timestamp: changed.to_rfc3339(),
                         key: issue.key.clone(),
@@ -126,6 +136,9 @@ fn map_jira_issues(issues: &[JiraIssue], options: &CollectOptions) -> Vec<JiraEn
             entries.push(JiraEntry {
                 source: "jira".to_string(),
                 connection: String::new(),
+                // Jira names only the latest change; each one seen is its own entry (cached days
+                // keep earlier ones), so the instant tells them apart in any range.
+                id: format!("{}:updated:{}", issue.key, updated.to_utc().to_rfc3339()),
                 entry_type: JiraEntryType::IssueUpdated,
                 timestamp: updated.to_rfc3339(),
                 key: issue.key.clone(),

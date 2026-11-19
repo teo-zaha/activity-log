@@ -3,8 +3,12 @@ use chrono::{DateTime, Utc};
 #[cfg(any(target_os = "macos", test))]
 use serde_json::Value;
 
+use super::meeting_text::meeting_text;
+#[cfg(any(target_os = "windows", test))]
+use crate::model::BusyStatus;
 use crate::model::{
-    CollectOptions, OutlookEntry, SupportedOs, outlook::raw_outlook_event::RawOutlookEvent,
+    CollectOptions, MeetingWeight, OutlookEntry, SupportedOs,
+    outlook::raw_outlook_event::RawOutlookEvent,
 };
 
 #[cfg(target_os = "macos")]
@@ -159,16 +163,46 @@ fn normalize_outlook_event(event: RawOutlookEvent) -> OutlookEntry {
                 .map(|start| (end - start).num_minutes())
         })
         .unwrap_or_default();
+    let meeting = meeting_text(event.body.as_deref(), None, []);
+    // A series' occurrences share Outlook's id, so the start tells them apart.
+    let id = match &event.id {
+        Some(id) => format!("{id}/{}", event.start),
+        None => crate::utils::stable_id(&[
+            &event.start,
+            &event.end,
+            event.subject.as_deref().unwrap_or_default(),
+            event.organizer.as_deref().unwrap_or_default(),
+        ]),
+    };
 
     OutlookEntry {
         source: "outlook".to_string(),
         connection: String::new(),
+        id,
         timestamp: event.start,
         title: event.subject.unwrap_or_else(|| "(No title)".to_string()),
         location: event.location,
         organizer: event.organizer,
         is_organizer: event.is_organizer.unwrap_or(false),
         duration_minutes: duration_minutes as i32,
+        busy_status: event.busy_status,
+        meeting_weight: MeetingWeight::of(event.busy_status),
+        description: meeting.description,
+        description_blocks: meeting.blocks,
+        join_url: meeting.join_url,
+    }
+}
+
+/// `AppointmentItem.BusyStatus` (`OlBusyStatus`).
+#[cfg(any(target_os = "windows", test))]
+pub(crate) fn busy_status_from_com(value: i32) -> Option<BusyStatus> {
+    match value {
+        0 => Some(BusyStatus::Free),
+        1 => Some(BusyStatus::Tentative),
+        2 => Some(BusyStatus::Busy),
+        3 => Some(BusyStatus::OutOfOffice),
+        4 => Some(BusyStatus::WorkingElsewhere),
+        _ => None,
     }
 }
 

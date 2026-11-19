@@ -1,5 +1,3 @@
-use serde_json::json;
-
 use chrono::FixedOffset;
 
 use super::{MergeResult, format_duration, merge_git_with_gitlab, to_markdown};
@@ -22,6 +20,7 @@ fn push(commit_to: &str) -> GitLabEntry {
     GitLabEntry {
         source: "gitlab".to_string(),
         connection: String::new(),
+        id: commit_to.to_string(),
         entry_type: crate::model::GitLabType::PushedTo,
         timestamp: "2026-03-10T10:05:00Z".to_string(),
         title: "repo".to_string(),
@@ -32,7 +31,7 @@ fn push(commit_to: &str) -> GitLabEntry {
         note_body: None,
         note_file: None,
         note_resolved: None,
-        raw: json!({ "push_data": { "commit_to": commit_to } }),
+        pushed_commit: Some(commit_to.to_string()),
     }
 }
 
@@ -58,10 +57,7 @@ fn a_push_without_its_git_commit_stays_an_entry() {
     let [unmatched] = remaining_gitlab.as_slice() else {
         panic!("expected the unmatched push, got {remaining_gitlab:?}");
     };
-    assert_eq!(
-        crate::collect::gitlab::commit_to_sha(unmatched),
-        Some("def456")
-    );
+    assert_eq!(unmatched.pushed_commit.as_deref(), Some("def456"));
 
     let alone = merge_git_with_gitlab(&[], &[push("abc123")]);
     assert_eq!(alone.remaining_gitlab.len(), 1, "nothing to fold into yet");

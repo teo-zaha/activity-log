@@ -2,14 +2,14 @@ use ts_rs::{Config, TS};
 
 use crate::model::{
     ActivityEntry, ActivityLog, ActivityLogMeta, AddConnectionRequestDto, AddConnectionResponseDto,
-    CalendarEntry, CollectRequest, CollectedActivitySummary, CollectionFailedResponse,
-    ConnectionCount, ConnectionId, ErrorResponse, GitEntry, GitLabEntry, GitLabType, JiraEntry,
-    JiraEntryType, LogEntry, LogLevel, LogsResponse, OutlookEntry,
-    ProviderConfigConnectionStateDto, ProviderConfigFieldStateDto, ProviderConfigFieldValueDto,
-    ProviderConfigSaveRequestDto, ProviderConfigSaveResponseDto, ProviderConfigSaveValueDto,
-    ProviderConfigSnapshotDto, ProviderConfigValueDto, ProviderConfigValueTypeDto, ProviderInfo,
-    ProviderKindDto, ProviderProblem, ProviderStatus, ProvidersResponse, Source, SupportedOs,
-    SystemEntry, SystemEntryType,
+    BusyStatus, CalendarEntry, CollectRequest, CollectedActivitySummary, CollectionFailedResponse,
+    ConnectionCount, ConnectionId, DescriptionBlock, ErrorResponse, GitEntry, GitLabEntry,
+    GitLabType, JiraEntry, JiraEntryType, ListItem, LogEntry, LogLevel, LogsResponse,
+    MeetingWeight, OutlookEntry, ProviderConfigConnectionStateDto, ProviderConfigFieldStateDto,
+    ProviderConfigFieldValueDto, ProviderConfigSaveRequestDto, ProviderConfigSaveResponseDto,
+    ProviderConfigSaveValueDto, ProviderConfigSnapshotDto, ProviderConfigValueDto,
+    ProviderConfigValueTypeDto, ProviderInfo, ProviderKindDto, ProviderProblem, ProviderStatus,
+    ProvidersResponse, Source, SupportedOs, SystemEntry, SystemEntryType, TextSegment,
 };
 
 pub fn activity_typescript() -> String {
@@ -37,6 +37,11 @@ pub fn activity_typescript() -> String {
         export_decl::<GitLabType>(&cfg),
         export_decl::<JiraEntryType>(&cfg),
         export_decl::<SystemEntryType>(&cfg),
+        export_decl::<BusyStatus>(&cfg),
+        export_decl::<MeetingWeight>(&cfg),
+        export_decl::<TextSegment>(&cfg),
+        export_decl::<ListItem>(&cfg),
+        export_decl::<DescriptionBlock>(&cfg),
         export_decl::<GitLabEntry>(&cfg),
         export_decl::<GitEntry>(&cfg),
         export_decl::<JiraEntry>(&cfg),

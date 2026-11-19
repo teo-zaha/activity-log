@@ -5,6 +5,7 @@ import { connectionKey, entryConnectionKeys } from './connection'
 const commit: GitEntry = {
   source: 'git',
   connection: 'wsl-nixos',
+  id: 'abc123',
   timestamp: '2026-05-18T09:00:00Z',
   repo: 'api',
   hash: 'abc',
@@ -26,11 +27,12 @@ describe('connection keys', () => {
         gitlabEvent: {
           source: 'gitlab',
           connection: 'work',
+          id: '4711',
           type: 'pushedTo',
           timestamp: commit.timestamp,
           title: 'Pushed',
           targetType: 'push',
-          raw: {},
+          pushedCommit: commit.hash,
         },
       })
     ).toEqual(['git/wsl-nixos', 'gitlab/work'])

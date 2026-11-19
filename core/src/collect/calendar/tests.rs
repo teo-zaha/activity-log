@@ -4,7 +4,7 @@ use calcard::common::timezone::Tz;
 use chrono::{TimeZone, Utc};
 
 use super::{FeedLocation, feed_location, parse_events, read_feed};
-use crate::model::CollectOptions;
+use crate::model::{BusyStatus, CollectOptions, MeetingWeight};
 
 /// 2–8 March 2026, UTC.
 fn week() -> CollectOptions {
@@ -227,6 +227,15 @@ END:VEVENT
     assert_eq!(entries[2].timestamp, "2026-03-05T10:00:00+00:00");
     assert_eq!(entries[2].title, "Moved");
     assert_eq!(entries[2].duration_minutes, 60);
+    // Occurrences by their start; the moved one by the occurrence it replaces.
+    assert_eq!(
+        entries.iter().map(|e| e.id.as_str()).collect::<Vec<_>>(),
+        [
+            "series/2026-03-02T08:00:00+00:00",
+            "series/2026-03-04T08:00:00+00:00",
+            "series/20260303T080000Z",
+        ]
+    );
     let original_window = CollectOptions {
         start: Utc.with_ymd_and_hms(2026, 3, 3, 0, 0, 0).unwrap(),
         end: Utc.with_ymd_and_hms(2026, 3, 4, 0, 0, 0).unwrap(),
@@ -331,6 +340,27 @@ END:VCALENDAR
         ]
     );
     assert!(entries.iter().all(|e| e.duration_minutes == 30));
+    assert_eq!(
+        entries[1].id,
+        "dst-series/20260330T093000;W. Europe Standard Time"
+    );
+}
+
+#[test]
+fn an_event_without_a_uid_gets_an_id_from_what_it_is() {
+    let text = feed(
+        "BEGIN:VEVENT\r
+SUMMARY:Meeting\r
+DTSTART:20260303T090000Z\r
+DTEND:20260303T100000Z\r
+END:VEVENT\r
+",
+    );
+    let first = parse_events(&text, &week(), Tz::UTC).unwrap();
+    let again = parse_events(&text, &week(), Tz::UTC).unwrap();
+
+    assert!(first[0].id.starts_with("h:"));
+    assert_eq!(first[0].id, again[0].id);
 }
 
 #[test]
@@ -421,4 +451,277 @@ fn unresolved_zones_and_floating_recurrence_periods_do_not_become_instants() {
         let error = parse_events(&text, &week(), Tz::Floating).unwrap_err();
         assert!(error.to_string().contains("floating or unknown time zone"));
     }
+}
+
+fn busy_status_of(properties: &str) -> Option<BusyStatus> {
+    let text = feed(&format!(
+        "BEGIN:VEVENT\r
+UID:status\r
+SUMMARY:Meeting\r
+DTSTART:20260303T090000Z\r
+DTEND:20260303T100000Z\r
+{properties}END:VEVENT\r
+"
+    ));
+    let entries = parse_events(&text, &week(), Tz::UTC).unwrap();
+    assert_eq!(entries.len(), 1);
+    assert_eq!(
+        entries[0].meeting_weight,
+        MeetingWeight::of(entries[0].busy_status)
+    );
+    entries[0].busy_status
+}
+
+#[test]
+fn reads_each_microsoft_busy_status() {
+    for (value, expected) in [
+        ("BUSY", BusyStatus::Busy),
+        ("TENTATIVE", BusyStatus::Tentative),
+        ("FREE", BusyStatus::Free),
+        ("OOF", BusyStatus::OutOfOffice),
+        ("WORKINGELSEWHERE", BusyStatus::WorkingElsewhere),
+        ("oof", BusyStatus::OutOfOffice),
+    ] {
+        assert_eq!(
+            busy_status_of(&format!("X-MICROSOFT-CDO-BUSYSTATUS:{value}\r\n")),
+            Some(expected),
+            "{value}"
+        );
+    }
+}
+
+#[test]
+fn falls_back_to_status_then_transparency() {
+    assert_eq!(
+        busy_status_of("STATUS:TENTATIVE\r\n"),
+        Some(BusyStatus::Tentative)
+    );
+    assert_eq!(
+        busy_status_of("TRANSP:TRANSPARENT\r\n"),
+        Some(BusyStatus::Free)
+    );
+    assert_eq!(busy_status_of("TRANSP:OPAQUE\r\n"), Some(BusyStatus::Busy));
+    assert_eq!(busy_status_of("STATUS:CONFIRMED\r\n"), None);
+    assert_eq!(busy_status_of(""), None);
+}
+
+#[test]
+fn the_microsoft_status_wins_over_status_and_transparency() {
+    assert_eq!(
+        busy_status_of("STATUS:TENTATIVE\r\nTRANSP:OPAQUE\r\nX-MICROSOFT-CDO-BUSYSTATUS:OOF\r\n"),
+        Some(BusyStatus::OutOfOffice)
+    );
+    assert_eq!(
+        busy_status_of(
+            "STATUS:TENTATIVE\r\nTRANSP:TRANSPARENT\r\nX-MICROSOFT-CDO-BUSYSTATUS:BUSY\r\n"
+        ),
+        Some(BusyStatus::Busy)
+    );
+    assert_eq!(
+        busy_status_of("X-MICROSOFT-CDO-BUSYSTATUS:SOMETHING\r\nTRANSP:TRANSPARENT\r\n"),
+        Some(BusyStatus::Free)
+    );
+}
+
+#[test]
+fn a_transparent_event_is_free_even_when_tentative() {
+    // RFC 5545: TRANSP decides whether an event blocks time; STATUS only says how sure it is.
+    assert_eq!(
+        busy_status_of("STATUS:TENTATIVE\r\nTRANSP:TRANSPARENT\r\n"),
+        Some(BusyStatus::Free)
+    );
+    assert_eq!(
+        busy_status_of("TRANSP:TRANSPARENT\r\nSTATUS:TENTATIVE\r\n"),
+        Some(BusyStatus::Free)
+    );
+    assert_eq!(
+        busy_status_of("STATUS:TENTATIVE\r\nTRANSP:OPAQUE\r\n"),
+        Some(BusyStatus::Tentative)
+    );
+}
+
+#[test]
+fn an_override_brings_its_own_busy_status() {
+    let text = feed(
+        "BEGIN:VEVENT
+UID:series
+SUMMARY:Weekly
+X-MICROSOFT-CDO-BUSYSTATUS:BUSY
+DTSTART:20260302T080000Z
+DTEND:20260302T083000Z
+RRULE:FREQ=DAILY;COUNT=3
+END:VEVENT
+BEGIN:VEVENT
+UID:series
+RECURRENCE-ID:20260303T080000Z
+SUMMARY:Weekly (maybe)
+X-MICROSOFT-CDO-BUSYSTATUS:TENTATIVE
+DTSTART:20260303T080000Z
+DTEND:20260303T083000Z
+END:VEVENT
+BEGIN:VEVENT
+UID:series
+RECURRENCE-ID:20260304T080000Z
+SUMMARY:Weekly (moved)
+DTSTART:20260304T120000Z
+DTEND:20260304T123000Z
+END:VEVENT
+",
+    );
+    let entries = parse_events(&text, &week(), Tz::UTC).unwrap();
+    let statuses = entries
+        .iter()
+        .map(|entry| (entry.title.as_str(), entry.busy_status))
+        .collect::<Vec<_>>();
+    assert_eq!(
+        statuses,
+        vec![
+            ("Weekly", Some(BusyStatus::Busy)),
+            ("Weekly (maybe)", Some(BusyStatus::Tentative)),
+            // An override replaces the whole occurrence; without its own status it has none.
+            ("Weekly (moved)", None),
+        ]
+    );
+}
+
+fn single_event(properties: &str) -> crate::model::CalendarEntry {
+    let text = feed(&format!(
+        "BEGIN:VEVENT\r
+UID:meeting\r
+SUMMARY:Meeting\r
+DTSTART:20260303T090000Z\r
+DTEND:20260303T100000Z\r
+{properties}END:VEVENT\r
+"
+    ));
+    let mut entries = parse_events(&text, &week(), Tz::UTC).unwrap();
+    assert_eq!(entries.len(), 1);
+    entries.remove(0)
+}
+
+#[test]
+fn unescapes_and_unfolds_the_description() {
+    let entry = single_event(
+        "DESCRIPTION:Agenda:\\n1. Budget\\, staffing\\; risks\\n\\nPath C:\\\\temp\\n\r
+  continued on a folded line\r
+",
+    );
+    assert_eq!(
+        entry.description.as_deref(),
+        Some("Agenda:\n\n1. Budget, staffing; risks\n\nPath C:\\temp\ncontinued on a folded line")
+    );
+    assert_eq!(entry.join_url, None);
+}
+
+#[test]
+fn reads_the_html_description_outlook_adds() {
+    use crate::model::{DescriptionBlock, TextSegment};
+
+    let entry = single_event(
+        "DESCRIPTION:Plain\\, as text\\n\r
+X-ALT-DESC;FMTTYPE=text/html:<html><body><p style=\"margin:0\\;color:red\">Hello\r
+  <b>team</b>\\,</p><ul><li>One</li></ul></body></html>\\n\r
+",
+    );
+    assert_eq!(entry.description.as_deref(), Some("Hello team,\n\n• One"));
+    assert_eq!(
+        entry.description_blocks.first(),
+        Some(&DescriptionBlock::Paragraph {
+            segments: vec![
+                TextSegment::text("Hello "),
+                TextSegment::Text {
+                    text: "team".to_string(),
+                    strong: true,
+                    emphasis: false,
+                },
+                TextSegment::text(","),
+            ]
+        })
+    );
+}
+
+#[test]
+fn reads_the_join_link_and_drops_the_invitation_from_the_description() {
+    let rule = "_".repeat(40);
+    let entry = single_event(&format!(
+        "DESCRIPTION:Weekly sync\\n\\n{rule}\\nMicrosoft Teams-Besprechung\\nJetzt an der Besprechung teilnehmen<https://eur03.safelinks.protection.outlook.com/?url=https%3A%2F%2Fteams.microsoft.com%2Fl%2Fmeetup-join%2F19%253ameeting_x%2540thread.v2%2F0&data=05%7C02&reserved=0>\\n{rule}\\n\r
+"
+    ));
+    assert_eq!(entry.description.as_deref(), Some("Weekly sync"));
+    assert_eq!(
+        entry.join_url.as_deref(),
+        Some("https://teams.microsoft.com/l/meetup-join/19%3ameeting_x%40thread.v2/0")
+    );
+}
+
+#[test]
+fn an_explicit_join_property_wins_over_the_description() {
+    let entry = single_event(
+        "DESCRIPTION:Fallback https://zoom.us/j/1\r
+X-GOOGLE-CONFERENCE:https://meet.google.com/abc-defg-hij\r
+X-MICROSOFT-SKYPETEAMSMEETINGURL:https://teams.microsoft.com/l/meetup-join/explicit;part\r
+",
+    );
+    assert_eq!(
+        entry.join_url.as_deref(),
+        Some("https://teams.microsoft.com/l/meetup-join/explicit;part")
+    );
+    assert_eq!(
+        single_event("X-GOOGLE-CONFERENCE:https://meet.google.com/abc-defg-hij\r\n")
+            .join_url
+            .as_deref(),
+        Some("https://meet.google.com/abc-defg-hij")
+    );
+}
+
+#[test]
+fn the_url_property_counts_only_when_it_is_a_meeting_link() {
+    assert_eq!(
+        single_event("URL:https://zoom.us/j/123\r\n")
+            .join_url
+            .as_deref(),
+        Some("https://zoom.us/j/123")
+    );
+    assert_eq!(
+        single_event("URL:https://example.org/event/1\r\n").join_url,
+        None
+    );
+}
+
+#[test]
+fn an_override_brings_its_own_description() {
+    let text = feed(
+        "BEGIN:VEVENT
+UID:series
+SUMMARY:Daily
+DESCRIPTION:Series notes https://meet.google.com/aaa-bbbb-ccc
+DTSTART:20260302T080000Z
+DTEND:20260302T083000Z
+RRULE:FREQ=DAILY;COUNT=2
+END:VEVENT
+BEGIN:VEVENT
+UID:series
+RECURRENCE-ID:20260303T080000Z
+SUMMARY:Daily (changed)
+DESCRIPTION:Only today
+DTSTART:20260303T080000Z
+DTEND:20260303T083000Z
+END:VEVENT
+",
+    );
+    let entries = parse_events(&text, &week(), Tz::UTC).unwrap();
+    let meetings = entries
+        .iter()
+        .map(|entry| (entry.description.as_deref(), entry.join_url.as_deref()))
+        .collect::<Vec<_>>();
+    assert_eq!(
+        meetings,
+        vec![
+            (
+                Some("Series notes https://meet.google.com/aaa-bbbb-ccc"),
+                Some("https://meet.google.com/aaa-bbbb-ccc")
+            ),
+            (Some("Only today"), None),
+        ]
+    );
 }

@@ -11,6 +11,9 @@ pub struct GitEntry {
     /// The name of the connection within its kind, such as `oss`; set by the runtime.
     #[serde(default)]
     pub connection: String,
+    /// The source's own id for the entry (a commit hash, an event id), unique within its
+    /// connection: `source`, `connection` and `id` identify an entry.
+    pub id: String,
     pub timestamp: String,
     pub repo: String,
     pub hash: String,
@@ -20,7 +23,7 @@ pub struct GitEntry {
     #[serde(skip_serializing_if = "Option::is_none")]
     #[serde(rename = "gitlabEvent")]
     #[ts(rename = "gitlabEvent", optional)]
-    pub gitlab_event: Option<GitLabEntry>,
+    pub gitlab_event: Option<Box<GitLabEntry>>,
 }
 
 impl GitEntry {
@@ -35,6 +38,7 @@ impl GitEntry {
         Self {
             source: "git".to_string(),
             connection: String::new(),
+            id: hash.clone(),
             timestamp,
             repo,
             hash,
