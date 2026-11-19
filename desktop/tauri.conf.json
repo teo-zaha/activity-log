@@ -6,7 +6,7 @@
   "build": {
     "beforeDevCommand": "pnpm --dir ../dashboard run dev:tauri",
     "beforeBuildCommand": "pnpm --dir ../dashboard run build:tauri",
-    "devUrl": "http://localhost:4200",
+    "devUrl": "http://localhost:3200",
     "frontendDist": "../dashboard/dist/dashboard/browser"
   },
   "app": {
