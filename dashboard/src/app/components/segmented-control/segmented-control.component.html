@@ -1,0 +1,17 @@
+@for (option of options(); track option.value) {
+  @let checked = option.value === value();
+  <button
+    #segment
+    type="button"
+    role="radio"
+    class="segment"
+    [attr.aria-checked]="checked"
+    [tabindex]="checked ? 0 : -1"
+    (click)="value.set(option.value)"
+  >
+    {{ option.label }}
+    @if (option.count !== undefined) {
+      <span class="count" [attr.data-tone]="option.tone ?? null">{{ option.count }}</span>
+    }
+  </button>
+}

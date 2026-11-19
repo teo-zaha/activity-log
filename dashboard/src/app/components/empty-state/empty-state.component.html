@@ -1,0 +1,17 @@
+<ng-content select="[emptyStateVisual]">
+  @if (icon(); as icon) {
+    <span class="icon-tile">
+      <mat-icon>{{ icon }}</mat-icon>
+    </span>
+  }
+</ng-content>
+@switch (level()) {
+  @case (2) {
+    <h2 class="heading">{{ heading() }}</h2>
+  }
+  @case (3) {
+    <h3 class="heading">{{ heading() }}</h3>
+  }
+}
+<p class="message"><ng-content /></p>
+<div class="actions"><ng-content select="[emptyStateAction]" /></div>
