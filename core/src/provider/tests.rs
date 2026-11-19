@@ -1094,3 +1094,85 @@ fn a_check_that_reports_a_problem_is_a_failure() {
     );
     assert_eq!(ProviderCheckResult::available().problem, None);
 }
+
+#[test]
+fn debug_output_of_configs_and_contexts_never_shows_a_token() {
+    use crate::provider::gitlab::{GITLAB_TOKEN, GITLAB_URL, GITLAB_USER, GitLabConfig};
+
+    let source = MapSource(vec![
+        ("GITLAB_URL", "https://gitlab.example.com"),
+        ("GITLAB_TOKEN", "glpat-secret-token"),
+        ("GITLAB_USER", "jane"),
+    ]);
+    let requirements = [GITLAB_URL, GITLAB_TOKEN, GITLAB_USER];
+    let config = ProviderConfig::resolve(&source, &requirements);
+    let typed = GitLabConfig::from_config(&config).unwrap();
+    let mut context = ProviderContext::resolve(&source, &requirements);
+    context.with_typed::<GitLabConfig>().unwrap();
+
+    for debug in [
+        format!("{config:?}"),
+        format!("{typed:?}"),
+        format!("{context:?}"),
+        format!("{context:#?}"),
+    ] {
+        assert!(!debug.contains("glpat-secret-token"), "{debug}");
+    }
+    // What is no secret stays readable.
+    let typed = format!("{typed:?}");
+    assert!(
+        typed.contains("https://gitlab.example.com") && typed.contains("jane"),
+        "{typed}"
+    );
+}
+
+#[test]
+fn debug_output_shows_no_secret_in_urls_or_values_being_saved() {
+    use crate::{
+        collect::calendar::feed_location,
+        model::{ProviderConfigSaveValueDto, ProviderConfigValueDto},
+        provider::gitlab::{GITLAB_TOKEN, GITLAB_URL, GITLAB_USER, GitLabConfig},
+    };
+
+    let source = MapSource(vec![
+        (
+            "GITLAB_URL",
+            "https://jane:url-password@gitlab.example.com/sub?private_token=query-secret#fragment-secret",
+        ),
+        ("GITLAB_TOKEN", "glpat-secret-token"),
+        ("GITLAB_USER", "jane"),
+    ]);
+    let config = GitLabConfig::from_config(&ProviderConfig::resolve(
+        &source,
+        &[GITLAB_URL, GITLAB_TOKEN, GITLAB_USER],
+    ))
+    .unwrap();
+    let saved = ProviderConfigSaveValueDto {
+        key: "GITLAB_TOKEN".to_string(),
+        value: Some(ProviderConfigValueDto::Text(
+            "glpat-replacement".to_string(),
+        )),
+    };
+    let list = ProviderConfigValueDto::List(vec!["list-secret".to_string()]);
+    let feed = feed_location("https://calendar.example.com/private/feed-secret/basic.ics").unwrap();
+
+    for debug in [
+        format!("{config:?}"),
+        format!("{saved:?}"),
+        format!("{list:?}"),
+        format!("{feed:?}"),
+    ] {
+        for secret in [
+            "url-password",
+            "query-secret",
+            "fragment-secret",
+            "glpat-",
+            "list-secret",
+            "feed-secret",
+        ] {
+            assert!(!debug.contains(secret), "{debug}");
+        }
+    }
+    assert!(format!("{config:?}").contains("https://gitlab.example.com/sub"));
+    assert!(format!("{feed:?}").contains("calendar.example.com"));
+}

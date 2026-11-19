@@ -25,7 +25,7 @@ use range::{RangePreset, day_range, parse_date, resolve_preset, today};
 use sources::{Terminal, list_lines, resolve_connection};
 
 /// Collects your activity, or manages the sources it is collected from.
-#[derive(Debug, Parser)]
+#[derive(Parser)]
 #[command(author, version, about)]
 struct Cli {
     /// The config file; default: ACTIVITY_LOG_CONFIG, else activity-log/config.toml in the OS
@@ -38,7 +38,7 @@ struct Cli {
     collect: CollectArgs,
 }
 
-#[derive(Debug, Args)]
+#[derive(Args)]
 struct CollectArgs {
     /// First local day, YYYY-MM-DD.
     #[arg(long)]
@@ -56,7 +56,7 @@ struct CollectArgs {
     format: String,
 }
 
-#[derive(Debug, Subcommand)]
+#[derive(Subcommand)]
 enum Command {
     /// List the sources with their status, or add, change and remove them.
     Sources {
@@ -70,7 +70,7 @@ enum Command {
     },
 }
 
-#[derive(Debug, Subcommand)]
+#[derive(Subcommand)]
 enum SourcesCommand {
     /// Add a source, such as a GitLab account; asks for its values.
     Add {
@@ -99,7 +99,7 @@ enum SourcesCommand {
     Remove { source: String },
 }
 
-#[derive(Debug, Subcommand)]
+#[derive(Subcommand)]
 enum ConfigCommand {
     /// Print the config file's path.
     Path,

@@ -5,9 +5,18 @@ use reqwest::Url;
 
 use super::{ConfigSource, ProviderConfigKey, ProviderConfigShape, ProviderConfigValueType};
 
-#[derive(Debug, Clone, Default)]
+#[derive(Clone, Default)]
 pub struct ProviderConfig {
     values: BTreeMap<String, String>,
+}
+
+impl std::fmt::Debug for ProviderConfig {
+    // Only the keys: the values hold tokens.
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("ProviderConfig")
+            .field("keys", &self.values.keys().collect::<Vec<_>>())
+            .finish()
+    }
 }
 
 impl ProviderConfig {
@@ -112,6 +121,21 @@ fn canonical_endpoint(value: &str) -> Option<String> {
         .unwrap_or_default();
     let path = url.path().trim_end_matches('/');
     Some(format!("{}://{host}{port}{path}", url.scheme()))
+}
+
+/// A URL setting for `Debug` output: its endpoint, without user info, query and fragment,
+/// which can hold credentials.
+pub fn url_for_debug(value: &str) -> String {
+    match Url::parse(value.trim()) {
+        Ok(mut url) => {
+            let _ = url.set_username("");
+            let _ = url.set_password(None);
+            url.set_query(None);
+            url.set_fragment(None);
+            url.to_string()
+        }
+        Err(_) => "<not a URL>".to_string(),
+    }
 }
 
 /// Whether `value` is valid for `key`: for a list, every item must match the value type.

@@ -37,3 +37,20 @@ fn global_log_records_scope_level_and_message() {
     assert_eq!(entry.level, LogLevel::Warn);
     assert_eq!(entry.scope, "tests");
 }
+
+#[test]
+fn a_panic_in_a_scoped_closure_restores_the_previous_connection() {
+    use crate::model::Source;
+
+    let outer = ConnectionId::new(Source::Git, "outer");
+    in_connection_sync(Some(outer.clone()), || {
+        let panicked = std::panic::catch_unwind(|| {
+            in_connection_sync(Some(ConnectionId::new(Source::Git, "inner")), || {
+                panic!("collector panicked")
+            })
+        });
+        assert!(panicked.is_err());
+        assert_eq!(current_connection(), Some(outer.clone()));
+    });
+    assert_eq!(current_connection(), None);
+}

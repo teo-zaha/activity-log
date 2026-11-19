@@ -1,5 +1,5 @@
 //! Activity written to a file, the same for the CLI, the desktop app and the API: JSON is the
-//! `ActivityLog`, Markdown is `utils::to_markdown` grouped by day in the reader's time zone.
+//! `ActivityLog`, Markdown is `markdown::to_markdown` grouped by day in the reader's time zone.
 
 use std::collections::BTreeMap;
 
@@ -13,11 +13,14 @@ use crate::{
         ConnectionCount, ConnectionId, ExportFile, ExportRequest, OutputFormat,
     },
     runtime::resolve_collect_options,
-    utils::{now_iso, to_markdown},
+    utils::now_iso,
 };
 
+mod markdown;
 #[cfg(test)]
 mod tests;
+
+use markdown::to_markdown;
 
 /// `log` as a file of `format`, with days and times in `tz`.
 pub fn render_export<Z: TimeZone>(log: &ActivityLog, format: OutputFormat, tz: &Z) -> ExportFile {

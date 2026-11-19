@@ -2,7 +2,7 @@ use chrono::{TimeZone, Utc};
 
 use super::{
     carried_for, carry_over, collect_activity_from_results, compare_timestamps_desc,
-    entries_by_connection, make_ids_unique,
+    entries_by_connection, make_ids_unique, merge_git_with_gitlab,
 };
 use crate::model::{
     ActivityEntry, ActivityLog, CalendarEntry, CollectOptions, ConnectionId, GitEntry, GitLabEntry,
@@ -332,4 +332,147 @@ fn numbers_repeated_ids_in_order_without_taking_another_entrys_id() {
         0,
         "unique ids stay as they are"
     );
+}
+
+fn git_commit(hash: &str) -> GitEntry {
+    GitEntry::new(
+        "repo".to_string(),
+        hash.to_string(),
+        "message".to_string(),
+        "me@example.com".to_string(),
+        "main".to_string(),
+        "2026-03-10T10:00:00Z".to_string(),
+    )
+}
+
+fn gitlab_push(commit_to: &str) -> GitLabEntry {
+    GitLabEntry {
+        source: "gitlab".to_string(),
+        connection: String::new(),
+        id: commit_to.to_string(),
+        entry_type: crate::model::GitLabType::PushedTo,
+        timestamp: "2026-03-10T10:05:00Z".to_string(),
+        title: "repo".to_string(),
+        target_type: "Project".to_string(),
+        mr_iid: None,
+        branch: Some("main".to_string()),
+        commit_count: Some(1),
+        note_body: None,
+        note_file: None,
+        note_resolved: None,
+        pushed_commit: Some(commit_to.to_string()),
+    }
+}
+
+#[test]
+fn merges_git_and_gitlab_push_events() {
+    let crate::model::MergeResult {
+        merged_git,
+        remaining_gitlab,
+    } = merge_git_with_gitlab(&[git_commit("abc123")], &[gitlab_push("abc123")]);
+
+    assert!(merged_git[0].gitlab_event.is_some());
+    assert!(remaining_gitlab.is_empty());
+}
+
+#[test]
+fn a_push_without_its_git_commit_stays_an_entry() {
+    let crate::model::MergeResult {
+        merged_git,
+        remaining_gitlab,
+    } = merge_git_with_gitlab(
+        &[git_commit("abc123")],
+        &[gitlab_push("abc123"), gitlab_push("def456")],
+    );
+
+    assert!(merged_git[0].gitlab_event.is_some());
+    let [unmatched] = remaining_gitlab.as_slice() else {
+        panic!("expected the unmatched push, got {remaining_gitlab:?}");
+    };
+    assert_eq!(unmatched.pushed_commit.as_deref(), Some("def456"));
+
+    let alone = merge_git_with_gitlab(&[], &[gitlab_push("abc123")]);
+    assert_eq!(alone.remaining_gitlab.len(), 1, "nothing to fold into yet");
+}
+
+#[test]
+fn two_pushes_of_one_commit_fold_one_and_keep_the_other() {
+    let mut other_branch = gitlab_push("abc123");
+    other_branch.id = "abc123-release".to_string();
+    other_branch.branch = Some("release".to_string());
+
+    let crate::model::MergeResult {
+        merged_git,
+        remaining_gitlab,
+    } = merge_git_with_gitlab(
+        &[git_commit("abc123")],
+        &[gitlab_push("abc123"), other_branch],
+    );
+
+    let folded = merged_git[0].gitlab_event.as_ref().expect("one push folds");
+    assert_eq!(folded.branch.as_deref(), Some("main"));
+    let [kept] = remaining_gitlab.as_slice() else {
+        panic!("expected the other push to stay, got {remaining_gitlab:?}");
+    };
+    assert_eq!(kept.branch.as_deref(), Some("release"));
+}
+
+#[test]
+fn a_push_folds_into_one_commit_even_when_two_clones_have_it() {
+    let mut wsl_clone = git_commit("abc123");
+    wsl_clone.connection = "wsl".to_string();
+
+    let merged =
+        merge_git_with_gitlab(&[git_commit("abc123"), wsl_clone], &[gitlab_push("abc123")]);
+
+    let folded = merged
+        .merged_git
+        .iter()
+        .filter(|commit| commit.gitlab_event.is_some())
+        .count();
+    assert_eq!(folded, 1, "the push shows once");
+    assert!(merged.remaining_gitlab.is_empty());
+}
+
+/// Rebuilding a log from its parts (a recheck of another source does) keeps the same push
+/// folded and the same one visible.
+#[test]
+fn two_pushes_of_one_commit_keep_their_places_when_the_log_is_rebuilt() {
+    let with_id = |id: &str, at: &str| {
+        let ActivityEntry::GitLab(mut push) = push_at("abc123", at) else {
+            unreachable!()
+        };
+        push.id = id.to_string();
+        ActivityEntry::GitLab(push)
+    };
+    let log = a_log(vec![
+        (
+            id(Source::Git, "laptop"),
+            vec![commit_in("laptop", "abc123", "2026-03-10T10:00:00Z")],
+        ),
+        (
+            id(Source::Gitlab, "work"),
+            vec![
+                with_id("push-a", "2026-03-10T12:00:00Z"),
+                with_id("push-b", "2026-03-10T11:00:00Z"),
+            ],
+        ),
+    ]);
+    let placement = |log: &ActivityLog| {
+        log.entries
+            .iter()
+            .map(|entry| match entry {
+                ActivityEntry::Git(commit) => {
+                    format!("folded {}", commit.gitlab_event.as_ref().unwrap().id)
+                }
+                other => format!("visible {}", other.id()),
+            })
+            .collect::<Vec<_>>()
+    };
+
+    let mut rebuilt = log.clone();
+    for _ in 0..3 {
+        rebuilt = a_log(entries_by_connection(&rebuilt));
+        assert_eq!(placement(&rebuilt), placement(&log));
+    }
 }

@@ -634,22 +634,11 @@ fn warn_unprotectable(location: &Path, scope: &str) {
 /// OS cache directory, never the working directory: an app started from the Start menu or
 /// Finder runs in a folder it cannot write to. `ACTIVITY_LOG_CACHE_DIR` overrides it.
 pub fn cache_dir() -> PathBuf {
-    if let Some(dir) = env::var_os("ACTIVITY_LOG_CACHE_DIR") {
-        return PathBuf::from(dir);
+    if let Some(dir) = crate::platform::dirs::env_path("ACTIVITY_LOG_CACHE_DIR") {
+        return dir;
     }
-
-    let home = || env::var_os("HOME").map(PathBuf::from);
-    let base = if cfg!(target_os = "windows") {
-        env::var_os("LOCALAPPDATA").map(PathBuf::from)
-    } else if cfg!(target_os = "macos") {
-        home().map(|home| home.join("Library").join("Caches"))
-    } else {
-        env::var_os("XDG_CACHE_HOME")
-            .map(PathBuf::from)
-            .or_else(|| home().map(|home| home.join(".cache")))
-    };
-
-    base.unwrap_or_else(env::temp_dir)
+    crate::platform::dirs::cache_home()
+        .unwrap_or_else(env::temp_dir)
         .join("activity-log")
         .join("cache")
 }

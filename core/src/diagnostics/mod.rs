@@ -86,10 +86,16 @@ pub fn current_connection() -> Option<ConnectionId> {
 
 /// Like [`in_connection`], for a blocking closure such as one in `spawn_blocking`.
 pub fn in_connection_sync<R>(connection: Option<ConnectionId>, f: impl FnOnce() -> R) -> R {
-    let previous = THREAD_CONNECTION.with(|current| current.replace(connection));
-    let result = f();
-    THREAD_CONNECTION.with(|current| current.replace(previous));
-    result
+    /// Puts the previous connection back, also when `f` panics: blocking threads are reused.
+    struct Restore(Option<ConnectionId>);
+    impl Drop for Restore {
+        fn drop(&mut self) {
+            let previous = self.0.take();
+            THREAD_CONNECTION.with(|current| current.replace(previous));
+        }
+    }
+    let _restore = Restore(THREAD_CONNECTION.with(|current| current.replace(connection)));
+    f()
 }
 
 fn connection_scope(scope: String) -> String {
