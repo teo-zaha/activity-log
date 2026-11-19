@@ -162,8 +162,6 @@ fn map_jira_issues(issues: &[JiraIssue], options: &CollectOptions) -> Vec<JiraEn
     let mut entries = Vec::new();
 
     for issue in issues {
-        let mut emitted_status_change = false;
-
         if let Some(created) = in_range(&issue.fields.created) {
             entries.push(JiraEntry {
                 source: "jira".to_string(),
@@ -191,7 +189,6 @@ fn map_jira_issues(issues: &[JiraIssue], options: &CollectOptions) -> Vec<JiraEn
                         continue;
                     }
 
-                    emitted_status_change = true;
                     entries.push(JiraEntry {
                         source: "jira".to_string(),
                         connection: String::new(),
@@ -222,7 +219,7 @@ fn map_jira_issues(issues: &[JiraIssue], options: &CollectOptions) -> Vec<JiraEn
 
         if let Some(updated) = in_range(&issue.fields.updated)
             && issue.fields.updated != issue.fields.created
-            && !emitted_status_change
+            && !is_status_change(issue, updated)
         {
             entries.push(JiraEntry {
                 source: "jira".to_string(),
@@ -243,6 +240,27 @@ fn map_jira_issues(issues: &[JiraIssue], options: &CollectOptions) -> Vec<JiraEn
     }
 
     entries
+}
+
+/// Whether the issue's latest change, `updated`, is a status change, which is shown already:
+/// the latest record of its change history is one, at `updated` (Jira stamps both alike, to
+/// within its second). Decided from the changes themselves, never from the range, so every
+/// partition of a span gives the same entries; an edit after a status change, however soon,
+/// is an entry of its own.
+fn is_status_change(issue: &JiraIssue, updated: DateTime<FixedOffset>) -> bool {
+    let latest = issue
+        .changelog
+        .iter()
+        .flat_map(|changelog| &changelog.histories)
+        .filter_map(|history| Some((parse_jira_timestamp(&history.created)?, history)))
+        .max_by_key(|(changed, _)| *changed);
+    latest.is_some_and(|(changed, history)| {
+        history
+            .items
+            .iter()
+            .any(|item| item.field.eq_ignore_ascii_case("status"))
+            && (updated - changed).abs() < chrono::Duration::seconds(1)
+    })
 }
 
 /// Jira writes offsets without a colon (`2026-03-05T08:00:00.000+0100`), which is not RFC 3339;
