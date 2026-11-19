@@ -1,0 +1,237 @@
+// ── Startup splash ───────────────────────────────────────────────────────────
+// The markup is inlined in index.html, so it paints with the theme tokens before Angular boots.
+// One cycle is `--splash-cycle`: the first draws the mark's activity line through its four nodes
+// and holds it; each later one re-traces the line over a faint copy. `dismissSplash()` leaves at
+// the end of the first cycle, or of the cycle in which the app became ready: the backdrop fades
+// while the mark and the name fly into the header's own brand.
+
+#splash {
+  --splash-cycle: 1100ms;
+
+  position: fixed;
+  inset: 0;
+  z-index: 10000;
+  display: grid;
+  place-items: center;
+  color: var(--text-primary);
+  user-select: none;
+  -webkit-user-select: none;
+
+  // The backdrop is its own layer so it can fade while the mark stays opaque in flight.
+  &::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background:
+      radial-gradient(
+        440px 340px at 50% 46%,
+        color-mix(in srgb, var(--accent) 9%, transparent),
+        transparent 70%
+      ),
+      var(--bg);
+    transition: opacity 220ms ease;
+  }
+
+  &.is-leaving {
+    pointer-events: none;
+
+    &::before {
+      opacity: 0;
+    }
+  }
+}
+
+// The header's brand stays in layout but unseen while the splash is up, so the splash's mark and
+// name are the only ones on screen until they land on it; `dismissSplash()` swaps them in one frame.
+.is-splashing app-header :is(.brand-mark, .brand-title) {
+  visibility: hidden;
+}
+
+.splash-stage {
+  position: relative;
+  display: grid;
+  justify-items: center;
+  gap: 18px;
+  margin-bottom: 4vh;
+}
+
+// Carries the exit transform set by `dismissSplash()`; the child keeps its intro animation.
+.splash-fly {
+  transform-origin: center;
+  transition:
+    transform 250ms var(--ease-out),
+    opacity 180ms ease;
+
+  &.splash-fade {
+    opacity: 0;
+  }
+}
+
+// Same tile as the header's brand mark, at 72px.
+.splash-mark {
+  display: grid;
+  place-items: center;
+  width: 72px;
+  height: 72px;
+  border-radius: 21px;
+  background: linear-gradient(
+    145deg,
+    var(--accent),
+    color-mix(in srgb, var(--accent) 62%, var(--text-primary))
+  );
+  color: var(--accent-fg);
+  box-shadow:
+    inset 0 1px 0 rgb(255 255 255 / 25%),
+    0 1px 3px color-mix(in srgb, var(--accent) 22%, transparent),
+    0 12px 32px -10px color-mix(in srgb, var(--accent) 45%, transparent);
+  transition: box-shadow 250ms ease;
+  animation: splash-in 240ms var(--ease-out) both;
+
+  .is-leaving & {
+    box-shadow:
+      inset 0 1px 0 rgb(255 255 255 / 25%),
+      0 1px 3px color-mix(in srgb, var(--accent) 22%, transparent);
+  }
+
+  svg {
+    width: 42px;
+    height: 42px;
+    overflow: visible;
+  }
+
+  path {
+    fill: none;
+    stroke: currentColor;
+    stroke-width: 1.7;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+    stroke-dasharray: 100 100;
+  }
+
+  circle {
+    fill: currentColor;
+    transform-box: fill-box;
+    transform-origin: center;
+    animation: splash-pop 200ms cubic-bezier(0.34, 1.56, 0.64, 1) both;
+  }
+
+  // Each node pops as the line reaches it: 0 %, 39 %, 67 % and 100 % of the draw.
+  circle:nth-of-type(1) {
+    animation-delay: 40ms;
+  }
+  circle:nth-of-type(2) {
+    animation-delay: 230ms;
+  }
+  circle:nth-of-type(3) {
+    animation-delay: 360ms;
+  }
+  circle:nth-of-type(4) {
+    animation-delay: 520ms;
+  }
+}
+
+// The loops start one cycle in and repeat every cycle, so their iterations mark the cycle ends
+// that `dismissSplash()` leaves on. Each loop cycle ends with the whole line drawn.
+.splash-trace {
+  stroke-dashoffset: 100;
+  animation:
+    splash-draw 480ms linear 60ms both,
+    splash-retrace var(--splash-cycle) cubic-bezier(0.65, 0, 0.35, 1) var(--splash-cycle) infinite;
+}
+
+.splash-trace-base {
+  opacity: 0;
+  animation: splash-base var(--splash-cycle) linear var(--splash-cycle) infinite;
+}
+
+// Leaving shows the whole trace, as the header's mark does.
+.is-leaving {
+  .splash-trace {
+    animation: none;
+    stroke-dashoffset: 0;
+  }
+
+  .splash-trace-base {
+    animation: none;
+  }
+}
+
+.splash-name {
+  font-size: 21px;
+  font-weight: 700;
+  line-height: 1.2;
+  letter-spacing: -0.02em;
+  white-space: nowrap;
+  animation: splash-rise 320ms var(--ease-out) 200ms both;
+}
+
+// No cycle: the finished mark at once, and when the app is ready a quick fade instead of the
+// flight (which the global reduced-motion rule would otherwise make instant).
+@media (prefers-reduced-motion: reduce) {
+  #splash,
+  #splash * {
+    animation: none !important;
+  }
+
+  #splash::before,
+  #splash * {
+    transition-duration: 160ms !important;
+  }
+
+  .splash-trace {
+    stroke-dashoffset: 0;
+  }
+}
+
+@keyframes splash-in {
+  from {
+    opacity: 0;
+    transform: scale(0.92);
+  }
+}
+
+@keyframes splash-pop {
+  from {
+    transform: scale(0);
+  }
+}
+
+@keyframes splash-draw {
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+
+@keyframes splash-retrace {
+  0% {
+    stroke-dashoffset: 0;
+  }
+  30% {
+    stroke-dashoffset: -100;
+  }
+  30.01% {
+    stroke-dashoffset: 100;
+  }
+  72%,
+  100% {
+    stroke-dashoffset: 0;
+  }
+}
+
+// Fades in while the full line still covers it, so the reset each cycle is never seen.
+@keyframes splash-base {
+  0% {
+    opacity: 0;
+  }
+  4%,
+  100% {
+    opacity: 0.35;
+  }
+}
+
+@keyframes splash-rise {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+}

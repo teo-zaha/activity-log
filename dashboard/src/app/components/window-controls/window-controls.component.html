@@ -1,0 +1,18 @@
+<!-- Glyphs of Segoe Fluent Icons (Windows 11) and Segoe MDL2 Assets (Windows 10). -->
+<button type="button" class="control" aria-label="Minimize" (click)="chrome.minimize()">
+  <span class="glyph" aria-hidden="true">&#xE921;</span>
+</button>
+<button
+  #maximize
+  type="button"
+  class="control"
+  [class.is-hovered]="chrome.maximizeButton().hovered"
+  [class.is-pressed]="chrome.maximizeButton().pressed"
+  [attr.aria-label]="chrome.maximized() ? 'Restore' : 'Maximize'"
+  (click)="chrome.toggleMaximize()"
+>
+  <span class="glyph" aria-hidden="true">{{ chrome.maximized() ? '' : '' }}</span>
+</button>
+<button type="button" class="control close" aria-label="Close" (click)="chrome.close()">
+  <span class="glyph" aria-hidden="true">&#xE8BB;</span>
+</button>

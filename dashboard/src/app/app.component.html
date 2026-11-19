@@ -18,27 +18,20 @@
     tabindex="-1"
     [attr.aria-busy]="activity.isLoading()"
   >
-    @if (activity.hasNoSources()) {
-      <app-no-sources />
-    } @else {
-      <app-collection-status />
-
-      @switch (activity.currentView()) {
-        @case ('list') {
-          <app-timeline />
-        }
-        @case ('day') {
-          <app-day-view />
-        }
-        @case ('workweek') {
-          <app-week-view />
-        }
-        @case ('week') {
-          <app-week-view />
-        }
+    <div class="view" [class.under-settings]="settingsTab()">
+      @if (activity.hasNoSources()) {
+        <app-no-sources />
+      } @else {
+        <app-collection-status />
+        <router-outlet />
       }
-    }
+    </div>
+    <app-settings-page-host />
   </main>
 </div>
 
 <app-event-detail />
+
+@if (chrome.frameless) {
+  <app-window-controls />
+}

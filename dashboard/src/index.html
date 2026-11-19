@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="en">
+<html lang="en" class="is-splashing">
   <head>
     <meta charset="utf-8" />
     <title>Activity Log</title>
@@ -8,41 +8,51 @@
     <meta name="color-scheme" content="light dark" />
     <script>
       ;(() => {
+        // The theme blocks in styles.scss key on data-theme, so the splash paints in the saved
+        // theme, or until one is chosen in Dark or Light as the device is; ThemeService applies
+        // the rest (html.dark, color-scheme) before the first render.
+        const root = document.documentElement
+        const device = matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'
         try {
-          // Load theme on start to prevent flash
-          const theme = localStorage.getItem('theme') ?? 'light'
-          const themes = [
-            'light',
-            'green',
-            'lilac',
-            'solarized',
-            'dim',
-            'mocha',
-            'dark',
-            'midnight',
-          ]
-          const darkThemes = new Set(['dark', 'dim', 'midnight', 'mocha'])
-          const root = document.documentElement
-          const resolvedTheme = themes.includes(theme) ? theme : 'light'
-          const isTauri =
-            typeof window !== 'undefined' && Object.hasOwn(window, '__TAURI_INTERNALS__')
-
-          root.dataset.theme = resolvedTheme
-          root.classList.toggle('dark', darkThemes.has(resolvedTheme))
-          root.classList.toggle('tauri', isTauri)
-          root.style.colorScheme = darkThemes.has(resolvedTheme) ? 'dark' : 'light'
+          root.dataset.theme = localStorage.getItem('theme') ?? device
         } catch {
-          const root = document.documentElement
-          root.dataset.theme = 'light'
-          root.classList.remove('dark')
-          root.classList.remove('tauri')
-          root.style.colorScheme = 'light'
+          root.dataset.theme = device
         }
+        const tauri = Object.hasOwn(window, '__TAURI_INTERNALS__')
+        root.classList.toggle('tauri', tauri)
+        // The Windows window has no title bar (tauri.windows.conf.json): the header is one, and
+        // the app draws the window buttons (WindowControlsComponent).
+        root.classList.toggle('frameless', tauri && navigator.userAgent.includes('Windows'))
       })()
     </script>
     <link rel="icon" type="image/svg+xml" href="favicon.svg" />
   </head>
   <body class="mat-typography">
+    <!-- Startup splash: styled by _splash.scss, handed off to the header by dismissSplash(). -->
+    <div id="splash" aria-hidden="true">
+      <div class="splash-stage">
+        <div class="splash-fly" data-splash-to="app-header .brand-mark">
+          <div class="splash-mark">
+            <svg viewBox="0 0 24 24">
+              <path class="splash-trace-base" pathLength="100" d="M3 16 10 9l5 5 6-6" />
+              <path class="splash-trace" pathLength="100" d="M3 16 10 9l5 5 6-6" />
+              <circle cx="3" cy="16" r="2" />
+              <circle cx="10" cy="9" r="2" />
+              <circle cx="15" cy="14" r="2" />
+              <circle cx="21" cy="8" r="2" />
+            </svg>
+          </div>
+        </div>
+        <div class="splash-fly" data-splash-to="app-header .brand-title">
+          <div class="splash-name">Activity Log</div>
+        </div>
+      </div>
+    </div>
+    <script>
+      // The desktop window starts hidden so it never shows a blank frame: the stylesheet has
+      // loaded by now, so show it with the splash. A browser or a test has nothing to show.
+      window.__TAURI_INTERNALS__?.invoke('plugin:window|show', { label: 'main' }).catch(() => {})
+    </script>
     <app-root></app-root>
   </body>
 </html>
