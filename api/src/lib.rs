@@ -7,8 +7,8 @@ use activity_log_core::{
         CollectRequest, CollectionFailedResponse, ConnectionId, ErrorResponse, ExportRequest,
         LogsResponse,
     },
-    runtime::{ActivitySnapshot, resolve_collect_options},
-    settings::ConfigFile,
+    runtime::{ActivitySnapshot, CollectionRuntime, resolve_collect_options},
+    settings::{ConfigFile, warn_no_location},
 };
 
 mod reload;
@@ -130,10 +130,18 @@ fn delete_logs() -> Status {
 }
 
 /// The server for the connections in `config` (or the default config file).
+/// Without a settings location it serves no sources and watches no file.
 pub async fn build_rocket(config: Option<&Path>) -> anyhow::Result<Rocket<Build>> {
-    let path = ConfigFile::resolve_path(config);
-    println!("Reading connections from {}", path.display());
-    let api = ApiRuntime::from_config(path).await?;
+    let api = match ConfigFile::resolve_path(config) {
+        Some(path) => {
+            println!("Reading connections from {}", path.display());
+            ApiRuntime::from_config(path).await?
+        }
+        None => {
+            warn_no_location();
+            ApiRuntime::fixed(CollectionRuntime::start(&[]).0)
+        }
+    };
     Ok(build_rocket_with(api, true))
 }
 

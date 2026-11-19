@@ -6,7 +6,9 @@ use activity_log_core::{
     settings::ConfigFile,
 };
 
-use super::{NO_SOURCES, Prompt, add, list_lines, resolve_connection, set, unset};
+use super::{
+    Lines, NO_SOURCES, Prompt, add, ask_values, key, list_lines, resolve_connection, value_for,
+};
 
 /// Answers questions in order and remembers which were secret.
 #[derive(Default)]
@@ -51,15 +53,16 @@ fn value(file: &ConfigFile, id: &str, key: &str) -> Option<String> {
 
 #[test]
 fn adds_a_connection_and_asks_for_its_values() {
-    let mut file = ConfigFile::parse("config.toml", "").unwrap();
+    let mut file = ConfigFile::parse("config.toml", b"").unwrap();
     let mut script = Script::new(&["not a url", "https://gitlab.com", "", "glpat-x", "me"]);
 
+    let values = ask_values(&Source::Gitlab, &mut script).unwrap();
     let id = add(
         &mut file,
         &Source::Gitlab,
         Some("Open Source"),
         None,
-        &mut script,
+        &values,
     )
     .unwrap();
 
@@ -84,20 +87,21 @@ fn adds_a_connection_and_asks_for_its_values() {
 
 #[test]
 fn sets_lists_and_single_values_and_unsets_them() {
-    let mut file = ConfigFile::parse("config.toml", "[[git]]\n\n[[jira]]\n").unwrap();
+    let mut file = ConfigFile::parse("config.toml", b"[[git]]\n\n[[jira]]\n").unwrap();
     let git = ConnectionId::new(Source::Git, "this-computer");
     let jira = ConnectionId::new(Source::Jira, "jira");
     let mut script = Script::new(&["s3cret"]);
 
-    set(
-        &mut file,
+    let (dirs, raw) = value_for(
         &git,
         "dirs",
         vec!["~/a".into(), "~/b,~/c".into()],
         &mut script,
     )
     .unwrap();
-    set(&mut file, &jira, "token", Vec::new(), &mut script).unwrap();
+    file.set(&git, dirs, Some(&raw)).unwrap();
+    let (token, raw) = value_for(&jira, "token", Vec::new(), &mut script).unwrap();
+    file.set(&jira, token, Some(&raw)).unwrap();
 
     assert_eq!(
         value(&file, "git/this-computer", "GIT_DIRS").as_deref(),
@@ -109,30 +113,40 @@ fn sets_lists_and_single_values_and_unsets_them() {
     );
     assert_eq!(script.secret_questions, ["token for jira/jira: "]);
 
-    unset(&mut file, &git, "dirs").unwrap();
+    file.set(&git, key(&Source::Git, "dirs").unwrap(), None)
+        .unwrap();
     assert_eq!(value(&file, "git/this-computer", "GIT_DIRS"), None);
 
-    let err = set(
-        &mut file,
-        &jira,
-        "insecure",
-        vec!["maybe".into()],
-        &mut script,
-    )
-    .unwrap_err();
+    let err = value_for(&jira, "insecure", vec!["maybe".into()], &mut script).unwrap_err();
     assert_eq!(err.to_string(), "Invalid value: expected bool");
-    let err = set(&mut file, &jira, "nope", vec!["x".into()], &mut script).unwrap_err();
+    let err = value_for(&jira, "nope", vec!["x".into()], &mut script).unwrap_err();
     assert_eq!(
         err.to_string(),
         "Jira has no setting nope; use one of: url, token, insecure"
     );
 }
 
+/// B42: piped input that ends before a required answer stops the setup instead of asking
+/// again forever.
+#[test]
+fn input_that_ends_early_stops_the_questions() {
+    let mut piped = Lines(&b"https://gitlab.com\n"[..]);
+
+    let err = ask_values(&Source::Gitlab, &mut piped).unwrap_err();
+
+    assert_eq!(
+        err.to_string(),
+        "The input ended before every question was answered; nothing was saved"
+    );
+    assert!(Lines(&b""[..]).ask("url: ", false).is_err());
+    assert_eq!(Lines(&b"x\r\n"[..]).ask("url: ", false).unwrap(), "x");
+}
+
 #[test]
 fn resolves_connections_by_id_or_unique_name() {
     let file = ConfigFile::parse(
         "config.toml",
-        "[[gitlab]]\nlabel = \"Work\"\n\n[[gitlab]]\nname = \"oss\"\nlabel = \"OSS\"\n\n[[jira]]\nlabel = \"Work\"\n",
+        b"[[gitlab]]\nlabel = \"Work\"\n\n[[gitlab]]\nname = \"oss\"\nlabel = \"OSS\"\n\n[[jira]]\nlabel = \"Work\"\n",
     )
     .unwrap();
     let connections = connections(&file);

@@ -1,4 +1,5 @@
 //! `activity-log sources …`: the connections in `config.toml`, managed without editing it.
+//! Every answer is collected before the file is written, so no lock is held across a prompt.
 
 use std::io::{BufRead, IsTerminal, Write};
 
@@ -35,10 +36,22 @@ impl Prompt for Terminal {
         if secret && std::io::stdin().is_terminal() {
             return Ok(rpassword::prompt_password(question)?);
         }
+        Lines(std::io::stdin().lock()).ask(question, secret)
+    }
+}
+
+/// Answers read line by line, such as piped input.
+pub(crate) struct Lines<R>(pub R);
+
+impl<R: BufRead> Prompt for Lines<R> {
+    fn ask(&mut self, question: &str, _secret: bool) -> Result<String> {
         print!("{question}");
         std::io::stdout().flush()?;
         let mut line = String::new();
-        std::io::stdin().lock().read_line(&mut line)?;
+        // The input ended: no answer will come, so stop instead of asking again.
+        if self.0.read_line(&mut line)? == 0 {
+            bail!("The input ended before every question was answered; nothing was saved");
+        }
         Ok(line.trim_end_matches(['\r', '\n']).to_string())
     }
 }
@@ -64,19 +77,12 @@ pub(crate) fn resolve_connection(connections: &[Connection], text: &str) -> Resu
     }
 }
 
-/// Adds a connection and asks for its values. Without a label it gets the kind's name.
-pub(crate) fn add(
-    file: &mut ConfigFile,
+/// Asks for the values of a new connection of `source`; required ones until answered.
+pub(crate) fn ask_values(
     source: &Source,
-    label: Option<&str>,
-    wsl: Option<String>,
     prompt: &mut dyn Prompt,
-) -> Result<ConnectionId> {
-    let location = match wsl {
-        Some(distro) => ConnectionLocation::Wsl(distro),
-        None => ConnectionLocation::Local,
-    };
-    let id = file.add(source, label, location)?;
+) -> Result<Vec<(ProviderConfigKey, String)>> {
+    let mut answers = Vec::new();
     for key in keys_of(source) {
         let field = field_name(source, key);
         let hint = match (key.required, key.shape) {
@@ -97,38 +103,50 @@ pub(crate) fn add(
             }
             match raw_value(key, &[answer]) {
                 Ok(raw) => {
-                    file.set(&id, key, Some(&raw))?;
+                    answers.push((key, raw));
                     break;
                 }
                 Err(err) => eprintln!("{err}"),
             }
         }
     }
+    Ok(answers)
+}
+
+/// Adds a connection with the values asked for. Without a label it gets the kind's name.
+pub(crate) fn add(
+    file: &mut ConfigFile,
+    source: &Source,
+    label: Option<&str>,
+    wsl: Option<String>,
+    values: &[(ProviderConfigKey, String)],
+) -> Result<ConnectionId> {
+    let location = match wsl {
+        Some(distro) => ConnectionLocation::Wsl(distro),
+        None => ConnectionLocation::Local,
+    };
+    let id = file.add(source, label, location)?;
+    for (key, raw) in values {
+        file.set(&id, *key, Some(raw))?;
+    }
     Ok(id)
 }
 
-/// Sets one field; without values, asks for it (hidden for secrets).
-pub(crate) fn set(
-    file: &mut ConfigFile,
+/// The key `field` names for `id`, and the value to store: `values`, or the answer when there
+/// are none (hidden for secrets).
+pub(crate) fn value_for(
     id: &ConnectionId,
     field: &str,
     values: Vec<String>,
     prompt: &mut dyn Prompt,
-) -> Result<()> {
+) -> Result<(ProviderConfigKey, String)> {
     let key = key(&id.source, field)?;
     let values = if values.is_empty() {
         vec![prompt.ask(&format!("{field} for {id}: "), is_secret(key))?]
     } else {
         values
     };
-    let raw = raw_value(key, &values)?;
-    file.set(id, key, Some(&raw))
-}
-
-/// Removes a field, so its default applies again.
-pub(crate) fn unset(file: &mut ConfigFile, id: &ConnectionId, field: &str) -> Result<()> {
-    let key = key(&id.source, field)?;
-    file.set(id, key, None)
+    Ok((key, raw_value(key, &values)?))
 }
 
 /// One line per connection: id, label and status.
@@ -180,7 +198,7 @@ fn keys_of(source: &Source) -> Vec<ProviderConfigKey> {
         .unwrap_or_default()
 }
 
-fn key(source: &Source, field: &str) -> Result<ProviderConfigKey> {
+pub(crate) fn key(source: &Source, field: &str) -> Result<ProviderConfigKey> {
     key_for_field(source, field).ok_or_else(|| {
         let fields = fields_of(source);
         if fields.is_empty() {

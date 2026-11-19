@@ -77,3 +77,18 @@ async fn a_reload_keeps_the_collection_running() {
         ActivitySnapshot::Running(log) if log.meta.start == options.start.to_rfc3339()
     ));
 }
+
+/// B2: a reload of a file that is no longer valid TOML fails with the place, never the text
+/// on the bad line; that error is what the reload logs. (Read from the error, not the shared
+/// log, which other API tests clear.)
+#[tokio::test]
+async fn a_broken_reload_fails_without_the_file_text() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("config.toml");
+    std::fs::write(&path, "[[gitlab]]\ntoken = \"glpat-RELOAD-SECRET\n").unwrap();
+
+    let message = format!("{:#}", super::build_from(path).await.err().unwrap());
+
+    assert!(message.contains("line 2, column"), "{message}");
+    assert!(!message.contains("RELOAD-SECRET"), "{message}");
+}

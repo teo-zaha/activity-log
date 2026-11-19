@@ -43,6 +43,9 @@ pub struct ProviderConfigKey {
     pub name: &'static str,
     pub required: bool,
     pub shape: ProviderConfigShape,
+    /// Says which account a connection uses (a server address, a token): a settings save based
+    /// on an older value of it is a conflict even when it does not touch it.
+    pub account: bool,
 }
 
 impl ProviderConfigKey {
@@ -60,6 +63,7 @@ impl ProviderConfigKey {
             name,
             required: true,
             shape: ProviderConfigShape::Single(value_type),
+            account: false,
         }
     }
 
@@ -68,6 +72,7 @@ impl ProviderConfigKey {
             name,
             required: false,
             shape: ProviderConfigShape::Single(value_type),
+            account: false,
         }
     }
 

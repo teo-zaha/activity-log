@@ -10,14 +10,13 @@ use activity_log_core::{
 };
 
 use super::{
-    apply_add, apply_save, build_snapshot, edited_connections, provider_config_key_label,
-    startup_connections,
+    apply_add, apply_save, build_snapshot, provider_config_key_label, startup_connections,
 };
 
 const OS: SupportedOs = SupportedOs::Macos;
 
 fn file(text: &str) -> ConfigFile {
-    ConfigFile::parse("config.toml", text).unwrap()
+    ConfigFile::parse("config.toml", text.as_bytes()).unwrap()
 }
 
 fn connections(file: &ConfigFile) -> Vec<Connection> {
@@ -276,22 +275,29 @@ fn config_problems_at_startup_reach_the_logs() {
     assert!(logged("gitlab/startup: unknown setting `tokn`"));
 }
 
+/// B2: the error names the line and column, never the text on it.
 #[test]
-fn a_broken_config_at_startup_is_logged_and_starts_empty() {
+fn a_broken_config_at_startup_is_logged_without_its_text_and_starts_empty() {
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("config.toml");
-    std::fs::write(&path, "gitlab = \"x\"\n").unwrap();
+    std::fs::write(&path, "[[gitlab]]\ntoken = \"glpat-STARTUP-SECRET\n").unwrap();
 
     assert!(startup_connections(Some(&path)).is_empty());
-    assert!(diagnostics::entries().iter().any(
-        |entry| entry.scope == "settings" && entry.message.contains("Reading settings failed")
-    ));
-}
-
-#[test]
-fn config_problems_after_an_edit_reach_the_logs() {
-    let config = file("[[gitlab]]\nlabel = \"Edited\"\nurll = \"x\"\n");
-
-    assert_eq!(edited_connections(&config).unwrap().len(), 1);
-    assert!(logged("gitlab/edited: unknown setting `urll`"));
+    let entries = diagnostics::entries();
+    let logged = entries
+        .iter()
+        .find(|entry| {
+            entry.scope == "settings" && entry.message.contains("Reading settings failed")
+        })
+        .expect("the error is logged");
+    assert!(
+        logged.message.contains("line 2, column"),
+        "{}",
+        logged.message
+    );
+    assert!(
+        entries
+            .iter()
+            .all(|entry| !entry.message.contains("STARTUP-SECRET"))
+    );
 }

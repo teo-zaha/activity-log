@@ -1,15 +1,17 @@
 use std::{
     fs,
     path::{Path, PathBuf},
-    process::Command as Process,
 };
 
 use activity_log_core::{
-    collect_activity_detailed_with_provider_runtimes,
+    collect_activity_detailed_with_provider_runtimes, diagnostics,
     export::render_export,
-    model::{CollectOptions, CollectedActivity, OutputFormat, ProviderInfo, Source},
-    provider::inspect_provider_runtimes_with,
-    settings::{ConfigFile, load_connections},
+    model::{CollectOptions, CollectedActivity, ConnectionId, OutputFormat, ProviderInfo, Source},
+    provider::{connection::ConnectionLocation, inspect_provider_runtimes_with},
+    settings::{
+        ConfigFile, EditError, ExternalEdit, FieldId, NO_LOCATION, Precondition, edit_config,
+        edit_externally, editor_command, load_connections,
+    },
 };
 use anyhow::{Result, anyhow};
 use chrono::{Days, Local};
@@ -101,7 +103,8 @@ enum SourcesCommand {
 enum ConfigCommand {
     /// Print the config file's path.
     Path,
-    /// Open the config file in $VISUAL or $EDITOR.
+    /// Edit the config file in $VISUAL or $EDITOR. The editor gets a private copy, which is
+    /// saved when it changed and the file did not change meanwhile.
     Edit,
 }
 
@@ -133,17 +136,24 @@ async fn run() -> Result<()> {
         Some(Command::Config {
             action: ConfigCommand::Path,
         }) => {
-            println!("{}", ConfigFile::resolve_path(config).display());
+            println!("{}", config_path(config)?.display());
             Ok(())
         }
         Some(Command::Config {
             action: ConfigCommand::Edit,
-        }) => edit_config(config),
+        }) => edit_in_editor(config),
     }
 }
 
+/// The settings file, or the message that there is no place for it.
+fn config_path(config: Option<&Path>) -> Result<PathBuf> {
+    ConfigFile::resolve_path(config).ok_or_else(|| anyhow!(NO_LOCATION))
+}
+
 async fn list_sources(config: Option<&Path>) -> Result<()> {
-    println!("{}\n", ConfigFile::resolve_path(config).display());
+    if let Some(path) = ConfigFile::resolve_path(config) {
+        println!("{}\n", path.display());
+    }
     let runtimes = inspect_provider_runtimes_with(&load_connections(config)?).await;
     let providers = runtimes
         .iter()
@@ -155,14 +165,29 @@ async fn list_sources(config: Option<&Path>) -> Result<()> {
     Ok(())
 }
 
+/// A change of the settings, applied to the file as read under the lock.
+type Change = Box<dyn FnOnce(&mut ConfigFile) -> Result<Option<String>>>;
+
+/// Asks what it needs first, then edits the file once. A command that showed the user a value
+/// (a question) saves only if the connection is still as it was then.
 fn change_sources(action: SourcesCommand, config: Option<&Path>) -> Result<()> {
-    let mut file = ConfigFile::load(ConfigFile::resolve_path(config))?;
-    let connections = load_connections(config)?;
+    let path = config_path(config)?;
+    let file = ConfigFile::load(&path)?;
+    let connections = file.logged_connections()?;
     let mut terminal = Terminal;
-    match action {
+    let (precondition, change): (Precondition, Change) = match action {
         SourcesCommand::Add { kind, label, wsl } => {
-            let id = sources::add(&mut file, &kind, label.as_deref(), wsl, &mut terminal)?;
-            println!("Added {id}");
+            // Checked before the questions, so a refused add asks nothing.
+            let location = wsl
+                .clone()
+                .map_or(ConnectionLocation::Local, ConnectionLocation::Wsl);
+            file.clone().add(&kind, label.as_deref(), location)?;
+            let values = sources::ask_values(&kind, &mut terminal)?;
+            let change: Change = Box::new(move |file| {
+                let id = sources::add(file, &kind, label.as_deref(), wsl, &values)?;
+                Ok(Some(format!("Added {id}")))
+            });
+            (Precondition::None, change)
         }
         SourcesCommand::Set {
             source,
@@ -170,33 +195,69 @@ fn change_sources(action: SourcesCommand, config: Option<&Path>) -> Result<()> {
             values,
         } => {
             let id = resolve_connection(&connections, &source)?;
-            sources::set(&mut file, &id, &field, values, &mut terminal)?;
+            let asks = values.is_empty();
+            let (key, raw) = sources::value_for(&id, &field, values, &mut terminal)?;
+            let precondition = match file.edit_base(&id, &[FieldId::Value(key.name)]) {
+                Some(base) if asks => Precondition::Unchanged(base),
+                _ => Precondition::None,
+            };
+            let change: Change = Box::new(move |file| {
+                file.set(&id, key, Some(&raw))?;
+                Ok(None)
+            });
+            (precondition, change)
         }
         SourcesCommand::Unset { source, field } => {
             let id = resolve_connection(&connections, &source)?;
-            sources::unset(&mut file, &id, &field)?;
+            let key = sources::key(&id.source, &field)?;
+            let change: Change = Box::new(move |file| {
+                file.set(&id, key, None)?;
+                Ok(None)
+            });
+            (Precondition::None, change)
         }
         SourcesCommand::Rename { source, label } => {
             let id = resolve_connection(&connections, &source)?;
-            file.rename(&id, &label)?;
+            let change: Change = Box::new(move |file| {
+                file.rename(&id, &label)?;
+                Ok(None)
+            });
+            (Precondition::None, change)
         }
         SourcesCommand::Remove { source } => {
             let id = resolve_connection(&connections, &source)?;
-            file.remove(&id)?;
-            println!("Removed {id}");
+            let change: Change = Box::new(move |file| {
+                file.remove(&id)?;
+                Ok(Some(format!("Removed {id}")))
+            });
+            (Precondition::None, change)
         }
+    };
+    let label = |id: &ConnectionId| {
+        connections
+            .iter()
+            .find(|connection| connection.id == *id)
+            .map(|connection| connection.label.clone())
+    };
+    let edited = edit_config(&path, precondition, change).map_err(|err| {
+        let label = match &err {
+            EditError::Conflict(conflict) => label(&conflict.connection),
+            _ => None,
+        };
+        anyhow!(err.message(label.as_deref()))
+    })?;
+    if let Some(message) = edited.value {
+        println!("{message}");
     }
-    file.save()?;
-    println!("Saved {}", file.path().display());
+    for warning in edited.warnings {
+        diagnostics::warn("config", warning);
+    }
+    println!("Saved {}", path.display());
     Ok(())
 }
 
-fn edit_config(config: Option<&Path>) -> Result<()> {
-    let path = ConfigFile::resolve_path(config);
-    if !path.exists() {
-        let file = ConfigFile::load(&path)?;
-        file.save()?;
-    }
+fn edit_in_editor(config: Option<&Path>) -> Result<()> {
+    let path = config_path(config)?;
     let editor = std::env::var("VISUAL")
         .or_else(|_| std::env::var("EDITOR"))
         .unwrap_or_else(|_| {
@@ -206,12 +267,24 @@ fn edit_config(config: Option<&Path>) -> Result<()> {
                 "vi".to_string()
             }
         });
-    let status = Process::new(&editor)
-        .arg(&path)
-        .status()
-        .map_err(|err| anyhow!("Could not start {editor}: {err}"))?;
-    if !status.success() {
-        anyhow::bail!("{editor} exited with {status}");
+    let outcome = edit_externally(&path, |copy| {
+        let status = editor_command(&editor)
+            .arg(copy)
+            .status()
+            .map_err(|err| anyhow!("Could not start {editor}: {err}"))?;
+        if !status.success() {
+            anyhow::bail!("{editor} exited with {status}");
+        }
+        Ok(())
+    })?;
+    match outcome {
+        ExternalEdit::Unchanged => println!("No changes"),
+        ExternalEdit::Saved { warnings } => {
+            for warning in warnings {
+                diagnostics::warn("config", warning);
+            }
+            println!("Saved {}", path.display());
+        }
     }
     Ok(())
 }

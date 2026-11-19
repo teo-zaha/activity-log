@@ -6,6 +6,7 @@ pub fn unsupported_result<T>(message: &'static str) -> Result<T> {
 
 #[cfg(target_os = "macos")]
 pub mod macos;
+pub mod private_file;
 #[cfg(target_os = "windows")]
 mod windows;
 #[cfg(target_os = "windows")]

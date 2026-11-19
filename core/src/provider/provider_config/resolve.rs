@@ -45,6 +45,7 @@ macro_rules! provider_config {
         $vis:vis struct $name:ident {
             $(
                 $field_vis:vis $field:ident => $key:ident : $vtype:ident $( = $default:literal )?
+                    $( [$account:ident] )?
             ),* $(,)?
         }
     ) => {
@@ -56,6 +57,7 @@ macro_rules! provider_config {
                     shape: $crate::provider::provider_config::ProviderConfigShape::Single(
                         $crate::provider_config!(@value_type $vtype),
                     ),
+                    account: $crate::provider_config!(@account $( $account )?),
                 };
         )*
 
@@ -92,6 +94,10 @@ macro_rules! provider_config {
     (@value_type Email)    => { $crate::provider::provider_config::ProviderConfigValueType::Email };
     (@value_type Int)      => { $crate::provider::provider_config::ProviderConfigValueType::Int };
     (@value_type Bool)     => { $crate::provider::provider_config::ProviderConfigValueType::Bool };
+
+    // ── Account keys: `url => GITLAB_URL: Url [account]` ─────────────────
+    (@account) => { false };
+    (@account account) => { true };
 
     // ── Required inference ────────────────────────────────────────────────
     (@required Bool)                  => { false };
