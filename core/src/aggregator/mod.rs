@@ -5,10 +5,11 @@ use chrono::{DateTime, Duration, FixedOffset};
 use crate::{
     model::{
         ActivityEntry, ActivityLog, ActivityLogMeta, CollectOptions, CollectedActivity,
-        CollectedActivitySummary, ConnectionCount, ConnectionId, IntoActivityEntries, Source,
+        CollectedActivitySummary, ConnectionCount, ConnectionId, GitEntry, GitLabEntry, GitLabType,
+        IntoActivityEntries, MergeResult, Source,
     },
     provider::provider_adapter::ConnectionEntries,
-    utils::{merge_git_with_gitlab, now_iso},
+    utils::now_iso,
 };
 
 /// Combines what the connections collected so far: GitLab pushes fold into their git commits,
@@ -91,6 +92,85 @@ pub fn collect_activity_from_results(
             entries,
         },
     }
+}
+
+/// Folds each GitLab push into the git commit it pushed, so the change shows once. A push whose
+/// commit is not among `git_entries` (not collected yet, another author's, no local clone)
+/// stays an entry of its own. Pushes and commits pair one to one: a second push of the same
+/// commit (another branch, another connection) stays an entry, and a commit two clones have
+/// takes the push once. Which pairs up is decided by what the entries are, never by their
+/// order, so a log rebuilt from its parts folds the same way: the earliest push (then by
+/// connection and id) goes to the first commit by connection and repository.
+pub(crate) fn merge_git_with_gitlab(
+    git_entries: &[GitEntry],
+    gitlab_entries: &[GitLabEntry],
+) -> MergeResult {
+    use std::collections::HashMap;
+
+    let mut pushes = HashMap::<&str, Vec<usize>>::new();
+    for (index, entry) in gitlab_entries.iter().enumerate() {
+        if let Some(sha) = push_sha(entry) {
+            pushes.entry(sha).or_default().push(index);
+        }
+    }
+    let mut commits = HashMap::<&str, Vec<usize>>::new();
+    for (index, entry) in git_entries.iter().enumerate() {
+        if pushes.contains_key(entry.hash.as_str()) {
+            commits.entry(entry.hash.as_str()).or_default().push(index);
+        }
+    }
+
+    let mut folded_into = vec![None; git_entries.len()];
+    let mut folded = vec![false; gitlab_entries.len()];
+    for (sha, mut commit_indices) in commits {
+        let mut push_indices = pushes.remove(sha).unwrap_or_default();
+        push_indices.sort_by_key(|&index| {
+            let push = &gitlab_entries[index];
+            (
+                parse_timestamp(&push.timestamp),
+                push.connection.as_str(),
+                push.id.as_str(),
+            )
+        });
+        commit_indices.sort_by_key(|&index| {
+            let commit = &git_entries[index];
+            (commit.connection.as_str(), commit.repo.as_str())
+        });
+        for (commit, push) in commit_indices.into_iter().zip(push_indices) {
+            folded_into[commit] = Some(push);
+            folded[push] = true;
+        }
+    }
+
+    let merged_git = git_entries
+        .iter()
+        .zip(folded_into)
+        .map(|(entry, push)| {
+            let mut entry = entry.clone();
+            if let Some(push) = push {
+                entry.gitlab_event = Some(Box::new(gitlab_entries[push].clone()));
+            }
+            entry
+        })
+        .collect::<Vec<_>>();
+    let remaining_gitlab = gitlab_entries
+        .iter()
+        .zip(folded)
+        .filter(|(_, folded)| !folded)
+        .map(|(entry, _)| entry.clone())
+        .collect::<Vec<_>>();
+
+    MergeResult {
+        merged_git,
+        remaining_gitlab,
+    }
+}
+
+/// Only GitLab push events have a commit SHA we can safely correlate with local git history.
+fn push_sha(entry: &GitLabEntry) -> Option<&str> {
+    (entry.entry_type == GitLabType::PushedTo)
+        .then_some(entry.pushed_commit.as_deref())
+        .flatten()
 }
 
 /// Numbers entries of one connection whose id an earlier one has (`id#2`, `id#3`, in order),

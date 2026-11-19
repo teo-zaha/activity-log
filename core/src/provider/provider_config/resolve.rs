@@ -61,9 +61,18 @@ macro_rules! provider_config {
                 };
         )*
 
-        #[derive(Debug, Clone)]
+        #[derive(Clone)]
         $vis struct $name {
             $( $field_vis $field: $crate::provider_config!(@field_type $vtype $( , $default )? ), )*
+        }
+
+        impl ::std::fmt::Debug for $name {
+            // `Password` values are tokens and secret links: never printed.
+            fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
+                f.debug_struct(stringify!($name))
+                    $( .field(stringify!($field), $crate::provider_config!(@debug self.$field, $vtype)) )*
+                    .finish()
+            }
         }
 
         impl $crate::provider::provider_config::ProviderConfigResolve for $name {
@@ -103,6 +112,11 @@ macro_rules! provider_config {
     (@required Bool)                  => { false };
     (@required $vtype:ident , $default:literal) => { false };
     (@required $vtype:ident)          => { true };
+
+    // ── Debug value ───────────────────────────────────────────────────────
+    (@debug $value:expr, Password) => { &"<redacted>" };
+    (@debug $value:expr, Url) => { &$crate::provider::provider_config::url_for_debug(&$value) };
+    (@debug $value:expr, $vtype:ident) => { &$value };
 
     // ── Rust field type ───────────────────────────────────────────────────
     (@field_type Bool)                            => { bool };

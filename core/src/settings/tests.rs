@@ -481,3 +481,16 @@ fn an_edit_writes_the_numbered_name_of_a_repeated_one() {
     );
     assert_eq!(find(&resolved.connections, "gitlab/work-2").label, "Second");
 }
+
+#[test]
+fn debug_output_of_the_config_file_never_shows_a_token() {
+    let file = ConfigFile::parse(
+        "config.toml",
+        b"[[gitlab]]\nname = \"work\"\ntoken = \"glpat-secret-token\"\n",
+    )
+    .unwrap();
+
+    let debug = format!("{file:?}");
+    assert!(!debug.contains("glpat-secret-token"), "{debug}");
+    assert!(debug.contains("config.toml"), "{debug}");
+}

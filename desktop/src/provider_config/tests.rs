@@ -301,3 +301,15 @@ fn a_broken_config_at_startup_is_logged_without_its_text_and_starts_empty() {
             .all(|entry| !entry.message.contains("STARTUP-SECRET"))
     );
 }
+
+#[test]
+fn debug_output_of_a_settings_snapshot_shows_no_url_query() {
+    let file = file(
+        "[[gitlab]]\nname = \"work\"\nurl = \"https://gitlab.example.com/?private_token=query-secret\"\ntoken = \"glpat-secret\"\nuser = \"jane\"\n",
+    );
+
+    let debug = format!("{:?}", build_snapshot(&connections(&file), &OS));
+
+    assert!(!debug.contains("query-secret"), "{debug}");
+    assert!(!debug.contains("glpat-secret"), "{debug}");
+}

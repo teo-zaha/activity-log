@@ -16,7 +16,7 @@
 
 use std::{
     collections::{BTreeMap, BTreeSet, HashMap},
-    env, fs, io,
+    fs, io,
     path::{Path, PathBuf},
     sync::{Arc, Once},
 };
@@ -145,13 +145,23 @@ impl std::fmt::Display for ConfigError {
 impl std::error::Error for ConfigError {}
 
 /// The connections file and its path.
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct ConfigFile {
     path: PathBuf,
     doc: DocumentMut,
     /// Connections added or changed since the file was read, and whether they need a new
     /// `instance` even if they have one; they get it when the file is written.
     touched: BTreeMap<ConnectionId, Refresh>,
+}
+
+impl std::fmt::Debug for ConfigFile {
+    // The document is left out: it holds tokens.
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("ConfigFile")
+            .field("path", &self.path)
+            .field("touched", &self.touched)
+            .finish_non_exhaustive()
+    }
 }
 
 /// Connections read from the file, with problems that did not stop reading it.
@@ -168,8 +178,13 @@ impl ConfigFile {
     pub fn resolve_path(explicit: Option<&Path>) -> Option<PathBuf> {
         let path = explicit
             .map(Path::to_path_buf)
-            .or_else(|| env_path("ACTIVITY_LOG_CONFIG"))
-            .or_else(|| config_dir().map(|dir| dir.join("activity-log").join("config.toml")))?;
+            .or_else(|| crate::platform::dirs::env_path("ACTIVITY_LOG_CONFIG"))
+            // No fallback without an OS folder: tokens are never written to a temporary or
+            // shared folder.
+            .or_else(|| {
+                crate::platform::dirs::config_home()
+                    .map(|dir| dir.join("activity-log").join("config.toml"))
+            })?;
         Some(std::path::absolute(&path).unwrap_or(path))
     }
 
@@ -939,23 +954,4 @@ fn numbered(wanted: &str, taken: &BTreeSet<String>, separator: &str) -> String {
         .map(|n| format!("{wanted}{separator}{n}"))
         .find(|name| !taken.contains(name))
         .expect("an unused name exists")
-}
-
-/// The OS folder for settings; `None` without one. There is no fallback: tokens are never
-/// written to a temporary or shared folder.
-fn config_dir() -> Option<PathBuf> {
-    if cfg!(target_os = "windows") {
-        env_path("APPDATA")
-    } else if cfg!(target_os = "macos") {
-        env_path("HOME").map(|home| home.join("Library").join("Application Support"))
-    } else {
-        env_path("XDG_CONFIG_HOME").or_else(|| env_path("HOME").map(|home| home.join(".config")))
-    }
-}
-
-/// A path from the environment; an empty variable counts as unset.
-fn env_path(name: &str) -> Option<PathBuf> {
-    env::var_os(name)
-        .filter(|value| !value.is_empty())
-        .map(PathBuf::from)
 }

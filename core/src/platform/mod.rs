@@ -5,6 +5,7 @@ pub fn unsupported_result<T>(message: &'static str) -> Result<T> {
 }
 
 pub(crate) mod blocking;
+pub(crate) mod dirs;
 #[cfg(target_os = "macos")]
 pub mod macos;
 pub mod private_file;
