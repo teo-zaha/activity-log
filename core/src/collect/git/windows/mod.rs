@@ -58,8 +58,10 @@ pub(crate) enum WslOutput {
 pub(crate) fn collect_wsl(
     target: &WslTarget,
     options: &CollectOptions,
+    cancelled: &std::sync::atomic::AtomicBool,
 ) -> anyhow::Result<RepoCommits> {
-    let scan = run(target, Some(options.start)).map_err(|reason| anyhow::anyhow!(reason))?;
+    let scan =
+        run(target, Some(options.start), cancelled).map_err(|reason| anyhow::anyhow!(reason))?;
     diagnostics::info(
         "git",
         format!(
@@ -113,13 +115,20 @@ pub(crate) fn repo_history(
 
 /// Whether the distribution has a repository under the target's folders.
 #[cfg(target_os = "windows")]
-pub(crate) fn has_wsl_repos(target: &WslTarget) -> Result<bool, String> {
-    run(target, None).map(|scan| !scan.repos.is_empty())
+pub(crate) fn has_wsl_repos(
+    target: &WslTarget,
+    cancelled: &std::sync::atomic::AtomicBool,
+) -> Result<bool, String> {
+    run(target, None, cancelled).map(|scan| !scan.repos.is_empty())
 }
 
 #[cfg(target_os = "windows")]
-fn run(target: &WslTarget, since: Option<DateTime<Utc>>) -> Result<WslScan, String> {
-    let stdout = run_wsl_script(&target.distro, &build_script(target, since))
+fn run(
+    target: &WslTarget,
+    since: Option<DateTime<Utc>>,
+    cancelled: &std::sync::atomic::AtomicBool,
+) -> Result<WslScan, String> {
+    let stdout = run_wsl_script(&target.distro, &build_script(target, since), cancelled)
         .map_err(|err| format!("{err:#}"))?;
     match parse_output(&stdout) {
         WslOutput::Scanned(scan) => Ok(scan),

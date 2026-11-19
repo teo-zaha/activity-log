@@ -523,35 +523,6 @@ fn a_walk_ends_once_it_is_cancelled() {
     assert_eq!(visited, 2);
 }
 
-// Several threads: the test waits on the blocking work while a worker runs and drops it.
-#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn dropping_a_collection_stops_its_blocking_work() {
-    use std::sync::{atomic::Ordering, mpsc};
-
-    let (started, has_started) = mpsc::channel();
-    let (ended, has_ended) = mpsc::channel();
-    let work = tokio::spawn(super::blocking_until_dropped(move |cancelled| {
-        started.send(()).unwrap();
-        let mut steps = 0_u64;
-        while !cancelled.load(Ordering::Relaxed) {
-            steps += 1;
-            std::thread::sleep(std::time::Duration::from_millis(1));
-        }
-        ended.send(steps).unwrap();
-    }));
-    has_started
-        .recv_timeout(std::time::Duration::from_secs(5))
-        .unwrap();
-
-    // What `Abortable` and the collection timeout do to the run waiting for it.
-    work.abort();
-
-    let steps = has_ended
-        .recv_timeout(std::time::Duration::from_secs(5))
-        .expect("the blocking work saw it was no longer awaited");
-    assert!(steps < 5_000);
-}
-
 #[tokio::test]
 async fn a_cancelled_local_collection_reads_no_repository() {
     use std::sync::atomic::AtomicBool;

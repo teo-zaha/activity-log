@@ -19,17 +19,24 @@ pub(super) async fn collect_system(options: &CollectOptions) -> Result<Vec<Syste
         .map(|(id, _, _)| *id)
         .collect::<Vec<_>>();
     let options = *options;
-    let system_raw = tokio::task::spawn_blocking(move || query_log("System", &ids, &options))
-        .await
-        .map_err(|err| anyhow::anyhow!("System collection task failed: {err}"))??;
+    let system_raw =
+        crate::platform::blocking::blocking_until_dropped("System collection", move |cancelled| {
+            query_log("System", &ids, &options, cancelled)
+        })
+        .await??;
 
     Ok(map_windows_events(&system_raw, WINDOWS_SYSTEM_EVENTS))
 }
 
 #[cfg(target_os = "windows")]
-fn query_log(log_name: &str, ids: &[i32], options: &CollectOptions) -> Result<Vec<RawSystemEvent>> {
+fn query_log(
+    log_name: &str,
+    ids: &[i32],
+    options: &CollectOptions,
+    cancelled: &std::sync::atomic::AtomicBool,
+) -> Result<Vec<RawSystemEvent>> {
     let query = build_event_query(ids, options.start, options.end);
-    let xml_events = query_windows_event_log(log_name, &query)?;
+    let xml_events = query_windows_event_log(log_name, &query, cancelled)?;
     let mut events = Vec::with_capacity(xml_events.len());
 
     for xml in xml_events {
