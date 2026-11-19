@@ -1,0 +1,28 @@
+// Spacing comes from the page: `--page-header-padding` and `--page-header-min-height`.
+:host {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+  min-height: var(--page-header-min-height, 56px);
+  padding: var(--page-header-padding, 8px);
+  border-bottom: 1px solid var(--hairline);
+  background: var(--surface);
+}
+
+.title {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+
+.back {
+  margin-right: 4px;
+}
+
+.close {
+  margin-left: 4px;
+}

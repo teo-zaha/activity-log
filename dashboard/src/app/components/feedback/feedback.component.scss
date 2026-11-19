@@ -1,0 +1,31 @@
+@use '../dashboard-shared' as ui;
+
+:host {
+  --icon-size: 17px;
+
+  display: inline-flex;
+  align-items: flex-start;
+  gap: 8px;
+  max-width: 100%;
+  margin: 0;
+  padding: 7px 10px;
+  border-radius: var(--radius-sm);
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 1.4;
+  @include ui.status-tone($mix: 10%);
+}
+
+.text {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+:host(.is-block) {
+  display: flex;
+  align-items: center;
+
+  .text {
+    flex: 1;
+  }
+}
