@@ -10,6 +10,7 @@ path = "src/lib.rs"
 [dependencies]
 anyhow.workspace = true
 chrono.workspace = true
+chrono-tz.workspace = true
 calcard = { version = "0.3", default-features = false }
 futures.workspace = true
 gix = "0.90"
