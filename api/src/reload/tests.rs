@@ -11,7 +11,7 @@ use activity_log_core::{
 use super::ApiRuntime;
 
 fn empty_runtime() -> CollectionRuntime {
-    let collector: Collector = Arc::new(|_, _| Box::pin(std::future::pending()));
+    let collector: Collector = Arc::new(|_, _, _, _| Box::pin(std::future::pending()));
     CollectionRuntime::new(collector, Vec::new())
 }
 

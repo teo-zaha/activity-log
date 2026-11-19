@@ -11,6 +11,21 @@ pub struct CollectOptions {
 }
 
 impl CollectOptions {
+    /// The longest range collected: ten years. A longer one would page a source's whole history
+    /// and write a cache row per day.
+    pub const MAX_DAYS: i64 = 3_653;
+
+    /// Why the range cannot be collected: empty, backwards or longer than `MAX_DAYS`.
+    pub fn check(&self) -> Result<(), &'static str> {
+        if self.end <= self.start {
+            return Err("end must be after start");
+        }
+        if self.end - self.start > chrono::Duration::days(Self::MAX_DAYS) {
+            return Err("A range can span at most 10 years (3653 days)");
+        }
+        Ok(())
+    }
+
     pub fn contains(&self, instant: DateTime<Utc>) -> bool {
         self.start <= instant && instant < self.end
     }

@@ -11,7 +11,7 @@ use std::{
 
 use activity_log_core::{
     diagnostics,
-    model::CollectOptions,
+    model::{CollectOptions, ConnectionId, ProvidersResponse},
     runtime::{ActivitySnapshot, CollectionRuntime},
     settings::load_connections,
 };
@@ -73,6 +73,17 @@ impl ApiRuntime {
             tokio::spawn(task);
         }
         snapshot
+    }
+
+    /// Runs the startup check of `id` again on the current runtime, which collects its kind
+    /// again; `None` for a connection it does not know.
+    pub async fn recheck(&self, id: &ConnectionId) -> Option<ProvidersResponse> {
+        let current = self.current().await;
+        let task = current.runtime.recheck(id)?;
+        // Before the task runs, so the answer shows the connection checking however fast it is.
+        let response = current.runtime.providers_response();
+        tokio::spawn(task);
+        Some(response)
     }
 
     pub async fn start_initial_collection(&self) {

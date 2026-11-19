@@ -57,10 +57,12 @@ pub fn day_range<Tz: TimeZone>(
     let next = until
         .succ_opt()
         .ok_or_else(|| anyhow!("--until {until} is out of range"))?;
-    Ok(CollectOptions {
+    let options = CollectOptions {
         start: start_of_day(tz, since)?,
         end: start_of_day(tz, next)?,
-    })
+    };
+    options.check().map_err(|reason| anyhow!(reason))?;
+    Ok(options)
 }
 
 /// A day can start inside a DST gap (some zones switch at midnight); take the first instant.
