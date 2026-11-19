@@ -46,7 +46,11 @@ The entry types, displayed fields, supported platforms and configuration of each
 
 The sidebar switches between **Timeline** (a list grouped by day, newest day first), **Day**, **Work week** (Monday to Friday) and **Week** (Monday to Sunday). The three calendar views have previous, Today and next buttons and a zoom control.
 
-When the Timeline list is longer than the window, a day index runs down its right edge with one row for every day of the selected range, newest at the top. The highlighted day follows the day header stuck at the top of the list. Hovering shows the day and its event count, and clicking or dragging jumps to that day; a day without events jumps to the nearest day that has some. Long ranges show Monday labels only or, past a few months, one bar per day sized by its event count. From the keyboard it is the next stop after the search box: <kbd>↑</kbd> <kbd>↓</kbd> step between days with events, <kbd>Page Up</kbd> <kbd>Page Down</kbd> move a week, <kbd>Home</kbd> <kbd>End</kbd> go to the newest and oldest day, and <kbd>Enter</kbd> moves focus to that day's first event.
+The calendar views show **meeting time**: in Day view under the date, in Work week and Week view under each day and once for the shown week beside the month. It is the time covered by Outlook and Calendar meetings on that local day, with overlapping meetings counted once and a meeting across midnight split between both days. Busy and working-elsewhere meetings count, as do meetings without a status; free and out-of-office ones do not (the backend sends this as each meeting's `meetingWeight`: `busy`, `tentative` or `none`). Tentative time is shown apart as a lighter extra (`5h 30m · +1h tentative`), without the part a busy meeting already covers. Only the meetings the source filter shows are counted. A meeting that starts before the shown range and runs into it counts on the days it covers. Connecting both Outlook and the Calendar feed of the same calendar does not change meeting time, since identical meetings overlap and count once, but every such meeting is listed and drawn twice.
+
+Each meeting carries its **busy status** where the source has one (Busy, Tentative, Free, Out of office, Working elsewhere): the detail panel lists it, and tentative meetings are drawn hatched and free ones outlined in the calendar views, with a Tentative or Free tag in the Timeline. While today is in view, a line in the accent colour marks the current time across today's column, with the time at the left edge; it moves every minute.
+
+When the Timeline list is longer than the window, a day index runs down its right edge with one row for every day of the selected range, newest at the top. The highlighted day follows the day header stuck at the top of the list. Hovering shows the day and its event count, and clicking or dragging jumps to that day; a day without events jumps to the nearest day that has some. Long ranges show Monday labels only or, past a few months, one bar per day sized by its event count. When the range spans more than one year, the oldest month heading also shows its year (`Nov ’25`). From the keyboard it is the next stop after the filter field: <kbd>↑</kbd> <kbd>↓</kbd> step between days with events, <kbd>Page Up</kbd> <kbd>Page Down</kbd> move a week, <kbd>Home</kbd> <kbd>End</kbd> go to the newest and oldest day, and <kbd>Enter</kbd> moves focus to that day's first event.
 
 <table>
   <tr>
@@ -59,9 +63,35 @@ When the Timeline list is longer than the window, a day index runs down its righ
   </tr>
 </table>
 
+### Links and history
+
+Every view has its own address, so Back and Forward step through views and days, and a reload or a copied link opens the same place:
+
+| URL                                                               | Shows                                                               |
+| ----------------------------------------------------------------- | ------------------------------------------------------------------- |
+| `/timeline` (`/` and unknown paths lead here)                     | Timeline                                                            |
+| `/day/2026-11-17`, `/workweek/2026-11-17`, `/week/2026-11-17`     | A calendar view on that local day; a bad or missing day shows today |
+| `?q=review`                                                       | The Timeline filter text; switching views clears it                 |
+| `?from=2026-11-01&to=2026-11-14`                                  | The collection range; opening the app on it collects it             |
+| `?settings=general`, `logs`, `add` or `gitlab/oss` (a connection) | Settings open over the view on that section                         |
+
+Views, days and opening or closing settings add a history entry; typing in the filter, changing the range and moving between settings sections replace the current one. Selection, hidden sources and zoom are not part of the URL.
+
+### Deep links
+
+The desktop app opens `activity-log:` links: the part after the scheme is the same path and query as above.
+
+| Link                                                    | Opens                                             |
+| ------------------------------------------------------- | ------------------------------------------------- |
+| `activity-log://day/2026-11-17?q=standup`               | The day view on 17 November                       |
+| `activity-log://timeline?from=2025-08-01&to=2026-11-17` | The Timeline, collecting that range               |
+| `activity-log://week/2026-11-16?settings=logs`          | The week view with the Logs settings open over it |
+
+A link brings the window to the front. A link that starts the app opens once it is loaded; on Windows and Linux a second launch with a link hands it to the running app and quits. A link only navigates: unknown views and query parameters are dropped, and nothing is written. The scheme is registered by the installed app: on macOS the bundled `.app` (not `pnpm desktop:dev`), on Windows the installer; debug builds on Windows and Linux register it when they start.
+
 ### Themes
 
-**Settings → General** has a theme picker with eight themes: Light, Green, Lilac, Solarized, Dim, Mocha, Dark and Midnight. The selected theme is stored in the browser's local storage.
+**Settings → General** has a theme picker with eight themes: Light, Green, Lilac, Solarized, Dim, Mocha, Dark and Midnight. The selected theme is stored in the browser's local storage. Until a theme is selected, the app uses Dark or Light to match the device's appearance, and follows it when it changes.
 
 <p align="center">
   <img src="pics/theme-picker.png" width="820" alt="Theme picker in Settings, General">
@@ -82,12 +112,12 @@ When the Timeline list is longer than the window, a day index runs down its righ
   </tr>
 </table>
 
-### Search
+### Filter
 
-The Timeline view has a search box that filters the entries as you type, ignoring case. <kbd>/</kbd> focuses it and <kbd>Esc</kbd> clears it. It matches fields such as commit message, repository, branch, GitLab event title, Jira key and status, and meeting title, location and organizer.
+The Timeline view has a **Filter activity…** field that narrows the collected entries as you type, ignoring case. <kbd>/</kbd> focuses it and <kbd>Esc</kbd> clears it. It matches fields such as commit message, repository, branch, GitLab event title, Jira key and status, and meeting title, location, organizer and description.
 
 <p align="center">
-  <img src="pics/search.png" width="820" alt="Timeline filtered by the search query order history">
+  <img src="pics/search.png" width="820" alt="Timeline filtered by the text order history">
 </p>
 
 ### Source filter
@@ -118,21 +148,23 @@ A local commit whose SHA matches a GitLab push event is shown once, with a **git
 
 ### Export
 
-The two buttons in the header export the current filtered view (date range, active sources and, in the Timeline view, the search query) as Markdown grouped by day or as JSON. The browser downloads the file as `activity-<from>-<to>.md` or `.json`; the desktop app opens a native save dialog instead.
+The two buttons in the header export the current filtered view (date range, active sources and, in the Timeline view, the filter text) as Markdown grouped by day or as JSON. The dashboard sends the shown entries, the range and the browser's time zone; the backend renders the file (the same renderer as `pnpm cli:collect --format markdown|json`). The browser downloads it as `activity-<first day>-<last day>.md` or `.json` from `POST /api/export`; the desktop app opens a native save dialog instead.
+
+The JSON export is a full `ActivityLog` (`meta`, `summary`, `entries`), the shape the CLI writes, rather than only the entries. The Markdown lists the range as local times, `[start, end)`, so a range ending on Friday ends at Saturday 00:00.
 
 Start of the Markdown export of the demo data:
 
 ```markdown
-# Activity Summary - 2026-11-02 to 2026-11-06
+# Activity Summary — 2026-11-02 00:00 to 2026-11-07 00:00
 
 Total: 64 events
 
 ## Friday, 6 November 2026
 
-- **[outlook]** Weekly sync (16:00 · 30m)
+- **[outlook]** Weekly sync (16:00, 30m)
 - **[git]** `web-portal` docs: add order history to changelog (15:40)
-- **[outlook]** Sprint 47 retro @ Room Ada (14:30 · 1h)
-- **[outlook]** Sprint 47 review @ Room Ada / Teams (14:00 · 1h)
+- **[outlook]** Sprint 47 retro @ Room Ada (14:30, 1h)
+- **[outlook]** Sprint 47 review @ Room Ada / Teams (14:00, 1h)
 - **[jira]** ACME-151: Flaky e2e: cart badge count after login [Done] (13:15)
 - **[git]** `checkout-service` spike(events): consumer with retry and DLQ (12:15)
 ```
@@ -251,8 +283,10 @@ For each source, this section lists the entries it produces, the line shown unde
 
 - **Entries:** one per event in Outlook's default calendar that overlaps the date range. The title is the event subject.
 - **Timeline line:** duration · location · `organizer` or `attendee` · `org:` and the organizer's name when you are not the organizer
-- **Detail panel:** Title, Duration, Location, Organizer and Role (Organizer or Attendee)
-- **Calendar views:** a meeting is drawn as a block that spans its duration.
+- **Detail panel:** Title, Duration, Status, Location, Organizer and Role (Organizer or Attendee), a **Join meeting** button for online meetings and the **Description**
+- **Calendar views:** a meeting is drawn as a block that spans its duration. In the Timeline an online meeting has a camera mark.
+- **Busy status:** on Windows from the appointment's Show As setting. On macOS it is not read yet, so meetings there have no status and count as busy.
+- **Description and join link:** on Windows from the appointment's plain-text body, cleaned like a [Calendar](#calendar) description. `Body` is one of the properties Outlook's Object Model Guard protects (like `Organizer`, which is already read): with antivirus that Windows reports as healthy Outlook does not ask, otherwise it can show a security prompt; if access is denied, meetings come without a description. On macOS the body is not read yet.
 - **Platforms:** Windows, macOS
 - **Configuration:** none. Outlook has to be installed and running. On Windows this must be classic Outlook: the new Outlook has no interface for other apps, and Activity Log cannot reach Outlook while it runs as administrator. On macOS it also needs a signed-in Exchange account. With the new Outlook, publish the calendar and add its ICS link as a [Calendar](#calendar) source.
 
@@ -265,8 +299,11 @@ For each source, this section lists the entries it produces, the line shown unde
 
 - **Entries:** one per event occurrence in the feed that overlaps the date range. Recurring meetings are expanded, with moved and removed occurrences applied. All-day and cancelled events are left out. The title is the event summary.
 - **Timeline line:** duration · location · `org:` and the organizer's name
-- **Detail panel:** Title, Duration, Location, Organizer
-- **Calendar views:** a meeting is drawn as a block that spans its duration.
+- **Detail panel:** Title, Duration, Status, Location, Organizer, a **Join meeting** button for online meetings and the **Description**
+- **Calendar views:** a meeting is drawn as a block that spans its duration. In the Timeline an online meeting has a camera mark.
+- **Description:** the event's `DESCRIPTION`, or the HTML version Outlook adds as `X-ALT-DESC` when the feed has one. It keeps its layout: paragraphs, headings, bulleted and numbered lists (also nested), bold, italic, links and images. From HTML only that structure is read; scripts, styles and other markup are dropped. An image is shown from its `https://` source; one whose data the feed does not hold (an attachment, `cid:`) shows as its alt text, and tracking pixels (width or height 0 or 1, in attributes or inline style), hidden images and the link around an image are dropped. An image inside a list is shown after the list. Plain text is read with the marks Outlook writes for a formatted text and with basic Markdown: items starting with `*`, `-`, `•` or a number, `# headings`, `**bold**`, `*italic*`, `[label](url)`, and `label<url>`, which becomes a link named by its label. Outlook Safe Links are replaced by the links they wrap, the Teams invitation block between two underscore lines (join link, dial-in numbers, meeting ID, help links) and runs of blank lines become one. Outlook writes an inline image into plain text as a line of its own in brackets: `[https://…/logo.jpg]`, an `https://` link to an image file (`.jpg`, `.png`, `.gif`, `.webp`, `.svg` and the like), is shown as the image; another link alone in brackets becomes a link; `[Company Logo]`, text of 2 to 80 characters, is an image the feed does not hold and shows as that alt text. In search and in the plain-text description an image counts as its alt text. It is capped at 4,000 characters. A moved or changed occurrence of a series uses its own description. In the panel it is cut to 12 lines with Show more, links in it open in the browser, and images load from their host without a referrer; one that fails to load shows as its alt text.
+- **Join link:** `X-MICROSOFT-SKYPETEAMSMEETINGURL`, `X-MICROSOFT-ONLINEMEETINGEXTERNALLINK` or `X-GOOGLE-CONFERENCE` when the feed has one, then `URL` when it is a meeting link; otherwise the first Teams, Zoom, Google Meet or Webex link in the description. Only `https://` links are used. Join meeting opens it in the browser (on desktop, the default browser).
+- **Busy status:** Outlook's `X-MICROSOFT-CDO-BUSYSTATUS` when the feed has it; otherwise `TRANSP:TRANSPARENT` is free (a transparent event blocks no time, even when tentative), then `STATUS:TENTATIVE` is tentative and `TRANSP:OPAQUE` busy. A moved or changed occurrence of a series uses its own value.
 - **Platforms:** Windows, macOS, Linux
 - **Configuration:** `ics_url` (required) per calendar: an `https://` or `webcal://` link, or the path of an `.ics` file. Plain `http://` is refused. The link is stored like a token and never written to the logs. Times without a time zone are read in this computer's time zone.
 - **Outlook (also the new Outlook):** Settings → Calendar → Shared calendars → Publish a calendar, then copy the ICS link. The tenant may only allow availability without titles. Anyone who has the link can read the calendar; unpublishing revokes it.
@@ -278,7 +315,7 @@ For each source, this section lists the entries it produces, the line shown unde
 <td width="56%" valign="top">
 
 - **Entries on Windows:** System event log events 6005 (`boot`, "System started"), 6006 (`shutdown`, "System shutdown") and 6008 (`unexpected_shutdown`, "Unexpected shutdown").
-- **Entries on macOS:** the reboot and shutdown records of the `last` command, as `boot` ("System started") and `shutdown` ("System shutdown").
+- **Entries on macOS:** the reboot and shutdown records of the `last` command, as `boot` ("System started") and `shutdown` ("System shutdown"), and sleep and wake from the power-management log (`pmset -g log`), as `sleep` ("Sleep (lid closed)", "Sleep (idle)") and `wake` ("Wake (lid opened)", "Wake (user activity)"). macOS keeps that log for only about a week, so older ranges show no sleep or wake. Only sleeps and full wakes a person would recognise are listed: maintenance sleeps (Power Nap, backups), going back to sleep after one, and dark wakes are left out. When the power log cannot be read, the Logs pane says so and boots and shutdowns still show.
 - **Timeline line:** the event type
 - **Detail panel:** Event type and Label
 - **Platforms:** Windows, macOS
@@ -311,7 +348,7 @@ pnpm cli:collect sources add gitlab   # or add sources in the desktop app
 
 | What                | Command                         | Result                                                               |
 | ------------------- | ------------------------------- | -------------------------------------------------------------------- |
-| Web dashboard + API | `pnpm dev`                      | API on `http://localhost:3001`, dashboard on `http://localhost:4200` |
+| Web dashboard + API | `pnpm dev`                      | API on `http://localhost:3001`, dashboard on `http://localhost:3200` |
 | Desktop app (Tauri) | `pnpm desktop:dev`              | The same Angular UI in a desktop window, talking to Rust commands    |
 | CLI                 | `pnpm cli:collect --range week` | Writes `logs/activity_log.json` (`--format markdown` writes a `.md`) |
 
@@ -354,7 +391,7 @@ ics_url = "https://outlook.office365.com/owa/calendar/…/calendar.ics"
 ```
 
 - The file is the only list of sources: a kind it does not mention is not collected. An empty or missing file means no sources.
-- A connection is identified by its kind and `name`, such as `gitlab/oss`. Without `name`, the name comes from the label (`Work GitLab` → `work-gitlab`). The name never changes with the label.
+- A connection is identified by its kind and `name`, such as `gitlab/oss`. Without `name`, the name comes from the label (`Work GitLab` → `work-gitlab`). The name never changes with the label. Names are compared as written in ids (`Work` and `work` are the same); when two connections of a kind end up with the same one, the later is read as `work-2`, the Logs pane says so, and the next change in Settings writes that name into the file.
 - Without `label`, a connection is named after its kind (`GitLab`), or for Git after its location (`This computer`, `WSL · NixOS`).
 - `[[outlook]]` and `[[system]]` have no settings; the empty table adds them.
 - The file holds tokens. It is written readable only by your user on macOS and Linux.
@@ -440,31 +477,35 @@ Hot-reload development (recommended):
 ```bash
 pnpm dev
 # API server  → http://localhost:3001
-# Dashboard   → http://localhost:4200  (live reload, /api proxied to :3001)
+# Dashboard   → http://localhost:3200  (live reload, /api proxied to :3001)
 ```
 
 Or run the two halves in separate terminals:
 
 ```bash
 pnpm api:dev          # API on :3001, the port the dashboard dev server proxies to
-pnpm dashboard:dev    # dashboard on :4200
+pnpm dashboard:dev    # dashboard on :3200
 ```
 
 `pnpm api:start` runs the API on its default port, [http://localhost:3000](http://localhost:3000) (override with `PORT`). The API routes are:
 
 - `GET /api/activity`: the last collection's log. While it runs the answer is `202` with the log of what is in so far: `meta.pending` lists the connections still being checked or collected, and is absent once the log is complete (`200`). After a collection failed as a whole: `200` with `{ "start", "end", "error" }`. Before the first collection: `503`
-- `GET /api/providers`: every connection with its startup check result, or `"status": "checking"` while the check still runs
-- `POST /api/collect` with `{ "start": "<RFC 3339>", "end": "<RFC 3339>" }`, the range `[start, end)`: starts the collection and answers `202` at once with its first log (no entries, every connection pending), or with the log of the collection that already runs; poll `GET /api/activity` for the result
+- `GET /api/providers`: every connection with its startup check result, or `"status": "checking"` while the check still runs. A connection whose last collection failed is `"degraded"`, with the error as its `reason`
+- `POST /api/connections/recheck` with `{ "source": "<kind>", "name": "<connection>" }`: runs that connection's startup check again, then collects the connections of its kind again for the range of the last collection; the other sources keep what they show. Answers `200` with the providers (this one checking), `404` for an unknown connection
+- `POST /api/collect` with `{ "start": "<RFC 3339>", "end": "<RFC 3339>" }`, the range `[start, end)`: starts the collection and answers `202` at once with its first log (every connection pending, showing what the previous log had for it), or with the log of the collection of the same range that already runs; a collection of another range is stopped and this one starts. Poll `GET /api/activity` for the result
+- `POST /api/export`: renders the entries it is sent as Markdown or JSON (see the export buttons below)
 - `GET /api/logs`, `DELETE /api/logs`
 
-The last 30 days are collected automatically on startup; the date pickers show that range while it runs, and keep it if it fails. The startup checks run in the background: a source is listed as checking until its own check finishes, and a collection reads each source as soon as that source is checked, so a slow check or a slow source holds back only itself. Results are progressive: the dashboard shows each source's entries when they arrive, and while a range is collected again it keeps a source's previous entries until the new ones are in. Saving settings (or editing `config.toml` under a running server) re-runs the checks the same way, and the backend collects its last range again with the new connections. After a change in Settings the dashboard follows that collection by itself; after an edit of the file, the next **Collect** or reload shows the result, including sources that are new. Use them to change the range and re-collect on the fly.
+The last 30 days are collected automatically on startup; the date pickers show that range while it runs, and keep it if it fails. The startup checks run in the background: a source is listed as checking until its own check finishes, and a collection reads each source as soon as that source is checked, so a slow check or a slow source holds back only itself. Results are progressive: the dashboard shows each source's entries when they arrive, and while a range is collected again the backend keeps a source's previous entries in the partial log until the new ones are in (with GitLab pushes still folded into their commits). Every entry carries an `id` from its source (a commit hash, a GitLab event id, an ICS UID with the occurrence), unique within its connection; a source that repeats an id gets it numbered (`id#2`) with a warning in the Logs pane. GitLab entries no longer carry the raw API event (`raw`); a push names its commit in `pushedCommit`. The per-day cache was bumped for this, so GitLab and Jira days are fetched once again after the update. Saving settings (or editing `config.toml` under a running server) re-runs the checks the same way, and the backend collects its last range again with the new connections. After a change in Settings the dashboard follows that collection by itself; after an edit of the file, the next **Collect** or reload shows the result, including sources that are new. Use them to change the range and re-collect on the fly.
 
-If you only build the dashboard (`pnpm dashboard:build`), it produces static files under `dashboard/dist/dashboard/` and does not serve them. To preview that build, run a static file server (for example `pnpm --dir dashboard exec npx http-server dist/dashboard/browser -p 4200`) or use `pnpm dashboard:dev`.
+If you only build the dashboard (`pnpm dashboard:build`), it produces static files under `dashboard/dist/dashboard/` and does not serve them. To preview that build, run a static file server (for example `pnpm --dir dashboard exec npx http-server dist/dashboard/browser -p 3200`) or use `pnpm dashboard:dev`.
 
 The header has two export buttons. Both export the current filtered view:
 
-- **Markdown** (`description` icon): downloads a `.md` summary grouped by day
-- **JSON** (`data_object` icon): downloads the raw entries as `.json`
+- **Markdown** (`description` icon): downloads a `.md` summary grouped by day in the browser's time zone
+- **JSON** (`data_object` icon): downloads the `ActivityLog` (range, per-source counts and the shown entries) as `.json`
+
+A collection or export range can span at most ten years. Both are rendered by `POST /api/export`, which takes `{ "format": "markdown" | "json", "start", "end", "timeZone": "<IANA zone>", "entries": [...] }` and answers `200` with `{ "fileName", "content" }`, or `400` with `{ "error" }` for an unknown zone or a bad range.
 
 In the desktop app, exports open a native save dialog instead.
 

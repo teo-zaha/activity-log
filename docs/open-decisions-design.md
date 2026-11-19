@@ -1,6 +1,6 @@
 # Open decisions, 17 November 2026
 
-Decisions taken in one question round after the progressive collection, the calendar recurrence fix, the date index rail and the read/write action design ([provider-actions.md](plans/provider-actions.md)). They settle what is built next and in which order: first the uncommitted work is committed in topic chunks that are reviewed one by one, then the version becomes 1.0.0, then the calendar work (meeting time, busy status, a current-time line), then the generic read step of the action system for Jira and GitLab, laid out as direction A of the UI mockups with the calendar look of direction C. The local API server stays local without a Host check. The mockups are in [mockups/ui-directions/](mockups/ui-directions/index.html); the date index mockup is [mockups/date-index-mockup.html](mockups/date-index-mockup.html).
+Decisions taken in one question round after the progressive collection, the calendar recurrence fix, the date index rail and the read/write action design ([provider-actions.md](plans/provider-actions.md)). They settle what is built next and in which order: first the uncommitted work is committed in topic chunks that are reviewed one by one, then the version becomes 1.0.0, then the calendar work (meeting time, busy status, a current-time line), then the generic read step of the action system for Jira and GitLab, laid out as direction A of the UI mockups with the calendar look of direction C. The local API server stays local without a Host check. The mockups are in [mockups/ui-directions/](mockups/ui-directions/index.html).
 
 ## Terms
 
@@ -82,7 +82,7 @@ The app grew in one day from a read-only activity log into the start of a tool t
 
 ## Routine choices
 
-- **Calendar features:** build meeting time per day and week (Day and Week views, overlaps counted once) and busy / tentative / free status on each meeting. Repeating-vs-one-off marks and the online-meeting flag are not built. The Day and Week views also get a line at the current time across today's column, moving every minute, with the time as a small label.
+- **Calendar features:** build meeting time per day and week (Day and Week views, overlaps counted once) and busy / tentative / free status on each meeting. Repeating-vs-one-off marks are not built. The online-meeting link was deferred at first and is now built because the user asked for it: Calendar and Outlook meetings carry their cleaned description and the join link, and the detail panel has a Join meeting button. The Day and Week views also get a line at the current time across today's column, moving every minute, with the time as a small label.
 - **Tentative time:** counted separately: meeting time shows busy time, with tentative as a lighter extra total next to it ("5h 30m · +1h tentative").
 - **Committing:** the uncommitted work is split into topic commits (connections and config file, add-source UI and UI cleanup, progressive collection, calendar recurrence fix, date index, labels and Odoo coming soon, docs). A commit plan is written first; then each commit is staged and its diff shown for review before it is committed. Commits that only build together with the next one are marked.
 - **Order of work:** commits first, then 1.0.0, then the calendar work, then the generic read step.
@@ -110,7 +110,7 @@ The app grew in one day from a read-only activity log into the start of a tool t
 
 ## Deferred
 
-- Repeating-vs-one-off marks and the online-meeting flag; reopen if day reviews need them.
+- Repeating-vs-one-off marks; reopen if day reviews need them. (The online-meeting link is built; see Routine choices.)
 - B's ⌘K command bar; after the actions exist, on top of the shortcut registry.
 - C's docked agent tray; only if the agent ends up supervised all day.
 
