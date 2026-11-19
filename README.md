@@ -264,7 +264,7 @@ For each source, this section lists the entries it produces, the line shown unde
 - **Entries:** taken from issues assigned to or reported by you. The title is the issue key followed by the summary.
   - `issueCreated`: the issue was created in the date range.
   - `statusChanged`: one entry per status change in the date range.
-  - `issueUpdated`: the issue was updated in the date range without a status change in that range.
+  - `issueUpdated`: the issue's latest change falls in the date range and is no status change (one that is shows as `statusChanged`).
 - **Timeline line:** issue type · status
 - **Detail panel:** Event, Key, Title, Status and Issue type. From status and To status for status changes.
 - **Platforms:** Windows, macOS, Linux

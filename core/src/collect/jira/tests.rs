@@ -420,3 +420,92 @@ async fn collector_errors_are_short_and_clean() {
         "Jira answered 400 Bad Request: The value '[redacted]' does not exist"
     );
 }
+
+/// A status change on Monday and a later edit on Tuesday: the edit shows however the range is
+/// split, and a status change that is the latest change is not shown twice.
+#[test]
+fn a_later_edit_shows_beside_an_earlier_status_change_in_any_partition() {
+    let monday_status_tuesday_edit = issue(
+        "2026-02-05T08:00:00Z",
+        "2026-03-03T10:00:00Z",
+        "2026-03-02T09:00:00Z",
+    );
+    let day = |day: u32| CollectOptions {
+        start: Utc.with_ymd_and_hms(2026, 3, day, 0, 0, 0).unwrap(),
+        end: Utc.with_ymd_and_hms(2026, 3, day + 1, 0, 0, 0).unwrap(),
+    };
+    let kinds = |options: &CollectOptions| {
+        map_jira_issues(std::slice::from_ref(&monday_status_tuesday_edit), options)
+            .into_iter()
+            .map(|entry| (entry.entry_type, entry.timestamp))
+            .collect::<Vec<_>>()
+    };
+
+    let both_days = CollectOptions {
+        start: day(2).start,
+        end: day(3).end,
+    };
+    let together = kinds(&both_days);
+    let mut apart = kinds(&day(2));
+    apart.extend(kinds(&day(3)));
+    assert_eq!(together, apart);
+    assert_eq!(
+        together,
+        [
+            (
+                JiraEntryType::StatusChanged,
+                "2026-03-02T09:00:00+00:00".to_string()
+            ),
+            (
+                JiraEntryType::IssueUpdated,
+                "2026-03-03T10:00:00+00:00".to_string()
+            ),
+        ]
+    );
+
+    // Jira's `updated` is the status change itself, to the millisecond or within its second.
+    for history in ["2026-03-03T10:00:00Z", "2026-03-03T10:00:00.400+0000"] {
+        let status_is_latest = issue(
+            "2026-02-05T08:00:00Z",
+            "2026-03-03T10:00:00.000+0000",
+            history,
+        );
+        let entries = map_jira_issues(&[status_is_latest], &march());
+        assert_eq!(entries.len(), 1, "{history}");
+        assert_eq!(entries[0].entry_type, JiraEntryType::StatusChanged);
+    }
+}
+
+/// A status change just before midnight and another edit just after it: the edit is the
+/// latest change and shows on its own day.
+#[test]
+fn an_edit_right_after_a_status_change_is_its_own_entry() {
+    let mut issue = issue(
+        "2026-02-05T08:00:00Z",
+        "2026-03-03T00:00:00.100+0000",
+        "2026-03-02T23:59:59.900+0000",
+    );
+    issue
+        .changelog
+        .as_mut()
+        .unwrap()
+        .histories
+        .push(JiraHistory {
+            id: Some("10043".to_string()),
+            created: "2026-03-03T00:00:00.100+0000".to_string(),
+            items: vec![JiraHistoryItem {
+                field: "summary".to_string(),
+                from_string: None,
+                to_string: None,
+            }],
+        });
+    let tuesday = CollectOptions {
+        start: Utc.with_ymd_and_hms(2026, 3, 3, 0, 0, 0).unwrap(),
+        end: Utc.with_ymd_and_hms(2026, 3, 4, 0, 0, 0).unwrap(),
+    };
+
+    let entries = map_jira_issues(&[issue], &tuesday);
+
+    assert_eq!(entries.len(), 1);
+    assert_eq!(entries[0].entry_type, JiraEntryType::IssueUpdated);
+}
