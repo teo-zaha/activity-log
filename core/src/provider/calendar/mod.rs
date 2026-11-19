@@ -1,7 +1,7 @@
 //! Calendars published as ICS feeds: Outlook, Google, iCloud and others, or a local `.ics`.
 
 use crate::{
-    collect::calendar::{collect_calendar, read_feed},
+    collect::calendar::{check_feed, collect_calendar},
     model::{IntoActivityEntries, Source, SupportedOs},
     provider::{connection::Instances, provider_check_result::ProviderCheckResult},
 };
@@ -19,7 +19,7 @@ crate::provider! {
                 Ok(config) => config,
                 Err(err) => return ProviderCheckResult::unavailable(format!("{err:#}")),
             };
-            match read_feed(&config.ics_url).await {
+            match check_feed(&config.ics_url).await {
                 Ok(_) => ProviderCheckResult::available(),
                 Err(err) => ProviderCheckResult::unavailable(format!("{err:#}")),
             }

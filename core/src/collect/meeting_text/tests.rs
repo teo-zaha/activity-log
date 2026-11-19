@@ -438,3 +438,69 @@ fn reads_a_description_that_is_only_an_html_image() {
     assert_eq!(meeting_text(Some("[Banner]"), Some(img), []).blocks, banner);
     assert_eq!(clean(img).description.as_deref(), Some("Banner"));
 }
+
+/// A meeting link written as text in an HTML paragraph is the join link, as in plain text.
+#[test]
+fn a_meeting_link_written_as_text_in_html_is_the_join_link() {
+    let html = meeting_text(
+        Some("<p>Join here: https://meet.google.com/abc-defg-hij</p><p>Agenda</p>"),
+        None,
+        [],
+    );
+    let plain = clean("Join here: https://meet.google.com/abc-defg-hij\n\nAgenda");
+
+    assert_eq!(
+        html.join_url.as_deref(),
+        Some("https://meet.google.com/abc-defg-hij")
+    );
+    assert_eq!(html.join_url, plain.join_url);
+}
+
+#[test]
+fn only_real_tags_make_a_text_html() {
+    use super::looks_like_html;
+
+    // Plain text that mentions something in angle brackets, or compares.
+    for plain in [
+        "Release <bravo> notes",
+        "Bring <pizza> and <icecream>",
+        "if a<b and c>d then",
+        "see <a> above",
+    ] {
+        assert!(!looks_like_html(plain), "{plain}");
+    }
+    for html in [
+        "<h2>Agenda</h2>",
+        "Line one<br>Line two",
+        "<p>Text</p>",
+        "<div class=\"x\">Text</div>",
+        "<a href=\"https://example.com\">Link</a>",
+        "<img src=\"https://example.com/logo.png\">",
+        "<UL><LI>One</LI></UL>",
+    ] {
+        assert!(looks_like_html(html), "{html}");
+    }
+
+    let heading = clean("<h2>Agenda</h2>");
+    assert_eq!(heading.description.as_deref(), Some("Agenda"));
+    let bracketed = clean("Release <bravo> notes");
+    assert_eq!(
+        bracketed.description.as_deref(),
+        Some("Release <bravo> notes")
+    );
+}
+
+#[test]
+fn a_tag_name_ends_only_where_a_tag_does() {
+    // An address in angle brackets is no `<br>`.
+    let address = clean("Write <br@example.com> here");
+    assert_eq!(
+        address.description.as_deref(),
+        Some("Write <br@example.com> here")
+    );
+    // Paragraphs need not be closed, and a closing tag may have space before `>`.
+    for html in ["<p>Agenda<p>Notes", "<h2>Agenda</h2 >"] {
+        assert!(super::looks_like_html(html), "{html}");
+        assert!(!clean(html).description.unwrap().contains('<'), "{html}");
+    }
+}

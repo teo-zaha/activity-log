@@ -5,18 +5,73 @@
 
 use super::{Line, LineKind, Run, image_src, item, push_run, web_link};
 
-/// Tags that mark a text as HTML rather than plain text that mentions a tag.
-const HTML_MARKERS: [&str; 13] = [
-    "<br", "<p>", "<p ", "<div", "<a href", "<b>", "<strong>", "<i>", "<em>", "<ul", "<ol",
-    "<html", "<img",
+/// Elements that make a text HTML, when written as tags: with their closing tag, for those
+/// that have none alone, and for those whose closing tag may be left out (`<p>`, `<li>`) when
+/// they come twice. A word in angle brackets (`<bravo>`, `a<b and c>d`) is no tag.
+const HTML_ELEMENTS: [&str; 30] = [
+    "a",
+    "b",
+    "strong",
+    "i",
+    "em",
+    "u",
+    "span",
+    "font",
+    "p",
+    "div",
+    "br",
+    "hr",
+    "img",
+    "ul",
+    "ol",
+    "li",
+    "h1",
+    "h2",
+    "h3",
+    "h4",
+    "h5",
+    "h6",
+    "pre",
+    "blockquote",
+    "table",
+    "tr",
+    "td",
+    "th",
+    "html",
+    "body",
 ];
+const VOID_ELEMENTS: [&str; 3] = ["br", "hr", "img"];
+const UNCLOSED_ELEMENTS: [&str; 2] = ["p", "li"];
 
 /// Elements whose content is no text to show.
 const HIDDEN: [&str; 5] = ["head", "script", "style", "title", "template"];
 
 pub(crate) fn looks_like_html(text: &str) -> bool {
-    let lower = text.to_ascii_lowercase();
-    HTML_MARKERS.iter().any(|marker| lower.contains(marker))
+    let mut opened = Vec::new();
+    let mut closed = std::collections::HashSet::new();
+    let mut rest = text;
+    while let Some(at) = rest.find('<') {
+        rest = &rest[at..];
+        let Some((tag, after)) = Tag::parse(rest) else {
+            rest = &rest[1..];
+            continue;
+        };
+        if HTML_ELEMENTS.contains(&tag.name.as_str()) {
+            if tag.closing {
+                closed.insert(tag.name);
+            } else if VOID_ELEMENTS.contains(&tag.name.as_str()) {
+                return true;
+            } else {
+                opened.push(tag.name);
+            }
+        }
+        rest = after;
+    }
+    opened.iter().any(|name| {
+        closed.contains(name)
+            || UNCLOSED_ELEMENTS.contains(&name.as_str())
+                && opened.iter().filter(|other| *other == name).count() > 1
+    })
 }
 
 pub(in super::super) fn html_lines(html: &str) -> Vec<Line> {
@@ -73,11 +128,19 @@ impl<'a> Tag<'a> {
             return None;
         }
         let end = tag_end(inner)?;
-        // `-` belongs to the name of a custom element: `<img-caption>` is no `<img>`.
+        // `-` and `:` belong to names too: `<img-caption>`, Outlook's `<o:p>`.
         let name_len = inner
-            .find(|c: char| !c.is_ascii_alphanumeric() && c != '-')
+            .find(|c: char| !c.is_ascii_alphanumeric() && !matches!(c, '-' | ':'))
             .unwrap_or(end)
             .min(end);
+        // A name ends where the tag goes on: `<br@example.com>` is an address, no `<br>`.
+        let ends_there = inner[name_len..]
+            .chars()
+            .next()
+            .is_none_or(|c| c.is_whitespace() || matches!(c, '/' | '>'));
+        if first != '!' && !ends_there {
+            return None;
+        }
         let tag = Tag {
             name: inner[..name_len].to_ascii_lowercase(),
             closing,
