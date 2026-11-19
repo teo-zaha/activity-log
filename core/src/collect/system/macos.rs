@@ -1,5 +1,6 @@
+#[cfg(target_os = "macos")]
 use anyhow::{Result, anyhow};
-use chrono::{DateTime, Local, NaiveDateTime, TimeZone, Utc};
+use chrono::{DateTime, NaiveDateTime, TimeZone, Utc};
 #[cfg(target_os = "macos")]
 use tokio::process::Command;
 
@@ -66,7 +67,7 @@ async fn collect_last(options: &CollectOptions) -> Result<Vec<SystemEntry>> {
     use std::process::Stdio;
     use tokio::io::{AsyncBufReadExt, BufReader};
 
-    let (start, end) = (options.start, options.end);
+    let mut reader = LastReader::new(options.start, options.end, chrono::Local);
     // `last` prints newest first and covers the whole wtmp history. Stream it and stop at the
     // first entry older than the range instead of reading everything; dropping the child
     // (kill_on_drop) ends the process early.
@@ -84,12 +85,33 @@ async fn collect_last(options: &CollectOptions) -> Result<Vec<SystemEntry>> {
 
     let mut lines = BufReader::new(stdout).lines();
     let mut entries = Vec::new();
+    let mut before_range = false;
     while let Some(line) = lines.next_line().await? {
-        match classify_last_line(&line, start, end)? {
+        match reader.line(&line) {
             LastLine::Entry(entry) => entries.push(entry),
             LastLine::Skip => {}
-            LastLine::BeforeRange => return Ok(entries),
+            LastLine::Unreadable(time) => crate::diagnostics::warn(
+                "system",
+                format!("Skipped a boot or shutdown at an unreadable local time: {time}"),
+            ),
+            LastLine::BeforeRange => {
+                before_range = true;
+                break;
+            }
         }
+    }
+    if let Some(first) = reader.undecided().first() {
+        crate::diagnostics::warn(
+            "system",
+            format!(
+                "{} boots or shutdowns fall in an hour a clock change repeats and could be either time; taken as the later (first: {first})",
+                reader.undecided().len()
+            ),
+        );
+    }
+    // Stopped early: dropping the child (kill_on_drop) ends it.
+    if before_range {
+        return Ok(entries);
     }
 
     let output = child.wait_with_output().await?;
@@ -106,55 +128,103 @@ async fn collect_last(options: &CollectOptions) -> Result<Vec<SystemEntry>> {
 pub(crate) enum LastLine {
     Entry(SystemEntry),
     Skip,
+    /// A boot or shutdown whose time cannot be read, or names no time in `zone` (inside a
+    /// clock change's gap): left out, the rest of the log stays.
+    Unreadable(String),
     /// Older than the range; everything after it is older too.
     BeforeRange,
 }
 
-pub(crate) fn classify_last_line(
-    line: &str,
+/// Reads `last`'s lines, newest first, their local times in `zone`.
+pub(crate) struct LastReader<Z: TimeZone> {
     start: DateTime<Utc>,
     end: DateTime<Utc>,
-) -> Result<LastLine> {
-    let trimmed = line.trim();
-    if trimmed.is_empty() || trimmed.starts_with("wtmp begins") {
-        return Ok(LastLine::Skip);
+    zone: Z,
+    /// The time of the record before, which is not older than this one.
+    newer: Option<DateTime<Utc>>,
+    /// Records in a repeated hour whose time neither the range nor the order decided.
+    undecided: Vec<String>,
+}
+
+impl<Z: TimeZone> LastReader<Z> {
+    pub(crate) fn new(start: DateTime<Utc>, end: DateTime<Utc>, zone: Z) -> Self {
+        Self {
+            start,
+            end,
+            zone,
+            newer: None,
+            undecided: Vec::new(),
+        }
     }
-    let Some((entry_type, label, raw_ts)) = parse_last_line(trimmed) else {
-        return Ok(LastLine::Skip);
-    };
-    let timestamp = parse_last_timestamp(raw_ts)?;
-    if timestamp < start {
-        return Ok(LastLine::BeforeRange);
+
+    /// The records in an hour a clock change repeats whose time could be either reading; each
+    /// was taken as the later one.
+    pub(crate) fn undecided(&self) -> &[String] {
+        &self.undecided
     }
-    if timestamp >= end {
-        return Ok(LastLine::Skip);
+
+    pub(crate) fn line(&mut self, line: &str) -> LastLine {
+        let trimmed = line.trim();
+        if trimmed.is_empty() || trimmed.starts_with("wtmp begins") {
+            return LastLine::Skip;
+        }
+        let Some((entry_type, label, raw_ts)) = parse_last_line(trimmed) else {
+            return LastLine::Skip;
+        };
+        let Some((earliest, latest)) = parse_last_timestamp(raw_ts, &self.zone) else {
+            return LastLine::Unreadable(raw_ts.to_string());
+        };
+        // In an hour a clock change repeats: the reading in the range if only one is, else
+        // the later reading unless that would put it after the newer record before it.
+        let in_range = |at: DateTime<Utc>| self.start <= at && at < self.end;
+        let timestamp = match (in_range(earliest), in_range(latest)) {
+            _ if earliest == latest => latest,
+            (true, false) => earliest,
+            (false, true) => latest,
+            (true, true) if self.newer.is_some_and(|newer| latest > newer) => earliest,
+            (true, true) => {
+                self.undecided.push(raw_ts.to_string());
+                latest
+            }
+            (false, false) if self.newer.is_some_and(|newer| latest > newer) => earliest,
+            (false, false) => latest,
+        };
+        self.newer = Some(timestamp);
+        if latest < self.start {
+            return LastLine::BeforeRange;
+        }
+        if timestamp < self.start || timestamp >= self.end {
+            return LastLine::Skip;
+        }
+        LastLine::Entry(SystemEntry {
+            source: "system".to_string(),
+            connection: String::new(),
+            id: format!("{entry_type}/{}", timestamp.to_rfc3339()),
+            entry_type,
+            timestamp: timestamp.to_rfc3339(),
+            label: label.to_string(),
+        })
     }
-    Ok(LastLine::Entry(SystemEntry {
-        source: "system".to_string(),
-        connection: String::new(),
-        id: format!("{entry_type}/{}", timestamp.to_rfc3339()),
-        entry_type,
-        timestamp: timestamp.to_rfc3339(),
-        label: label.to_string(),
-    }))
 }
 
 /// Same rules as the streaming collector, for captured `last` output.
 #[cfg(test)]
-pub(crate) fn parse_last_output(
+pub(crate) fn parse_last_output<Z: TimeZone>(
     stdout: String,
     start: DateTime<Utc>,
     end: DateTime<Utc>,
-) -> Result<Vec<SystemEntry>> {
+    zone: Z,
+) -> Vec<SystemEntry> {
+    let mut reader = LastReader::new(start, end, zone);
     let mut entries = Vec::new();
     for line in stdout.lines() {
-        match classify_last_line(line, start, end)? {
+        match reader.line(line) {
             LastLine::Entry(entry) => entries.push(entry),
-            LastLine::Skip => {}
+            LastLine::Skip | LastLine::Unreadable(_) => {}
             LastLine::BeforeRange => break,
         }
     }
-    Ok(entries)
+    entries
 }
 
 fn parse_last_line(line: &str) -> Option<(SystemEntryType, &'static str, &str)> {
@@ -169,15 +239,18 @@ fn parse_last_line(line: &str) -> Option<(SystemEntryType, &'static str, &str)> 
     None
 }
 
-/// `last` prints the machine's local wall-clock time without an offset, so this is the one
-/// place the backend reads the local timezone: only the machine knows what it meant.
-fn parse_last_timestamp(raw: &str) -> Result<DateTime<Utc>> {
-    let timestamp = NaiveDateTime::parse_from_str(raw, "%a %b %e %Y %H:%M")?;
-    Ok(Local
-        .from_local_datetime(&timestamp)
-        .single()
-        .ok_or_else(|| anyhow!("invalid last timestamp: {raw}"))?
-        .with_timezone(&Utc))
+/// `last` prints the machine's local wall-clock time without an offset, so the collector reads
+/// it in the local time zone: only the machine knows what it meant. The earliest and latest
+/// instant it can mean, which differ in an hour a clock change repeats; `None` for no time or
+/// one a clock change skips.
+fn parse_last_timestamp<Z: TimeZone>(
+    raw: &str,
+    zone: &Z,
+) -> Option<(DateTime<Utc>, DateTime<Utc>)> {
+    let timestamp = NaiveDateTime::parse_from_str(raw, "%a %b %e %Y %H:%M").ok()?;
+    let local = zone.from_local_datetime(&timestamp);
+    let latest = local.clone().latest()?.with_timezone(&Utc);
+    Some((local.earliest()?.with_timezone(&Utc), latest))
 }
 
 pub(crate) enum PowerLine {
