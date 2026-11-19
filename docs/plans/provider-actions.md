@@ -1,6 +1,6 @@
 # Provider actions: search, read, write and time tracking
 
-Status: draft, revised after an independent review, with the user's decisions recorded in section 10 (Jira Data Center only, plain Jira worklogs, Odoo latest version on any hosting). Nothing here is built. It fits next to the provider connections (`docs/adr/0005-provider-connections.md`) and the progressive collection, and does not depend on how the collection pipeline works internally.
+Status: draft, revised after an independent review, with the user's decisions recorded in section 10 (Jira Data Center only, plain Jira worklogs, Odoo latest version on any hosting). Nothing here is built. The first step, the generic read part for Jira and GitLab together (phase 0, 1a, and the agent policy of 1b), is planned slice by slice in [generic-read-step.md](generic-read-step.md); where the two differ, that plan is newer. It fits next to the provider connections (`docs/adr/0005-provider-connections.md`) and the progressive collection, and does not depend on how the collection pipeline works internally.
 
 ## Goal
 
@@ -147,12 +147,10 @@ shell (Tauri command / CLI / the desktop's agent socket)
 A call names one connection. Requests carry only keys, and responses carry full refs:
 
 ```rust
-#[serde(tag = "kind", rename_all = "camelCase")]
-pub enum ActionCall {
-    Run { connection: ConnectionId, request: ActionRequest },  // reads, and prepare for writes
-    Confirm { id: String },                                     // only the id: nothing that can differ from the plan
-}
+pub struct ActionCall { pub connection: ConnectionId, pub request: ActionRequest } // reads, and prepare for writes
 ```
+
+Confirming a prepared write is its own command, `confirm_action(id)`, carrying only the id: nothing that can differ from the plan. (An earlier draft had a `Confirm` variant in an `ActionCall` enum; the read step ships without writes, so `run_action` never gets a variant it can't serve.)
 
 ### Callers
 
@@ -192,7 +190,7 @@ allow = ["search", "read", "create", "log_time"]
 
 ### Token scopes and the startup check
 
-Every startup check of a kind with actions probes the token once (one extra request), whatever the allow list says, so settings can show what each toggle would be able to do. It reports a `CapabilityState { capability, allowed, granted: yes|no|unknown, reason? }` per capability:
+Every startup check of a kind with actions probes the token once (one extra request), whatever the allow list says, so settings can show what each toggle would be able to do. The probe is advisory (it never changes the status) and checks only the capabilities the kind implements so far; each write phase adds its permissions. It reports a `CapabilityState { capability, allowed, granted: yes|no|unknown, reason? }` per capability:
 
 - **GitLab**: `GET /api/v4/personal_access_tokens/self` returns `scopes`; `read_api` is enough for search and read, writes need `api`. Fine-grained tokens report `granular_scopes` when the instance has them; those are mapped too. Missing endpoint (old GitLab) → `unknown`.
 - **Jira** (Data Center):
@@ -421,7 +419,8 @@ Structured filters build JQL with every literal quoted and escaped (`"` and `\`)
 
 ### Tauri
 
-- One command, `run_action(call: ActionCall) -> ActionResponse`. The shell builds `Caller { origin: Desktop }`; the webview cannot choose the origin.
+- `run_action(request: ActionCall) -> ActionResponse`, with the transport's `{ request }` envelope. The shell builds `Caller { origin: Desktop }`; the webview cannot choose the origin. It clones the runtime under a short read guard and awaits outside it, so a settings save is never blocked by a read.
+- `open_work_item(request: WorkItemRef)` opens a core-built URL; `confirm_action(request: id)` comes with the first write.
 - Settings saves already rebuild the runtime, so allow-list changes apply like other settings and drop pending plans.
 - The dashboard's `backend-contract.ts` gets one operation, `runAction`, marked desktop-only (`http: null`) like the settings operations.
 
@@ -515,7 +514,7 @@ The docs say so plainly.
 - **The fingerprint stored with the plan** covers the connection's config, `allow` and `agent_allow`, so changing either list voids pending agent requests.
 - **Nothing in a request selects a channel.** The origin comes from the listener (socket = `Agent`, Tauri command = `Desktop`, CLI process = `Cli`).
 
-`agent_allow = [...]` is a per-connection field, reserved and parsed like `allow` (malformed fails closed). Without it, the agent gets **nothing** on that connection, not even reads, because ticket text is what prompt injection rides on.
+`agent_allow = [...]` is a per-connection field, reserved and parsed like `allow` (malformed fails closed). Without it, the agent gets **nothing** on that connection, not even reads, because ticket text is what prompt injection rides on. In the settings it is one select per connection, Off / Read only / Read and prepare changes, with Advanced per-action checkboxes (the last option appears once a write exists). Recommended default, pending the user's confirmation: `read` in `agent_allow` also means the agent may be shown that connection's collected activity, so every kind (Git and Outlook too) has the setting, while a kind without actions still implements no actions.
 
 #### Agent requests in the desktop
 
@@ -525,7 +524,7 @@ The docs say so plainly.
 4. **States:** `pending` → `approved` → `applying` → `done | failed | outcome_unknown`, or `rejected` / `expired`.
    - `applying` is written to the audit (and flushed) **before** the request is sent. If that write fails, nothing is sent.
 5. **Crash recovery:**
-   - Pending requests live in the runtime's memory. They disappear on a crash, a restart or a settings change (S2), and the agent's status call then gets `not_found`.
+   - Superseded by the decision on drafts ([open-decisions-design.md](../open-decisions-design.md)): an agent request is saved as a draft (request and origin only, never tokens) in the app's private data folder, expires after 7 days, and is prepared again under the current settings with a fresh preview when opened. The prepared plan itself still lives only in the runtime's memory.
    - On start, an `applying` audit line without an outcome shows in the inbox as `outcome_unknown`. It is never replayed.
 6. **`request_status(handle)`:**
    - It returns the state and, when done, the result in the agent projection (below).
@@ -569,16 +568,16 @@ MCP elicitation (the agent host asking you something) is not used to confirm. It
 
 ## 6. Provider matrix
 
-| Kind                        | Collect (today, + time)                                                              | search                                                                                                                    | read                                                                                         | create                               | comment                                                            | update                                                               | log_time                                                                            | Token scope                                                                                                                    |
-| --------------------------- | ------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------- | ------------------------------------ | ------------------------------------------------------------------ | -------------------------------------------------------------------- | ----------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------ |
-| **Jira**                    | Issues; your worklogs as time entries                                                | Phase 1a                                                                                                                  | Phase 1a                                                                                     | Phase 1c                             | Phase 3                                                            | Phase 3 (transition, assign)                                         | Phase 2                                                                             | Data Center PAT: the user's permissions, probed with `mypermissions`                                                           |
-| **GitLab**                  | Events; your timelogs as time entries                                                | Phase 3: `GET /issues?scope=all`, `GET /merge_requests?scope=all` with `search`, `assignee_id=None`, `author_id`, `state` | Phase 3: `GET /projects/:id/issues/:iid`, `…/merge_requests/:iid`, `…/notes`, `…/time_stats` | Phase 3: `POST /projects/:id/issues` | Phase 3: `POST …/issues/:iid/notes`, `…/merge_requests/:iid/notes` | Later: `PUT …/issues/:iid` (`state_event`, `assignee_ids`, `labels`) | Phase 3: GraphQL `timelogCreate`                                                    | `read_api` for search and read; `api` for writes. Probed with `GET /personal_access_tokens/self` (`scopes`, `granular_scopes`) |
-| **Odoo** (coming soon)      | Your timesheet lines as time entries; check-ins and check-outs as entries (optional) | Phase 4: the `time_target` model (`project.task` by default, `helpdesk.ticket` or `project.project`)                      | Phase 4: the task or ticket, its chatter (`mail.message`), its timesheets                    | Phase 4: `project.task`              | Later: `message_post`, which notifies followers                    | Later: `stage_id`, `user_ids`                                        | Phase 4: `account.analytic.line`; check-in and check-out as `attendance` (optional) | The user's access rights; probed with access checks and `fields_get`                                                           |
-| **Git**                     | Your commits                                                                         | Maybe later: commits by anyone mentioning a key, across your repositories                                                 | Maybe later: one commit's details                                                            | —                                    | —                                                                  | —                                                                    | —                                                                                   | None (local)                                                                                                                   |
-| **Outlook**                 | Calendar events                                                                      | —                                                                                                                         | —                                                                                            | —                                    | —                                                                  | —                                                                    | —                                                                                   | Stays read-only: writing a calendar over COM or AppleScript is risky and not needed                                            |
-| **Calendar** (ICS)          | Events                                                                               | —                                                                                                                         | —                                                                                            | —                                    | —                                                                  | —                                                                    | —                                                                                   | Read-only by nature                                                                                                            |
-| **System**                  | Boot and shutdown                                                                    | —                                                                                                                         | —                                                                                            | —                                    | —                                                                  | —                                                                    | —                                                                                   | Read-only                                                                                                                      |
-| **Microsoft Graph** (later) | Calendar, Teams                                                                      | Mail and calendar search would fit `search`/`read`; no writes planned                                                     | —                                                                                            | —                                    | —                                                                  | —                                                                    | —                                                                                   | OAuth delegated scopes; a separate kind                                                                                        |
+| Kind                        | Collect (today, + time)                                                              | search                                                                                                                     | read                                                                                          | create                               | comment                                                            | update                                                               | log_time                                                                            | Token scope                                                                                                                    |
+| --------------------------- | ------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------- | ------------------------------------ | ------------------------------------------------------------------ | -------------------------------------------------------------------- | ----------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------ |
+| **Jira**                    | Issues; your worklogs as time entries                                                | Phase 1a                                                                                                                   | Phase 1a                                                                                      | Phase 1c                             | Phase 3                                                            | Phase 3 (transition, assign)                                         | Phase 2                                                                             | Data Center PAT: the user's permissions, probed with `mypermissions`                                                           |
+| **GitLab**                  | Events; your timelogs as time entries                                                | Phase 1a: `GET /issues?scope=all`, `GET /merge_requests?scope=all` with `search`, `assignee_id=None`, `author_id`, `state` | Phase 1a: `GET /projects/:id/issues/:iid`, `…/merge_requests/:iid`, `…/notes`, `…/time_stats` | Phase 3: `POST /projects/:id/issues` | Phase 3: `POST …/issues/:iid/notes`, `…/merge_requests/:iid/notes` | Later: `PUT …/issues/:iid` (`state_event`, `assignee_ids`, `labels`) | Phase 3: GraphQL `timelogCreate`                                                    | `read_api` for search and read; `api` for writes. Probed with `GET /personal_access_tokens/self` (`scopes`, `granular_scopes`) |
+| **Odoo** (coming soon)      | Your timesheet lines as time entries; check-ins and check-outs as entries (optional) | Phase 4: the `time_target` model (`project.task` by default, `helpdesk.ticket` or `project.project`)                       | Phase 4: the task or ticket, its chatter (`mail.message`), its timesheets                     | Phase 4: `project.task`              | Later: `message_post`, which notifies followers                    | Later: `stage_id`, `user_ids`                                        | Phase 4: `account.analytic.line`; check-in and check-out as `attendance` (optional) | The user's access rights; probed with access checks and `fields_get`                                                           |
+| **Git**                     | Your commits                                                                         | Maybe later: commits by anyone mentioning a key, across your repositories                                                  | Maybe later: one commit's details                                                             | —                                    | —                                                                  | —                                                                    | —                                                                                   | None (local)                                                                                                                   |
+| **Outlook**                 | Calendar events                                                                      | —                                                                                                                          | —                                                                                             | —                                    | —                                                                  | —                                                                    | —                                                                                   | Stays read-only: writing a calendar over COM or AppleScript is risky and not needed                                            |
+| **Calendar** (ICS)          | Events                                                                               | —                                                                                                                          | —                                                                                             | —                                    | —                                                                  | —                                                                    | —                                                                                   | Read-only by nature                                                                                                            |
+| **System**                  | Boot and shutdown                                                                    | —                                                                                                                          | —                                                                                             | —                                    | —                                                                  | —                                                                    | —                                                                                   | Read-only                                                                                                                      |
+| **Microsoft Graph** (later) | Calendar, Teams                                                                      | Mail and calendar search would fit `search`/`read`; no writes planned                                                      | —                                                                                             | —                                    | —                                                                  | —                                                                    | —                                                                                   | OAuth delegated scopes; a separate kind                                                                                        |
 
 ### Jira (Data Center)
 
@@ -676,12 +675,12 @@ Decision: target the **latest Odoo version** with the JSON-2 API, on **any hosti
 
 ## 7. UI (dashboard, desktop app)
 
-- **Work items view:** a fifth item in the sidebar, next to Timeline, Day, Work week and Week, shown in the desktop app when some connection allows `search`.
-  - Connection picker.
+- **Work items view:** in the sidebar's Work group (direction A), shown in the desktop app when some connection allows `search`.
+  - Connection picker; recommended default, pending confirmation: all connections, narrowed by the picker, as "Search Jira & GitLab…".
   - Filter chips: Assigned to me, Unassigned, Not mine, Created by me, Open/Done.
   - A text box, and a JQL toggle for Jira.
   - The results are a list of `WorkItem`s, separate from the timeline: they are current state, not events. They never mix with entries, filters, export or the timeline search.
-  - Selecting a result opens the existing detail panel (`event-detail`) with an action bar.
+  - Selecting a result docks its detail beside the list above 1100 px, with the flyout below that and the bottom sheet on phones.
 - **Action bar** in the detail panel, for work items and for timeline entries that point to one (a Jira entry, a GitLab MR event, a commit mentioning a key):
   - **Open** in the browser.
   - **Comment…**, **Move to…**, **Assign to me**, **Log time…**.
@@ -750,11 +749,13 @@ Each phase ends green on `pnpm verify` (and `pnpm win:check` where Windows code 
   - Path building with odd user names.
   - `allow` parsing: missing, empty, malformed (→ `[]`), unknown names.
 
-**Phase 1a: Jira search and details (read-only)**
+Phase 0, 1a and the agent policy of 1b are planned in detail in [generic-read-step.md](generic-read-step.md): Jira and GitLab together, without the Host check, with `agent_allow` and the policy intersection landing early.
 
-- `core::actions`: the executor with caller, policy, limits and `ActionCall::Run`.
-- `ActionProvider` for Jira: `search`, `get`, `probe`.
-- DTOs and generated TypeScript; `run_action` in Tauri; CLI `jira search|show` (checks the targeted connection only).
+**Phase 1a: search and details for Jira and GitLab (read-only)**
+
+- `core::actions`: the executor with caller, policy, limits and `ActionCall`; `agent_allow` parsed and intersected for the `Agent` origin.
+- `ActionProvider` for Jira and GitLab: `search`, `get`, `probe`.
+- DTOs and generated TypeScript; `run_action` and `open_work_item` in Tauri; CLI `<source> search|show` (checks the targeted connection only).
 - Dashboard: Work items view (desktop), detail panel with Open through a core-built URL.
 - Settings: Access section showing the probe; the desktop CSP.
 - Tests:
@@ -768,8 +769,7 @@ Each phase ends green on `pnpm verify` (and `pnpm win:check` where Windows code 
 
 - The desktop's agent socket or pipe (private folder or owner-only DACL, peer check, frame limits) and single instance.
 - `activity-log mcp` (stdio, `rmcp` pinned) as a thin adapter: `search`, `get_item`, `activity`, `time_report`.
-- `agent_allow` reserved and parsed (fails closed).
-- Agent response types and the recursive projection.
+- Agent response types and the recursive projection (required before the transport ships). `agent_allow` and the policy intersection already land in 1a.
 - Limits at the socket.
 - The audit file with its lock (no agent writes yet).
 - Docs: adding the server to an agent host, and the boundary (shell, PTY, file access and UI automation defeat it).
@@ -784,7 +784,7 @@ Each phase ends green on `pnpm verify` (and `pnpm win:check` where Windows code 
 **Phase 1c: the first write (Jira create), from you and from the agent**
 
 - `describe_create`, `plan`/`apply` for `Create`.
-- The write path from section 3: `PendingActions` in the runtime with fingerprint and channel (S1, S2), random confirm and correlation ids (S6), `ActionCall::Confirm`, `actions.jsonl` audit with the recent-write warning (S7), typed plan with one mutation and core-rendered preview (S8), closed `FieldValue` with the createmeta re-check (S9).
+- The write path from section 3: `PendingActions` in the runtime with fingerprint and channel (S1, S2), random confirm and correlation ids (S6), the `confirm_action` command, `actions.jsonl` audit with the recent-write warning (S7), typed plan with one mutation and core-rendered preview (S8), closed `FieldValue` with the createmeta re-check (S9).
 - New item dialog with preview and confirm; CLI `jira create` with `--dry-run`/`--yes`.
 - Agent writes: `request_write`, `request_status`, the desktop inbox and confirmation display, and the audit states with `applying` before sending.
 - The returned item is inserted by the client.
@@ -828,7 +828,7 @@ Each phase ends green on `pnpm verify` (and `pnpm win:check` where Windows code 
 **Phase 3: GitLab, and the rest of Jira's writes**
 
 - Jira: `comment`, `transition`, `assign`.
-- GitLab: `search`, `get`, `create`, `comment`, `log_time` (GraphQL), timelog collection, scope probe including `granular_scopes`, strict `#`/`!` refs.
+- GitLab: `create`, `comment`, `log_time` (GraphQL), timelog collection, and the write scopes in the probe. Search, get, the scope probe and strict `#`/`!` refs moved to phase 1a.
 - Tests: mapping fixtures, `read_api` against `api` probe results, ref parsing, the transition `Conflict` when the transition list changed.
 
 **Phase 4: the Odoo provider**
@@ -866,7 +866,7 @@ Each later phase adds its new actions to the MCP tools under the same rules.
 - **`CollectionRuntime` gains `PendingActions`, and hands out a `&ProviderRuntime` per connection** (awaiting its check), so plans die with the runtime they were made in.
 - **`ActivityLog.timeEntries`, `CollectRequest.days` and `collect_time`**, the time model that keeps core free of date↔instant conversion.
 - **Error cleanup in the collectors**, which today echo response bodies.
-- **The Host-check fairing and the desktop CSP.** Both are needed regardless.
+- **The desktop CSP**, before any remote text is shown (phase 1a). The Host-check fairing is dropped by decision.
 - **A `Choice` config value type** (single and list) for Odoo's `time_target` and `read`.
 - **The agent surface:** the desktop's agent socket and inbox, a thin MCP subcommand in `cli`, `agent_allow` in settings, and agent response types with their projection.
 
