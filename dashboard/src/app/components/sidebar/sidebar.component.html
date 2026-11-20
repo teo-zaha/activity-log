@@ -1,44 +1,47 @@
 <aside class="sidebar" [class.is-rail]="isRail()" aria-label="Views and sources">
-  <nav class="view-nav" aria-label="Views">
-    @for (group of groups; track group.id) {
-      <div class="view-group">
-        <span class="section-label">{{ group.label }}</span>
-        <div class="view-list">
-          @for (item of group.items; track item.id) {
-            <!-- Links: views are routes, so they open in place, show their URL and take Back. -->
-            <a
-              class="view-btn"
-              [routerLink]="viewLink(item.id)"
-              [queryParams]="{ q: null, settings: null }"
-              [routerLinkActive]="settingsTab() ? [] : 'active'"
-              [ariaCurrentWhenActive]="settingsTab() ? undefined : 'page'"
-              [matTooltip]="item.label"
-              [matTooltipDisabled]="!isRail()"
-              matTooltipPosition="right"
-            >
-              <mat-icon>{{ item.icon }}</mat-icon>
-              <span class="view-label">{{ isPhone() ? item.shortLabel : item.label }}</span>
-            </a>
-          }
+  <!-- Scrolls where the window is too short for it; Settings below stays in reach. -->
+  <div class="sidebar-scroll">
+    <nav class="view-nav" aria-label="Views">
+      @for (group of groups; track group.id) {
+        <div class="view-group">
+          <span class="section-label">{{ group.label }}</span>
+          <div class="view-list">
+            @for (item of group.items; track item.id) {
+              <!-- Links: views are routes, so they open in place, show their URL and take Back. -->
+              <a
+                class="view-btn"
+                [routerLink]="viewLink(item.id)"
+                [queryParams]="{ q: null, settings: null }"
+                [routerLinkActive]="settingsTab() ? [] : 'active'"
+                [ariaCurrentWhenActive]="settingsTab() ? undefined : 'page'"
+                [matTooltip]="item.label"
+                [matTooltipDisabled]="!isRail()"
+                matTooltipPosition="right"
+              >
+                <mat-icon>{{ item.icon }}</mat-icon>
+                <span class="view-label">{{ isPhone() ? item.shortLabel : item.label }}</span>
+              </a>
+            }
+          </div>
         </div>
-      </div>
-    }
-    @if (isPhone()) {
-      <button
-        type="button"
-        class="view-btn"
-        [class.active]="settingsTab()"
-        [attr.aria-current]="settingsTab() ? 'page' : null"
-        (click)="showSettingsTab()"
-      >
-        <mat-icon>settings</mat-icon>
-        <span class="view-label">Settings</span>
-      </button>
-    }
-  </nav>
+      }
+      @if (isPhone()) {
+        <button
+          type="button"
+          class="view-btn"
+          [class.active]="settingsTab()"
+          [attr.aria-current]="settingsTab() ? 'page' : null"
+          (click)="showSettingsTab()"
+        >
+          <mat-icon>settings</mat-icon>
+          <span class="view-label">Settings</span>
+        </button>
+      }
+    </nav>
 
-  <!-- What the layout on screen puts in the sidebar, such as the views' source chips. -->
-  <ng-container *ngTemplateOutlet="sources()" />
+    <!-- What the layout on screen puts in the sidebar, such as the views' source chips. -->
+    <ng-container *ngTemplateOutlet="sources()" />
+  </div>
 
   @if (!isPhone()) {
     <div class="sidebar-bottom">

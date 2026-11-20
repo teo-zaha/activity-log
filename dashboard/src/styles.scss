@@ -1064,10 +1064,20 @@ mat-card {
 }
 
 // Every notice, its action included, keeps clear of the screen's safe area: Material's 8 px margin
-// plus the inset, which is 0 on the desktop.
+// plus the inset, which is 0 on the desktop. Below it, it keeps clear of what else holds the
+// bottom of the screen: the phone's bottom bar and the collection's pill or card
+// (`--collection-status-clearance`, set by `CollectionStatusComponent` while one shows).
+:root {
+  --notices-bottom: max(env(safe-area-inset-bottom), var(--collection-status-clearance, 0px));
+
+  @include ui.down('phone') {
+    --notices-bottom: max(var(--phone-nav-height), var(--collection-status-clearance, 0px));
+  }
+}
+
 .cdk-overlay-pane .mat-mdc-snack-bar-container {
   margin: calc(8px + env(safe-area-inset-top)) calc(8px + env(safe-area-inset-right))
-    calc(8px + env(safe-area-inset-bottom)) calc(8px + env(safe-area-inset-left));
+    calc(8px + var(--notices-bottom)) calc(8px + env(safe-area-inset-left));
 }
 
 .error-alert-snackbar {

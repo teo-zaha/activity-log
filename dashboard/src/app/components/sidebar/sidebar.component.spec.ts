@@ -53,4 +53,22 @@ describe('SidebarComponent', () => {
 
     expect(container.querySelector('.sidebar')?.classList.contains('is-rail')).toBe(true)
   })
+
+  it('keeps Settings out of what scrolls in a short window, in the rail too', async () => {
+    const { container } = await render(SidebarComponent, {
+      providers: [
+        provideAppRouter(),
+        provideLocationMocks(),
+        { provide: ActivityService, useValue: { selectedDay: signal('2026-11-10') } },
+        { provide: SettingsDialogLauncher, useValue: { open: vi.fn(), pageOpen: signal(false) } },
+        { provide: BreakpointState, useValue: { phone: signal(false), rail: signal(true) } },
+      ],
+    })
+
+    const scroller = container.querySelector('.sidebar-scroll')
+    expect(scroller?.contains(screen.getByRole('navigation', { name: 'Views' }))).toBe(true)
+    const settings = screen.getByRole('button', { name: 'Settings' })
+    expect(scroller?.contains(settings)).toBe(false)
+    expect(container.querySelector('.sidebar')?.contains(settings)).toBe(true)
+  })
 })
