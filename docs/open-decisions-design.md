@@ -6,7 +6,7 @@ Decisions taken in one question round after the progressive collection, the cale
 
 - **Meeting time**: the time per day or week covered by calendar and Outlook meetings, with overlaps counted once. Avoid: meeting load, busy time.
 - **Filter**: narrowing the activity already collected (your own commits, meetings, tickets) in the timeline; what the timeline's search field does today. Avoid: search.
-- **Remote search**: asking Jira or GitLab directly for items, including ones you never touched. Avoid: filter, search field.
+- **Remote search**: asking a work system behind a connection directly for items, including ones you never touched. Avoid: filter, search field.
 - **Draft**: a write the AI agent asked for, saved with where it came from; the desktop prepares it again with a fresh preview when you open it, and you confirm it. Avoid: pending plan, queued action.
 - **Shortcut hint**: a small key tag (⌘K, ?) on a button or menu item, generated from the same registry that handles the key and lists it in the help. Avoid: hotkey label, tooltip.
 - **Host check**: the local API server answering only requests addressed to `localhost` or `127.0.0.1`. Avoid: CORS fix, firewall.
@@ -89,7 +89,7 @@ The app grew in one day from a read-only activity log into the start of a tool t
 - **First generic read step:** not Jira-specific. The shared parts (remote search, open item, per-connection permissions, Work items view, read-only agent access) are built once and proven on Jira and GitLab together; Odoo is the step after, as a new source.
 - **Search and open on by default** for desktop and CLI on new connections; writing is always off until switched on, and the agent gets nothing until allowed.
 - **AI access per connection:** one select, Off / Read only / Read and prepare changes (every change confirmed by you), with an Advanced toggle for per-action checkboxes. Read only is possible even where the source and you can write.
-- **Naming:** the timeline field becomes "Filter activity…"; the new remote search is "Search Jira & GitLab…" in the Work items view.
+- **Naming:** the timeline field becomes "Filter activity…"; the new remote search is "Search work items…" in the Work items view. An item's open button names the item's own source ("Open in Jira", "Open in GitLab"), with the label from the source catalog. No text names the list of sources for something meant for every source.
 - **Time view early:** time is reported per item per week, so A's Time view comes right after the first read step, with Jira worklogs first, then Odoo.
 - **Keyboard shortcuts:** a small in-app registry (typed list of shortcuts with scopes, a directive that binds one to a button and renders its shortcut hint, ⌘ on macOS and Ctrl elsewhere, never firing while typing unless meant to) and a help dialog opened with `?`, built from the same list. No new dependency.
 - **Date index rail:** the oldest month label shows the year when the range spans more than one year ("Nov ’25"); in dense mode the top month label moves so the today pill never covers it.
