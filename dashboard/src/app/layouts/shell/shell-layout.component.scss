@@ -1,0 +1,64 @@
+@use '../../components/dashboard-shared' as ui;
+
+:host {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.shell-body {
+  flex: 1;
+  display: flex;
+  min-height: 0;
+  gap: 12px;
+  padding: 0 16px 16px 12px;
+}
+
+.main-content {
+  position: relative; // anchors the collection status overlay and the phone's Settings tab
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  // Clipped, never scrolled: a view fading in rises from below its place.
+  overflow: clip;
+  min-height: 0;
+  min-width: 0;
+  outline: none;
+  @include ui.panel-shell($radius: var(--radius-xl));
+}
+
+// Lays the routed layout out as the main content's own. Under the settings tab
+// (`SettingsPageHostComponent`) it stays alive, unseen and out of the tab order.
+.view {
+  display: contents;
+
+  &.under-settings {
+    visibility: hidden;
+  }
+}
+
+@include ui.down('tablet') {
+  .shell-body {
+    gap: 8px;
+    padding: 0 12px 12px 8px;
+  }
+
+  .main-content {
+    border-radius: var(--radius-lg);
+  }
+}
+
+@include ui.down('phone') {
+  .shell-body {
+    flex-direction: column;
+    gap: 0;
+    padding: 0 0 var(--phone-nav-height);
+  }
+
+  .main-content {
+    border-radius: var(--radius-lg) var(--radius-lg) 0 0;
+    border-bottom: 0;
+    border-inline: 0;
+  }
+}

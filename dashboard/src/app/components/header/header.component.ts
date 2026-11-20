@@ -1,78 +1,34 @@
-import { Component, computed, inject, linkedSignal } from '@angular/core'
-import { form, FormField, FormRoot } from '@angular/forms/signals'
-import { MatTooltipModule } from '@angular/material/tooltip'
-import { MatDatepickerModule } from '@angular/material/datepicker'
+import { NgTemplateOutlet } from '@angular/common'
+import { Component, type TemplateRef, inject, input } from '@angular/core'
 import { MatIconModule } from '@angular/material/icon'
+import { MatTooltipModule } from '@angular/material/tooltip'
 import { Router } from '@angular/router'
 import { IconButtonComponent } from '../button/icon-button.component'
-import { ButtonComponent } from '../button/button.component'
 import { ActivityService } from '../../services/activity.service'
 import { RuntimeEnvironmentService } from '../../services/backend/runtime-environment.service'
 import { WindowChromeService } from '../../services/window-chrome.service'
-import { SettingsDialogLauncher } from '../settings-dialog/settings-dialog-launcher.service'
 import { appLink, injectLinkBase, injectShareLink, pageLink } from '../share/share-link'
-import { dateOfKey, localDateKey, type DayKey } from '../../utils/local-day'
 
-interface DateRange {
-  readonly from: Date | null
-  readonly to: Date | null
-}
-
+/**
+ * The window's top row on every page: the brand, what the layout on screen puts in the middle
+ * (`center`), and Export and Share. In the desktop app it is the title bar too.
+ */
 @Component({
   selector: 'app-header',
-  imports: [
-    IconButtonComponent,
-    ButtonComponent,
-    MatIconModule,
-    FormField,
-    FormRoot,
-    MatTooltipModule,
-    MatDatepickerModule,
-  ],
+  imports: [IconButtonComponent, MatIconModule, MatTooltipModule, NgTemplateOutlet],
   templateUrl: './header.component.html',
   styleUrl: './header.component.scss',
 })
 export class HeaderComponent {
+  /** The layout's part of the row, such as the views' range and Collect; none on other pages. */
+  readonly center = input<TemplateRef<unknown> | null>(null)
+
   protected readonly activity = inject(ActivityService)
   private readonly chrome = inject(WindowChromeService)
   private readonly router = inject(Router)
-  /** On a phone the settings are a tab, without the range that filters the views. */
-  protected readonly settingsTab = inject(SettingsDialogLauncher).pageOpen
   private readonly shareLink = injectShareLink()
   private readonly linkBase = injectLinkBase()
   private readonly desktop = inject(RuntimeEnvironmentService).isTauri()
-
-  protected readonly dateFromObj = computed(() => this.parseDateStr(this.activity.dateFrom()))
-  protected readonly dateToObj = computed(() => this.parseDateStr(this.activity.dateTo()))
-
-  /**
-   * What the pickers show while a date is being typed. It only reaches the activity filters once
-   * the input commits (`dateChange`), so half-typed dates never filter the timeline.
-   */
-  protected readonly range = linkedSignal<DateRange>(() => ({
-    from: this.dateFromObj(),
-    to: this.dateToObj(),
-  }))
-
-  protected readonly rangeForm = form(this.range, {
-    submission: {
-      // The pickers' own min/max validators only grey out dates; they never blocked collecting.
-      ignoreValidators: 'all',
-      action: async () => {
-        const [from, to] = [this.activity.dateFrom(), this.activity.dateTo()]
-        if (from && to) await this.activity.collect(from, to)
-      },
-    },
-  })
-
-  protected parseDateStr(day: DayKey | null): Date | null {
-    return day === null ? null : dateOfKey(day)
-  }
-
-  /** The day a picker holds; none for no date or one it could not read. */
-  protected fmtDate(date: Date | null): DayKey | null {
-    return date && !Number.isNaN(date.getTime()) ? localDateKey(date) : null
-  }
 
   protected exportMd(): void {
     void this.activity.exportMarkdown()
@@ -103,11 +59,13 @@ export class HeaderComponent {
     if (this.isDragSurface(event)) void this.toggleWindowMaximize(event)
   }
 
+  /** The row itself, its empty middle and the brand move the window; controls do not. */
   private isDragSurface(event: MouseEvent): boolean {
     const target = event.target
     return (
       target === event.currentTarget ||
-      (target instanceof Element && target.closest('.brand') !== null)
+      (target instanceof Element &&
+        (target.classList.contains('header-center') || target.closest('.brand') !== null))
     )
   }
 

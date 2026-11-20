@@ -16,8 +16,11 @@ import {
   withNavigationErrorHandler,
   withRouterConfig,
 } from '@angular/router'
-import { VIEW_LABELS } from './models/view-option'
-import { provideViewTransitionGate, withAppViewTransitions } from './view-transitions'
+import { ViewUnavailableComponent } from './components/view-unavailable/view-unavailable.component'
+import { VIEW_LABELS } from './models/nav'
+import { ShellLayoutComponent } from './layouts/shell/shell-layout.component'
+import { ViewsLayoutComponent } from './layouts/views/views-layout.component'
+import { provideNavigationMotion } from './navigation-motion'
 import { ActivityService } from './services/activity.service'
 import { failureWhile } from './services/failure'
 import { type CalendarView, VIEW_PATHS, viewCommands } from './utils/app-url'
@@ -25,8 +28,28 @@ import { isDayKey, longDayLabel, todayKey } from './utils/local-day'
 
 const APP_TITLE = 'Activity Log'
 
-const loadWeekView = (): Promise<Type<unknown>> =>
+/**
+ * A view's code, loaded when the view first opens. When it does not load for the app's first
+ * navigation (an app update, a dev server that went away), the view's place shows
+ * `ViewUnavailableComponent`, which offers a reload, so the shell and the navigation come up
+ * instead of nothing; the failure is a notice. A later navigation fails as before: the view on
+ * screen stays and a notice says so (`provideAppRouter`).
+ */
+export function loadView(load: () => Promise<Type<unknown>>): () => Promise<Type<unknown>> {
+  return () => {
+    const router = inject(Router)
+    const activity = inject(ActivityService)
+    return load().catch((error: unknown) => {
+      if (router.navigated) throw error
+      activity.notice.set({ origin: 'view', failure: failureWhile('Opening this view', error) })
+      return ViewUnavailableComponent
+    })
+  }
+}
+
+const loadWeekView = loadView(() =>
   import('./components/week-view/week-view.component').then(m => m.WeekViewComponent)
+)
 
 /** The calendar views match only a real day; any other second segment falls through. */
 const isDayParam: CanMatchFn = (_route, segments) => isDayKey(segments[1]?.path ?? '')
@@ -36,6 +59,8 @@ function redirectKeepingQuery(commands: () => string[]): RedirectFunction {
   return ({ queryParams }) =>
     inject(Router).createUrlTree(commands(), { queryParams, queryParamsHandling: 'replace' })
 }
+
+const showTimeline = (): string[] => viewCommands('list', todayKey())
 
 function dayTitle(view: CalendarView): ResolveFn<string> {
   return route => {
@@ -53,20 +78,43 @@ function calendarRoutes(view: CalendarView, loadComponent: () => Promise<Type<un
   ]
 }
 
+/**
+ * The shell (header, navigation, main content) around every page, and in it the views' layout
+ * (range, Collect, source chips) around the activity views. A page that needs neither range nor
+ * chips is the views layout's sibling under the shell.
+ */
 export const APP_ROUTES: Routes = [
+  // `/` shows the timeline; the shell's empty path would otherwise match it with no page in it.
+  { path: '', pathMatch: 'full', redirectTo: redirectKeepingQuery(showTimeline) },
   {
-    path: VIEW_PATHS.list,
-    loadComponent: () =>
-      import('./components/timeline/timeline.component').then(m => m.TimelineComponent),
-    title: VIEW_LABELS.list,
+    path: '',
+    component: ShellLayoutComponent,
+    children: [
+      {
+        path: '',
+        component: ViewsLayoutComponent,
+        children: [
+          {
+            path: VIEW_PATHS.list,
+            loadComponent: loadView(() =>
+              import('./components/timeline/timeline.component').then(m => m.TimelineComponent)
+            ),
+            title: VIEW_LABELS.list,
+          },
+          ...calendarRoutes(
+            'day',
+            loadView(() =>
+              import('./components/day-view/day-view.component').then(m => m.DayViewComponent)
+            )
+          ),
+          ...calendarRoutes('workweek', loadWeekView),
+          ...calendarRoutes('week', loadWeekView),
+        ],
+      },
+    ],
   },
-  ...calendarRoutes('day', () =>
-    import('./components/day-view/day-view.component').then(m => m.DayViewComponent)
-  ),
-  ...calendarRoutes('workweek', loadWeekView),
-  ...calendarRoutes('week', loadWeekView),
-  // `/` and unknown paths show the timeline.
-  { path: '**', redirectTo: redirectKeepingQuery(() => viewCommands('list', todayKey())) },
+  // Unknown paths show the timeline: a path no page under the shell matches comes here.
+  { path: '**', redirectTo: redirectKeepingQuery(showTimeline) },
 ]
 
 /** `Day · Tuesday, 17 November 2026 · Activity Log`. */
@@ -120,7 +168,6 @@ export function provideAppRouter(): (Provider | EnvironmentProviders)[] {
     provideRouter(
       APP_ROUTES,
       withRouterConfig({ defaultQueryParamsHandling: 'merge' }),
-      withAppViewTransitions(),
       // A view's code failed to load (an app update, a dropped dev server): say so and stay.
       withNavigationErrorHandler(error =>
         inject(ActivityService).notice.set({
@@ -131,6 +178,6 @@ export function provideAppRouter(): (Provider | EnvironmentProviders)[] {
     ),
     { provide: TitleStrategy, useClass: AppTitleStrategy },
     { provide: RouteReuseStrategy, useClass: TimelineReuseStrategy },
-    provideViewTransitionGate(),
+    provideNavigationMotion(),
   ]
 }

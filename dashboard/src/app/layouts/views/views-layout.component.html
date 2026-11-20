@@ -1,0 +1,10 @@
+<app-range-form *shellSlot="'header'" />
+<app-source-list *shellSlot="'sidebar'" />
+
+<!-- Also without sources: a backend that cannot be reached shows here, with Retry. -->
+<app-collection-status />
+@if (activity.hasNoSources()) {
+  <app-no-sources />
+} @else {
+  <router-outlet />
+}

@@ -4,7 +4,7 @@
   display: flex;
   flex-direction: column;
   height: 100dvh;
-  overflow: hidden;
+  overflow: clip;
   background:
     radial-gradient(1100px 520px at 8% -14%, var(--canvas-glow), transparent 70%), var(--bg);
 }
@@ -45,60 +45,5 @@ mat-progress-bar.top-loader {
 
   &.visible {
     opacity: 1;
-  }
-}
-
-.shell {
-  flex: 1;
-  display: flex;
-  min-height: 0;
-  gap: 12px;
-  padding: 0 16px 16px 12px;
-}
-
-.main-content {
-  position: relative; // anchors the collection status overlay
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  overflow: hidden;
-  min-height: 0;
-  min-width: 0;
-  outline: none;
-  @include ui.panel-shell($radius: var(--radius-xl));
-}
-
-// Lays its content out as the main content's own. Under the settings tab
-// (`SettingsPageHostComponent`) the view stays alive, unseen and out of the tab order.
-.view {
-  display: contents;
-
-  &.under-settings {
-    visibility: hidden;
-  }
-}
-
-@include ui.down('tablet') {
-  .shell {
-    gap: 8px;
-    padding: 0 12px 12px 8px;
-  }
-
-  .main-content {
-    border-radius: var(--radius-lg);
-  }
-}
-
-@include ui.down('phone') {
-  .shell {
-    flex-direction: column;
-    gap: 0;
-    padding: 0 0 var(--phone-nav-height);
-  }
-
-  .main-content {
-    border-radius: var(--radius-lg) var(--radius-lg) 0 0;
-    border-bottom: 0;
-    border-inline: 0;
   }
 }

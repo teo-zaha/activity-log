@@ -1,0 +1,160 @@
+@use '../dashboard-shared' as ui;
+
+// Shrinks before anything beside it: the header's brand and actions keep their size.
+:host {
+  display: flex;
+  min-width: 0;
+}
+
+.range-form {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.range {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  height: 40px;
+  padding: 0 2px 0 4px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--surface);
+  transition:
+    border-color 0.15s ease,
+    box-shadow 0.15s ease;
+
+  &:focus-within {
+    border-color: var(--accent);
+    box-shadow: 0 0 0 3px var(--accent-soft);
+  }
+
+  &.is-disabled {
+    opacity: 0.7;
+  }
+}
+
+.range-field {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  padding-left: 8px;
+  cursor: text;
+}
+
+.range-label {
+  margin-right: 8px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-tertiary);
+}
+
+.range-input {
+  flex: 0 1 92px;
+  width: 92px;
+  min-width: 0;
+  border: 0;
+  outline: none;
+  background: transparent;
+  color: var(--text-primary);
+  font:
+    500 14px Inter,
+    sans-serif;
+  font-variant-numeric: tabular-nums;
+
+  &:focus-visible {
+    outline: none;
+  }
+}
+
+.range-toggle {
+  color: var(--text-tertiary);
+  --mat-icon-button-state-layer-size: 32px;
+  --mat-datepicker-toggle-icon-color: var(--text-tertiary);
+  --mat-datepicker-toggle-active-state-icon-color: var(--accent);
+}
+
+.range-sep {
+  --icon-size: 16px;
+  color: var(--text-tertiary);
+  margin: 0 2px;
+}
+
+.btn-collect {
+  flex-shrink: 0;
+  min-width: 112px;
+}
+
+.btn-collect-label {
+  display: inline-grid;
+
+  > span {
+    grid-area: 1 / 1;
+  }
+
+  > .is-inactive {
+    visibility: hidden;
+  }
+}
+
+@include ui.down('tablet') {
+  .range-label {
+    @include ui.visually-hidden;
+  }
+}
+
+@include ui.down('window-min') {
+  .btn-collect {
+    min-width: 0;
+  }
+}
+
+// A row of its own under the header's first: the whole width, its own space above.
+@include ui.down('phone') {
+  :host {
+    flex: 1;
+    margin-top: 10px;
+  }
+
+  .range-form {
+    flex: 1;
+  }
+
+  .range {
+    flex: 1;
+    min-width: 0;
+  }
+
+  .range-field {
+    flex: 1;
+    padding-left: 6px;
+  }
+
+  .range-input {
+    width: 100%;
+    font-size: 13px;
+  }
+
+  .btn-collect {
+    width: 40px;
+    padding: 0;
+  }
+
+  .btn-collect-label {
+    @include ui.visually-hidden;
+  }
+}
+
+@include ui.down('phone-narrow') {
+  .range-sep {
+    display: none;
+  }
+
+  .range-toggle {
+    --mat-icon-button-state-layer-size: 28px;
+  }
+}

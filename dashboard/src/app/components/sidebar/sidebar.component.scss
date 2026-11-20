@@ -1,4 +1,5 @@
 @use '../dashboard-shared' as ui;
+@use '../nav-row' as nav;
 
 :host {
   display: flex;
@@ -16,83 +17,18 @@
   @include ui.hide-scrollbar;
 }
 
-.section-head {
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: 8px;
-}
-
 .section-label {
-  @include ui.kicker-label;
-  display: block;
-  padding: 0 10px 6px;
-  font-size: 10.5px;
+  @include nav.section-label;
 }
 
-.section-hint {
-  padding-right: 6px;
-  font-size: 11px;
-  color: var(--text-tertiary);
-  opacity: 0;
-  transition: opacity 0.2s ease;
-}
-
-.sources:hover .section-hint,
-.sources:focus-within .section-hint {
-  opacity: 1;
-}
-
-.view-list,
-.source-list,
-.issues {
+.view-list {
   display: flex;
   flex-direction: column;
   gap: 2px;
 }
 
-// Shared row look for view buttons, source chips, issues and settings.
-%row {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  width: 100%;
-  min-height: 38px;
-  padding: 6px 10px;
-  border: 1px solid transparent;
-  border-radius: var(--radius-sm);
-  background: transparent;
-  color: var(--text-secondary);
-  font:
-    500 13.5px/1.2 Inter,
-    sans-serif;
-  text-align: left;
-  cursor: pointer;
-  transition:
-    background-color 0.15s ease,
-    border-color 0.15s ease,
-    color 0.15s ease,
-    box-shadow 0.15s ease;
-
-  &:hover {
-    background: color-mix(in srgb, var(--surface-hover) 70%, transparent);
-    color: var(--text-primary);
-  }
-
-  &:focus-visible {
-    @include ui.focus-ring;
-  }
-}
-
-%row-active {
-  background: var(--surface);
-  border-color: var(--hairline);
-  color: var(--text-primary);
-  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.06);
-}
-
 .view-btn {
-  @extend %row;
+  @include nav.row;
   text-decoration: none;
 
   mat-icon {
@@ -100,7 +36,7 @@
   }
 
   &.active {
-    @extend %row-active;
+    @include nav.row-active;
     font-weight: 600;
 
     mat-icon {
@@ -109,161 +45,12 @@
   }
 }
 
-.view-label,
-.source-label {
+.view-label {
   flex: 1;
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-}
-
-// ── Sources ──────────────────────────────────────────────────────────────────
-
-.source-chip {
-  @extend %row;
-  position: relative;
-  color: var(--text-tertiary);
-
-  .source-icon {
-    filter: grayscale(1);
-    opacity: 0.55;
-  }
-
-  &.active {
-    @extend %row-active;
-
-    .source-icon {
-      filter: none;
-      opacity: 1;
-    }
-
-    .source-count {
-      background: var(--badge-bg);
-      color: var(--badge-fg);
-    }
-  }
-}
-
-.source-chip.is-checking {
-  cursor: default;
-}
-
-// Sits where the event count goes until the source is checked and collected.
-.source-checking {
-  flex: 0 0 auto;
-  width: 12px;
-  height: 12px;
-  margin-right: 6px;
-  border: 2px solid color-mix(in srgb, var(--text-tertiary) 30%, transparent);
-  border-top-color: var(--text-tertiary);
-  border-radius: 999px;
-  animation: source-checking-spin 0.8s linear infinite;
-
-  @media (prefers-reduced-motion: reduce) {
-    animation: none;
-  }
-}
-
-@keyframes source-checking-spin {
-  to {
-    transform: rotate(360deg);
-  }
-}
-
-.source-count {
-  min-width: 24px;
-  padding: 2px 7px;
-  border-radius: 999px;
-  background: color-mix(in srgb, var(--text-tertiary) 12%, transparent);
-  font-size: 11px;
-  font-weight: 700;
-  font-variant-numeric: tabular-nums;
-  text-align: center;
-}
-
-.add-source {
-  @extend %row;
-  color: var(--text-tertiary);
-
-  .add-icon {
-    display: inline-grid;
-    place-items: center;
-    flex: 0 0 auto;
-    width: 24px;
-    height: 24px;
-    border: 1px dashed var(--border);
-    border-radius: 7px;
-    --icon-size: 16px;
-  }
-
-  &:hover .add-icon {
-    border-color: var(--accent);
-    color: var(--accent);
-  }
-}
-
-// ── Unavailable providers ────────────────────────────────────────────────────
-
-.issue-row {
-  position: relative;
-}
-
-.issue {
-  @extend %row;
-  padding-block: 8px;
-
-  &.has-action {
-    padding-right: 40px;
-  }
-
-  .issue-icon {
-    filter: grayscale(1);
-    opacity: 0.6;
-  }
-}
-
-.issue-action {
-  position: absolute;
-  top: 50%;
-  right: 6px;
-  transform: translateY(-50%);
-}
-
-.issue-copy {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  flex: 1;
-  min-width: 0;
-}
-
-.issue-name {
-  color: var(--text-secondary);
-  font-weight: 600;
-}
-
-.issue-reason {
-  display: -webkit-box;
-  -webkit-line-clamp: 2;
-  -webkit-box-orient: vertical;
-  overflow: hidden;
-  color: var(--text-tertiary);
-  font-size: 12px;
-  line-height: 1.35;
-  overflow-wrap: anywhere;
-}
-
-.issues-chip {
-  @extend %row;
-  gap: 6px;
-  color: var(--status-error-fg);
-  --icon-size: 18px;
-}
-
-.issues-count {
-  font-weight: 700;
-  font-variant-numeric: tabular-nums;
 }
 
 // ── Settings ─────────────────────────────────────────────────────────────────
@@ -275,7 +62,7 @@
 }
 
 .settings-button {
-  @extend %row;
+  @include nav.row;
 
   mat-icon {
     color: var(--text-tertiary);
@@ -292,66 +79,13 @@
 
   .section-label,
   .view-label,
-  .source-label,
-  .settings-label,
-  .issues-label {
+  .settings-label {
     @include ui.visually-hidden;
   }
 
   .view-btn,
-  .source-chip,
-  .add-source,
-  .settings-button,
-  .issues-chip {
-    justify-content: center;
-    width: 46px;
-    min-height: 44px;
-    padding: 0;
-  }
-
-  .issues-chip {
-    flex-direction: column;
-    gap: 0;
-    font-size: 11px;
-  }
-
-  .source-icon {
-    --provider-icon-box: 28px;
-    --provider-icon-glyph: 16px;
-  }
-
-  .add-icon {
-    width: 28px;
-    height: 28px;
-  }
-
-  .source-count {
-    position: absolute;
-    top: 0;
-    right: -2px;
-    min-width: 18px;
-    padding: 1px 4px;
-    font-size: 10px;
-    background: var(--surface);
-    box-shadow: 0 0 0 1px var(--hairline);
-  }
-
-  .source-warn {
-    position: absolute;
-    bottom: 4px;
-    right: 4px;
-  }
-
-  .source-checking {
-    position: absolute;
-    top: 2px;
-    right: 0;
-    margin: 0;
-  }
-
-  .sources {
-    padding-top: 14px;
-    border-top: 1px solid var(--hairline);
+  .settings-button {
+    @include nav.rail-row;
   }
 
   .sidebar-bottom {
@@ -361,7 +95,7 @@
   }
 }
 
-// ── Phone: source chip row + bottom navigation ───────────────────────────────
+// ── Phone: the bottom bar, the chips above the main content ──────────────────
 
 @include ui.down('phone') {
   :host {
@@ -371,85 +105,33 @@
   .sidebar {
     display: block;
     width: auto;
-    padding: 0 0 10px;
+    padding: 0;
     overflow: visible;
   }
 
-  .section-head {
-    display: none;
-  }
-
-  .source-list {
-    flex-direction: row;
-    gap: 6px;
-    padding: 0 12px;
-    overflow-x: auto;
-    @include ui.hide-scrollbar;
-  }
-
-  .source-chip,
-  .add-source,
-  .issues-chip {
-    flex: 0 0 auto;
-    gap: 6px;
-    width: auto;
-    min-height: 34px;
-    padding: 3px 5px 3px 3px;
-    border-color: var(--hairline);
-    border-radius: 999px;
-    font-size: 13px;
-  }
-
-  .source-icon {
-    --provider-icon-box: 26px;
-    --provider-icon-radius: 999px;
-  }
-
-  .add-icon {
-    width: 26px;
-    height: 26px;
-    border-radius: 999px;
-  }
-
-  .add-source {
-    padding-right: 10px;
-  }
-
-  .source-count {
-    flex-shrink: 0;
-    min-width: 22px;
-    padding: 3px 7px;
-    line-height: 1.1;
-  }
-
-  .issues-chip {
-    gap: 4px;
-    padding-inline: 8px 10px;
-  }
-
-  .source-label {
-    flex: 0 0 auto;
-  }
-
+  // One row of tabs: every view, then Settings.
   .view-nav {
     position: fixed;
     left: 0;
     right: 0;
     bottom: 0;
     z-index: 150;
+    display: flex;
+    gap: 2px;
     padding: 6px 8px calc(6px + env(safe-area-inset-bottom));
     background: color-mix(in srgb, var(--surface) 92%, transparent);
     border-top: 1px solid var(--hairline);
     backdrop-filter: blur(16px);
     -webkit-backdrop-filter: blur(16px);
-
-    .section-label {
-      @include ui.visually-hidden;
-    }
   }
 
+  .view-group,
   .view-list {
-    flex-direction: row;
+    display: contents;
+  }
+
+  .section-label {
+    @include ui.visually-hidden;
   }
 
   .view-btn {
@@ -471,13 +153,5 @@
   .view-label {
     flex: 0 0 auto;
     max-width: 100%;
-  }
-}
-
-// Narrow phones: the chip row must fit without scrolling, so the issues chip
-// keeps only its icon and count (the tooltip and aria-label carry the meaning).
-@include ui.down('phone-narrow') {
-  .issues-label {
-    @include ui.visually-hidden;
   }
 }

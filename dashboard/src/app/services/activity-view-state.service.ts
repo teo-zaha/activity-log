@@ -90,6 +90,8 @@ export class ActivityViewStateService {
   readonly openEventKey = computed<EntryKey | null>(() => this.url().event)
   /** The overlapping events the URL lists together; empty without a group. */
   readonly openGroupKeys = computed<readonly EntryKey[]>(() => this.url().events)
+  /** Whether details show over the view: an event, or a group's list. */
+  readonly detailsOpen = computed(() => this.url().event !== null || this.url().events.length > 0)
   readonly hourHeight = storage('calendar-hour-height', DEFAULT_HOUR_HEIGHT, {
     serializer: hourHeightSerializer,
   })

@@ -1,5 +1,11 @@
 <!-- Focuses the main content in place: following `#main-content` would leave the route. -->
-<a class="skip-link" href="#main-content" (click)="skipToMain($event)">Skip to activity</a>
+<a
+  class="skip-link"
+  href="#main-content"
+  [attr.inert]="activity.detailsOpen() ? '' : null"
+  (click)="skipToMain($event)"
+  >Skip to activity</a
+>
 
 <mat-progress-bar
   mode="indeterminate"
@@ -8,32 +14,7 @@
   aria-hidden="true"
 />
 
-<app-header />
-
-<div class="shell">
-  <app-sidebar />
-
-  <main
-    #main
-    id="main-content"
-    class="main-content"
-    tabindex="-1"
-    [attr.aria-busy]="activity.isLoading()"
-  >
-    <div class="view" [class.under-settings]="settingsTab()">
-      <!-- Also without sources: a backend that cannot be reached shows here, with Retry. -->
-      <app-collection-status />
-      @if (activity.hasNoSources()) {
-        <app-no-sources />
-      } @else {
-        <router-outlet />
-      }
-    </div>
-    <app-settings-page-host />
-  </main>
-</div>
-
-<app-event-detail />
+<router-outlet />
 
 @if (chrome.frameless) {
   <app-window-controls />

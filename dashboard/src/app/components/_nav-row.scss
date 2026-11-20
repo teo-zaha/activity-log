@@ -1,0 +1,58 @@
+@use 'dashboard-shared' as ui;
+
+// The sidebar's row look, shared by the view links, the source chips, the unavailable sources and
+// the Settings button (`sidebar`, `source-list`).
+
+@mixin section-label {
+  @include ui.kicker-label;
+  display: block;
+  padding: 0 10px 6px;
+  font-size: 10.5px;
+}
+
+@mixin row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  min-height: 38px;
+  padding: 6px 10px;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-secondary);
+  font:
+    500 13.5px/1.2 Inter,
+    sans-serif;
+  text-align: left;
+  cursor: pointer;
+  transition:
+    background-color 0.15s ease,
+    border-color 0.15s ease,
+    color 0.15s ease,
+    box-shadow 0.15s ease;
+
+  &:hover {
+    background: color-mix(in srgb, var(--surface-hover) 70%, transparent);
+    color: var(--text-primary);
+  }
+
+  &:focus-visible {
+    @include ui.focus-ring;
+  }
+}
+
+@mixin row-active {
+  background: var(--surface);
+  border-color: var(--hairline);
+  color: var(--text-primary);
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.06);
+}
+
+// The rail's square icon buttons.
+@mixin rail-row {
+  justify-content: center;
+  width: 46px;
+  min-height: 44px;
+  padding: 0;
+}

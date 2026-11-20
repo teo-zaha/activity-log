@@ -41,10 +41,14 @@
 }
 
 .header-inner {
-  display: flex;
+  // One row of a fixed height, whatever the middle holds: the brand and the actions never move
+  // between pages. The middle shrinks first, never the brand.
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  grid-template-rows: 40px;
+  grid-template-areas: 'brand center actions';
   align-items: center;
-  gap: 12px;
-  min-height: 64px;
+  column-gap: 12px;
   // Left padding centres the brand mark over the sidebar icons below it
   // (shell 12px + sidebar 8px + row border 1px + row padding 10px + half icon 10px = 41px).
   padding: 12px 16px 12px 24px;
@@ -53,25 +57,24 @@
 }
 
 :host-context(html.tauri) .header-inner {
-  min-height: 52px;
   padding-top: 0;
 }
 
 // ── Brand ────────────────────────────────────────────────────────────────────
 
 .brand {
+  grid-area: brand;
   display: flex;
   align-items: center;
   gap: 10px;
-  // Never squeezed: when the row runs out of room, the date fields give a little first.
-  flex-shrink: 0;
-  margin-right: auto;
 }
 
 .brand-mark {
   display: inline-grid;
   place-items: center;
-  flex: 0 0 34px;
+  // A width, not only a flex basis: WebKit sizes the brand's grid column from it.
+  flex: none;
+  width: 34px;
   height: 34px;
   border-radius: var(--radius-sm);
   background: linear-gradient(
@@ -93,106 +96,19 @@
   white-space: nowrap;
 }
 
-// ── Range ────────────────────────────────────────────────────────────────────
+// ── Middle ───────────────────────────────────────────────────────────────────
 
-.range-form {
+.header-center {
+  grid-area: center;
   display: flex;
-  align-items: center;
-  gap: 8px;
+  justify-content: flex-end;
   min-width: 0;
-}
-
-.range {
-  display: flex;
-  align-items: center;
-  min-width: 0;
-  height: 40px;
-  padding: 0 2px 0 4px;
-  border: 1px solid var(--border);
-  border-radius: var(--radius-md);
-  background: var(--surface);
-  transition:
-    border-color 0.15s ease,
-    box-shadow 0.15s ease;
-
-  &:focus-within {
-    border-color: var(--accent);
-    box-shadow: 0 0 0 3px var(--accent-soft);
-  }
-
-  &.is-disabled {
-    opacity: 0.7;
-  }
-}
-
-.range-field {
-  display: flex;
-  align-items: center;
-  min-width: 0;
-  padding-left: 8px;
-  cursor: text;
-}
-
-.range-label {
-  margin-right: 8px;
-  font-size: 11px;
-  font-weight: 700;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-  color: var(--text-tertiary);
-}
-
-.range-input {
-  flex: 0 1 92px;
-  width: 92px;
-  min-width: 0;
-  border: 0;
-  outline: none;
-  background: transparent;
-  color: var(--text-primary);
-  font:
-    500 14px Inter,
-    sans-serif;
-  font-variant-numeric: tabular-nums;
-
-  &:focus-visible {
-    outline: none;
-  }
-}
-
-.range-toggle {
-  color: var(--text-tertiary);
-  --mat-icon-button-state-layer-size: 32px;
-  --mat-datepicker-toggle-icon-color: var(--text-tertiary);
-  --mat-datepicker-toggle-active-state-icon-color: var(--accent);
-}
-
-.range-sep {
-  --icon-size: 16px;
-  color: var(--text-tertiary);
-  margin: 0 2px;
-}
-
-.btn-collect {
-  flex-shrink: 0;
-  min-width: 112px;
-}
-
-.btn-collect-label {
-  display: inline-grid;
-
-  > span {
-    grid-area: 1 / 1;
-  }
-
-  > .is-inactive {
-    visibility: hidden;
-  }
 }
 
 // ── Export actions ───────────────────────────────────────────────────────────
 
 .header-actions {
+  grid-area: actions;
   display: flex;
   align-items: center;
   gap: 6px;
@@ -209,13 +125,9 @@
 
 @include ui.down('tablet') {
   .header-inner {
-    gap: 8px;
+    column-gap: 8px;
     // Centres the brand mark over the rail icons (shell 8px + rail 6px + half of 62px content).
-    padding: 10px 12px 10px 28px;
-  }
-
-  .range-label {
-    @include ui.visually-hidden;
+    padding: 12px 12px 12px 28px;
   }
 
   .header-actions {
@@ -224,66 +136,21 @@
   }
 }
 
-// The Tauri window bottoms out at 760px; keep the header on one row there.
+// The Tauri window bottoms out at 760px; the header keeps one row there, the mark stays whole.
 @include ui.between('phone', 'window-min') {
   .brand-title {
     @include ui.visually-hidden;
   }
 }
 
-@include ui.down('window-min') {
-  .btn-collect {
-    min-width: 0;
-  }
-}
-
+// The middle wraps to a row of its own, which spaces itself from the first: the brand and the
+// actions stay put when a page has nothing there (the Settings tab).
 @include ui.down('phone') {
-  // Rows from the top: with the range left out (the Settings tab), the logo and buttons stay
-  // where they are instead of centring in the desktop app's minimum height.
   .header-inner {
-    padding-left: 12px;
-    flex-wrap: wrap;
-    align-content: flex-start;
-    row-gap: 10px;
-    min-height: 0;
-  }
-
-  .range-form {
-    order: 3;
-    flex: 1 1 100%;
-  }
-
-  .range {
-    flex: 1;
-    min-width: 0;
-  }
-
-  .range-field {
-    flex: 1;
-    padding-left: 6px;
-  }
-
-  .range-input {
-    width: 100%;
-    font-size: 13px;
-  }
-
-  .btn-collect {
-    width: 40px;
-    padding: 0;
-  }
-
-  .btn-collect-label {
-    @include ui.visually-hidden;
-  }
-}
-
-@include ui.down('phone-narrow') {
-  .range-sep {
-    display: none;
-  }
-
-  .range-toggle {
-    --mat-icon-button-state-layer-size: 28px;
+    grid-template-rows: 40px auto;
+    grid-template-areas:
+      'brand . actions'
+      'center center center';
+    padding: 10px 12px;
   }
 }

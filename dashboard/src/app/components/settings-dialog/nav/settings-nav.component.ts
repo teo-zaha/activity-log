@@ -1,5 +1,13 @@
 import { A11yModule } from '@angular/cdk/a11y'
-import { Component, computed, inject, input, output } from '@angular/core'
+import {
+  Component,
+  type ElementRef,
+  computed,
+  inject,
+  input,
+  output,
+  viewChild,
+} from '@angular/core'
 import { MatIconModule } from '@angular/material/icon'
 import { MatTooltipModule } from '@angular/material/tooltip'
 import { THEMES, ThemeService } from '../../../services/theme.service'
@@ -39,6 +47,8 @@ export class SettingsNavComponent {
   /** The phone's list page instead of a column beside the section. */
   readonly home = input(false)
   readonly selected = output<SettingsSelection>()
+  /** The home list's title, which takes focus when the list comes back on a phone. */
+  readonly homeTitle = viewChild<ElementRef<HTMLElement>>('homeTitle')
 
   private readonly theme = inject(ThemeService).theme
   protected readonly themeLabel = computed(

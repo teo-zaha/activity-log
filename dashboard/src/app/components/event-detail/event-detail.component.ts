@@ -24,11 +24,15 @@ import { MeetingDescriptionComponent } from '../meeting-description/meeting-desc
 import { PageHeaderComponent } from '../page-header/page-header.component'
 import { appLink, injectLinkBase, injectShareLink } from '../share/share-link'
 import { SourceBadgeComponent } from '../source-badge/source-badge.component'
+import { TopLayer } from '../../layouts/shell/top-layer.service'
 import { downQuery } from '../../utils/breakpoints'
+import { NavigationMotionService } from '../../navigation-motion'
 
 /**
  * The event drawer. A single event opens straight into its details; overlapping events open as a
- * list, and each row opens the same details with a way back and a stepper through the group.
+ * list, and each row opens the same details with a way back and a stepper through the group. It
+ * lies over whatever the shell shows, the phone's Settings tab included; on a phone it is a page
+ * of its own, and the list and an event are pages in it.
  */
 @Component({
   selector: 'app-event-detail',
@@ -49,6 +53,8 @@ import { downQuery } from '../../utils/breakpoints'
   host: {
     // On the document, so Escape closes even when a click left focus on nothing.
     '(document:keydown.escape)': 'onEscape($event)',
+    // Under the settings dialog the details are out of reach, as everything under them is.
+    '[attr.inert]': "layers.top() === 'settingsDialog' ? '' : null",
   },
 })
 export class EventDetailComponent {
@@ -59,7 +65,10 @@ export class EventDetailComponent {
   private readonly linkBase = injectLinkBase()
   /** On a phone the details are a page of their own, left with a back arrow. */
   protected readonly isPhone = mediaQuery(downQuery('phone'))
+  protected readonly motion = inject(NavigationMotionService)
+  protected readonly layers = inject(TopLayer)
   private readonly title = viewChild<ElementRef<HTMLElement>>('detailTitle')
+  private readonly listTitle = viewChild<ElementRef<HTMLElement>>('listTitle')
   private readonly body = viewChild<ElementRef<HTMLElement>>('body')
   private readonly rows = viewChildren<ElementRef<HTMLButtonElement>>('row')
   private readonly flyout = viewChild<ElementRef<HTMLElement>>('flyout')
@@ -77,9 +86,7 @@ export class EventDetailComponent {
     const index = group && entry ? group.indexOf(entry) : -1
     return index < 0 ? null : index
   })
-  protected readonly isOpen = computed(
-    () => this.activity.openEventKey() !== null || this.activity.openGroupKeys().length > 0
-  )
+  protected readonly isOpen = this.activity.detailsOpen
   /**
    * What shows for details the URL names but the entries do not hold: `loading` until the log is
    * in, then `missing` (another range, or the entry is gone). Null when there is something to show.
@@ -102,9 +109,11 @@ export class EventDetailComponent {
       const isOpen = this.isOpen()
       const index = this.openIndex()
 
+      // The details take focus as they open, on their title, so it is read out first.
       if (isOpen && !this.wasOpen) {
         const activeElement = document.activeElement
         this.previouslyFocusedElement = activeElement instanceof HTMLElement ? activeElement : null
+        this.moveFocus(() => this.titleOnScreen())
       }
 
       if (!isOpen && this.wasOpen) {
@@ -116,27 +125,54 @@ export class EventDetailComponent {
       if (isOpen && this.wasOpen && this.group() !== null) {
         const from = this.lastIndex
         if (from === null && index !== null) {
-          afterNextRender(() => this.title()?.nativeElement.focus(), { injector: this.injector })
+          this.moveFocus(() => this.title()?.nativeElement)
         } else if (from !== null && index === null) {
           // The row, unless the event left the group: then the page that says so.
-          afterNextRender(
-            () => (this.rows()[from] ?? this.title() ?? this.flyout())?.nativeElement.focus(),
-            { injector: this.injector }
-          )
+          this.moveFocus(() => (this.rows()[from] ?? this.title() ?? this.flyout())?.nativeElement)
         }
       }
 
       this.wasOpen = isOpen
       this.lastIndex = index
     })
+
+    // The settings dialog closed over the details: they take the focus it had.
+    this.layers.whenExposed('details', () => this.focusIfOutside())
   }
 
   /**
-   * Only the layer on top closes: the settings open over the details, and a dialog over either
-   * handles Escape first (and marks it handled).
+   * Moves focus after the next render, only while the details are on top: under the settings
+   * dialog they are `inert`, and a change in them (an update that removes or brings back the open
+   * event) must not pull focus out of the dialog. The dialog's close hands it over
+   * (`focusIfOutside`).
+   */
+  private moveFocus(to: () => HTMLElement | undefined): void {
+    afterNextRender(
+      () => {
+        if (this.layers.top() === 'details') to()?.focus()
+      },
+      { injector: this.injector }
+    )
+  }
+
+  /** The page's title, or the panel when the page has none (loading, not found). */
+  private titleOnScreen(): HTMLElement | undefined {
+    return (this.title() ?? this.listTitle() ?? this.flyout())?.nativeElement
+  }
+
+  private focusIfOutside(): void {
+    const flyout = this.flyout()?.nativeElement
+    if (flyout !== undefined && !flyout.contains(document.activeElement)) {
+      this.titleOnScreen()?.focus()
+    }
+  }
+
+  /**
+   * Only while the details are on top: the settings dialog opens over them, the phone's Settings
+   * tab lies under them. A dialog over the details handles Escape first (and marks it handled).
    */
   protected onEscape(event: Event): void {
-    if (!this.isOpen() || event.defaultPrevented || this.activity.settings() !== null) return
+    if (this.layers.top() !== 'details' || event.defaultPrevented) return
     event.preventDefault()
     this.close()
   }

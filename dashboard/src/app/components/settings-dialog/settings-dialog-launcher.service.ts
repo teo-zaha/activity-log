@@ -38,6 +38,8 @@ export class SettingsDialogLauncher {
   private readonly host = signal<'dialog' | 'page' | null>(null)
   /** Whether the settings show as the phone's Settings tab rather than in the dialog. */
   readonly pageOpen = computed(() => this.host() === 'page')
+  /** Whether the settings show in the dialog, or will once its code has loaded. */
+  readonly dialogOpen = computed(() => this.host() === 'dialog')
 
   private loadOpener = this.createOpenerLoader()
   private loading = false

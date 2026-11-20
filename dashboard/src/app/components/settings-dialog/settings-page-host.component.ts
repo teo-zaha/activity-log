@@ -1,5 +1,6 @@
 import { A11yModule } from '@angular/cdk/a11y'
-import { Component, effect, inject } from '@angular/core'
+import { Component, ElementRef, effect, inject, viewChild } from '@angular/core'
+import { TopLayer } from '../../layouts/shell/top-layer.service'
 import { ActivityService } from '../../services/activity.service'
 import { SettingsDialogLauncher } from './settings-dialog-launcher.service'
 import { SettingsDialogComponent } from './settings-dialog.component'
@@ -7,8 +8,9 @@ import { SettingsDialogComponent } from './settings-dialog.component'
 /**
  * The settings on a phone: the last tab of the bottom bar, shown in the main content in place of
  * the view, under the same header. Its pages are the list of sections, then one section. Wider
- * windows use the dialog. Lives in the app shell, so a view transition finds the page in the next
- * frame, and loads its code while the app is idle.
+ * windows use the dialog. Lives in the shell, outside the views' layout, and loads its code while
+ * the app is idle. Event details opened over it cover it: the shell makes it `inert` under them,
+ * and Escape closes them first (`TopLayer`).
  */
 @Component({
   selector: 'app-settings-page-host',
@@ -24,7 +26,7 @@ import { SettingsDialogComponent } from './settings-dialog.component'
           [cdkTrapFocus]="false"
           [cdkTrapFocusAutoCapture]="true"
         >
-          <app-settings-dialog chrome="page" />
+          <app-settings-dialog #page chrome="page" />
         </div>
       }
     }
@@ -37,7 +39,11 @@ import { SettingsDialogComponent } from './settings-dialog.component'
 })
 export class SettingsPageHostComponent {
   private readonly activity = inject(ActivityService)
+  private readonly host = inject<ElementRef<HTMLElement>>(ElementRef).nativeElement
   protected readonly open = inject(SettingsDialogLauncher).pageOpen
+  private readonly layers = inject(TopLayer)
+  // By its reference, not its class: a class query would load the deferred settings at startup.
+  private readonly page = viewChild<SettingsDialogComponent>('page')
   private previouslyFocused: HTMLElement | null = null
 
   constructor() {
@@ -55,11 +61,20 @@ export class SettingsPageHostComponent {
       }
       wasOpen = open
     })
+
+    // Details over the page closed: the page takes the focus they had.
+    this.layers.whenExposed('settingsPage', () => {
+      const active = document.activeElement
+      if (!this.host.contains(active)) this.page()?.focusTitle()
+    })
   }
 
-  /** A dialog over the page (a confirmation, a select's list) handles Escape first. */
+  /**
+   * Only while the page is on top: details over it close first. A dialog over it (a
+   * confirmation, a select's list) handles Escape first, too.
+   */
   protected onEscape(event: Event): void {
-    if (!this.open() || event.defaultPrevented) return
+    if (this.layers.top() !== 'settingsPage' || event.defaultPrevented) return
     event.preventDefault()
     void this.activity.closeSettings()
   }

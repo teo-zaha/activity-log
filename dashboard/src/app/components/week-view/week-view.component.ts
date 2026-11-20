@@ -22,6 +22,7 @@ import {
   sumMeetingTime,
 } from '../../utils/meeting-time'
 import { injectCalendarZoom } from '../calendar-zoom'
+import { NavigationMotionService } from '../../navigation-motion'
 
 const HOUR_START = 0
 const HOUR_END = 23
@@ -75,9 +76,15 @@ interface PositionedWeekOverflow {
   imports: [IconButtonComponent, ButtonComponent, MatIconModule],
   templateUrl: './week-view.component.html',
   styleUrl: './week-view.component.scss',
+  // Cross-fades with the calendar view it replaces (`navigation-motion.ts`, `styles.scss`).
+  host: {
+    '(animate.enter)': "motion.enter($event, 'view')",
+    '(animate.leave)': "motion.leave($event, 'view')",
+  },
 })
 export class WeekViewComponent {
   protected readonly activity = inject(ActivityService)
+  protected readonly motion = inject(NavigationMotionService)
 
   private readonly scrollEl = viewChild.required<ElementRef<HTMLElement>>('scrollEl')
   private readonly gridEl = viewChild.required<ElementRef<HTMLElement>>('gridEl')
