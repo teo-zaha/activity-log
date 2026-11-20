@@ -56,7 +56,8 @@
               "optimization": false,
               "extractLicenses": false,
               "sourceMap": true
-            }
+            },
+            "test": { "polyfills": ["src/test-polyfills.ts"] }
           },
           "defaultConfiguration": "development"
         },
@@ -78,7 +79,7 @@
         "test": {
           "builder": "@angular/build:unit-test",
           "options": {
-            "buildTarget": "dashboard:build",
+            "buildTarget": "dashboard:build:development,test",
             "tsConfig": "tsconfig.spec.json",
             "runner": "vitest",
             "include": ["src/**/*.spec.ts"],

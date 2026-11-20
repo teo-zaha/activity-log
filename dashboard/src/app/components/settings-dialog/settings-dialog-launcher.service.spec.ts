@@ -116,7 +116,9 @@ describe('SettingsDialogLauncher', () => {
 
   it('reports a failed chunk load, drops the parameter and loads again on the next click', async () => {
     let attempts = 0
-    class FlakyLauncher extends SettingsDialogLauncher {
+    // Class expressions: a class declaration here takes its base before the split test bundle has
+    // set it, and extends undefined.
+    const FlakyLauncher = class extends SettingsDialogLauncher {
       protected override importOpener(): Promise<Type<SettingsDialogOpener>> {
         attempts += 1
         return attempts === 1
@@ -145,7 +147,7 @@ describe('SettingsDialogLauncher', () => {
 
   it('does not open the dialog after the URL dropped the settings while its code loaded', async () => {
     let finishLoading = (): void => undefined
-    class SlowLauncher extends SettingsDialogLauncher {
+    const SlowLauncher = class extends SettingsDialogLauncher {
       protected override importOpener(): Promise<Type<SettingsDialogOpener>> {
         const load = super.importOpener()
         return new Promise(resolve => (finishLoading = (): void => resolve(load)))
@@ -162,7 +164,7 @@ describe('SettingsDialogLauncher', () => {
 
   it('keeps the phone page open when the dialog code fails to load after the window narrowed', async () => {
     let failLoading = (): void => undefined
-    class FailingLauncher extends SettingsDialogLauncher {
+    const FailingLauncher = class extends SettingsDialogLauncher {
       protected override importOpener(): Promise<Type<SettingsDialogOpener>> {
         return new Promise((_, reject) => {
           failLoading = (): void => reject(new Error('Failed to fetch dynamically imported module'))
