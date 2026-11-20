@@ -10,6 +10,7 @@
     "build": "ng build",
     "build:tauri": "ng build --configuration production",
     "test": "ng test --watch=false",
+    "test:layout": "ng test --watch=false --configuration layout",
     "test:watch": "ng test",
     "watch": "ng build --watch --configuration development"
   },
@@ -35,7 +36,9 @@
     "@testing-library/angular": "^19.6.0",
     "@testing-library/jest-dom": "^7.0.1",
     "@testing-library/user-event": "^14.6.8",
+    "@vitest/browser-playwright": "5.1.0",
     "jsdom": "^30.1.3",
+    "playwright": "1.65.1",
     "typescript": "catalog:",
     "vitest": "^5.1.0"
   }

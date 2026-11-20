@@ -5,6 +5,8 @@ logs/
 *.json.log
 .cache/
 .angular/
+# Screenshots Vitest's browser runner takes of a failed layout spec
+.vitest/
 .direnv
 target/
 desktop/gen/
