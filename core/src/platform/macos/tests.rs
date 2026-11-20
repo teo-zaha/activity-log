@@ -2,6 +2,16 @@ use std::time::{Duration, Instant};
 
 use super::{AppleScriptError, run_apple_script, script_error};
 
+/// Its error lines are parsed, so it runs in the C locale.
+#[tokio::test]
+async fn runs_in_the_c_locale() {
+    let locale = run_apple_script("return system attribute \"LC_ALL\"", &[])
+        .await
+        .unwrap();
+
+    assert_eq!(locale, "C");
+}
+
 #[tokio::test]
 async fn passes_arguments_and_returns_the_text_result() {
     let result = run_apple_script(

@@ -287,3 +287,40 @@ fn the_script_reads_a_tip_recorded_before_since_with_its_parents() {
         .collect::<Vec<_>>();
     assert_eq!(subjects, ["Old tip", "Parent"], "each once");
 }
+
+/// The script's git runs in the C locale whatever the distribution's language: a stand-in `git`
+/// reports the locale it was started in.
+#[cfg(unix)]
+#[test]
+fn the_script_runs_git_in_the_c_locale() {
+    use std::{os::unix::fs::PermissionsExt, process::Command};
+
+    use super::{WslTarget, build_script};
+
+    let bin = tempfile::tempdir().unwrap();
+    let seen = bin.path().join("locale");
+    let git = bin.path().join("git");
+    std::fs::write(
+        &git,
+        format!(
+            "#!/bin/sh\nprintf '%s' \"$LC_ALL\" > '{}'\n",
+            seen.display()
+        ),
+    )
+    .unwrap();
+    std::fs::set_permissions(&git, std::fs::Permissions::from_mode(0o755)).unwrap();
+    let target = WslTarget {
+        distro: "Test".to_string(),
+        dirs: vec![bin.path().display().to_string()],
+    };
+
+    Command::new("/bin/sh")
+        .arg("-c")
+        .arg(build_script(&target, Some(chrono::Utc::now())))
+        .env("PATH", format!("{}:/usr/bin:/bin", bin.path().display()))
+        .env("LC_ALL", "de_DE.UTF-8")
+        .output()
+        .unwrap();
+
+    assert_eq!(std::fs::read_to_string(&seen).unwrap(), "C");
+}

@@ -18,6 +18,17 @@ pub use windows::{
     running_process_names, system_log_access, wsl_distribution_names,
 };
 
+#[cfg(test)]
+mod tests;
+
+/// A `background_command` whose output is parsed: it runs in the C locale, so the dates and
+/// words it prints are English whatever language the user runs (AGENTS.md).
+pub fn parsed_output_command(program: &str) -> std::process::Command {
+    let mut command = background_command(program);
+    command.env("LC_ALL", "C");
+    command
+}
+
 /// A `Command` that never opens a console window, for subprocesses run by the GUI app.
 pub fn background_command(program: &str) -> std::process::Command {
     #[allow(unused_mut)]

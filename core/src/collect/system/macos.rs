@@ -5,6 +5,9 @@ use chrono::{DateTime, NaiveDateTime, TimeZone, Utc};
 use tokio::process::Command;
 
 #[cfg(target_os = "macos")]
+use crate::platform::parsed_output_command;
+
+#[cfg(target_os = "macos")]
 use crate::model::CollectOptions;
 use crate::model::{SystemEntry, SystemEntryType};
 
@@ -36,8 +39,7 @@ async fn collect_power_log(options: &CollectOptions) -> Result<Vec<SystemEntry>>
     use std::process::Stdio;
     use tokio::io::{AsyncBufReadExt, BufReader};
 
-    let mut child = Command::new("/usr/bin/pmset")
-        .args(["-g", "log"])
+    let mut child = power_log_command()
         .stdout(Stdio::piped())
         .stderr(Stdio::null())
         .kill_on_drop(true)
@@ -62,6 +64,23 @@ async fn collect_power_log(options: &CollectOptions) -> Result<Vec<SystemEntry>>
     Ok(entries)
 }
 
+/// `pmset -g log`, read as English whatever the user's language.
+#[cfg(target_os = "macos")]
+pub(crate) fn power_log_command() -> Command {
+    let mut command = Command::from(parsed_output_command("/usr/bin/pmset"));
+    command.args(["-g", "log"]);
+    command
+}
+
+/// `last -y reboot`, read as English: in another language it prints `Di. 17 Nov.` and no line
+/// would parse.
+#[cfg(target_os = "macos")]
+pub(crate) fn last_command() -> Command {
+    let mut command = Command::from(parsed_output_command("/usr/bin/last"));
+    command.args(["-y", "reboot"]);
+    command
+}
+
 #[cfg(target_os = "macos")]
 async fn collect_last(options: &CollectOptions) -> Result<Vec<SystemEntry>> {
     use std::process::Stdio;
@@ -71,9 +90,7 @@ async fn collect_last(options: &CollectOptions) -> Result<Vec<SystemEntry>> {
     // `last` prints newest first and covers the whole wtmp history. Stream it and stop at the
     // first entry older than the range instead of reading everything; dropping the child
     // (kill_on_drop) ends the process early.
-    let mut child = Command::new("/usr/bin/last")
-        .arg("-y")
-        .arg("reboot")
+    let mut child = last_command()
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .kill_on_drop(true)
