@@ -293,7 +293,7 @@ export class ActivityService {
   }
 
   /** Where a save's receipt stands against the state on screen, see `ReceiptStanding`. */
-  receiptStanding(receipt: InstallReceipt): ReceiptStanding {
+  receiptStanding(receipt: InstallReceipt | null): ReceiptStanding {
     return this.data.receiptStanding(receipt)
   }
 

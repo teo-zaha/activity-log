@@ -23,11 +23,7 @@ import {
 import { ActivityDataService } from './activity-data.service'
 import { ActivityBackendClient } from './backend/backend-client'
 import { type RuntimeStateSink, RuntimeStateSource } from './runtime-state/runtime-state-source'
-import {
-  ACTIVITY_POLL_ATTEMPTS,
-  ACTIVITY_POLL_DELAY_MS,
-  ACTIVITY_READ_TIMEOUT_MS,
-} from './runtime-state/polling-state-source'
+import { FIRST_PAIR_TIMEOUT_MS } from './runtime-state/push-state-source'
 import { ActivityViewStateService } from './activity-view-state.service'
 import { ProviderConfigFacade } from './provider-config-facade.service'
 import { localDayRange } from '../utils/local-day'
@@ -57,22 +53,21 @@ const withEntries = (log: ActivityLog, entries: ActivityLog['entries']): Activit
 /** Lets the service handle the answers it already has, up to its next wait. */
 const settleAnswers = (): Promise<unknown> => vi.advanceTimersByTimeAsync(0)
 
-function setup(
-  pollAttempts = 2,
-  pollDelayMs = 1
-): {
+/** Lets the mock host take one step: it pushes what a command changed. */
+const pushed = (backend: MockBackendTransport): Promise<unknown> =>
+  vi.advanceTimersByTimeAsync(backend.stepMs)
+
+/** Long enough for every reconnect to be tried and to fail. */
+const GIVE_UP_MS = 60_000
+
+function setup(stepMs = 1): {
   backend: MockBackendTransport
   service: ActivityDataService
   viewState: ActivityViewStateService
 } {
   const backend = new MockBackendTransport()
-  TestBed.configureTestingModule({
-    providers: [
-      provideMockBackend(backend),
-      { provide: ACTIVITY_POLL_ATTEMPTS, useValue: pollAttempts },
-      { provide: ACTIVITY_POLL_DELAY_MS, useValue: pollDelayMs },
-    ],
-  })
+  backend.stepMs = stepMs
+  TestBed.configureTestingModule({ providers: [provideMockBackend(backend)] })
   return {
     backend,
     service: TestBed.inject(ActivityDataService),
@@ -134,7 +129,7 @@ describe('ActivityDataService', () => {
   })
 
   it('waits for the first collection while the host has none yet', async () => {
-    const { backend, service } = setup(5)
+    const { backend, service } = setup()
     backend.activityResponses = [null, null, collectingLog]
 
     const load = service.initLoad()
@@ -149,10 +144,10 @@ describe('ActivityDataService', () => {
   })
 
   it('reports a backend it cannot reach, and Retry reconnects without collecting', async () => {
-    const { backend, service } = setup(3)
+    const { backend, service } = setup()
     vi.spyOn(backend, 'call')
     const unreachable = new BackendFailure('unreachable', 'connection refused')
-    backend.activityResponses = [unreachable, unreachable, unreachable]
+    backend.stateError = unreachable
 
     const load = service.initLoad()
     await vi.advanceTimersByTimeAsync(1)
@@ -163,6 +158,7 @@ describe('ActivityDataService', () => {
     })
     await vi.runAllTimersAsync()
     await load
+    backend.stateError = null
 
     expect(service.collectionStatus()).toEqual({
       kind: 'failed',
@@ -175,17 +171,19 @@ describe('ActivityDataService', () => {
     expect(service.allEntries()).toEqual(activityLog.entries)
     expect(service.collectionStatus()).toEqual({ kind: 'idle' })
     expect(calls(backend, BackendOperations.collect)).toEqual([])
+    expect(backend.streamsOpened).toBe(1 + 5 + 1)
   })
 
   it('follows a collection asked for after it gave up on the backend', async () => {
-    const { backend, service } = setup(2)
-    const unreachable = new BackendFailure('unreachable', 'connection refused')
-    backend.activityResponses = [unreachable, unreachable]
+    const { backend, service } = setup()
+    backend.stateError = new BackendFailure('unreachable', 'connection refused')
     const load = service.initLoad()
     await vi.runAllTimersAsync()
     await load
     expect(service.collectionStatus()).toMatchObject({ kind: 'failed' })
 
+    // The backend is back: its answer to the collect has the dashboard connect again.
+    backend.stateError = null
     backend.collectResponse = collectingLog
     backend.activityResponses = [collectingLog]
     await service.collect('2026-05-17', '2026-05-18')
@@ -193,24 +191,6 @@ describe('ActivityDataService', () => {
     await vi.runAllTimersAsync()
     expect(service.allEntries()).toEqual(activityLog.entries)
     expect(service.collectionStatus()).toEqual({ kind: 'idle' })
-  })
-
-  it('says so when a collection never completes', async () => {
-    const { backend, service, viewState } = setup()
-    backend.activityResponses = [running, running]
-    backend.activityResponse = running
-
-    const load = service.initLoad()
-    await vi.runAllTimersAsync()
-    await load
-
-    expect(viewState.dateFrom()).toBe('2026-05-04')
-    expect(viewState.dateTo()).toBe('2026-05-06')
-    expect(service.collectionStatus()).toEqual({
-      kind: 'timedOut',
-      operation: 'initial',
-      message: 'Timed out waiting for initial collection.',
-    })
   })
 
   describe('opened on a URL with a range', () => {
@@ -234,21 +214,14 @@ describe('ActivityDataService', () => {
       expect([viewState.dateFrom(), viewState.dateTo()]).toEqual(['2026-05-17', '2026-05-18'])
     })
 
-    it('keeps the host a command answer showed when an older first read brings another', async () => {
+    it('keeps the host a command answer showed when an older first pair brings another', async () => {
       const { backend, service } = openOnRange()
       const client = TestBed.inject(ActivityBackendClient)
-      const firstRead = held()
+      const firstPair = held()
       const post = held()
-      const handshake = held()
-      // Host a answered the first read before it was replaced by host b, which shows nothing.
+      // Host a sent the first pair before it was replaced by host b, which shows nothing.
       backend.epoch = 'a'
-      const old = backend.runtimeState()
-      backend.epoch = 'b'
-      backend.activityResponse = withEntries(activityLog, [])
-      const fresh = backend.runtimeState()
-      vi.spyOn(client, 'getRuntimeState')
-        .mockImplementationOnce(() => firstRead.gate.then(() => old))
-        .mockImplementationOnce(() => handshake.gate.then(() => fresh))
+      backend.stateGate = firstPair.gate
       vi.spyOn(client, 'collect').mockImplementationOnce(() =>
         post.gate.then(() => ({
           ...withEntries(activityLog, []),
@@ -258,24 +231,27 @@ describe('ActivityDataService', () => {
       )
       const starting = service.initLoad()
       await settleAnswers()
+      backend.epoch = 'b'
+      backend.stateGate = null
+      backend.activityResponses = []
+      backend.activityResponse = withEntries(activityLog, [])
       post.release()
       await settleAnswers()
       expect(service.hostEpoch()).toBe('b')
 
-      firstRead.release()
+      firstPair.release()
       await settleAnswers()
-      // Host a's pair conflicts with what host b answered: a fresh handshake decides.
+      // Host a's pair conflicts with what host b answered: a fresh stream decides.
       expect(service.allEntries()).toEqual([])
-      expect(client.getRuntimeState).toHaveBeenCalledTimes(2)
+      expect(backend.streamsOpened).toBe(2)
 
-      handshake.release()
       await vi.runAllTimersAsync()
       await starting
       expect(service.allEntries()).toEqual([])
       expect(service.hostEpoch()).toBe('b')
     })
 
-    it('reads the host without waiting for the collect to be answered', async () => {
+    it('follows the host without waiting for the collect to be answered', async () => {
       const { backend, service } = openOnRange()
       const post = held()
       backend.collectGate = post.gate
@@ -283,14 +259,14 @@ describe('ActivityDataService', () => {
       const load = service.initLoad()
       await settleAnswers()
 
-      expect(calls(backend, BackendOperations.runtimeState).length).toBeGreaterThan(0)
+      expect(backend.streamsOpened).toBe(1)
       expect(service.providersLoaded()).toBe(true)
       post.release()
       await vi.runAllTimersAsync()
       await load
     })
 
-    it('shows the accepted collect while the first read is still out, and sends it once', async () => {
+    it('shows the accepted collect while the first pair is still out, and sends it once', async () => {
       const { backend, service } = openOnRange()
       const partial: ActivityLog = { ...collectingLog, meta: { ...collectingLog.meta, ...range } }
       backend.collectResponses = [partial]
@@ -333,11 +309,11 @@ describe('ActivityDataService', () => {
       expect(service.allEntries()).toEqual(activityLog.entries)
       expect(service.pendingConnections().size).toBe(0)
       expect(service.collectionStatus()).toEqual({ kind: 'idle' })
-      expect(calls(backend, BackendOperations.runtimeState).length).toBe(2)
+      expect(backend.streamsOpened).toBe(1)
     })
 
     it('changes nothing for a state the host repeats', async () => {
-      const { backend, service } = setup(3)
+      const { backend, service } = setup()
       backend.activityResponses = [
         collectingLog,
         withEntries(collectingLog, [...collectingLog.entries]),
@@ -360,7 +336,7 @@ describe('ActivityDataService', () => {
       backend.activityResponses = [withEntries(collectingLog, jiraEntries), activityLog]
 
       await save()
-      await settleAnswers()
+      await pushed(backend)
 
       expect(service.collectionStatus()).toMatchObject({ kind: 'collecting', operation: 'collect' })
       expect(service.allEntries().map(entry => entry.source)).toEqual(['jira'])
@@ -378,7 +354,7 @@ describe('ActivityDataService', () => {
 
       await service.recheckConnection({ source: 'jira', name: 'default' })
       expect(service.providerInfo()[1]?.status).toBe('checking')
-      await settleAnswers()
+      await pushed(backend)
       expect(service.collectionStatus()).toMatchObject({ kind: 'collecting', operation: 'collect' })
 
       backend.providersResponse = { currentOs: 'linux', providers: providerInfo }
@@ -387,8 +363,8 @@ describe('ActivityDataService', () => {
       expect(service.collectionStatus()).toEqual({ kind: 'idle' })
     })
 
-    it('reads again after a failed read until the checks end', async () => {
-      const { backend, service } = setup(10)
+    it('connects again after a lost stream and follows the checks to their end', async () => {
+      const { backend, service } = setup()
       backend.providersResponse = { currentOs: 'linux', providers: withJira('checking') }
       const load = service.initLoad()
       await settleAnswers()
@@ -404,9 +380,9 @@ describe('ActivityDataService', () => {
       expect(service.providerInfo().map(info => info.status)).toEqual(['available', 'available'])
     })
 
-    it('keeps reading after one failed read among good ones', async () => {
-      // The third read fails: that is one failure in a row, not the budget used up.
-      const { backend, service } = setup(3)
+    it('keeps following after one lost stream among good ones', async () => {
+      // The host drops the stream once: one reconnect, not the budget used up.
+      const { backend, service } = setup()
       backend.activityResponses = [
         collectingLog,
         collectingLog,
@@ -422,25 +398,12 @@ describe('ActivityDataService', () => {
       expect(service.collectionStatus()).toEqual({ kind: 'idle' })
     })
 
-    it('gives a collection a check started its whole budget', async () => {
-      const { backend, service } = setup(3)
-      backend.activityResponses = [collectingLog, collectingLog, collectingLog, collectingLog]
-      void service.initLoad()
-      await vi.advanceTimersByTimeAsync(1)
-      // Two of three reads are spent when the check is accepted.
-      await service.recheckConnection({ source: 'jira', name: 'default' })
-      await vi.runAllTimersAsync()
-
-      expect(service.collectionStatus()).toEqual({ kind: 'idle' })
-      expect(service.allEntries()).toEqual(activityLog.entries)
-    })
-
-    it('gives up on a read the backend never answers', async () => {
-      const { backend, service } = setup(2)
+    it('gives up on a stream that never brings its pair', async () => {
+      const { backend, service } = setup()
       backend.stateGate = new Promise(() => undefined)
       const load = service.initLoad()
 
-      await vi.advanceTimersByTimeAsync(ACTIVITY_READ_TIMEOUT_MS)
+      await vi.advanceTimersByTimeAsync(FIRST_PAIR_TIMEOUT_MS)
       expect(service.connection().status.kind).toBe('reconnecting')
       await vi.runAllTimersAsync()
       await load
@@ -465,7 +428,7 @@ describe('ActivityDataService', () => {
     })
 
     it('shows a log whose entries were replaced under the same size', async () => {
-      const { backend, service } = setup(5)
+      const { backend, service } = setup()
       await service.initLoad()
       const replaced = jiraEntries.map(entry => ({ ...entry, id: 'AL-9:updated', key: 'AL-9' }))
       backend.activityResponses = [
@@ -474,7 +437,7 @@ describe('ActivityDataService', () => {
       ]
 
       await save()
-      await settleAnswers()
+      await pushed(backend)
       expect(service.allEntries()).toEqual(jiraEntries)
       await vi.advanceTimersByTimeAsync(1)
 
@@ -484,7 +447,7 @@ describe('ActivityDataService', () => {
 
   describe('an account that changes (B69)', () => {
     it('shows the entries a check takes away while the same connection stays pending', async () => {
-      const { backend, service } = setup(5)
+      const { backend, service } = setup()
       await service.initLoad()
       backend.activityResponses = [
         withEntries(collectingLog, jiraEntries),
@@ -493,7 +456,7 @@ describe('ActivityDataService', () => {
       backend.activityResponse = withEntries(activityLog, [])
 
       await save()
-      await settleAnswers()
+      await pushed(backend)
       expect(service.allEntries()).toEqual(jiraEntries)
 
       await vi.advanceTimersByTimeAsync(1)
@@ -504,14 +467,14 @@ describe('ActivityDataService', () => {
     })
 
     it('follows the collection a check starts after a label save', async () => {
-      const { backend, service } = setup(5)
+      const { backend, service } = setup()
       await service.initLoad()
       backend.providersResponse = { currentOs: 'linux', providers: withJira('checking') }
       // The host still shows the last log while the new check runs.
       backend.activityResponses = [activityLog]
 
       await save()
-      await settleAnswers()
+      await pushed(backend)
       expect(service.allEntries()).toEqual(activityLog.entries)
 
       // The check found another account: the host collected Jira again, with nothing for it.
@@ -549,7 +512,7 @@ describe('ActivityDataService', () => {
     })
 
     it('gives a superseded collect no say in loading or failure', async () => {
-      const { backend, service } = setup(8)
+      const { backend, service } = setup()
       await service.initLoad()
       let refuse = (_: Error): void => undefined
       backend.collectGate = new Promise((_, reject) => (refuse = reject))
@@ -565,7 +528,7 @@ describe('ActivityDataService', () => {
     })
 
     it('ends a collect’s say once a check is sent after it', async () => {
-      const { backend, service } = setup(8)
+      const { backend, service } = setup()
       await service.initLoad()
       let refuse = (_: Error): void => undefined
       backend.collectGate = new Promise((_, reject) => (refuse = reject))
@@ -582,7 +545,7 @@ describe('ActivityDataService', () => {
     })
 
     it('never shows the late answer of a superseded collect', async () => {
-      const { backend, service } = setup(8)
+      const { backend, service } = setup()
       await service.initLoad()
       const first = held()
       backend.collectGate = first.gate
@@ -605,7 +568,7 @@ describe('ActivityDataService', () => {
     })
 
     it('never brings back with a collect’s answer what a newer read took away', async () => {
-      const { backend, service } = setup(8)
+      const { backend, service } = setup()
       // A collection runs, so the host is being read.
       backend.activityResponses = []
       backend.activityResponse = collectingLog
@@ -626,8 +589,8 @@ describe('ActivityDataService', () => {
       expect(service.allEntries()).toEqual([])
     })
 
-    it('reads the host after a refused command, and after a superseded settings answer', async () => {
-      const { backend, service } = setup(8)
+    it('shows what the host pushes after a refused command and a superseded settings answer', async () => {
+      const { backend, service } = setup()
       await service.initLoad()
       const reply = held()
       backend.saveGate = reply.gate
@@ -641,7 +604,7 @@ describe('ActivityDataService', () => {
       // A check of Jira, sent after it, is refused: Jira is gone, which the read it brings shows.
       backend.recheckError = new BackendFailure('internal', 'No source jira/default')
       await expect(service.recheckConnection({ source: 'jira', name: 'default' })).rejects.toThrow()
-      await settleAnswers()
+      await pushed(backend)
       expect(service.providerInfo().map(info => info.connection.source)).toEqual(['git'])
 
       reply.release()
@@ -651,8 +614,8 @@ describe('ActivityDataService', () => {
     })
 
     it('shows a lost backend while a collect still waits for its answer', async () => {
-      const { backend, service } = setup(2)
-      // A collection runs, so the host is being read.
+      const { backend, service } = setup()
+      // A collection runs, so the host pushes.
       backend.activityResponses = []
       backend.activityResponse = collectingLog
       void service.initLoad()
@@ -660,8 +623,8 @@ describe('ActivityDataService', () => {
       backend.collectGate = new Promise(() => undefined)
       void service.collect('2026-05-10', '2026-05-11')
       backend.stateError = new BackendFailure('unreachable', 'connection refused')
-      // The reads give up long before the collect's answer would count as lost.
-      await vi.advanceTimersByTimeAsync(1000)
+      // The reconnects give up long before the collect's answer would count as lost.
+      await vi.advanceTimersByTimeAsync(20_000)
 
       expect(service.collectionStatus()).toMatchObject({
         kind: 'failed',
@@ -670,7 +633,7 @@ describe('ActivityDataService', () => {
     })
 
     it('resolves a collect once it is accepted, while the collection runs on', async () => {
-      const { backend, service } = setup(8)
+      const { backend, service } = setup()
       await service.initLoad()
       backend.collectResponse = collectingLog
       backend.activityResponses = []
@@ -757,7 +720,7 @@ describe('ActivityDataService', () => {
   })
 
   it('offers Retry for a collect sent from an idle screen whose answer never comes', async () => {
-    const { backend, service } = setup(2)
+    const { backend, service } = setup()
     await service.initLoad()
     backend.collectGate = new Promise(() => undefined)
     void service.collect('2026-05-10', '2026-05-11')
@@ -769,8 +732,8 @@ describe('ActivityDataService', () => {
     expect(service.collectionStatus().kind).toBe('failed')
   })
 
-  it('reads the host after a command whose answer was lost, without sending it again', async () => {
-    const { backend, service } = setup(4)
+  it('shows what a command whose answer was lost did, without sending it again', async () => {
+    const { backend, service } = setup()
     await service.initLoad()
     expect(service.allEntries()).toEqual(activityLog.entries)
     const recheck = vi
@@ -779,6 +742,7 @@ describe('ActivityDataService', () => {
         // The host checks again and evicts the entries, but its answer never arrives.
         backend.activityResponses = []
         backend.activityResponse = withEntries(activityLog, [])
+        backend.publish()
         return Promise.reject(new BackendFailure('unreachable', 'connection reset'))
       })
 
@@ -792,11 +756,10 @@ describe('ActivityDataService', () => {
   })
 
   describe('an answer that comes after its deadline', () => {
-    it('reads the host once more when a recheck is answered late', async () => {
-      const { backend, service } = setup(4)
+    it('shows what a recheck answered late did, but not its answer', async () => {
+      const { backend, service } = setup()
       await service.initLoad()
       const client = TestBed.inject(ActivityBackendClient)
-      const reads = vi.spyOn(client, 'getRuntimeState')
       const late = held()
       const send = vi
         .spyOn(client, 'recheckConnection')
@@ -811,7 +774,6 @@ describe('ActivityDataService', () => {
       ).rejects.toMatchObject({ kind: 'unreachable' })
       await vi.advanceTimersByTimeAsync(31_000)
       await refused
-      expect(reads).toHaveBeenCalledTimes(1)
       expect(service.allEntries()).toHaveLength(2)
 
       late.release()
@@ -821,8 +783,8 @@ describe('ActivityDataService', () => {
       expect(service.allEntries()).toEqual([])
     })
 
-    it('reads the host once more when a collect is answered late, and shows its range', async () => {
-      const { backend, service, viewState } = setup(4)
+    it('shows what a collect answered late did, and its range', async () => {
+      const { backend, service, viewState } = setup()
       await service.initLoad()
       const client = TestBed.inject(ActivityBackendClient)
       const late = held()
@@ -850,7 +812,7 @@ describe('ActivityDataService', () => {
     })
 
     it('follows a collection acknowledged in time for as long as it runs', async () => {
-      const { backend, service } = setup(100, 1000)
+      const { backend, service } = setup(1000)
       await service.initLoad()
       const send = vi.spyOn(TestBed.inject(ActivityBackendClient), 'collect')
       backend.collectResponse = running
@@ -866,11 +828,10 @@ describe('ActivityDataService', () => {
       expect(send).toHaveBeenCalledTimes(1)
     })
 
-    it('reads the host once for a recheck refused on an idle host', async () => {
-      const { backend, service } = setup(4)
+    it('keeps its stream for a recheck refused on a connected host', async () => {
+      const { backend, service } = setup()
       await service.initLoad()
       const client = TestBed.inject(ActivityBackendClient)
-      const reads = vi.spyOn(client, 'getRuntimeState')
       const send = vi.spyOn(client, 'recheckConnection')
       backend.recheckError = new BackendFailure('internal', 'lost')
 
@@ -879,17 +840,17 @@ describe('ActivityDataService', () => {
       )
       await vi.advanceTimersByTimeAsync(60 * 60 * 1000)
 
-      expect(reads).toHaveBeenCalledTimes(1)
+      expect(backend.streamsOpened).toBe(1)
       expect(send).toHaveBeenCalledTimes(1)
     })
   })
 
-  it('moves to a backend that restarted between two reads', async () => {
-    const { backend, service } = setup(8)
+  it('moves to a backend that restarted', async () => {
+    const { backend, service } = setup()
     await service.initLoad()
     expect(service.allEntries()).toEqual(activityLog.entries)
 
-    // No read failed: the next one is simply answered by another host.
+    // The collect is answered by another host; the old one's stream ends.
     backend.epoch = 'restarted-host'
     backend.activityResponse = withEntries(activityLog, [])
     await service.collect('2026-05-10', '2026-05-11')
@@ -900,45 +861,44 @@ describe('ActivityDataService', () => {
   })
 
   describe('teardown and retry', () => {
-    it('makes no read once it is torn down during the pause', async () => {
+    it('takes nothing more and opens no stream once it is torn down', async () => {
       const { backend, service } = setup()
       backend.activityResponses = [collectingLog]
-      const spy = vi.spyOn(backend, 'call')
-      const load = service.initLoad()
+      void service.initLoad()
       await settleAnswers()
-      const before = spy.mock.calls.length
+      const shown = service.allEntries()
 
       TestBed.resetTestingModule()
       await vi.runAllTimersAsync()
-      await load
 
-      expect(spy.mock.calls.length - before).toBe(0)
+      expect(service.allEntries()).toBe(shown)
+      expect(backend.streamsOpened).toBe(1)
     })
 
-    it('makes no read and delivers nothing once it is torn down during a read', async () => {
+    it('delivers nothing once it is torn down while the first pair is on its way', async () => {
       const { backend, service } = setup()
-      const read = held()
-      backend.stateGate = read.gate
-      const spy = vi.spyOn(backend, 'call')
-      const load = service.initLoad()
+      const pair = held()
+      backend.stateGate = pair.gate
+      void service.initLoad()
       await settleAnswers()
-      const before = spy.mock.calls.length
 
       TestBed.resetTestingModule()
-      read.release()
+      pair.release()
       await vi.runAllTimersAsync()
-      await load
 
-      expect(spy.mock.calls.length - before).toBe(0)
       expect(service.providersLoaded()).toBe(false)
+      expect(backend.streamsOpened).toBe(1)
     })
 
-    it('drops a read of the attempt Retry replaced', async () => {
-      const { backend, service } = setup(1)
-      backend.activityResponses = [new BackendFailure('unreachable', 'connection refused')]
-      await service.initLoad()
+    it('drops the pair of the stream Retry replaced', async () => {
+      const { backend, service } = setup()
+      backend.stateError = new BackendFailure('unreachable', 'connection refused')
+      const load = service.initLoad()
+      await vi.advanceTimersByTimeAsync(GIVE_UP_MS)
+      await load
       expect(service.collectionStatus()).toMatchObject({ kind: 'failed' })
-      // A read from the host before a restart is held; Retry reconnects to the new one.
+      backend.stateError = null
+      // A pair from the host before a restart is held; Retry reconnects to the new one.
       const stale = held()
       backend.stateGate = stale.gate
       const retry = service.retryCollection()
@@ -952,6 +912,7 @@ describe('ActivityDataService', () => {
       await retry
 
       expect(service.allEntries()).toEqual([])
+      expect(service.hostEpoch()).toBe('restarted-host')
     })
   })
 
@@ -977,7 +938,7 @@ describe('ActivityDataService', () => {
   })
 
   it('shows a failed collection again once a lost backend is back', async () => {
-    const { backend, service } = setup(1)
+    const { backend, service } = setup()
     const failed = { start: running.meta.start, end: running.meta.end, error: 'invalid report' }
     backend.activityResponses = []
     backend.activityResponse = failed
@@ -1055,7 +1016,7 @@ describe('ActivityDataService', () => {
   })
 
   it('applies each check as it ends and keeps the sources the user switched off', async () => {
-    const { backend, service, viewState } = setup(10)
+    const { backend, service, viewState } = setup()
     const [git, jira] = providerInfo
     if (!git || !jira) throw new Error('fixture has two providers')
     const checking = { status: 'checking', usable: false } as const
@@ -1250,6 +1211,19 @@ describe('ActivityDataService', () => {
       // A receipt answered under another host than the one on screen never waits either.
       await service.saveSettings(() => Promise.resolve(saved('a', 11)))
       source.feed().providers(providers('b', 11, [git!, jira!]))
+      expect(viewState.activeConnections().has('jira/default')).toBe(false)
+    })
+
+    it('never activates a save its host wrote but did not install (B70)', async () => {
+      const { source, service, viewState } = connect()
+      source.feed().state(pair('a', 1), true)
+      viewState.activeConnections.set(new Set(['git/default']))
+      const written = { ...saved('a', 1), installed: null }
+
+      await service.saveSettings(() => Promise.resolve(written))
+      source.feed().providers(providers('a', 2))
+
+      expect(service.receiptStanding(written.installed)).toBe('notInstalled')
       expect(viewState.activeConnections().has('jira/default')).toBe(false)
     })
 

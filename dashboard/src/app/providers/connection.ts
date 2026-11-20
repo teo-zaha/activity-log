@@ -19,7 +19,8 @@ const SOURCES: Readonly<Record<Source, true>> = {
   calendar: true,
 }
 
-function isSource(value: string): value is Source {
+/** Whether `value` names a source kind this dashboard has an adapter for. */
+export function isSource(value: string): value is Source {
   return Object.hasOwn(SOURCES, value)
 }
 

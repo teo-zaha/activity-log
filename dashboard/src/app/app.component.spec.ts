@@ -8,7 +8,7 @@ import { AppComponent } from './app.component'
 import { provideAppRouter } from './app.routes'
 import { ActivityDataService } from './services/activity-data.service'
 import { RuntimeEnvironmentService } from './services/backend/runtime-environment.service'
-import { ACTIVITY_POLL_ATTEMPTS } from './services/runtime-state/polling-state-source'
+import { RECONNECT_DELAYS_MS } from './services/runtime-state/push-state-source'
 import { MockBackendTransport, provideMockBackend } from './testing/activity-fixtures'
 import { provideDashboardDates } from './utils/date-adapter'
 import { BackendFailure } from './services/backend/backend-failure'
@@ -20,7 +20,7 @@ function shell(backend: MockBackendTransport): (Provider | EnvironmentProviders)
     provideAppRouter(),
     provideLocationMocks(),
     provideDashboardDates(),
-    { provide: ACTIVITY_POLL_ATTEMPTS, useValue: 1 },
+    { provide: RECONNECT_DELAYS_MS, useValue: [] },
     { provide: RuntimeEnvironmentService, useValue: { isTauri: (): boolean => false } },
   ]
 }

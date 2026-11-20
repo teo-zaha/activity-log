@@ -3,9 +3,11 @@ import userEvent from '@testing-library/user-event'
 import { describe, expect, it, vi } from 'vitest'
 import type {
   ConnectionId,
+  InstallReceipt,
   ProviderConfigSnapshotDto,
   ProviderKindDto,
 } from '../../../generated/activity'
+import type { ReceiptStanding } from '../../../services/types'
 import { ActivityService } from '../../../services/activity.service'
 import { BackendFailure } from '../../../services/backend/backend-failure'
 import { RuntimeEnvironmentService } from '../../../services/backend/runtime-environment.service'
@@ -50,28 +52,41 @@ async function setup(
   before: ProviderConfigSnapshotDto,
   after: ProviderConfigSnapshotDto,
   desktop = true,
-  created: ConnectionId | undefined = after.connections.at(-1)?.connection
-): Promise<{ addConnection: ReturnType<typeof vi.fn>; opened: ReturnType<typeof vi.fn> }> {
+  created: ConnectionId | undefined = after.connections.at(-1)?.connection,
+  installed: InstallReceipt | null = { epoch: 'mock-host', revision: 1 }
+): Promise<{
+  addConnection: ReturnType<typeof vi.fn>
+  opened: ReturnType<typeof vi.fn>
+  loadProviderConfig: ReturnType<typeof vi.fn>
+}> {
   const addConnection = vi.fn().mockResolvedValue({
     created,
     snapshot: after,
     providersResponse: { currentOs: 'windows', providers: providerInfo },
+    installed,
   })
   const opened = vi.fn()
+  const loadProviderConfig = vi.fn((): Promise<ProviderConfigSnapshotDto> =>
+    Promise.resolve(before)
+  )
+  // As the coordinator decides it: no receipt is a save the host never installed.
+  const receiptStanding = (receipt: InstallReceipt | null): ReceiptStanding =>
+    receipt === null ? 'notInstalled' : 'current'
   await render(SettingsAddSourcePaneComponent, {
     on: { opened },
     providers: [
       {
         provide: ActivityService,
         useValue: {
-          loadProviderConfig: (): Promise<ProviderConfigSnapshotDto> => Promise.resolve(before),
+          loadProviderConfig,
           addConnection,
+          receiptStanding,
         },
       },
       { provide: RuntimeEnvironmentService, useValue: { isTauri: (): boolean => desktop } },
     ],
   })
-  return { addConnection, opened }
+  return { addConnection, opened, loadProviderConfig }
 }
 
 describe('SettingsAddSourcePaneComponent', () => {
@@ -85,6 +100,28 @@ describe('SettingsAddSourcePaneComponent', () => {
 
     expect(addConnection).toHaveBeenCalledWith({ source: 'gitlab' })
     expect(opened).toHaveBeenCalledWith('gitlab/gitlab')
+  })
+
+  it('opens nothing for an add written but never installed (B70), and reads the snapshot again', async () => {
+    const before = snapshot([])
+    const { opened, loadProviderConfig } = await setup(
+      before,
+      snapshot([{ source: 'gitlab', name: 'gitlab' }]),
+      true,
+      { source: 'gitlab', name: 'gitlab' },
+      null
+    )
+    await screen.findByRole('button', { name: 'GitLab' })
+    const reads = loadProviderConfig.mock.calls.length
+
+    await userEvent.click(screen.getByRole('button', { name: 'GitLab' }))
+
+    expect(opened).not.toHaveBeenCalled()
+    await vi.waitFor(() => expect(loadProviderConfig.mock.calls.length).toBe(reads + 1))
+    // What shows is the snapshot read again, not the answer's.
+    expect((await screen.findByRole('button', { name: 'GitLab' })).textContent).not.toContain(
+      '1 added'
+    )
   })
 
   it('describes each source as the backend declares it', async () => {

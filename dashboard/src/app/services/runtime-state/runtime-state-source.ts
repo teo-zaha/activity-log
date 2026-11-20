@@ -1,16 +1,14 @@
 import { inject, Service } from '@angular/core'
 import type { ActivityUpdate, ProvidersUpdate, RuntimeState } from '../../generated/activity'
 import type { Failure } from '../failure'
-import { PollingStateSource } from './polling-state-source'
+import { PushStateSource } from './push-state-source'
 
 /** Why a source stopped trying until `retry()`. */
 export type SourceFailure =
-  /** Reads kept failing in a way another read could fix; the last one's failure. */
+  /** Connections kept failing in a way another one could fix; the last one's failure. */
   | { readonly kind: 'unreachable'; readonly failure: Failure }
-  /** The backend refused the read in a way reading again cannot fix (a route it lacks). */
+  /** The backend refused the connection in a way connecting again cannot fix. */
   | { readonly kind: 'refused'; readonly failure: Failure }
-  /** A collection or a check went on for longer than the backend allows it. */
-  | { readonly kind: 'timedOut' }
 
 export type SourceStatus =
   | { readonly kind: 'connecting' }
@@ -36,21 +34,20 @@ export interface RuntimeStateSink {
 
 /**
  * How the host's collection and source state reaches the dashboard. The coordinator
- * (`ActivityDataService`) applies what the source delivers and sends the commands. Today that
- * is `PollingStateSource`, which reads `get_runtime_state`; a pushing source delivers the same
- * pairs and updates.
+ * (`ActivityDataService`) applies what the source delivers and sends the commands. The host
+ * pushes it: `PushStateSource` follows `GET /api/events` or the desktop app's events.
  */
-@Service({ factory: (): RuntimeStateSource => inject(PollingStateSource) })
+@Service({ factory: (): RuntimeStateSource => inject(PushStateSource) })
 export abstract class RuntimeStateSource {
   /** Starts delivering to `sink`, once. */
   abstract connect(sink: RuntimeStateSink): void
   /**
-   * The backend answered a command: the host may collect or check now. A source that reads the
-   * state reads it at once and follows what it shows; one that is told the state does nothing.
+   * The backend answered a command, so it is reachable: a source that gave up starts a new
+   * connection attempt; one that is connected does nothing, the host tells it what changed.
    */
   abstract follow(): void
   /** A new connection attempt: after `failed`, or for a pair the coordinator missed. */
   abstract retry(): void
-  /** Resolves once nothing the backend does is being followed any more. */
+  /** Resolves once the current attempt brought its first pair, or the source gave up. */
   abstract settled(): Promise<void>
 }

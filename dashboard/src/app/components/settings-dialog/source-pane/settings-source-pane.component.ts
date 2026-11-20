@@ -380,9 +380,11 @@ export class SettingsSourcePaneComponent {
     )
     if (!removed.ok) return
     this.toast.success(`${label} removed`)
-    // Answered by a host that is gone: the connection of that name on screen is another's, so
-    // its draft and its section stay, and the snapshot is read again.
-    if (this.activity.receiptStanding(removed.value.installed) === 'otherHost') {
+    // Answered by a host that is gone, or one that shut down before it installed the removal:
+    // the connection of that name on screen is not the one removed there, so its draft and its
+    // section stay, and the snapshot is read again.
+    const standing = this.activity.receiptStanding(removed.value.installed)
+    if (standing === 'otherHost' || standing === 'notInstalled') {
       this.config.reload()
       return
     }

@@ -8,7 +8,6 @@ import { BackendFailure } from '../../services/backend/backend-failure'
 import { failure, failureOf } from '../../services/failure'
 import type { SourceLink } from '../../services/activity-data.service'
 import type { CollectionStatus } from '../../services/types'
-import { SettingsDialogLauncher } from '../settings-dialog/settings-dialog-launcher.service'
 import { CollectionStatusComponent } from './collection-status.component'
 
 async function setup(
@@ -18,31 +17,25 @@ async function setup(
 ): Promise<{
   retryCollection: ReturnType<typeof vi.fn>
   dismissCollectionStatus: ReturnType<typeof vi.fn>
-  open: ReturnType<typeof vi.fn>
   fixture: ComponentFixture<CollectionStatusComponent>
 }> {
   const retryCollection = vi.fn(() => Promise.resolve())
   const dismissCollectionStatus = vi.fn()
-  const open = vi.fn()
   const activity = {
     collectionStatus: signal(status),
     providers: signal(
       ['Git', 'System'].map(label => ({ label, collecting: collecting.includes(label) }))
     ),
-    unusableProviders: signal([{ key: 'outlook/default' }]),
     retryCollection,
     dismissCollectionStatus,
     connection: signal(link),
   }
 
   const { fixture } = await render(CollectionStatusComponent, {
-    providers: [
-      { provide: ActivityService, useValue: activity },
-      { provide: SettingsDialogLauncher, useValue: { open } },
-    ],
+    providers: [{ provide: ActivityService, useValue: activity }],
   })
 
-  return { retryCollection, dismissCollectionStatus, open, fixture }
+  return { retryCollection, dismissCollectionStatus, fixture }
 }
 
 describe('CollectionStatusComponent', () => {
@@ -70,24 +63,6 @@ describe('CollectionStatusComponent', () => {
     expect(status.textContent).not.toContain('Git')
   })
 
-  it('offers retry and source checks after a timeout', async () => {
-    const { retryCollection, open, dismissCollectionStatus } = await setup({
-      kind: 'timedOut',
-      operation: 'collect',
-      message: 'Timed out waiting for collection.',
-    })
-
-    expect(screen.getByRole('alert').textContent).toContain('Collection timed out')
-
-    await userEvent.click(screen.getByRole('button', { name: /retry/i }))
-    await userEvent.click(screen.getByRole('button', { name: 'Check sources' }))
-    await userEvent.click(screen.getByRole('button', { name: 'Dismiss' }))
-
-    expect(retryCollection).toHaveBeenCalled()
-    expect(open).toHaveBeenCalledWith('outlook/default')
-    expect(dismissCollectionStatus).toHaveBeenCalled()
-  })
-
   it('shows a reconnect over the state, and says when it is out of date', async () => {
     vi.useFakeTimers({ toFake: ['Date', 'setInterval', 'clearInterval'] })
     try {
@@ -109,8 +84,8 @@ describe('CollectionStatusComponent', () => {
     }
   })
 
-  it('shows failures without the source shortcut', async () => {
-    await setup({
+  it('shows a lost backend with Retry and Dismiss', async () => {
+    const { retryCollection, dismissCollectionStatus } = await setup({
       kind: 'failed',
       operation: 'initial',
       origin: 'lostBackend',
@@ -120,8 +95,10 @@ describe('CollectionStatusComponent', () => {
     const alert = screen.getByRole('alert').textContent
     expect(alert).toContain('Could not load activity')
     expect(alert).toContain('offline')
-    expect(screen.getByRole('button', { name: /retry/i })).toBeTruthy()
-    expect(screen.queryByRole('button', { name: 'Check sources' })).toBeNull()
+    await userEvent.click(screen.getByRole('button', { name: /retry/i }))
+    await userEvent.click(screen.getByRole('button', { name: 'Dismiss' }))
+    expect(retryCollection).toHaveBeenCalled()
+    expect(dismissCollectionStatus).toHaveBeenCalled()
   })
 
   it('offers no retry for a request the backend refused as invalid', async () => {

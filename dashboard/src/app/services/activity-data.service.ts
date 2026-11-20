@@ -36,8 +36,8 @@ import type {
 } from './types'
 
 /**
- * The host's state on screen. A pushing source starts with both parts; a command's answer can
- * come before a reading source's first pair, so either part can still be missing at first.
+ * The host's state on screen. A stream starts with both parts, but a command's answer can come
+ * before the stream's first pair, so either part can still be missing at first.
  */
 interface Installed {
   readonly epoch: string
@@ -84,7 +84,7 @@ interface Outcome {
   readonly origin: 'command' | 'source' | 'state'
   /** The command's token, the source's failure episode or the activity revision. */
   readonly id: number
-  readonly status: Extract<CollectionStatus, { kind: 'timedOut' | 'failed' }>
+  readonly status: Extract<CollectionStatus, { kind: 'failed' }>
 }
 
 type OutcomeKey = Pick<Outcome, 'origin' | 'id'>
@@ -324,9 +324,10 @@ export class ActivityDataService {
   /**
    * Where a save's receipt stands against what is on screen: of this host and nothing later
    * installed (or no host yet to tell), of this host with a later providers revision installed,
-   * or of another host.
+   * of another host, or none (written, never installed).
    */
-  receiptStanding(receipt: InstallReceipt): ReceiptStanding {
+  receiptStanding(receipt: InstallReceipt | null): ReceiptStanding {
+    if (receipt === null) return 'notInstalled'
     const installed = this.installed()
     if (installed === null) return 'current'
     if (installed.epoch !== receipt.epoch) return 'otherHost'
@@ -407,8 +408,8 @@ export class ActivityDataService {
 
   /**
    * `answer`, or a failure once it took longer than `COMMAND_ANSWER_TIMEOUT_MS`. The command may
-   * still reach the host after that, so when its answer comes after all, either way, the source
-   * reads the host once more; the answer itself has no say any more.
+   * still reach the host after that: what it did is pushed, and when its answer comes after all,
+   * either way, the source is told the backend answered; the answer itself has no say any more.
    */
   private answeredWithin<T>(answer: Promise<T>): Promise<T> {
     return new Promise((resolve, reject) => {
@@ -437,7 +438,8 @@ export class ActivityDataService {
 
   /**
    * A command's answer. Its failure may come after the host applied it (a lost or late answer),
-   * so the source reads the host either way; the command itself is never sent again.
+   * whose result the host pushes; the source is told either way, and the command is never sent
+   * again.
    */
   private async answered<T>(answer: Promise<T>): Promise<T> {
     try {
@@ -460,7 +462,8 @@ export class ActivityDataService {
 
   /**
    * The backend accepted a command: the latest one's answer is installed by its stamp; an older
-   * one's is not, since a newer command was sent after it. Either way the source reads again.
+   * one's is not, since a newer command was sent after it. Either way the source is told the
+   * backend answered (a source that gave up connects again).
    */
   private accept(token: number, install: () => void): void {
     if (token === this.latestToken) install()
@@ -474,7 +477,7 @@ export class ActivityDataService {
       this.install(pair.activity, pair.providers, true)
     } else if (epoch !== installed.epoch) {
       // Another host may come only with an attempt's first pair, and over a host that only a
-      // command's answer showed (an older read may still bring the host before) only with the
+      // command's answer showed (an older pair may still bring the host before) only with the
       // first pair of a handshake asked for here. Otherwise one is asked for.
       if (!authoritative || (!installed.confirmed && !this.resync.outstanding)) {
         return this.resyncFor(0)
@@ -588,9 +591,12 @@ export class ActivityDataService {
     this.activatePending()
   }
 
-  /** Keeps a save's receipt until its revision is installed; another host's never will be. */
-  private awaitInstall(receipt: InstallReceipt): void {
-    if (this.receiptStanding(receipt) === 'otherHost') return
+  /**
+   * Keeps a save's receipt until its revision is installed; another host's never will be, nor a
+   * save without one.
+   */
+  private awaitInstall(receipt: InstallReceipt | null): void {
+    if (receipt === null || this.receiptStanding(receipt) === 'otherHost') return
     this.pendingActivations = [...this.pendingActivations, receipt]
     this.activatePending()
   }
@@ -619,15 +625,6 @@ export class ActivityDataService {
   private sourceOutcome(cause: SourceFailure): Outcome['status'] {
     const operation = this.operation()
     switch (cause.kind) {
-      case 'timedOut':
-        return {
-          kind: 'timedOut',
-          operation,
-          message:
-            operation === 'initial'
-              ? 'Timed out waiting for initial collection.'
-              : 'Timed out waiting for collection.',
-        }
       case 'unreachable':
         return { kind: 'failed', operation, origin: 'lostBackend', failure: cause.failure }
       case 'refused':

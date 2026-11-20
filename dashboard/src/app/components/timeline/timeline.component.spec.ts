@@ -151,12 +151,13 @@ describe('TimelineComponent', () => {
     expect(room.querySelector('.online-mark')).toBeNull()
   })
 
-  it('explains an empty result when collection timed out', async () => {
+  it('explains an empty result when the backend was lost', async () => {
     const { activity } = mockActivity({
       status: {
-        kind: 'timedOut',
+        kind: 'failed',
         operation: 'collect',
-        message: 'Timed out waiting for collection.',
+        origin: 'lostBackend',
+        failure: failureOf(new BackendFailure('unreachable', 'offline')),
       },
     })
     activity.groupedByDay.set([])

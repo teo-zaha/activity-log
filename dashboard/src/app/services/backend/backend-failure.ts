@@ -40,10 +40,21 @@ export function httpFailureOf(error: unknown): BackendFailure {
   if (error.status === 0) {
     return new BackendFailure('unreachable', 'The backend cannot be reached', { cause: error })
   }
-  const body: unknown = error.error
-  if (isBackendError(body)) return new BackendFailure(body.kind, body.error, { cause: error })
-  return new BackendFailure('internal', `The backend answered ${error.status} without an error`, {
-    cause: error,
+  return responseFailureOf(error.status, error.error, error)
+}
+
+/**
+ * An answer of `status` whose `body` is the backend's `BackendError`, or anything else the
+ * server (or a proxy in between) sent, which is never shown.
+ */
+export function responseFailureOf(
+  status: number,
+  body: unknown,
+  cause: unknown = body
+): BackendFailure {
+  if (isBackendError(body)) return new BackendFailure(body.kind, body.error, { cause })
+  return new BackendFailure('internal', `The backend answered ${status} without an error`, {
+    cause,
   })
 }
 

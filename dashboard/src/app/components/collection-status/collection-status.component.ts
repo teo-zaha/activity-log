@@ -6,7 +6,6 @@ import { ButtonComponent } from '../button/button.component'
 import { IconButtonComponent } from '../button/icon-button.component'
 import { ActivityService } from '../../services/activity.service'
 import { retryable } from '../../services/collection-failure'
-import { SettingsDialogLauncher } from '../settings-dialog/settings-dialog-launcher.service'
 
 type BannerTone = 'info' | 'warn' | 'error'
 
@@ -33,7 +32,6 @@ interface CollectionBannerVm {
 })
 export class CollectionStatusComponent {
   protected readonly activity = inject(ActivityService)
-  private readonly settings = inject(SettingsDialogLauncher)
   private readonly now = signal(Date.now())
 
   protected readonly elapsedSeconds = computed(() => {
@@ -79,15 +77,6 @@ export class CollectionStatusComponent {
           retry: false,
         }
       }
-      case 'timedOut':
-        return {
-          tone: 'warn',
-          icon: 'timer_off',
-          title: 'Collection timed out',
-          message: `${status.message} A source may still be starting up or responding slowly.`,
-          busy: false,
-          retry: true,
-        }
       case 'failed':
         return {
           tone: 'error',
@@ -119,9 +108,5 @@ export class CollectionStatusComponent {
 
   protected dismiss(): void {
     this.activity.dismissCollectionStatus()
-  }
-
-  protected openSources(): void {
-    this.settings.open(this.activity.unusableProviders()[0]?.key)
   }
 }

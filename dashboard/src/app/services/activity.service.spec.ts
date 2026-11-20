@@ -10,7 +10,6 @@ import {
   provideMockBackend,
 } from '../testing/activity-fixtures'
 import { ActivityDataService } from './activity-data.service'
-import { ACTIVITY_POLL_DELAY_MS } from './runtime-state/polling-state-source'
 import { ActivityExportService } from './activity-export.service'
 import { ActivityService } from './activity.service'
 import { BackendFailure } from './backend/backend-failure'
@@ -20,7 +19,6 @@ function setup(exportFn: ActivityExportService['export']): ActivityService {
   TestBed.configureTestingModule({
     providers: [
       provideMockBackend(new MockBackendTransport()),
-      { provide: ACTIVITY_POLL_DELAY_MS, useValue: 1 },
       { provide: ActivityExportService, useValue: { export: exportFn } },
     ],
   })

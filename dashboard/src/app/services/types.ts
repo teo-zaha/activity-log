@@ -25,7 +25,6 @@ export type CollectionStatus =
       readonly operation: CollectionOperation
       readonly startedAt: number
     }
-  | { readonly kind: 'timedOut'; readonly operation: CollectionOperation; readonly message: string }
   | {
       readonly kind: 'failed'
       readonly operation: CollectionOperation
@@ -35,13 +34,15 @@ export type CollectionStatus =
 
 /**
  * Where a failure the shell shows comes from: the collect request the backend refused, the
- * backend lost after reads kept failing, a read it refuses for good, or the collection itself.
+ * backend lost after connections kept failing, a connection it refuses for good, or the
+ * collection itself.
  */
 export type FailureOrigin = 'collect' | 'lostBackend' | 'refusedRead' | 'collection'
 
 /**
  * Where a save's install receipt stands against the state on screen (`receiptStanding`): its
  * host with nothing later installed (or no host on screen yet), its host with a later providers
- * revision installed, or another host.
+ * revision installed, another host, or no receipt at all: the file was written but the host shut
+ * down before it installed it, so no host on screen will show it.
  */
-export type ReceiptStanding = 'current' | 'superseded' | 'otherHost'
+export type ReceiptStanding = 'current' | 'superseded' | 'otherHost' | 'notInstalled'

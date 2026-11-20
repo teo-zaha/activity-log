@@ -1118,9 +1118,11 @@ describe('SettingsSourcePaneComponent connections', () => {
     saveProviderConfig: ReturnType<typeof vi.fn>
     removeConnection: ReturnType<typeof vi.fn>
     removed: ReturnType<typeof vi.fn>
-    receiptStanding: ReturnType<typeof vi.fn<(receipt: InstallReceipt) => ReceiptStanding>>
+    receiptStanding: ReturnType<typeof vi.fn<(receipt: InstallReceipt | null) => ReceiptStanding>>
   }> {
-    const receiptStanding = vi.fn<(receipt: InstallReceipt) => ReceiptStanding>(() => 'current')
+    const receiptStanding = vi.fn<(receipt: InstallReceipt | null) => ReceiptStanding>(
+      () => 'current'
+    )
     const saveProviderConfig = vi.fn().mockResolvedValue({
       snapshot: connectionsSnapshot(),
       providersResponse: { currentOs: 'linux', providers: providerInfo },
@@ -1176,6 +1178,29 @@ describe('SettingsSourcePaneComponent connections', () => {
     await toasted
 
     expect(drafts.get('jira/default')?.label).toBe('Host B edit')
+    expect(removed).not.toHaveBeenCalled()
+  })
+
+  it('leaves the draft and the section of a removal written but never installed (B70)', async () => {
+    const { removeConnection, removed, receiptStanding } = await setupConnections()
+    receiptStanding.mockImplementation(receipt => (receipt === null ? 'notInstalled' : 'current'))
+    const drafts = TestBed.inject(SourceDrafts)
+    drafts.set('jira/default', { label: 'Edited meanwhile', values: {}, lists: {} })
+    // The file holds the removal, but the app quit before it installed it.
+    removeConnection.mockResolvedValueOnce({
+      snapshot: connectionsSnapshot(),
+      providersResponse: { currentOs: 'linux', providers: providerInfo },
+      installed: null,
+    })
+
+    await userEvent.click(screen.getByRole('button', { name: 'Remove source' }))
+    const question = await screen.findByRole('alertdialog')
+    const toasted = nextToast()
+    await userEvent.click(within(question).getByRole('button', { name: 'Remove' }))
+    await toasted
+
+    expect(receiptStanding).toHaveBeenCalledWith(null)
+    expect(drafts.get('jira/default')?.label).toBe('Edited meanwhile')
     expect(removed).not.toHaveBeenCalled()
   })
 

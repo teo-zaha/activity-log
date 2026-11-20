@@ -62,12 +62,11 @@ function command<Req, Res>(
 }
 
 export const BackendOperations = {
-  /** Both parts of the host's state, as one coherent pair with the host's stamps. */
-  runtimeState: read<RuntimeState>({
-    label: 'Runtime state',
-    tauri: 'get_runtime_state',
-    route: '/api/runtime-state',
-  }),
+  /**
+   * Both parts of the host's state, as one coherent pair with the host's stamps: the desktop
+   * app's handshake before its events. The browser follows `GET /api/events` instead.
+   */
+  runtimeState: read<RuntimeState>({ label: 'Runtime state', tauri: 'get_runtime_state' }),
   providerConfig: read<ProviderConfigSnapshotDto>({
     label: 'Provider configuration',
     tauri: 'get_provider_config',
