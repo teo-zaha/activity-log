@@ -105,6 +105,17 @@ Routes (the shell, then the views' layout, then the views, lazy-loaded into its 
 - Date pickers use one root adapter, `provideDashboardDates()` (`utils/date-adapter.ts`): typed digits read day first (`en-GB`); no component provides its own date adapter
 - Path URLs, not hash URLs: the Tauri asset protocol serves `index.html` for unknown paths and `ng serve` falls back to it; the Rocket API does not serve the dashboard
 
+## Code Quality
+
+Working code is not done code. A change that works but misses these rules is unfinished, and a review reports each miss as a finding, not as taste. The Rust and Angular rules below apply them to each side.
+
+- Logic never decides anything by comparing, searching or parsing text meant for people. Tell cases apart by types: enums, discriminated unions, error kinds, status codes. Messages are only for people to read
+- Make wrong states unrepresentable: one union of states instead of flags or nullable fields that must agree, and an `Option` or a variant instead of a sentinel (`""`, `-1`, `"unknown"`, a shared marker string)
+- One source of truth per fact: a contract is generated from its owner (Rust), a rule lives in one place, a value is derived instead of copied. When something replaces old code, delete the old code
+- Types hold across every boundary (HTTP, IPC, events, the cache, generated DTOs): no casts where narrowing works, no `any`, no error strings a caller must tell apart; untrusted input is checked where it enters
+- Errors keep their kind and their cause: never swallow one, never merge different failures into one
+- Tests check behaviour and fail without the fix they guard; they assert kinds and results, not wording, unless the wording is the product
+
 ## Rust Rules
 
 - Keep shared domain and API types in `core/src/model/`, not in `api` or `cli`
