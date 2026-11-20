@@ -195,7 +195,7 @@ Total: 64 events
 
 ### Phone-width layout
 
-At a width of 640px or less, the view switcher and Settings move to a bottom tab bar and the source chips become a horizontally scrolling row.
+At a width of 640px or less, the view switcher and Settings move to a bottom tab bar and the source chips become a horizontally scrolling row. Event details and each settings section are pages of their own that slide in and out (not with reduced motion); the header keeps its logo and buttons in place on every tab.
 
 <table align="center">
   <tr>
@@ -673,7 +673,8 @@ activity-log/
 ├── desktop/                   Tauri desktop crate, config, capabilities, and icons
 ├── dashboard/
 │   ├── src/app/
-│   │   ├── components/        header, filters, timeline, calendar views, settings dialog
+│   │   ├── layouts/           routed layouts: the shell (header, navigation, main) and the views' layout
+│   │   ├── components/        header, range, sources, timeline, calendar views, settings dialog
 │   │   ├── generated/         Rust-generated DTOs
 │   │   ├── services/          app state; backend/ holds the operation table and HTTP/Tauri transports
 │   │   ├── models/            Angular-only view models
