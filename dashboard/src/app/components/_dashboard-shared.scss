@@ -63,6 +63,14 @@ $breakpoints: (
   }
 }
 
+/// Where the pointer cannot hover (a touch screen), at any width: hides what only a mouse and a
+/// keyboard use, such as key tags. `@include ui.no-hover { display: none; }`.
+@mixin no-hover {
+  @media (hover: none) {
+    @content;
+  }
+}
+
 @mixin panel-shell(
   $radius: 28px,
   $background: var(--panel-bg),

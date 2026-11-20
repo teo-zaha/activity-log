@@ -2,7 +2,8 @@
 // `styles`) and `index.html`:
 // - every `:hover` goes through the `ui.hover` mixin (`components/_dashboard-shared.scss`), which
 //   applies it only where the pointer hovers and not after a touch, and shows the same look while
-//   a control is pressed; the compiled mixin is pinned below;
+//   a control is pressed; the compiled mixin is pinned below; a hover media query is written only
+//   in it and in `ui.no-hover` (what a touch screen hides, such as key tags, at every width);
 // - every scroller says what its overscroll does (`overscroll-behavior` beside its `overflow`, on
 //   the scroller itself, for each axis it scrolls), so it hands its bounce on only where it means to;
 // - the viewport covers the whole screen (`viewport-fit=cover`) and keeps pinch zoom.
@@ -102,7 +103,8 @@ function selectorSyntax(prelude) {
 }
 
 const HOVER_USE = /^@include\s+(?:ui\.)?hover\b/
-const HOVER_MIXIN = /^@mixin\s+hover\b/
+/** The mixins that hold the dashboard's hover media queries: `ui.hover` and `ui.no-hover`. */
+const HOVER_MIXIN = /^@mixin\s+(?:no-)?hover\b/
 const HOVER_MEDIA = /\(\s*(?:any-)?hover\s*:/
 const SCROLLS = /^(?:auto|scroll)$/
 /** At-rules a declaration inside them shares with the rule around them. */
@@ -261,6 +263,8 @@ test('the checker allows what the rules allow', () => {
     '.a { @include ui.hover { color: red; } }',
     '.a { @include ui.hover($pressed: false) { .b { color: red } } }',
     '@mixin hover { @media (hover: hover) { &:hover { @content; } } }',
+    '@mixin no-hover { @media (hover: none) { @content; } }',
+    '.a { @include ui.no-hover { display: none } }',
     '// .a:hover {\n.a { color: red }',
     ".a::after { content: ':hover {' }",
     '.a[data-tip=":hover"] { color: red }',
@@ -309,6 +313,18 @@ test('the checker reads every inline stylesheet a component declares', () => {
     () => inlineStyles("@Component({ styles: [base + ':host {}'] }) class C {}"),
     UnreadableStylesheet
   )
+})
+
+test('key tags hide wherever the pointer cannot hover, at every width', () => {
+  const sheet = join(SOURCE, 'app', 'components', 'shortcut', 'key-tag.component.scss')
+  const { css } = sass().compile(sheet, { loadPaths: [SOURCE] })
+  const hidden = blocks(css).filter(
+    block =>
+      block.prelude === ':host' &&
+      block.parent?.prelude === '@media (hover: none)' &&
+      block.declarations.some(({ property, value }) => property === 'display' && value === 'none')
+  )
+  assert.equal(hidden.length, 1)
 })
 
 test('ui.hover compiles to a hover only where the pointer hovers, and to the pressed look', () => {

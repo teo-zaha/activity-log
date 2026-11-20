@@ -11,11 +11,17 @@ export interface SegmentedOption<T extends string> {
 
 /**
  * The option a radio group's key moves to from `current` among `count`: the arrows step and wrap,
- * Home and End go to the ends. Null for any other key.
+ * Home and End go to the ends. Null for any other key, and for a key held with Alt, Ctrl or ⌘,
+ * which is the app's or the browser's (Alt+← is Back).
  */
-export function radioKeyTarget(key: string, current: number, count: number): number | null {
+export function radioKeyTarget(
+  event: KeyboardEvent,
+  current: number,
+  count: number
+): number | null {
+  if (event.altKey || event.ctrlKey || event.metaKey) return null
   const last = count - 1
-  switch (key) {
+  switch (event.key) {
     case 'ArrowRight':
     case 'ArrowDown':
       return current >= last ? 0 : current + 1
@@ -55,7 +61,7 @@ export class SegmentedControlComponent<T extends string> {
   protected onKeydown(event: KeyboardEvent): void {
     const options = this.options()
     const current = options.findIndex(option => option.value === this.value())
-    const next = radioKeyTarget(event.key, current, options.length)
+    const next = radioKeyTarget(event, current, options.length)
     if (next === null || !options[next]) return
     event.preventDefault()
     this.value.set(options[next].value)

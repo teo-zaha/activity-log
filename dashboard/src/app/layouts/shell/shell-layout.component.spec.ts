@@ -1,61 +1,17 @@
-import { provideLocationMocks } from '@angular/common/testing'
-import { Component, type EnvironmentProviders, type Provider } from '@angular/core'
-import { DeferBlockBehavior, TestBed } from '@angular/core/testing'
-import { provideRouter, Router } from '@angular/router'
-import { fireEvent, render, screen, within } from '@testing-library/angular'
+import { Component } from '@angular/core'
+import { TestBed } from '@angular/core/testing'
+import { provideRouter } from '@angular/router'
+import { fireEvent, screen, within } from '@testing-library/angular'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { AppComponent } from '../../app.component'
-import { loadView, provideAppRouter } from '../../app.routes'
-import { LOGS_POLL_INTERVAL_MS } from '../../components/settings-dialog/logs-pane/settings-logs-pane.component'
+import { loadView } from '../../app.routes'
 import { createEntryAdapter } from '../../providers/provider-adapter'
 import { ActivityService } from '../../services/activity.service'
-import { RuntimeEnvironmentService } from '../../services/backend/runtime-environment.service'
-import { RECONNECT_DELAYS_MS } from '../../services/runtime-state/push-state-source'
+import { activityLog } from '../../testing/activity-fixtures'
+import { openApp as open } from '../../testing/app'
 import { mockPhone } from '../../testing/media'
 import { holdMotion } from '../../testing/motion'
-import { stubLayoutObservers } from '../../testing/observers'
-import {
-  activityLog,
-  MockBackendTransport,
-  provideMockBackend,
-} from '../../testing/activity-fixtures'
-import { provideDashboardDates } from '../../utils/date-adapter'
 import { ShellLayoutComponent } from './shell-layout.component'
 import { ViewsLayoutComponent } from '../views/views-layout.component'
-
-/** The app in a browser: the backend, and the services every page uses. */
-function app(backend: MockBackendTransport): (Provider | EnvironmentProviders)[] {
-  return [
-    provideMockBackend(backend),
-    provideLocationMocks(),
-    provideDashboardDates(),
-    { provide: RECONNECT_DELAYS_MS, useValue: [] },
-    { provide: LOGS_POLL_INTERVAL_MS, useValue: 60_000 },
-    { provide: RuntimeEnvironmentService, useValue: { isTauri: (): boolean => false } },
-  ]
-}
-
-/** Renders the app, its shell routed in, and navigates to `url` as its first navigation. */
-async function open(
-  url: string,
-  options: { backend?: MockBackendTransport; router?: Provider | EnvironmentProviders } = {}
-): Promise<{ router: Router; settle: () => Promise<void>; backend: MockBackendTransport }> {
-  stubLayoutObservers()
-  const backend = options.backend ?? new MockBackendTransport()
-  const { fixture } = await render(AppComponent, {
-    providers: [...app(backend), options.router ?? provideAppRouter()],
-    // As a browser does: what comes and goes runs its enter and leave callbacks.
-    configureTestBed: testBed =>
-      testBed.configureTestingModule({
-        animationsEnabled: true,
-        deferBlockBehavior: DeferBlockBehavior.Playthrough,
-      }),
-  })
-  const router = TestBed.inject(Router)
-  await router.navigateByUrl(url)
-  await fixture.whenStable()
-  return { router, settle: () => fixture.whenStable(), backend }
-}
 
 /**
  * For what loads its code on demand (the settings dialog), which takes seconds on a cold build

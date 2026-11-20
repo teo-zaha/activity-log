@@ -22,6 +22,8 @@
         class="content-header"
         [backLabel]="isPhone() ? 'Back to settings' : null"
         [closeLabel]="isPhone() ? null : 'Close settings'"
+        [backKeys]="keys.back"
+        [closeKeys]="keys.close"
         (goBack)="back()"
         (dismiss)="close()"
       >

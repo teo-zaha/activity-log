@@ -27,6 +27,7 @@ import { SourceBadgeComponent } from '../source-badge/source-badge.component'
 import { TopLayer } from '../../layouts/shell/top-layer.service'
 import { downQuery } from '../../utils/breakpoints'
 import { NavigationMotionService } from '../../navigation-motion'
+import { ShortcutService, ariaKeysOf } from '../../services/shortcut.service'
 
 /**
  * The event drawer. A single event opens straight into its details; overlapping events open as a
@@ -51,8 +52,6 @@ import { NavigationMotionService } from '../../navigation-motion'
   templateUrl: './event-detail.component.html',
   styleUrl: './event-detail.component.scss',
   host: {
-    // On the document, so Escape closes even when a click left focus on nothing.
-    '(document:keydown.escape)': 'onEscape($event)',
     // Under the settings dialog the details are out of reach, as everything under them is.
     '[attr.inert]': "layers.top() === 'settingsDialog' ? '' : null",
   },
@@ -67,6 +66,19 @@ export class EventDetailComponent {
   protected readonly isPhone = mediaQuery(downQuery('phone'))
   protected readonly motion = inject(NavigationMotionService)
   protected readonly layers = inject(TopLayer)
+  private readonly shortcuts = inject(ShortcutService)
+  /**
+   * The keys of the controls that do what a shortcut does: the group's back button goes Back;
+   * the close button and the phone's back arrow, which closes too, answer Escape and Back.
+   */
+  protected readonly keys = {
+    back: this.shortcuts.ariaKeys('app.back'),
+    close: this.shortcuts.ariaKeys('layer.close'),
+    closeOrBack: ariaKeysOf([
+      this.shortcuts.ariaKeys('layer.close'),
+      this.shortcuts.ariaKeys('app.back'),
+    ]),
+  }
   private readonly title = viewChild<ElementRef<HTMLElement>>('detailTitle')
   private readonly listTitle = viewChild<ElementRef<HTMLElement>>('listTitle')
   private readonly body = viewChild<ElementRef<HTMLElement>>('body')
@@ -138,6 +150,20 @@ export class EventDetailComponent {
 
     // The settings dialog closed over the details: they take the focus it had.
     this.layers.whenExposed('details', () => this.focusIfOutside())
+
+    // While open, the details are a layer: Escape and Back are theirs while they are on top (the
+    // settings dialog opens over them, the phone's Settings tab lies under them). A field or
+    // dialog that handles Escape first keeps it. On a phone they hide the view under them.
+    effect(onCleanup => {
+      if (!this.isOpen()) return
+      const onTop = (): boolean => this.layers.top() === 'details'
+      const off = [
+        this.shortcuts.openLayer({ kind: 'page', hidesRoute: this.isPhone() }),
+        this.shortcuts.bind('layer.close', () => this.close(), onTop),
+        this.shortcuts.bind('app.back', () => this.back(), onTop),
+      ]
+      onCleanup(() => off.forEach(close => close()))
+    })
   }
 
   /**
@@ -167,14 +193,10 @@ export class EventDetailComponent {
     }
   }
 
-  /**
-   * Only while the details are on top: the settings dialog opens over them, the phone's Settings
-   * tab lies under them. A dialog over the details handles Escape first (and marks it handled).
-   */
-  protected onEscape(event: Event): void {
-    if (this.layers.top() !== 'details' || event.defaultPrevented) return
-    event.preventDefault()
-    this.close()
+  /** Back from an event of a group is its list; from anything else it closes the details. */
+  private back(): void {
+    if (this.openIndex() !== null) this.backToList()
+    else this.close()
   }
 
   protected close(): void {

@@ -230,6 +230,12 @@ export class ActivityService {
     return this.data.collect(fromKey, toKey)
   }
 
+  /** Collects the range on screen (Collect, ⌘R); null when it has no range to collect. */
+  collectShownRange(): Promise<void> | null {
+    const [from, to] = [this.dateFrom(), this.dateTo()]
+    return from !== null && to !== null ? this.collect(from, to) : null
+  }
+
   /** Retry for the collection failure shown, see `ActivityDataService.retryCollection`. */
   retryCollection(): Promise<void> {
     return this.data.retryCollection()

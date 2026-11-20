@@ -1,5 +1,5 @@
 import { TestBed } from '@angular/core/testing'
-import { fireEvent, render, screen } from '@testing-library/angular'
+import { createEvent, fireEvent, render, screen } from '@testing-library/angular'
 import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, it } from 'vitest'
 import { ThemeService } from '../../../../services/theme.service'
@@ -32,5 +32,16 @@ describe('SettingsThemeCardComponent', () => {
     fireEvent.keyDown(screen.getByRole('radiogroup'), { key: 'ArrowLeft' })
     fireEvent.keyDown(screen.getByRole('radiogroup'), { key: 'ArrowLeft' })
     expect(themes.theme()).toBe('midnight')
+  })
+
+  it('leaves Alt+← (Back) to the app and the browser, keeping the theme', async () => {
+    await render(SettingsThemeCardComponent)
+    const group = screen.getByRole('radiogroup')
+
+    const event = createEvent.keyDown(group, { key: 'ArrowLeft', altKey: true })
+    fireEvent(group, event)
+
+    expect(event.defaultPrevented).toBe(false)
+    expect(TestBed.inject(ThemeService).theme()).toBe('light')
   })
 })
