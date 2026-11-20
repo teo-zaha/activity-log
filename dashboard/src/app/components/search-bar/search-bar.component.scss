@@ -79,18 +79,8 @@
 .search-hint {
   position: absolute;
   right: 12px;
-  display: grid;
-  place-items: center;
-  min-width: 22px;
-  height: 22px;
-  border: 1px solid var(--border);
-  border-bottom-width: 2px;
-  border-radius: 6px;
+  border-color: var(--border);
   color: var(--text-tertiary);
-  font:
-    600 12px Inter,
-    sans-serif;
-  pointer-events: none;
 }
 
 @include ui.down('tablet') {
@@ -121,10 +111,5 @@
 
   .search-clear {
     right: 4px;
-  }
-
-  // No hardware keyboard to press `/` on.
-  .search-hint {
-    display: none;
   }
 }

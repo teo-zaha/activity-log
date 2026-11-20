@@ -1,5 +1,5 @@
 import { signal } from '@angular/core'
-import { fireEvent, render, screen } from '@testing-library/angular'
+import { createEvent, fireEvent, render, screen } from '@testing-library/angular'
 import userEvent from '@testing-library/user-event'
 import { describe, expect, it } from 'vitest'
 import { type SegmentedOption, SegmentedControlComponent } from './segmented-control.component'
@@ -59,5 +59,18 @@ describe('SegmentedControlComponent', () => {
     expect(value()).toBe('all')
     fireEvent.keyDown(group, { key: 'End' })
     expect(value()).toBe('error')
+  })
+
+  it('leaves a modified arrow (Alt+← is Back) to the app and the browser', async () => {
+    const value = await renderControl()
+    const group = screen.getByRole('radiogroup')
+
+    for (const modifier of ['altKey', 'ctrlKey', 'metaKey'] as const) {
+      const event = createEvent.keyDown(group, { key: 'ArrowLeft', [modifier]: true })
+      fireEvent(group, event)
+      expect(event.defaultPrevented, modifier).toBe(false)
+    }
+
+    expect(value()).toBe('all')
   })
 })

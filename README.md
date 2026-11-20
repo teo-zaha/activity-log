@@ -126,6 +126,21 @@ The Timeline view has a **Filter activity…** field that narrows the collected 
   <img src="pics/search.png" width="820" alt="Timeline filtered by the text order history">
 </p>
 
+### Keyboard shortcuts
+
+<kbd>?</kbd> lists the shortcuts that work where you are. The desktop app uses <kbd>⌘</kbd> on macOS and <kbd>Ctrl</kbd> on Windows and Linux; a browser tab keeps its own keys, so there only <kbd>/</kbd>, <kbd>?</kbd> and <kbd>Esc</kbd> are the dashboard's.
+
+| Keys                                                                  | What they do                                                                                                 | Where                         |
+| --------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------ | ----------------------------- |
+| <kbd>/</kbd>                                                          | Focus the Timeline's filter                                                                                  | Timeline                      |
+| <kbd>?</kbd>                                                          | Show the keyboard shortcuts (again: close them)                                                              | Everywhere                    |
+| <kbd>Esc</kbd>                                                        | Close the event details or, on a phone-width window, the settings                                            | Everywhere                    |
+| <kbd>⌘R</kbd> / <kbd>Ctrl+R</kbd>, <kbd>F5</kbd> on Windows and Linux | Collect the range on screen, also while typing                                                               | Desktop app                   |
+| <kbd>⌘F</kbd> / <kbd>Ctrl+F</kbd>                                     | Switch to the Timeline, keeping the range, and focus its filter                                              | Desktop app                   |
+| <kbd>⌘[</kbd> on macOS, <kbd>Alt+←</kbd> on Windows and Linux         | Back: from an event of a group to its list, out of the details or a settings section, else the previous view | Desktop app, not while typing |
+
+Keys that type a character never fire in a text field.
+
 ### Source filter
 
 Every connection has a chip with its label, such as "Work GitLab" or "WSL · NixOS", and its entry count. Click a chip to toggle that source. Double-click it to show only that source, and double-click it again to show all sources.

@@ -49,6 +49,8 @@
           [class.is-bare]="!entries"
           [backLabel]="pageBack ? 'Close event details' : null"
           [closeLabel]="pageBack ? null : 'Close event details'"
+          [backKeys]="keys.closeOrBack"
+          [closeKeys]="keys.close"
           (goBack)="close()"
           (dismiss)="close()"
         >
@@ -59,6 +61,7 @@
               size="sm"
               icon="arrow_back"
               class="flyout-back"
+              [attr.aria-keyshortcuts]="keys.back"
               (click)="backToList()"
             >
               <span class="flyout-back-label">{{ entries.length }} overlapping events</span>
@@ -174,6 +177,8 @@
           class="flyout-header"
           [backLabel]="isPhone() && !listed ? 'Close event details' : null"
           [closeLabel]="isPhone() && !listed ? null : 'Close event details'"
+          [backKeys]="keys.closeOrBack"
+          [closeKeys]="keys.close"
           (goBack)="close()"
           (dismiss)="close()"
         >
@@ -184,6 +189,7 @@
               size="sm"
               icon="arrow_back"
               class="flyout-back"
+              [attr.aria-keyshortcuts]="keys.back"
               (click)="backToList()"
             >
               <span class="flyout-back-label">{{ group()?.length }} overlapping events</span>
@@ -218,6 +224,8 @@
           class="flyout-header"
           [backLabel]="isPhone() ? 'Close event details' : null"
           [closeLabel]="isPhone() ? null : 'Close event details'"
+          [backKeys]="keys.closeOrBack"
+          [closeKeys]="keys.close"
           (goBack)="close()"
           (dismiss)="close()"
         >

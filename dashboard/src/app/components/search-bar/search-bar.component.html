@@ -9,6 +9,7 @@
       [attr.aria-label]="label() ?? placeholder()"
       [placeholder]="placeholder()"
       [formField]="query"
+      [appShortcut]="shortcut()"
       (keydown.escape)="clear()"
     />
     @if (value()) {
@@ -20,8 +21,8 @@
         [label]="clearLabel()"
         (click)="clear(); input.focus()"
       ></button>
-    } @else {
-      <kbd class="search-hint" aria-hidden="true">/</kbd>
+    } @else if (shortcut(); as id) {
+      <app-key-tag class="search-hint" [shortcut]="id" />
     }
   </div>
 </div>

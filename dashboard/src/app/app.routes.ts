@@ -18,11 +18,13 @@ import {
 } from '@angular/router'
 import { ViewUnavailableComponent } from './components/view-unavailable/view-unavailable.component'
 import { VIEW_LABELS } from './models/nav'
+import type { ShortcutScope } from './models/shortcuts'
 import { ShellLayoutComponent } from './layouts/shell/shell-layout.component'
 import { ViewsLayoutComponent } from './layouts/views/views-layout.component'
 import { provideNavigationMotion } from './navigation-motion'
 import { ActivityService } from './services/activity.service'
 import { failureWhile } from './services/failure'
+import { SHORTCUT_SCOPE } from './services/shortcut.service'
 import { type CalendarView, VIEW_PATHS, viewCommands } from './utils/app-url'
 import { isDayKey, longDayLabel, todayKey } from './utils/local-day'
 
@@ -100,6 +102,7 @@ export const APP_ROUTES: Routes = [
               import('./components/timeline/timeline.component').then(m => m.TimelineComponent)
             ),
             title: VIEW_LABELS.list,
+            data: { [SHORTCUT_SCOPE]: 'timeline' satisfies ShortcutScope },
           },
           ...calendarRoutes(
             'day',

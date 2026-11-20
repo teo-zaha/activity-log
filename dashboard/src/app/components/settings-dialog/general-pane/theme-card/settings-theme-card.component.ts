@@ -30,7 +30,7 @@ export class SettingsThemeCardComponent {
 
   protected onKeydown(event: KeyboardEvent): void {
     const current = this.themes.findIndex(option => this.isThemeActive(option.id))
-    const next = radioKeyTarget(event.key, current, this.themes.length)
+    const next = radioKeyTarget(event, current, this.themes.length)
     const option = next === null ? undefined : this.themes[next]
     if (next === null || !option) return
     event.preventDefault()

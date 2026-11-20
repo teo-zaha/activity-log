@@ -11,7 +11,7 @@
         (dateChange)="activity.setDateFrom(fmtDate($event.value))"
       />
       <mat-datepicker-toggle class="range-toggle" [for]="pickerFrom" />
-      <mat-datepicker #pickerFrom />
+      <mat-datepicker #pickerFrom (opened)="pickerOpened()" (closed)="pickerClosed()" />
     </label>
 
     <mat-icon class="range-sep">arrow_forward</mat-icon>
@@ -27,7 +27,7 @@
         (dateChange)="activity.setDateTo(fmtDate($event.value))"
       />
       <mat-datepicker-toggle class="range-toggle" [for]="pickerTo" />
-      <mat-datepicker #pickerTo />
+      <mat-datepicker #pickerTo (opened)="pickerOpened()" (closed)="pickerClosed()" />
     </label>
   </div>
 
@@ -38,6 +38,7 @@
     size="lg"
     icon="sync"
     class="btn-collect"
+    [appShortcut]="'app.collect'"
     [busy]="activity.isLoading()"
     [disabled]="activity.isLoading()"
     [attr.aria-label]="activity.isLoading() ? 'Collecting activity' : 'Collect activity'"
@@ -48,5 +49,6 @@
       <span [class.is-inactive]="activity.isLoading()">Collect</span>
       <span [class.is-inactive]="!activity.isLoading()">Collecting…</span>
     </span>
+    <app-key-tag class="btn-collect-key" shortcut="app.collect" />
   </button>
 </form>

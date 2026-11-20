@@ -14,6 +14,7 @@ import { SettingsPageHostComponent } from '../../components/settings-dialog/sett
 import { SidebarComponent } from '../../components/sidebar/sidebar.component'
 import { ActivityService } from '../../services/activity.service'
 import { dismissSplash } from '../../utils/splash'
+import { bindShellShortcuts } from './shell-shortcuts'
 import { type ShellSlotName, ShellSlots } from './shell-slots'
 
 /**
@@ -50,6 +51,7 @@ export class ShellLayoutComponent {
   constructor() {
     // The header is in the DOM now, the splash's brand flies into it; the data streams in later.
     afterNextRender(() => dismissSplash())
+    bindShellShortcuts()
   }
 
   private slot(name: ShellSlotName): Signal<TemplateRef<unknown> | null> {

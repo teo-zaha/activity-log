@@ -24,7 +24,10 @@ async function setup(): Promise<{
           dateTo,
           setDateFrom: (day: DayKey | null): void => dateFrom.set(day),
           setDateTo: (day: DayKey | null): void => dateTo.set(day),
-          collect,
+          collectShownRange: (): Promise<void> | null => {
+            const [from, to] = [dateFrom(), dateTo()]
+            return from !== null && to !== null ? collect(from, to) : null
+          },
           isLoading: signal(false),
         },
       },

@@ -17,6 +17,7 @@ import { mediaQuery } from '@signality/core/browser/media-query'
 import { connectionKey, isSource } from '../../providers/connection'
 import { getProviderAdapter } from '../../providers/provider-adapter'
 import { ActivityService } from '../../services/activity.service'
+import { ShortcutService } from '../../services/shortcut.service'
 import { downQuery } from '../../utils/breakpoints'
 import { NavigationMotionService } from '../../navigation-motion'
 import { PageHeaderComponent } from '../page-header/page-header.component'
@@ -77,6 +78,15 @@ export class SettingsDialogComponent {
   readonly chrome = input<'dialog' | 'page'>('dialog')
   protected readonly isPhone = mediaQuery(downQuery('phone'))
   protected readonly motion = inject(NavigationMotionService)
+  private readonly shortcuts = inject(ShortcutService)
+  /**
+   * The keys of the controls that do what a shortcut does: the page's back arrow goes Back
+   * (`SettingsPageHostComponent`), the dialog's close button answers Escape (the dialog's own).
+   */
+  protected readonly keys = {
+    back: this.shortcuts.ariaKeys('app.back'),
+    close: this.shortcuts.ariaKeys('layer.close'),
+  }
   private readonly nav = viewChild(SettingsNavComponent)
   private readonly pageTitle = viewChild<ElementRef<HTMLElement>>('pageTitle')
 
@@ -207,6 +217,12 @@ export class SettingsDialogComponent {
 
   protected back(): void {
     void this.activity.backToSettingsHome()
+  }
+
+  /** Back on the phone's page (`app.back`): from a section to the list, from the list out. */
+  pageBack(): void {
+    if (this.showsHome()) this.close()
+    else this.back()
   }
 
   /** After a source is removed, and from a source that is not there: the list on a phone, else General. */

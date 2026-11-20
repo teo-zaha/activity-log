@@ -16,6 +16,7 @@ import { IconButtonComponent } from '../button/icon-button.component'
         icon="arrow_back"
         class="back"
         [label]="label"
+        [attr.aria-keyshortcuts]="backKeys()"
         (click)="goBack.emit()"
       ></button>
     }
@@ -27,6 +28,7 @@ import { IconButtonComponent } from '../button/icon-button.component'
         icon="close"
         class="close"
         [label]="label"
+        [attr.aria-keyshortcuts]="closeKeys()"
         (click)="dismiss.emit()"
       ></button>
     }
@@ -38,6 +40,9 @@ export class PageHeaderComponent {
   readonly backLabel = input<string | null>(null)
   /** Names the close button, which shows only when set. */
   readonly closeLabel = input<string | null>(null)
+  /** The back arrow's and the close button's `aria-keyshortcuts` (`ShortcutService.ariaKeys`). */
+  readonly backKeys = input<string | null>(null)
+  readonly closeKeys = input<string | null>(null)
   readonly goBack = output<void>()
   readonly dismiss = output<void>()
 }

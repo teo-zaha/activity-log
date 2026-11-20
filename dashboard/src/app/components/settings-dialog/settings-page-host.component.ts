@@ -2,6 +2,7 @@ import { A11yModule } from '@angular/cdk/a11y'
 import { Component, ElementRef, effect, inject, viewChild } from '@angular/core'
 import { TopLayer } from '../../layouts/shell/top-layer.service'
 import { ActivityService } from '../../services/activity.service'
+import { ShortcutService } from '../../services/shortcut.service'
 import { SettingsDialogLauncher } from './settings-dialog-launcher.service'
 import { SettingsDialogComponent } from './settings-dialog.component'
 
@@ -32,16 +33,13 @@ import { SettingsDialogComponent } from './settings-dialog.component'
     }
   `,
   styleUrl: './settings-page-host.component.scss',
-  host: {
-    // On the document, so Escape closes even when focus is on nothing.
-    '(document:keydown.escape)': 'onEscape($event)',
-  },
 })
 export class SettingsPageHostComponent {
   private readonly activity = inject(ActivityService)
   private readonly host = inject<ElementRef<HTMLElement>>(ElementRef).nativeElement
   protected readonly open = inject(SettingsDialogLauncher).pageOpen
   private readonly layers = inject(TopLayer)
+  private readonly shortcuts = inject(ShortcutService)
   // By its reference, not its class: a class query would load the deferred settings at startup.
   private readonly page = viewChild<SettingsDialogComponent>('page')
   private previouslyFocused: HTMLElement | null = null
@@ -62,6 +60,20 @@ export class SettingsPageHostComponent {
       wasOpen = open
     })
 
+    // While open, the page is a layer that hides the view: Escape closes it while it is on top
+    // (details over it close first; a dialog over it, a confirmation or a select's list, handles
+    // Escape first, too), and Back leaves its section, then the page.
+    effect(onCleanup => {
+      if (!this.open()) return
+      const onTop = (): boolean => this.layers.top() === 'settingsPage'
+      const off = [
+        this.shortcuts.openLayer({ kind: 'page', hidesRoute: true }),
+        this.shortcuts.bind('layer.close', () => void this.activity.closeSettings(), onTop),
+        this.shortcuts.bind('app.back', () => this.pageBack(), onTop),
+      ]
+      onCleanup(() => off.forEach(close => close()))
+    })
+
     // Details over the page closed: the page takes the focus they had.
     this.layers.whenExposed('settingsPage', () => {
       const active = document.activeElement
@@ -69,13 +81,10 @@ export class SettingsPageHostComponent {
     })
   }
 
-  /**
-   * Only while the page is on top: details over it close first. A dialog over it (a
-   * confirmation, a select's list) handles Escape first, too.
-   */
-  protected onEscape(event: Event): void {
-    if (this.layers.top() !== 'settingsPage' || event.defaultPrevented) return
-    event.preventDefault()
-    void this.activity.closeSettings()
+  /** Back on the page, once its code is in; until then the key is left to the app. */
+  private pageBack(): false | void {
+    const page = this.page()
+    if (page === undefined) return false
+    page.pageBack()
   }
 }
