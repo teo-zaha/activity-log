@@ -32,7 +32,8 @@ impl<T> Clone for Part<T> {
 
 /// What a host shows, as one coherent value: replaced whole, under the host's state lock, at
 /// every transition that changes a part. Revisions rise in the order transitions are installed.
-/// `epoch` names the host; `authority` rises at every config install, which stamps both parts.
+/// `epoch` names the host; `authority` rises at every config install and every collection key a
+/// check changes, which stamps both parts.
 #[derive(Debug, Clone)]
 pub struct Published {
     pub epoch: Arc<str>,
@@ -78,17 +79,17 @@ impl Published {
     }
 
     /// The value after a transition that showed `activity` and `providers`, or `None` when it
-    /// changed neither and installed no config. Each changed part takes `revision + 1`; a
-    /// config install (`installed`) raises the authority and stamps both parts.
+    /// changed neither and is no authority boundary. Each changed part takes `revision + 1`; a
+    /// boundary (`new_authority`) raises the authority and stamps both parts.
     pub(super) fn next(
         &self,
         revision: u64,
         activity: &Arc<ActivityState>,
         providers: ProvidersResponse,
-        installed: bool,
+        new_authority: bool,
     ) -> Option<Self> {
-        let activity_changed = installed || !Arc::ptr_eq(&self.activity.value, activity);
-        let providers_changed = installed || *self.providers.value != providers;
+        let activity_changed = new_authority || !Arc::ptr_eq(&self.activity.value, activity);
+        let providers_changed = new_authority || *self.providers.value != providers;
         if !activity_changed && !providers_changed {
             return None;
         }
@@ -96,7 +97,7 @@ impl Published {
         assert!(revision <= MAX_REVISION, "revision past 2^53 - 1");
         Some(Self {
             epoch: self.epoch.clone(),
-            authority: self.authority + u64::from(installed),
+            authority: self.authority + u64::from(new_authority),
             activity: if activity_changed {
                 Part {
                     revision,
@@ -138,21 +139,31 @@ impl Published {
 
     /// Both parts on the wire.
     pub fn runtime_state(&self) -> RuntimeState {
-        let activity = self.activity_stamp();
-        let providers = self.providers_stamp();
         RuntimeState {
-            activity: ActivityUpdate {
-                epoch: activity.epoch,
-                authority: activity.authority,
-                revision: activity.revision,
-                state: self.activity.value.clone(),
-            },
-            providers: ProvidersUpdate {
-                epoch: providers.epoch,
-                authority: providers.authority,
-                revision: providers.revision,
-                providers: self.providers.value.clone(),
-            },
+            activity: self.activity_update(),
+            providers: self.providers_update(),
+        }
+    }
+
+    /// The activity part on the wire.
+    pub fn activity_update(&self) -> ActivityUpdate {
+        let stamp = self.activity_stamp();
+        ActivityUpdate {
+            epoch: stamp.epoch,
+            authority: stamp.authority,
+            revision: stamp.revision,
+            state: self.activity.value.clone(),
+        }
+    }
+
+    /// The providers part on the wire.
+    pub fn providers_update(&self) -> ProvidersUpdate {
+        let stamp = self.providers_stamp();
+        ProvidersUpdate {
+            epoch: stamp.epoch,
+            authority: stamp.authority,
+            revision: stamp.revision,
+            providers: self.providers.value.clone(),
         }
     }
 

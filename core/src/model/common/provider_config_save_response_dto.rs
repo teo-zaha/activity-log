@@ -12,6 +12,7 @@ use crate::model::{
 pub struct ProviderConfigSaveResponseDto {
     pub snapshot: ProviderConfigSnapshotDto,
     pub providers_response: ProvidersResponse,
-    /// Where the change became visible, see [`InstallReceipt`].
-    pub installed: InstallReceipt,
+    /// Where the change became visible, see [`InstallReceipt`]; `null` when it was written but
+    /// the host shut down before it installed it: the file holds it, no revision shows it.
+    pub installed: Option<InstallReceipt>,
 }

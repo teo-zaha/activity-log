@@ -493,8 +493,9 @@ async fn an_edit_answers_its_new_connections_checking_even_when_their_checks_end
     assert_eq!(edit.providers.providers[0].status, ProviderStatus::Checking);
     assert_eq!(status(&host, &edit.value), ProviderStatus::Unavailable);
     let handed_over_at = last_handed_over(&spawned);
-    assert_eq!(handed_over_at, edit.installed.revision);
-    assert!(edit.installed.revision < host.subscribe().borrow().providers.revision);
+    let installed = edit.installed.expect("installed");
+    assert_eq!(handed_over_at, installed.revision);
+    assert!(installed.revision < host.subscribe().borrow().providers.revision);
 }
 
 // B14
@@ -782,18 +783,19 @@ async fn a_save_that_writes_nothing_installs_what_another_writer_wrote() {
     let edit = host.edit(Precondition::None, |_| Ok(())).await.unwrap();
 
     assert_eq!(edit.providers.providers.len(), 1);
+    let installed = edit.installed.expect("installed");
     assert_eq!(
-        edit.installed.revision,
+        installed.revision,
         host.subscribe()
             .borrow()
             .providers
             .revision
-            .min(edit.installed.revision)
+            .min(installed.revision)
     );
 
     let current = host.subscribe().borrow().providers.revision;
     let unchanged = host.edit(Precondition::None, |_| Ok(())).await.unwrap();
-    assert_eq!(unchanged.installed.revision, current);
+    assert_eq!(unchanged.installed.expect("current").revision, current);
     assert_eq!(host.subscribe().borrow().providers.revision, current);
 }
 
@@ -1121,6 +1123,51 @@ async fn another_account_behind_the_same_settings_drops_the_old_ones_entries() {
     collection.add_permits(1);
     spawned.end().await;
     assert_eq!(labels(&host.activity()), ["work as b"]);
+}
+
+/// A check that finds another account changes what the connection's entries belong to: the
+/// checked provider and the eviction of the old account's entries are one boundary, a new
+/// authority, so a subscriber gets them as one pair and never the provider first (§5).
+#[tokio::test]
+async fn another_account_reaches_a_subscriber_as_one_pair_with_the_eviction() {
+    let world = World::shared();
+    world.name(&jira(), "a");
+    let (host, mut spawned) = host_of(&world, &[connection(&jira(), &[])]);
+    host.collect(march());
+    spawned.end().await;
+    let check = world.hold_checks(&jira());
+    let _collection = world.hold_collections(&jira());
+    world.name(&jira(), "b");
+    let mut forwarder = crate::runtime::Forwarder::default();
+    let before = host.subscribe().borrow().clone();
+    forwarder.delivered_pair(&before);
+
+    host.recheck(&jira()).unwrap();
+    let mut published = host.subscribe();
+    let mut seen = vec![published.borrow_and_update().clone()];
+    check.add_permits(1);
+    while seen.last().unwrap().providers.value.providers[0].status != ProviderStatus::Available {
+        published.changed().await.unwrap();
+        seen.push(published.borrow_and_update().clone());
+    }
+
+    let checked = seen.last().unwrap();
+    assert!(checked.authority > before.authority, "a new authority");
+    assert!(
+        labels(&checked.activity.value).is_empty(),
+        "the eviction with it"
+    );
+    for value in &seen {
+        let available = value.providers.value.providers[0].status == ProviderStatus::Available;
+        let messages = forwarder.take(value);
+        if available {
+            let names = messages
+                .iter()
+                .map(|message| message.event())
+                .collect::<Vec<_>>();
+            assert_eq!(names, ["state"], "the checked provider comes as a pair");
+        }
+    }
 }
 
 #[tokio::test]
@@ -1647,11 +1694,14 @@ async fn an_edit_written_before_shutdown_installs_nothing_after_it() {
 
     host.shutdown();
     written.resume.add_permits(1);
-    let _ = edit.await.unwrap();
+    let edit = edit.await.unwrap().expect("the file was written");
 
     let shown = host.providers_response().providers;
     assert_eq!(shown.len(), 1, "{shown:?}");
     assert_eq!(shown[0].label, "Home");
+    // B70: the save is durable, but no revision holds it, so it is no install receipt.
+    assert_eq!(edit.connections.len(), 2);
+    assert_eq!(edit.installed, None);
 }
 
 /// Every value a subscriber sees until `done`, the current one first.
@@ -1713,7 +1763,7 @@ async fn a_config_install_raises_the_authority_and_stamps_both_parts() {
         .unwrap();
     spawned.end().await;
 
-    let installed = edit.installed;
+    let installed = edit.installed.expect("installed");
     assert_eq!(installed.epoch, &*before.epoch);
     let state = host.runtime_state();
     assert_eq!(state.activity.authority, (before.authority + 1).to_string());
@@ -1773,4 +1823,70 @@ fn the_runtime_state_serializes_as_the_push_contract_says() {
     assert!(value["activity"]["revision"].is_u64());
     assert_eq!(value["providers"]["epoch"], value["activity"]["epoch"]);
     assert!(value["providers"]["providers"]["providers"].is_array());
+}
+
+// The feed each event subscriber reads (§5).
+
+#[tokio::test]
+async fn a_feed_starts_with_the_current_value_and_then_waits_for_a_change() {
+    let (spawner, _spawned) = spawner();
+    let host = Host::with_collector(planned_collector(), fixed_git(), spawner);
+    let current = host.subscribe().borrow().clone();
+    let mut feed = host.feed();
+
+    let first = feed.next().await.expect("the current value");
+    assert!(Arc::ptr_eq(&first, &current));
+    let waiting = feed.next();
+    futures::pin_mut!(waiting);
+    assert!(futures::poll!(&mut waiting).is_pending());
+}
+
+#[tokio::test]
+async fn a_feed_that_lagged_gets_the_latest_value_once() {
+    let (spawner, mut spawned) = spawner();
+    let host = Host::with_collector(planned_collector(), fixed_git(), spawner);
+    let mut feed = host.feed();
+    feed.next().await.unwrap();
+
+    host.collect(march());
+    spawned.end().await;
+    host.collect(april());
+    spawned.end().await;
+
+    let latest = feed.next().await.unwrap();
+    assert!(Arc::ptr_eq(&latest, &host.subscribe().borrow().clone()));
+    let waiting = feed.next();
+    futures::pin_mut!(waiting);
+    assert!(futures::poll!(&mut waiting).is_pending());
+}
+
+#[tokio::test]
+async fn two_feeds_each_get_every_latest_value() {
+    let (spawner, mut spawned) = spawner();
+    let host = Host::with_collector(planned_collector(), fixed_git(), spawner);
+    let mut first = host.feed();
+    let mut second = host.feed();
+    first.next().await.unwrap();
+
+    host.collect(march());
+    spawned.end().await;
+
+    let published = host.subscribe().borrow().clone();
+    assert!(Arc::ptr_eq(&first.next().await.unwrap(), &published));
+    // The second one never read: its first value is the latest too.
+    assert!(Arc::ptr_eq(&second.next().await.unwrap(), &published));
+}
+
+#[tokio::test]
+async fn a_feed_ends_at_shutdown_also_while_it_waits() {
+    let (spawner, _spawned) = spawner();
+    let host = Host::with_collector(planned_collector(), fixed_git(), spawner);
+    let mut waiting = host.feed();
+    waiting.next().await.unwrap();
+    let next = tokio::spawn(async move { waiting.next().await.is_none() });
+
+    host.shutdown();
+
+    assert!(next.await.unwrap());
+    assert!(host.feed().next().await.is_none());
 }

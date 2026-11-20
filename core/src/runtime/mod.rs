@@ -17,6 +17,7 @@ use crate::{
     },
 };
 
+pub mod forward;
 pub mod host;
 pub(crate) mod keys;
 pub mod report;
@@ -24,8 +25,9 @@ pub(crate) mod result_store;
 #[cfg(test)]
 mod tests;
 
+pub use forward::{Due, Forwarder, PING_INTERVAL, RuntimeMessage};
 pub use host::{
-    Answered, BadConfig, Edit, Host, HostWork, Part, Published, RecheckRefused, RunSpawner,
+    Answered, BadConfig, Edit, Feed, Host, HostWork, Part, Published, RecheckRefused, RunSpawner,
 };
 pub use report::{
     Checked, CollectionKey, Collector, Outcome, Plan, Progress, RunReport, Slot, Stored, Superseded,

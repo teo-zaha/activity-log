@@ -1,19 +1,23 @@
 use strum::IntoEnumIterator;
 use ts_rs::{Config, TS};
 
-use crate::model::{
-    ActivityEntry, ActivityLog, ActivityLogMeta, ActivityState, ActivityUpdate,
-    AddConnectionRequestDto, AddConnectionResponseDto, BackendError, BackendErrorKind, BusyStatus,
-    CalendarEntry, CollectAnswer, CollectOptions, CollectRequest, CollectedActivitySummary,
-    CollectionFailedResponse, ConnectionCount, ConnectionId, DescriptionBlock, ExportFile,
-    ExportOutcome, ExportRequest, GitEntry, GitLabEntry, GitLabType, InstallReceipt, JiraEntry,
-    JiraEntryType, ListItem, LogEntry, LogLevel, LogsResponse, MeetingWeight, OutlookEntry,
-    OutputFormat, PartStamp, ProviderConfigConnectionStateDto, ProviderConfigFieldStateDto,
-    ProviderConfigFieldValueDto, ProviderConfigSaveRequestDto, ProviderConfigSaveResponseDto,
-    ProviderConfigSaveValueDto, ProviderConfigSnapshotDto, ProviderConfigValueDto,
-    ProviderConfigValueTypeDto, ProviderInfo, ProviderKindDto, ProviderProblem, ProviderStatus,
-    ProvidersResponse, ProvidersUpdate, RecheckAnswer, RuntimeState, ShownActivity, Source,
-    SupportedOs, SystemEntry, SystemEntryType, TextSegment,
+use crate::{
+    model::{
+        ActivityEntry, ActivityLog, ActivityLogMeta, ActivityState, ActivityUpdate,
+        AddConnectionRequestDto, AddConnectionResponseDto, BackendError, BackendErrorKind,
+        BusyStatus, CalendarEntry, CollectAnswer, CollectOptions, CollectRequest,
+        CollectedActivitySummary, CollectionFailedResponse, ConnectionCount, ConnectionId,
+        DescriptionBlock, ExportFile, ExportOutcome, ExportRequest, GitEntry, GitLabEntry,
+        GitLabType, InstallReceipt, JiraEntry, JiraEntryType, ListItem, LogEntry, LogLevel,
+        LogsResponse, MeetingWeight, OutlookEntry, OutputFormat, PartStamp,
+        ProviderConfigConnectionStateDto, ProviderConfigFieldStateDto, ProviderConfigFieldValueDto,
+        ProviderConfigSaveRequestDto, ProviderConfigSaveResponseDto, ProviderConfigSaveValueDto,
+        ProviderConfigSnapshotDto, ProviderConfigValueDto, ProviderConfigValueTypeDto,
+        ProviderInfo, ProviderKindDto, ProviderProblem, ProviderStatus, ProvidersResponse,
+        ProvidersUpdate, RecheckAnswer, RuntimePing, RuntimeState, ShownActivity, Source,
+        SupportedOs, SystemEntry, SystemEntryType, TextSegment,
+    },
+    runtime::PING_INTERVAL,
 };
 
 pub fn activity_typescript() -> String {
@@ -73,6 +77,7 @@ pub fn activity_typescript() -> String {
         export_decl::<ActivityUpdate>(&cfg),
         export_decl::<ProvidersUpdate>(&cfg),
         export_decl::<RuntimeState>(&cfg),
+        export_decl::<RuntimePing>(&cfg),
         export_decl::<InstallReceipt>(&cfg),
         export_decl::<ShownActivity>(&cfg),
         export_decl::<CollectAnswer>(&cfg),
@@ -97,8 +102,11 @@ fn constants() -> String {
         "/** The longest range the backend collects or exports, in days (`CollectOptions::MAX_DAYS`). */\n\
          export const COLLECT_MAX_DAYS = {}\n\n\
          /** Every `BackendErrorKind`, for telling a backend error body from any other. */\n\
-         export const BACKEND_ERROR_KINDS = [{kinds}] as const satisfies readonly BackendErrorKind[]\n",
-        CollectOptions::MAX_DAYS
+         export const BACKEND_ERROR_KINDS = [{kinds}] as const satisfies readonly BackendErrorKind[]\n\n\
+         /** How often `GET /api/events` sends its `ping` event, in seconds (`runtime::PING_INTERVAL`). */\n\
+         export const RUNTIME_PING_SECONDS = {}\n",
+        CollectOptions::MAX_DAYS,
+        PING_INTERVAL.as_secs()
     )
 }
 

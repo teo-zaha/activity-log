@@ -25,7 +25,7 @@ use tokio::sync::{oneshot, watch};
 
 use super::{
     default_collect_options,
-    keys::KeyTable,
+    keys::{KeyChange, KeyTable},
     lock, panic_message,
     report::{Checked, Collector, Outcome, Plan, Progress, RunReport, Slot, Superseded},
     result_store::{Candidate, ResultStore, Scope, Seed, evict},
@@ -49,6 +49,37 @@ mod published;
 mod tests;
 
 pub use published::{Part, Published};
+
+/// One subscriber's view of the published state, from [`Host::feed`]: the current value at
+/// once, then the latest one after each change (values in between are skipped, never
+/// reordered), until the host shuts down.
+pub struct Feed {
+    values: watch::Receiver<Arc<Published>>,
+    stop: watch::Receiver<bool>,
+}
+
+impl Feed {
+    /// The latest value not yet returned, waiting for one; `None` once the host shut down or is
+    /// gone. The value is cloned out of the watch, so no lock is held while it is serialized.
+    pub async fn next(&mut self) -> Option<Arc<Published>> {
+        loop {
+            if *self.stop.borrow_and_update() {
+                return None;
+            }
+            if self.values.has_changed().ok()? {
+                return Some(self.values.borrow_and_update().clone());
+            }
+            tokio::select! {
+                changed = self.values.changed() => {
+                    changed.ok()?;
+                    // Taken at the top, after a shutdown at the same moment had its say.
+                    self.values.mark_changed();
+                }
+                stopped = self.stop.changed() => stopped.ok()?,
+            }
+        }
+    }
+}
 
 /// Work the host hands to its adapter: a collection run resolves to its `RunEnd`; a check
 /// resolves to `None`. A run is handed over exactly once; a join of a running collection hands
@@ -84,8 +115,17 @@ pub struct Edit<T> {
     /// The providers as installed: a connection whose check runs again is checking.
     pub providers: ProvidersResponse,
     /// The providers part's revision that first holds this edit, or the current one when the
-    /// edit changed nothing.
-    pub installed: InstallReceipt,
+    /// edit changed nothing. `None` when the file was written but the host shut down before it
+    /// installed it (B70): the save is durable, yet no revision of this host shows it.
+    pub installed: Option<InstallReceipt>,
+}
+
+/// Whether what a host shows holds a config file once an install was asked for.
+enum InstallOutcome {
+    /// It was installed, or it already was: the providers as they show it.
+    Shown(ProvidersResponse),
+    /// The host shut down first and installs nothing: the providers it shows without it.
+    ShutDown(ProvidersResponse),
 }
 
 /// A command's answer with the stamp of the part it shows, both taken under the state lock.
@@ -194,8 +234,10 @@ struct HostState {
     logs: Vec<(LogLevel, String, String)>,
     /// Set by `shutdown`: no run, check, install or edit is current any more.
     shut_down: bool,
-    /// This transition installed a config: the published authority rises.
-    installed: bool,
+    /// This transition is an authority boundary: it installed a config, or a check changed a
+    /// connection's collection key. The published authority rises and both parts are stamped,
+    /// so a subscriber gets what changed as one pair.
+    new_authority: bool,
 }
 
 type SharedCheck = Shared<BoxFuture<'static, Result<Checked, Superseded>>>;
@@ -501,7 +543,7 @@ impl Host {
             retired: Vec::new(),
             logs: Vec::new(),
             shut_down: false,
-            installed: false,
+            new_authority: false,
         };
         Host {
             inner: Arc::new(HostInner {
@@ -627,16 +669,19 @@ impl Host {
             diagnostics::warn("config", warning);
         }
         let connections = edited.file.connections().connections;
-        let installed = self.lock().content == Some(edited.content);
-        let applied = if installed {
-            // Nothing changed anywhere: the providers as they are.
-            self.apply(|_, state| state.providers_response())
+        let unchanged = self.lock().content == Some(edited.content);
+        let applied = if unchanged {
+            // Nothing changed anywhere: the providers as they are, which hold the file.
+            self.apply(|_, state| InstallOutcome::Shown(state.providers_response()))
         } else {
             self.apply_install(connections.clone(), Some(edited.content))
         };
         drop(config);
-        let installed = applied.published.receipt();
-        let providers = self.spawn(applied);
+        let receipt = applied.published.receipt();
+        let (providers, installed) = match self.spawn(applied) {
+            InstallOutcome::Shown(providers) => (providers, Some(receipt)),
+            InstallOutcome::ShutDown(providers) => (providers, None),
+        };
         Ok(Edit {
             value: edited.value,
             connections,
@@ -758,6 +803,18 @@ impl Host {
         self.inner.publisher.subscribe()
     }
 
+    /// The published state for one subscriber that ends at shutdown: what the event stream and
+    /// the desktop's events forward.
+    pub fn feed(&self) -> Feed {
+        let mut values = self.subscribe();
+        // The current value is the first one returned.
+        values.mark_changed();
+        Feed {
+            values,
+            stop: self.inner.shutdown.subscribe(),
+        }
+    }
+
     #[cfg(test)]
     async fn pause(&self, which: impl FnOnce(&Pauses) -> Option<Pause>) {
         let pause = which(&lock(&self.inner.pauses));
@@ -790,7 +847,7 @@ impl Host {
                 current.revision(),
                 &state.activity,
                 state.providers_response(),
-                std::mem::take(&mut state.installed),
+                std::mem::take(&mut state.new_authority),
             ) {
                 let old = self.inner.publisher.send_replace(Arc::new(next));
                 state.retired.push(Box::new(old));
@@ -838,19 +895,20 @@ impl Host {
         self.spawn(applied);
     }
 
+    /// Installs `connections`, unless the host shut down.
     fn apply_install(
         &self,
         connections: Vec<Connection>,
         content: Option<ContentId>,
-    ) -> Applied<ProvidersResponse> {
+    ) -> Applied<InstallOutcome> {
         self.apply(|inner, state| {
             if state.shut_down {
-                return state.providers_response();
+                return InstallOutcome::ShutDown(state.providers_response());
             }
             if content.is_some() {
                 state.content = content;
             }
-            state.installed = true;
+            state.new_authority = true;
             let old_ids = state
                 .checks
                 .iter()
@@ -885,7 +943,7 @@ impl Host {
             if let Some((options, scope)) = run {
                 start_run(inner, state, options, scope);
             }
-            state.providers_response()
+            InstallOutcome::Shown(state.providers_response())
         })
     }
 
@@ -907,7 +965,7 @@ impl Host {
                 .iter()
                 .position(|check| check.generation == generation)
                 .ok_or(Superseded)?;
-            let (key, changed) = state
+            let (key, change) = state
                 .keys
                 .record(id, runtime.identity())
                 .ok_or(Superseded)?;
@@ -917,7 +975,12 @@ impl Host {
                 CheckState::Recorded(Box::new(checked.clone())),
             );
             state.retired.push(Box::new(old));
-            if changed {
+            // Another account than the one entries may be shown for: the checked provider and
+            // the eviction go out as one pair.
+            if change == KeyChange::Replaced {
+                state.new_authority = true;
+            }
+            if change != KeyChange::Kept {
                 // Another account: what failed for the previous one is not its failure.
                 state.failures.remove(id);
                 state.evict_shown();
