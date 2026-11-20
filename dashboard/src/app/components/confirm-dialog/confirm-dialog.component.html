@@ -1,6 +1,9 @@
 <div class="confirm">
-  <h2 mat-dialog-title class="confirm-title">{{ data.title }}</h2>
-  <p mat-dialog-content class="confirm-message">{{ data.message }}</p>
+  <!-- Scrolls when it does not fit, so the actions below always show. -->
+  <div class="confirm-body">
+    <h2 mat-dialog-title class="confirm-title">{{ data.title }}</h2>
+    <p mat-dialog-content class="confirm-message">{{ data.message }}</p>
+  </div>
   <div mat-dialog-actions class="confirm-actions">
     <button appButton variant="ghost" [mat-dialog-close]="false">Cancel</button>
     <button

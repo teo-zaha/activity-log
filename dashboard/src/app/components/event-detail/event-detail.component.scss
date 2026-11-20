@@ -15,15 +15,15 @@
 
 .flyout {
   position: fixed;
-  // Below the window buttons the app draws on Windows.
-  top: calc(12px + var(--window-controls-height));
-  right: 12px;
-  bottom: 12px;
+  // Below the window buttons the app draws on Windows, and clear of the screen's safe area.
+  top: calc(12px + max(var(--window-controls-height), env(safe-area-inset-top)));
+  right: calc(12px + env(safe-area-inset-right));
+  bottom: calc(12px + env(safe-area-inset-bottom));
   z-index: 201;
   // One cell for its pages: on a phone the one that comes slides over the one that goes.
   display: grid;
   grid-template: minmax(0, 1fr) / minmax(0, 1fr);
-  width: min(440px, calc(100vw - 24px));
+  width: min(440px, calc(100vw - 24px - env(safe-area-inset-left) - env(safe-area-inset-right)));
   // Clipped, never scrolled: a page sliding in would otherwise let focus scroll the panel sideways.
   overflow: clip;
   @include ui.panel-shell($radius: var(--radius-xl), $shadow: var(--panel-shadow-strong));
@@ -247,8 +247,12 @@
   cursor: pointer;
   transition: background-color 0.15s ease;
 
-  &:hover {
+  @include ui.hover {
     background: color-mix(in srgb, var(--surface-hover) 65%, transparent);
+
+    .overlap-chevron {
+      color: var(--text-primary);
+    }
   }
 
   &:focus-visible {
@@ -261,7 +265,6 @@
     }
   }
 
-  &:hover .overlap-chevron,
   &:focus-visible .overlap-chevron {
     color: var(--text-primary);
   }

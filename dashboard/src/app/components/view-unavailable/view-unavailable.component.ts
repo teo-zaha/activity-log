@@ -26,6 +26,7 @@ import { EmptyStateComponent } from '../empty-state/empty-state.component'
       min-height: 0;
       padding: 24px;
       overflow-y: auto;
+      overscroll-behavior-y: contain;
     }
   `,
 })

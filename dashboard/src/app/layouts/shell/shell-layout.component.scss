@@ -5,6 +5,9 @@
   display: flex;
   flex-direction: column;
   min-height: 0;
+  // The screen's safe area (`viewport-fit=cover`): notches, the status bar, rounded corners. The
+  // bottom inset is the body's, since on a phone the bottom bar keeps it (`--phone-nav-height`).
+  padding: env(safe-area-inset-top) env(safe-area-inset-right) 0 env(safe-area-inset-left);
 }
 
 .shell-body {
@@ -12,7 +15,7 @@
   display: flex;
   min-height: 0;
   gap: 12px;
-  padding: 0 16px 16px 12px;
+  padding: 0 16px calc(16px + env(safe-area-inset-bottom)) 12px;
 }
 
 .main-content {
@@ -41,7 +44,7 @@
 @include ui.down('tablet') {
   .shell-body {
     gap: 8px;
-    padding: 0 12px 12px 8px;
+    padding: 0 12px calc(12px + env(safe-area-inset-bottom)) 8px;
   }
 
   .main-content {

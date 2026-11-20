@@ -676,6 +676,42 @@ body {
   background: color-mix(in srgb, var(--accent) 28%, transparent);
 }
 
+// ── Touch ────────────────────────────────────────────────────────────────────
+// The page itself never scrolls (`overflow: hidden` above), and it neither bounces as a whole
+// (iOS) nor reloads when pulled (Chrome on Android). Each scroller keeps its own bounce and does
+// not hand it on (`overscroll-behavior` beside its `overflow`, `scripts/touch-styles.test.mjs`).
+html,
+body {
+  overscroll-behavior: none;
+}
+
+// A tap shows the control's own pressed state (`ui.hover`), not the browser's grey flash.
+html {
+  -webkit-tap-highlight-color: transparent;
+}
+
+// Controls answer a tap at once, without waiting for a double tap (pinch zoom stays), and a press
+// selects none of their text and opens no callout. Text in fields and content stays selectable.
+button,
+a,
+[role='button'],
+[role='radio'],
+[role='tab'],
+[role='option'],
+[role='menuitem'] {
+  touch-action: manipulation;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
+}
+
+// A link that leaves the app (`appExternalLink`) keeps its callout and its text.
+a[target='_blank'] {
+  user-select: auto;
+  -webkit-user-select: auto;
+  -webkit-touch-callout: default;
+}
+
 // ── Scrollbars ───────────────────────────────────────────────────────────────
 // A slim pill on a transparent track, tinted from each theme's own tokens so every
 // theme gets a matching bar without per-theme values. It warms to the accent on drag.
@@ -718,8 +754,10 @@ body {
   min-height: 32px;
 }
 
-::-webkit-scrollbar-thumb:hover {
-  background-color: var(--scrollbar-thumb-hover);
+::-webkit-scrollbar-thumb {
+  @include ui.hover($pressed: false) {
+    background-color: var(--scrollbar-thumb-hover);
+  }
 }
 
 ::-webkit-scrollbar-thumb:active {
@@ -918,7 +956,7 @@ mat-card {
   .mat-mdc-icon-button {
     color: var(--text-secondary) !important;
 
-    &:hover {
+    @include ui.hover {
       color: var(--text-primary) !important;
     }
   }
@@ -945,10 +983,13 @@ mat-card {
   color: var(--text-primary) !important;
 }
 
-.mat-calendar-body-cell:not(.mat-calendar-body-disabled):hover
-  .mat-calendar-body-cell-content:not(.mat-calendar-body-selected) {
-  background: var(--surface-hover) !important;
-  color: var(--text-primary) !important;
+.mat-calendar-body-cell:not(.mat-calendar-body-disabled) {
+  @include ui.hover {
+    .mat-calendar-body-cell-content:not(.mat-calendar-body-selected) {
+      background: var(--surface-hover) !important;
+      color: var(--text-primary) !important;
+    }
+  }
 }
 
 // Today
@@ -1022,6 +1063,13 @@ mat-card {
   }
 }
 
+// Every notice, its action included, keeps clear of the screen's safe area: Material's 8 px margin
+// plus the inset, which is 0 on the desktop.
+.cdk-overlay-pane .mat-mdc-snack-bar-container {
+  margin: calc(8px + env(safe-area-inset-top)) calc(8px + env(safe-area-inset-right))
+    calc(8px + env(safe-area-inset-bottom)) calc(8px + env(safe-area-inset-left));
+}
+
 .error-alert-snackbar {
   --mat-snack-bar-container-color: color-mix(in srgb, var(--error-bg) 90%, var(--surface) 10%);
   --mat-snack-bar-supporting-text-color: var(--error-fg);
@@ -1031,7 +1079,7 @@ mat-card {
     border: 1px solid var(--error-border);
     border-radius: 16px !important;
     box-shadow: var(--panel-shadow-strong);
-    min-width: min(560px, calc(100vw - 32px));
+    min-width: min(560px, var(--dialog-max-width));
   }
 
   .mat-mdc-snack-bar-label {
@@ -1044,8 +1092,15 @@ mat-card {
 :root {
   --window-controls-width: 0px;
   --window-controls-height: 0px;
-  // A dialog keeps 16 px from the window's edges and, centred, clear of the buttons.
-  --dialog-max-height: calc(100dvh - 32px - 2 * var(--window-controls-height));
+  // A dialog keeps 16 px from the window's edges and, centred, clear of the buttons and of the
+  // screen's safe area (notches, the status bar, the home indicator; `viewport-fit=cover`).
+  --dialog-max-width: calc(
+    100vw - 32px - 2 * max(env(safe-area-inset-left), env(safe-area-inset-right))
+  );
+  --dialog-max-height: calc(
+    100dvh - 32px - 2 *
+      max(var(--window-controls-height), env(safe-area-inset-top), env(safe-area-inset-bottom))
+  );
   // The phone's bottom bar with the views and Settings (`SidebarComponent`).
   --phone-nav-height: calc(64px + env(safe-area-inset-bottom));
 }

@@ -2,11 +2,22 @@
   display: flex;
   flex-direction: column;
   gap: 10px;
+  max-height: var(--dialog-max-height);
   padding: 22px 24px 18px;
   border: 1px solid var(--hairline);
   border-radius: var(--radius-lg);
   background: var(--surface);
   box-shadow: var(--panel-shadow-strong);
+}
+
+.confirm-body {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior-y: contain;
+  overflow-wrap: anywhere;
 }
 
 // Material's dialog parts bring their own spacing and colours; the card sets them instead.
@@ -29,6 +40,9 @@
 }
 
 .confirm-message {
+  // The body scrolls, not the message on its own (Material caps it at 65vh).
+  max-height: none;
+  overflow: visible;
   color: var(--text-secondary);
   font-size: 13.5px;
   line-height: 1.5;
@@ -36,6 +50,7 @@
 
 .confirm-actions {
   display: flex;
+  flex: none;
   justify-content: flex-end;
   gap: 8px;
   min-height: 0;

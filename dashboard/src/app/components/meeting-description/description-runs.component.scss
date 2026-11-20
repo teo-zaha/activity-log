@@ -13,7 +13,7 @@
   text-decoration: underline;
   text-underline-offset: 2px;
 
-  &:hover {
+  @include ui.hover {
     color: var(--accent-hover);
   }
 

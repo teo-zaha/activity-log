@@ -1,5 +1,5 @@
 use serde::{Deserialize, Serialize};
-use strum::{AsRefStr, Display, EnumIter, EnumString};
+use strum::{AsRefStr, Display, EnumIter, EnumString, IntoStaticStr};
 use ts_rs::TS;
 
 #[derive(
@@ -17,6 +17,7 @@ use ts_rs::TS;
     AsRefStr,
     EnumString,
     EnumIter,
+    IntoStaticStr,
 )]
 #[serde(rename_all = "lowercase")]
 #[ts(export, rename_all = "lowercase")]
