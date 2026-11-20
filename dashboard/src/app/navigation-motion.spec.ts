@@ -4,7 +4,8 @@ import { ApplicationRef } from '@angular/core'
 import { TestBed } from '@angular/core/testing'
 import { DefaultUrlSerializer, NavigationEnd, Router } from '@angular/router'
 import { filter, firstValueFrom } from 'rxjs'
-import { describe, expect, it, vi } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
+import { holdMotion } from './testing/motion'
 import { provideAppRouter } from './app.routes'
 import { type MotionTarget, NavigationMotionService, navigationMotion } from './navigation-motion'
 
@@ -107,6 +108,76 @@ describe('NavigationMotionService', () => {
     expect([...page.classList]).toEqual(['page-leave', 'motion-page-out'])
     // jsdom runs no animation, so there is none to wait for.
     await vi.waitFor(() => expect(complete).toHaveBeenCalledOnce())
+  })
+
+  describe('a slide held until the first frame drawn', () => {
+    let motion: ReturnType<typeof holdMotion> | null = null
+    afterEach(() => motion?.restore())
+
+    /** The details opened: a page that slides in comes now. */
+    async function opened(): Promise<{
+      service: NavigationMotionService
+      router: Router
+      frames: FrameRequestCallback[]
+    }> {
+      const { router, motion: service } = start()
+      router.initialNavigation()
+      await router.navigateByUrl('/day/2026-11-17')
+      await router.navigateByUrl('/day/2026-11-17?event=git%2Fa%2F1')
+      const frames: FrameRequestCallback[] = []
+      vi.spyOn(window, 'requestAnimationFrame').mockImplementation(frame => frames.push(frame))
+      motion = holdMotion()
+      return { service, router, frames }
+    }
+    const nextFrame = (frames: FrameRequestCallback[]): void =>
+      frames.splice(0).forEach(frame => frame(performance.now()))
+
+    it('starts it at that frame, however long the render that put it in took', async () => {
+      const { service, frames } = await opened()
+      const page = document.createElement('section')
+
+      service.enter({ target: page, animationComplete: () => undefined }, 'page')
+      const [slide] = motion?.slidesOf(page) ?? []
+      // Held at its start while the render goes on, so none of it runs before it is drawn.
+      expect(slide?.playState).toBe('paused')
+
+      nextFrame(frames)
+      expect(slide?.playState).toBe('running')
+      expect(slide?.plays).toBe(1)
+    })
+
+    it('never plays an entrance again that was cancelled before the frame', async () => {
+      const { service, frames } = await opened()
+      const page = document.createElement('section')
+      const complete = vi.fn()
+      service.enter({ target: page, animationComplete: () => undefined }, 'page')
+      const [entrance] = motion?.slidesOf(page) ?? []
+
+      // Back before the first frame: the page leaves as it was coming.
+      service.leave({ target: page, animationComplete: complete }, 'page')
+      expect(entrance?.playState).toBe('idle')
+      nextFrame(frames)
+
+      const [, exit] = motion?.slidesOf(page) ?? []
+      expect(entrance?.plays).toBe(0)
+      expect(entrance?.playState).toBe('idle')
+      expect(exit?.playState).toBe('running')
+      exit?.finish()
+      await vi.waitFor(() => expect(complete).toHaveBeenCalledOnce())
+    })
+
+    it('lets a page go that its slide finished while it was held', async () => {
+      const { service, frames } = await opened()
+      const page = document.createElement('section')
+      service.enter({ target: page, animationComplete: () => undefined }, 'page')
+      const [slide] = motion?.slidesOf(page) ?? []
+
+      slide?.finish()
+      await vi.waitFor(() => expect([...page.classList]).toEqual([]))
+      nextFrame(frames)
+
+      expect(slide?.plays).toBe(0)
+    })
   })
 
   /** Back, as a browser does it: the popstate event, then the router's navigation. */
