@@ -407,7 +407,7 @@ async fn collect_answers_running_even_when_the_run_completes_at_once() {
     let host = Host::with_collector(planned_collector(), fixed_git(), spawner);
     published.set(host.subscribe()).unwrap();
 
-    let answer = host.collect(march());
+    let answer = host.collect(march()).value;
 
     let ActivityState::Running { log } = answer else {
         panic!("expected running, got {answer:?}");
@@ -433,7 +433,10 @@ async fn recheck_answers_checking_even_when_the_check_ends_at_once() {
     let calendar = ConnectionId::new(Source::Calendar, "team");
     assert_eq!(status(&host, &calendar), ProviderStatus::Unavailable);
 
-    let answer = host.recheck(&calendar).expect("a connection of this host");
+    let answer = host
+        .recheck(&calendar)
+        .expect("a connection of this host")
+        .value;
 
     assert_eq!(answer.providers[0].status, ProviderStatus::Checking);
     assert_eq!(status(&host, &calendar), ProviderStatus::Unavailable);
@@ -469,8 +472,8 @@ async fn an_edit_answers_its_new_connections_checking_even_when_their_checks_end
     assert_eq!(edit.providers.providers[0].status, ProviderStatus::Checking);
     assert_eq!(status(&host, &edit.value), ProviderStatus::Unavailable);
     let handed_over_at = last_handed_over(&spawned);
-    assert_eq!(handed_over_at, edit.revision);
-    assert!(edit.revision < host.subscribe().borrow().providers.revision);
+    assert_eq!(handed_over_at, edit.installed.revision);
+    assert!(edit.installed.revision < host.subscribe().borrow().providers.revision);
 }
 
 // B14
@@ -759,17 +762,17 @@ async fn a_save_that_writes_nothing_installs_what_another_writer_wrote() {
 
     assert_eq!(edit.providers.providers.len(), 1);
     assert_eq!(
-        edit.revision,
+        edit.installed.revision,
         host.subscribe()
             .borrow()
             .providers
             .revision
-            .min(edit.revision)
+            .min(edit.installed.revision)
     );
 
     let current = host.subscribe().borrow().providers.revision;
     let unchanged = host.edit(Precondition::None, |_| Ok(())).await.unwrap();
-    assert_eq!(unchanged.revision, current);
+    assert_eq!(unchanged.installed.revision, current);
     assert_eq!(host.subscribe().borrow().providers.revision, current);
 }
 
@@ -1628,4 +1631,125 @@ async fn an_edit_written_before_shutdown_installs_nothing_after_it() {
     let shown = host.providers_response().providers;
     assert_eq!(shown.len(), 1, "{shown:?}");
     assert_eq!(shown[0].label, "Home");
+}
+
+/// Every value a subscriber sees until `done`, the current one first.
+async fn published_until(host: &Host, done: impl Fn(&Published) -> bool) -> Vec<Arc<Published>> {
+    let mut updates = host.subscribe();
+    let mut seen = vec![updates.borrow_and_update().clone()];
+    while !done(seen.last().unwrap()) {
+        updates.changed().await.unwrap();
+        seen.push(updates.borrow_and_update().clone());
+    }
+    seen
+}
+
+#[tokio::test]
+async fn the_runtime_state_is_one_host_and_one_authority_whose_revisions_only_grow() {
+    let (spawner, mut spawned) = spawner();
+    let host = Host::with_collector(planned_collector(), fixed_git(), spawner);
+    let before = host.runtime_state();
+
+    let answered = host.collect(march());
+    let seen = published_until(&host, ready).await;
+    spawned.end().await;
+
+    for published in &seen {
+        let state = published.runtime_state();
+        assert_eq!(state.activity.epoch, before.activity.epoch);
+        assert_eq!(state.providers.epoch, state.activity.epoch);
+        assert_eq!(state.providers.authority, state.activity.authority);
+    }
+    for pair in seen.windows(2) {
+        assert!(pair[0].activity.revision <= pair[1].activity.revision);
+        assert!(pair[0].providers.revision <= pair[1].providers.revision);
+    }
+    // The answer is stamped with the revision it installed, under the same lock.
+    assert_eq!(answered.stamp.epoch, before.activity.epoch);
+    assert!(answered.stamp.revision > before.activity.revision);
+    let after = host.runtime_state();
+    assert!(after.activity.revision > answered.stamp.revision);
+    assert!(matches!(*after.activity.state, ActivityState::Ready { .. }));
+}
+
+#[tokio::test]
+async fn a_config_install_raises_the_authority_and_stamps_both_parts() {
+    let world = World::shared();
+    world.name(&jira(), "a");
+    world.name(&gitlab(), "a");
+    let (_dir, _path, host, mut spawned) = ready_at(TWO_SOURCES, &world).await;
+    let before = host.subscribe().borrow().clone();
+
+    let edit = host
+        .edit(Precondition::None, |file| {
+            file.set(
+                &gitlab(),
+                crate::provider::gitlab::GITLAB_URL,
+                Some("https://gitlab2.example.org"),
+            )
+        })
+        .await
+        .unwrap();
+    spawned.end().await;
+
+    let installed = edit.installed;
+    assert_eq!(installed.epoch, &*before.epoch);
+    let state = host.runtime_state();
+    assert_eq!(state.activity.authority, (before.authority + 1).to_string());
+    assert_eq!(state.providers.authority, state.activity.authority);
+    assert!(installed.revision > before.revision());
+    assert!(state.providers.revision >= installed.revision);
+    assert!(state.activity.revision >= installed.revision);
+}
+
+#[tokio::test]
+async fn a_recheck_answer_is_stamped_with_the_providers_it_installed() {
+    let calendar = unconfigured_calendar();
+    let id = calendar.id.clone();
+    let world = World::shared();
+    let (host, _spawned) = host_of(&world, &[calendar]);
+    until(&host, checked).await;
+
+    let answered = host.recheck(&id).expect("a connection of this host");
+
+    let published = host.subscribe().borrow().clone();
+    assert_eq!(answered.stamp.epoch, &*published.epoch);
+    assert_eq!(answered.stamp.authority, published.authority.to_string());
+    assert!(answered.stamp.revision <= published.providers.revision);
+    assert_eq!(answered.value.providers[0].status, ProviderStatus::Checking);
+}
+
+#[test]
+fn two_hosts_have_different_epochs() {
+    let (first, _) = spawner();
+    let (second, _) = spawner();
+    let a = Host::with_collector(planned_collector(), fixed_git(), first);
+    let b = Host::with_collector(planned_collector(), fixed_git(), second);
+
+    assert_ne!(
+        a.runtime_state().activity.epoch,
+        b.runtime_state().activity.epoch
+    );
+}
+
+#[test]
+fn the_runtime_state_serializes_as_the_push_contract_says() {
+    let (spawner, _) = spawner();
+    let host = Host::with_collector(planned_collector(), fixed_git(), spawner);
+
+    let value = serde_json::to_value(host.runtime_state()).unwrap();
+
+    assert_eq!(
+        value["activity"]["state"],
+        serde_json::json!({ "kind": "empty" })
+    );
+    assert!(
+        value["activity"]["epoch"]
+            .as_str()
+            .is_some_and(|epoch| epoch.len() == 16)
+    );
+    assert!(value["activity"]["authority"].is_string());
+    assert!(value["activity"]["revision"].is_u64());
+    assert_eq!(value["providers"]["epoch"], value["activity"]["epoch"]);
+    assert!(value["providers"]["providers"]["providers"].is_array());
 }

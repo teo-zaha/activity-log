@@ -2,9 +2,10 @@ use activity_log_core::{
     diagnostics,
     export::render_export_request,
     model::{
-        ActivityState, AddConnectionRequestDto, AddConnectionResponseDto, CollectRequest,
-        ConnectionId, ExportRequest, LogsResponse, ProviderConfigSaveRequestDto,
-        ProviderConfigSaveResponseDto, ProviderConfigSnapshotDto, ProvidersResponse,
+        ActivityState, AddConnectionRequestDto, AddConnectionResponseDto, CollectAnswer,
+        CollectRequest, ConnectionId, ExportRequest, LogsResponse, ProviderConfigSaveRequestDto,
+        ProviderConfigSaveResponseDto, ProviderConfigSnapshotDto, ProvidersResponse, RecheckAnswer,
+        RuntimeState, ShownActivity,
     },
     provider::current_os,
     runtime::resolve_collect_options,
@@ -29,15 +30,25 @@ fn activity_response(state: ActivityState) -> Result<serde_json::Value, String> 
             Ok(serde_json::to_value(&*log).unwrap())
         }
         ActivityState::Failed { failure } => Ok(serde_json::to_value(failure).unwrap()),
-        ActivityState::Empty => Err("No data yet".to_string()),
+        ActivityState::Empty => Err(NO_DATA_YET.to_string()),
     }
 }
+
+const NO_DATA_YET: &str = "No data yet";
 
 #[tauri::command]
 pub(crate) async fn get_activity(
     state: tauri::State<'_, AppState>,
 ) -> Result<serde_json::Value, String> {
     activity_response(state.host.activity())
+}
+
+/// Both parts of the host's state as one coherent pair, with their stamps.
+#[tauri::command]
+pub(crate) async fn get_runtime_state(
+    state: tauri::State<'_, AppState>,
+) -> Result<RuntimeState, String> {
+    Ok(state.host.runtime_state())
 }
 
 #[tauri::command]
@@ -52,22 +63,31 @@ pub(crate) async fn get_providers(
 pub(crate) async fn collect(
     state: tauri::State<'_, AppState>,
     request: CollectRequest,
-) -> Result<serde_json::Value, String> {
+) -> Result<CollectAnswer, String> {
     let options = resolve_collect_options(&request).map_err(str::to_string)?;
-    activity_response(state.host.collect(options))
+    let answered = state.host.collect(options);
+    let activity = ShownActivity::of(answered.value).ok_or_else(|| NO_DATA_YET.to_string())?;
+    Ok(CollectAnswer {
+        activity,
+        stamp: answered.stamp,
+    })
 }
 
 /// Runs a connection's startup check again and collects its kind again for the range on
-/// screen; answers with the sources, this one checking.
+/// screen; answers with the sources, this one checking, and their stamp.
 #[tauri::command]
 pub(crate) async fn recheck_connection(
     state: tauri::State<'_, AppState>,
     request: ConnectionId,
-) -> Result<ProvidersResponse, String> {
-    state
+) -> Result<RecheckAnswer, String> {
+    let answered = state
         .host
         .recheck(&request)
-        .ok_or_else(|| format!("No source {request}"))
+        .ok_or_else(|| format!("No source {request}"))?;
+    Ok(RecheckAnswer {
+        providers: answered.value,
+        stamp: answered.stamp,
+    })
 }
 
 /// Async, so reading the file and listing WSL distributions (the registry) never holds the
@@ -162,6 +182,7 @@ async fn update_config<T: Send + 'static>(
         ProviderConfigSaveResponseDto {
             snapshot,
             providers_response: edit.providers,
+            installed: edit.installed,
         },
     ))
 }

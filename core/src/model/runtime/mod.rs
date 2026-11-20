@@ -1,4 +1,12 @@
 pub mod activity_state;
+pub mod activity_update;
+pub mod collect_answer;
+pub mod install_receipt;
+pub mod part_stamp;
+pub mod providers_update;
+pub mod recheck_answer;
 pub mod run_end;
 pub mod run_id;
 pub mod run_outcome;
+pub mod runtime_state;
+pub mod shown_activity;

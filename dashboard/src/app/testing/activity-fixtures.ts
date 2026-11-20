@@ -156,7 +156,11 @@ export class MockBackendTransport implements BackendTransport {
   }
 
   private saveResponse(): ProviderConfigSaveResponseDto {
-    return { snapshot: { kinds: [], connections: [] }, providersResponse: this.providersResponse }
+    return {
+      snapshot: { kinds: [], connections: [] },
+      providersResponse: this.providersResponse,
+      installed: { epoch: 'mock-host', revision: 1 },
+    }
   }
 
   private respond(operation: BackendOperation<unknown, unknown>): Promise<unknown> {

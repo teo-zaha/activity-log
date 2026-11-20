@@ -426,6 +426,17 @@ async fn recheck_answers_with_the_connection_checking_and_404_for_an_unknown_one
     assert_eq!(response.status(), Status::Ok);
     let body: serde_json::Value = response.into_json().await.unwrap();
     assert_eq!(body["providers"][0]["status"], "checking");
+    // The answer as before, plus the stamp of the providers it installed.
+    let state: serde_json::Value = client
+        .get("/api/runtime-state")
+        .dispatch()
+        .await
+        .into_json()
+        .await
+        .unwrap();
+    assert_eq!(body["stamp"]["epoch"], state["providers"]["epoch"]);
+    assert_eq!(body["stamp"]["authority"], state["providers"]["authority"]);
+    assert!(body["stamp"]["revision"].as_u64() <= state["providers"]["revision"].as_u64());
 
     let response = client
         .post("/api/connections/recheck")
@@ -478,4 +489,55 @@ async fn a_request_sees_a_config_file_changed_since_the_last_one() {
         .unwrap();
 
     assert_eq!(body["providers"][0]["connection"]["source"], "calendar");
+}
+
+#[rocket::async_test]
+async fn the_runtime_state_answers_both_parts_of_one_host() {
+    let client = client(collector_ok()).await;
+
+    let response = client.get("/api/runtime-state").dispatch().await;
+    assert_eq!(
+        response.status(),
+        Status::Ok,
+        "also before the first collection"
+    );
+    let state: serde_json::Value = response.into_json().await.unwrap();
+    assert_eq!(
+        state["activity"]["state"],
+        serde_json::json!({ "kind": "empty" })
+    );
+    assert_eq!(state["activity"]["epoch"], state["providers"]["epoch"]);
+    assert_eq!(
+        state["activity"]["authority"],
+        state["providers"]["authority"]
+    );
+    assert!(state["providers"]["providers"]["providers"].is_array());
+}
+
+#[rocket::async_test]
+async fn a_collect_answers_its_log_as_before_with_the_stamp_of_the_state_it_installed() {
+    let release = Arc::new(Notify::new());
+    let client = client(collector_held(&release)).await;
+
+    let started: serde_json::Value = post_collect(&client, MARCH_FIRST_WEEK)
+        .await
+        .into_json()
+        .await
+        .unwrap();
+    let state: serde_json::Value = client
+        .get("/api/runtime-state")
+        .dispatch()
+        .await
+        .into_json()
+        .await
+        .unwrap();
+
+    assert_eq!(started["meta"]["start"], "2026-03-01T00:00:00+00:00");
+    // The host's own kind for it, never left to be read off the pending list.
+    assert_eq!(started["kind"], "running");
+    assert_eq!(started["stamp"]["epoch"], state["activity"]["epoch"]);
+    assert_eq!(started["stamp"]["revision"], state["activity"]["revision"]);
+    assert_eq!(state["activity"]["state"]["kind"], "running");
+    assert_eq!(state["activity"]["state"]["log"]["meta"], started["meta"]);
+    release.notify_one();
 }

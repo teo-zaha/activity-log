@@ -134,6 +134,7 @@ function saveResponse(fields: ProviderConfigFieldStateDto[]): ProviderConfigSave
   return {
     snapshot: snapshot(fields),
     providersResponse: { currentOs: 'linux', providers: providerInfo },
+    installed: { epoch: 'mock-host', revision: 1 },
   }
 }
 
