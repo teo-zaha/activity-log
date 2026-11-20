@@ -7,8 +7,12 @@ import {
   NativeDateAdapter,
 } from '@angular/material/core'
 
-/** `17/05/2026`, `17.5.2026` or `17-05-26`: day, month, year, as the pickers show dates. */
-const DAY_MONTH_YEAR = /^(\d{1,2})[./-](\d{1,2})[./-](\d{2}|\d{4})$/
+/**
+ * `17/05/2026`, `17.5.2026` or `17-05-26`: day, month, year, as the pickers show dates; or
+ * `17,5,2026`, as a phone's keypad for digits (`inputmode="decimal"`) types in a language whose
+ * decimal sign is a comma.
+ */
+const DAY_MONTH_YEAR = /^(\d{1,2})[./,-](\d{1,2})[./,-](\d{2}|\d{4})$/
 const YEAR_MONTH_DAY = /^(\d{4})-(\d{1,2})-(\d{1,2})$/
 /** `3 May 2026` and `3 May, 2026`. */
 const DAY_NAME_YEAR = /^(\d{1,2})\.?\s+([a-z]+)\.?,?\s+(\d{4})$/i

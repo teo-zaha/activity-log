@@ -11,7 +11,9 @@ async function setup(): Promise<{
   dateFrom: ReturnType<typeof signal<DayKey | null>>
   dateTo: ReturnType<typeof signal<DayKey | null>>
   collect: ReturnType<typeof vi.fn<(since: string, until: string) => Promise<void>>>
+  editing: ReturnType<typeof signal<boolean>>
 }> {
+  const editing$ = signal(false)
   const dateFrom = signal<DayKey | null>('2026-05-17')
   const dateTo = signal<DayKey | null>('2026-05-18')
   const collect = vi.fn<(since: string, until: string) => Promise<void>>(() => Promise.resolve())
@@ -29,13 +31,14 @@ async function setup(): Promise<{
             return from !== null && to !== null ? collect(from, to) : null
           },
           isLoading: signal(false),
+          setRangeEditing: (editing: boolean): void => editing$.set(editing),
         },
       },
       // The app's own providers: the date adapter is the one the app starts with.
       ...appConfig.providers,
     ],
   })
-  return { dateFrom, dateTo, collect }
+  return { dateFrom, dateTo, collect, editing: editing$ }
 }
 
 describe('RangeFormComponent', () => {
@@ -74,6 +77,23 @@ describe('RangeFormComponent', () => {
     expect(dateFrom()).toBe('2026-05-13')
   })
 
+  it('opens the keypad for digits, and reads a date typed with its separator', async () => {
+    const { dateFrom } = await setup()
+    const from = screen.getByLabelText('From date')
+    for (const field of [from, screen.getByLabelText('To date')]) {
+      expect(field.getAttribute('inputmode')).toBe('decimal')
+    }
+
+    // The keypad's separator is the device's decimal sign: a point or a comma.
+    for (const typed of ['3.5.2026', '3,5,2026']) {
+      await userEvent.clear(from)
+      await userEvent.type(from, typed)
+      await userEvent.tab()
+      expect(dateFrom()).toBe('2026-05-03')
+      dateFrom.set('2026-05-17')
+    }
+  })
+
   it('reads a month by its name, and no date from digits with a time or zone after them', async () => {
     const { dateFrom } = await setup()
     const from = screen.getByLabelText('From date')
@@ -90,6 +110,23 @@ describe('RangeFormComponent', () => {
       await userEvent.tab()
       expect(dateFrom()).toBeNull()
     }
+  })
+
+  it('keeps a date being typed while the range changes under it, and says it is edited', async () => {
+    const { dateFrom, editing } = await setup()
+    const from = screen.getByLabelText('From date')
+
+    await userEvent.clear(from)
+    await userEvent.type(from, '01/05/20')
+    expect(editing()).toBe(true)
+    // Another collection's range comes while the field has focus.
+    dateFrom.set('2026-04-01')
+    await new Promise(resolve => setTimeout(resolve))
+    expect(from).toHaveProperty('value', '01/05/20')
+
+    await userEvent.click(document.body)
+    await new Promise(resolve => setTimeout(resolve))
+    expect(editing()).toBe(false)
   })
 
   it('collects the range on submit', async () => {

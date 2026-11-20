@@ -1,5 +1,14 @@
 import { Location } from '@angular/common'
-import { computed, inject, InjectionToken, linkedSignal, signal, Service } from '@angular/core'
+import {
+  computed,
+  effect,
+  inject,
+  InjectionToken,
+  linkedSignal,
+  signal,
+  Service,
+  untracked,
+} from '@angular/core'
 import {
   NavigationCancel,
   NavigationEnd,
@@ -52,8 +61,22 @@ export class ActivityViewStateService {
     const url = this.router.lastSuccessfulNavigation()?.finalUrl
     return (url && parseAppUrl(url)) ?? DEFAULT_LOCATION
   })
-  /** The range the collection on screen covers; the URL's range wins over it. */
-  private readonly collectedRange = signal<DayRange | null>(null)
+  /**
+   * The range the collection on screen covers. The URL's range is this tab's own and wins over it;
+   * where the two differ, both are shown.
+   */
+  private readonly collected = signal<DayRange | null>(null)
+  readonly collectedRange = this.collected.asReadonly()
+  /** The range fields are being edited (focused, or a picker open): the URL's range stays. */
+  private readonly editingRange = signal(false)
+  /**
+   * A restarted host's range, for the URL's range that followed the old host's collection,
+   * decided once no navigation is under way and the range is not being edited.
+   */
+  private readonly restart = signal<{
+    readonly followed: DayRange
+    readonly next: DayRange
+  } | null>(null)
 
   readonly currentView = computed<ViewMode>(() => this.url().view)
   /** The calendar views' day; the timeline keeps the one shown last. */
@@ -77,11 +100,9 @@ export class ActivityViewStateService {
   )
   /** The range shown: the URL's, else the collection's; null where neither names a day. */
   readonly dateFrom = computed<DayKey | null>(
-    () => this.url().from ?? this.collectedRange()?.from ?? null
+    () => this.url().from ?? this.collected()?.from ?? null
   )
-  readonly dateTo = computed<DayKey | null>(
-    () => this.url().to ?? this.collectedRange()?.to ?? null
-  )
+  readonly dateTo = computed<DayKey | null>(() => this.url().to ?? this.collected()?.to ?? null)
   /** The settings section open over the view, or null. */
   readonly settings = computed<SettingsSelection | null>(() => this.url().settings)
 
@@ -113,9 +134,41 @@ export class ActivityViewStateService {
     return opened?.from && opened.to ? { from: opened.from, to: opened.to } : null
   }
 
-  /** Shows the range the collection on screen covers, unless the URL names one; null for none. */
+  constructor() {
+    effect(() => {
+      const restart = this.restart()
+      if (restart === null || this.editingRange() || this.router.currentNavigation() !== null) {
+        return
+      }
+      untracked(() => this.followRestart(restart))
+    })
+  }
+
+  /** Shows the range the collection on screen covers; null for none. */
   showCollectedRange(range: DayRange | null): void {
-    this.collectedRange.set(range)
+    this.collected.set(range)
+  }
+
+  /**
+   * A restarted host shows `next` where the old one showed `followed`. Where the URL's range is
+   * still the one it followed, `next` takes its place, in place (B81); a range picked meanwhile,
+   * or a navigation that leaves elsewhere, keeps its own. Waits for a navigation under way, so it
+   * never cancels one, and while the range is edited.
+   */
+  followRestartedHost(followed: DayRange, next: DayRange): void {
+    this.restart.set({ followed, next })
+  }
+
+  /** The range fields are edited, or no longer (`RangeFormComponent`). */
+  setRangeEditing(editing: boolean): void {
+    this.editingRange.set(editing)
+  }
+
+  private followRestart({ followed, next }: { followed: DayRange; next: DayRange }): void {
+    this.restart.set(null)
+    const { from, to } = this.url()
+    if (from !== followed.from || to !== followed.to || sameRange(followed, next)) return
+    void this.setRange(next.from, next.to)
   }
 
   navigateDay(delta: number): void {
@@ -429,6 +482,10 @@ function readDepths(state: unknown): HistoryDepths {
     detailDepth: 'detailDepth' in state ? depthOf(state.detailDepth) : 0,
     settingsDepth: 'settingsDepth' in state ? depthOf(state.settingsDepth) : 0,
   }
+}
+
+function sameRange(a: DayRange, b: DayRange): boolean {
+  return a.from === b.from && a.to === b.to
 }
 
 function depthOf(value: unknown): number {

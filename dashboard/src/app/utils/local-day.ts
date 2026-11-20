@@ -96,6 +96,20 @@ export function longDayLabel(key: DayKey): string {
   return LONG_DAY.format(dateOfKey(key))
 }
 
+const DAY_MONTH = new Intl.DateTimeFormat('en-GB', { day: 'numeric', month: 'short' })
+const DAY_MONTH_YEAR = new Intl.DateTimeFormat('en-GB', {
+  day: 'numeric',
+  month: 'short',
+  year: 'numeric',
+})
+
+/** `1 Apr – 8 Apr 2026`, or `28 Dec 2025 – 3 Jan 2026` across a year: the days of a range. */
+export function dayRangeLabel(from: DayKey, to: DayKey): string {
+  const [start, end] = [dateOfKey(from), dateOfKey(to)]
+  const first = start.getFullYear() === end.getFullYear() ? DAY_MONTH : DAY_MONTH_YEAR
+  return `${first.format(start)} – ${DAY_MONTH_YEAR.format(end)}`
+}
+
 const MONTH = new Intl.DateTimeFormat('en-GB', { month: 'short' })
 
 /** `Nov`: three letters for every month (en-GB writes September as "Sept"). */

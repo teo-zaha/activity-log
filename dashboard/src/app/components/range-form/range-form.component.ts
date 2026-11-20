@@ -1,8 +1,19 @@
-import { Component, DestroyRef, computed, inject, linkedSignal } from '@angular/core'
+import {
+  Component,
+  DestroyRef,
+  type ElementRef,
+  computed,
+  effect,
+  inject,
+  linkedSignal,
+  signal,
+  viewChild,
+} from '@angular/core'
 import { form, FormField, FormRoot } from '@angular/forms/signals'
 import { MatDatepickerModule } from '@angular/material/datepicker'
 import { MatIconModule } from '@angular/material/icon'
 import { MatTooltipModule } from '@angular/material/tooltip'
+import { elementFocusWithin } from '@signality/core/elements/element-focus-within'
 import { ActivityService } from '../../services/activity.service'
 import { ShortcutService } from '../../services/shortcut.service'
 import { dateOfKey, localDateKey, type DayKey } from '../../utils/local-day'
@@ -40,14 +51,26 @@ export class RangeFormComponent {
   protected readonly dateFromObj = computed(() => this.parseDateStr(this.activity.dateFrom()))
   protected readonly dateToObj = computed(() => this.parseDateStr(this.activity.dateTo()))
 
+  private readonly fields = viewChild<ElementRef<HTMLElement>>('fields')
+  private readonly fieldFocused = elementFocusWithin(this.fields)
+  private readonly pickerOpen = signal(false)
+  /** A date field has focus or a picker is open: what is typed there is the user's. */
+  private readonly editing = computed(() => this.fieldFocused() || this.pickerOpen())
+
   /**
    * What the pickers show while a date is being typed. It only reaches the activity filters once
-   * the input commits (`dateChange`), so half-typed dates never filter the timeline.
+   * the input commits (`dateChange`), so half-typed dates never filter the timeline. While the
+   * range is edited it keeps what is typed, whatever range comes meanwhile; once the editing
+   * ends it shows the range again.
    */
-  protected readonly range = linkedSignal<DateRange>(() => ({
-    from: this.dateFromObj(),
-    to: this.dateToObj(),
-  }))
+  protected readonly range = linkedSignal<{ shown: DateRange; editing: boolean }, DateRange>({
+    source: () => ({
+      shown: { from: this.dateFromObj(), to: this.dateToObj() },
+      editing: this.editing(),
+    }),
+    computation: ({ shown, editing }, previous) =>
+      editing && previous !== undefined ? previous.value : shown,
+  })
 
   protected readonly rangeForm = form(this.range, {
     submission: {
@@ -61,16 +84,22 @@ export class RangeFormComponent {
   })
 
   constructor() {
-    inject(DestroyRef).onDestroy(() => this.pickerClosed())
+    effect(() => this.activity.setRangeEditing(this.editing()))
+    inject(DestroyRef).onDestroy(() => {
+      this.pickerClosed()
+      this.activity.setRangeEditing(false)
+    })
   }
 
   protected pickerOpened(): void {
     this.closePickerLayer ??= this.shortcuts.openLayer({ kind: 'modal' })
+    this.pickerOpen.set(true)
   }
 
   protected pickerClosed(): void {
     this.closePickerLayer?.()
     this.closePickerLayer = null
+    this.pickerOpen.set(false)
   }
 
   /**

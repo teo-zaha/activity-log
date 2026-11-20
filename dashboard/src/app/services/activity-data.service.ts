@@ -19,7 +19,7 @@ import { type ConnectionKey, connectionKey } from '../providers/connection'
 import { createEntryAdapters, getProviderAdapter } from '../providers/provider-adapter'
 import type { EntryUiAdapter } from '../providers/types'
 import { ActivityBackendClient } from './backend/backend-client'
-import { ActivityViewStateService } from './activity-view-state.service'
+import { ActivityViewStateService, type DayRange } from './activity-view-state.service'
 import { type Failure, failure, failureOf } from './failure'
 import { BackendFailure } from './backend/backend-failure'
 import {
@@ -133,6 +133,11 @@ export class ActivityDataService {
   private pendingActivations: readonly InstallReceipt[] = []
   private resync = NO_RESYNC
   private latestToken = 0
+  /**
+   * The range the old host showed, which the URL may have followed, from a restart until the new
+   * host shows a range of its own; none where a collect was on its way, whose range decides.
+   */
+  private restartedFrom: DayRange | null = null
   private starting: Promise<void> | null = null
 
   private readonly activityState = computed<ActivityState | null>(
@@ -172,11 +177,14 @@ export class ActivityDataService {
     return state.kind === 'running'
   })
   readonly isLoading = this.collecting
-  private readonly collectingSince = linkedSignal<boolean, number>({
-    source: this.collecting,
-    computation: (collecting, previous) =>
-      collecting && previous?.source ? previous.value : collecting ? Date.now() : 0,
-  })
+  /**
+   * When the collection on screen began: the dashboard's start until a first state, then each run
+   * boundary as it is accepted (`markRun`): a collect sent, another host, a run that follows one
+   * that ended, a run of another range. Updates of one run keep it. Set where each is accepted,
+   * not derived from `collecting`, which only tells whether one runs: a run that ends and the
+   * next that begins between two reads look alike there (B77).
+   */
+  private readonly runStartedAt = signal(Date.now())
 
   /** What failed, most direct first: a refused request, a lost backend, a failed collection. */
   private readonly outcomes = computed<readonly Outcome[]>(() => {
@@ -224,7 +232,7 @@ export class ActivityDataService {
 
   readonly collectionStatus = computed<CollectionStatus>(() => {
     if (this.collecting()) {
-      return { kind: 'collecting', operation: this.operation(), startedAt: this.collectingSince() }
+      return { kind: 'collecting', operation: this.operation(), startedAt: this.runStartedAt() }
     }
     return this.shownOutcome()?.status ?? { kind: 'idle' }
   })
@@ -385,6 +393,8 @@ export class ActivityDataService {
   private async sendCollect(operation: CollectionOperation, range: CollectRequest): Promise<void> {
     const token = this.dispatch(operation)
     const epoch = this.installed()?.epoch ?? null
+    if (!this.collecting()) this.runStartedAt.set(Date.now())
+    this.restartedFrom = null
     this.collectCommand.set({ token, epoch, operation, phase: 'sending' })
     try {
       const answer = await this.answered(this.answeredWithin(this.backend.collect(range)))
@@ -507,6 +517,14 @@ export class ActivityDataService {
     if (stamp === null) return
     const previous = this.installed()
     const newHost = previous === null || previous.epoch !== stamp.epoch
+    if (newHost && previous !== null) {
+      this.runStartedAt.set(Date.now())
+      const followed = previous.activity && dayRangeOf(previous.activity.state)
+      this.restartedFrom =
+        this.collectCommand()?.phase === 'sending' ? null : (this.restartedFrom ?? followed)
+    } else if (activity) {
+      this.markRun(previous?.activity ?? null, activity)
+    }
     this.installed.set({
       epoch: stamp.epoch,
       authority: stamp.authority,
@@ -535,6 +553,7 @@ export class ActivityDataService {
     if (installed === null) return this.install(update, null, false)
     if (!this.current(installed, update)) return
     if (installed.activity && update.revision <= installed.activity.revision) return
+    this.markRun(installed.activity, update)
     this.installed.set({ ...installed, activity: update })
     this.showRange(update.state)
   }
@@ -546,6 +565,21 @@ export class ActivityDataService {
     if (installed.providers && update.revision <= installed.providers.revision) return
     this.installed.set({ ...installed, providers: update })
     this.showProviders(update, installed.providers)
+  }
+
+  /** Starts the run's time at a run that begins with `next`: after none running, or of another range. */
+  private markRun(previous: ActivityUpdate | null, next: ActivityUpdate): void {
+    if (next.state.kind !== 'running') return
+    const before = previous?.state.kind === 'running' ? rangeOf(previous.state) : null
+    const after = rangeOf(next.state)
+    if (
+      before === null ||
+      after === null ||
+      before.start !== after.start ||
+      before.end !== after.end
+    ) {
+      this.runStartedAt.set(Date.now())
+    }
   }
 
   /**
@@ -632,12 +666,16 @@ export class ActivityDataService {
     }
   }
 
-  /** Shows the local days the collection covers; nothing collected shows none. */
+  /**
+   * Shows the local days the collection covers; nothing collected shows none. A restarted host's
+   * first range goes to the URL's range that followed the old host's.
+   */
   private showRange(state: ActivityState): void {
-    const range = rangeOf(state)
-    this.viewState.showCollectedRange(
-      range && { from: dayKeyOf(range.start), to: lastDayKeyBefore(range.end) }
-    )
+    const range = dayRangeOf(state)
+    this.viewState.showCollectedRange(range)
+    if (range === null || this.restartedFrom === null) return
+    this.viewState.followRestartedHost(this.restartedFrom, range)
+    this.restartedFrom = null
   }
 }
 
@@ -650,6 +688,12 @@ const COMMAND_ANSWER_TIMEOUT_MS = 30_000
 
 function watermark(installed: Installed): number {
   return Math.max(installed.activity?.revision ?? 0, installed.providers?.revision ?? 0)
+}
+
+/** The local days a collection covers, none for nothing collected. */
+function dayRangeOf(state: ActivityState): DayRange | null {
+  const range = rangeOf(state)
+  return range && { from: dayKeyOf(range.start), to: lastDayKeyBefore(range.end) }
 }
 
 function rangeOf(state: ActivityState): { start: string; end: string } | null {
