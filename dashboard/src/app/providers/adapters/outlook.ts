@@ -2,9 +2,16 @@ import type { OutlookEntry } from '../../generated/activity'
 import { EntryUiAdapter, ProviderUiAdapterDefinition } from '../types'
 import { busyStatusLabel, createBadge, formatDuration, joinParts, toDefinedStrings } from '../utils'
 
+/** The user's role in the event; none when Outlook did not say. */
+function roleOf(entry: OutlookEntry): 'Organizer' | 'Attendee' | null {
+  if (entry.isOrganizer === undefined) return null
+  return entry.isOrganizer ? 'Organizer' : 'Attendee'
+}
+
 class OutlookEntryUiAdapter extends EntryUiAdapter<OutlookEntry> {
   constructor(provider: OutlookProviderAdapter, entry: OutlookEntry) {
     const entryIcon = 'event'
+    const role = roleOf(entry)
     const badge = createBadge(provider.source, provider.label, entryIcon)
 
     super(provider, entry, {
@@ -12,8 +19,8 @@ class OutlookEntryUiAdapter extends EntryUiAdapter<OutlookEntry> {
       meta: joinParts([
         formatDuration(entry.durationMinutes),
         entry.location,
-        entry.isOrganizer ? 'organizer' : 'attendee',
-        entry.organizer && !entry.isOrganizer ? `org: ${entry.organizer}` : '',
+        role?.toLowerCase(),
+        entry.organizer && role !== 'Organizer' ? `org: ${entry.organizer}` : '',
       ]),
       entryIcon,
       searchTerms: toDefinedStrings([
@@ -34,7 +41,7 @@ class OutlookEntryUiAdapter extends EntryUiAdapter<OutlookEntry> {
         { label: 'Status', value: entry.busyStatus ? busyStatusLabel(entry.busyStatus) : '' },
         { label: 'Location', value: entry.location ?? '' },
         { label: 'Organizer', value: entry.organizer ?? '' },
-        { label: 'Role', value: entry.isOrganizer ? 'Organizer' : 'Attendee' },
+        { label: 'Role', value: role ?? '' },
       ].filter(field => field.value),
       badge,
       badges: [badge],

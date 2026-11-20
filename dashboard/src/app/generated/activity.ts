@@ -168,7 +168,11 @@ connection: string,
  * The source's own id for the entry (a commit hash, an event id), unique within its
  * connection: `source`, `connection` and `id` identify an entry.
  */
-id: string, timestamp: string, title: string, location?: string, organizer?: string, isOrganizer: boolean, durationMinutes: number, busyStatus?: BusyStatus, 
+id: string, timestamp: string, title: string, location?: string, organizer?: string, 
+/**
+ * Whether the user organizes it; absent when Outlook did not say (a read it refused).
+ */
+isOrganizer?: boolean, durationMinutes: number, busyStatus?: BusyStatus, 
 /**
  * How the entry counts towards meeting time, from `busy_status`.
  */

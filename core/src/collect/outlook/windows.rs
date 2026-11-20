@@ -12,7 +12,9 @@ use crate::{
     },
 };
 
-use super::{OutlookFallback, busy_status_from_com, normalize_outlook_events};
+use super::{
+    OutlookFallback, busy_status_from_com, is_organizer_from_com, normalize_outlook_events,
+};
 
 /// Guards against a collection that never ends, such as an unbounded recurrence.
 const MAX_EVENTS: usize = 10_000;
@@ -71,7 +73,6 @@ fn collect_outlook_blocking(
                 "Outlook returned more than {MAX_EVENTS} events for the range; stopped reading"
             ));
         }
-        let meeting_status = event.property_i32("MeetingStatus").unwrap_or_default();
         events.push(RawOutlookEvent {
             id: event
                 .property_optional_string("GlobalAppointmentID")
@@ -83,7 +84,7 @@ fn collect_outlook_blocking(
             end: event.property_utc_rfc3339("EndUTC")?,
             location: event.property_optional_string("Location")?,
             organizer: event.property_optional_string("Organizer")?,
-            is_organizer: Some(matches!(meeting_status, 0 | 1)),
+            is_organizer: is_organizer_from_com(event.property_i32("MeetingStatus").ok()),
             is_default_calendar: Some(true),
             busy_status: event
                 .property_i32("BusyStatus")

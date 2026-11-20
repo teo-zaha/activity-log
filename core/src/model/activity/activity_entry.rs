@@ -19,6 +19,24 @@ pub enum ActivityEntry {
     Calendar(CalendarEntry),
 }
 
+/// An entry's `source`, accepted only if it is `expected`. Entries are untagged, so for kinds
+/// whose other fields can all be absent (an Outlook entry without `isOrganizer`), the source is
+/// what keeps one kind from being read as another.
+pub(crate) fn source_named<'de, D: serde::Deserializer<'de>>(
+    deserializer: D,
+    expected: &str,
+) -> Result<String, D::Error> {
+    let source = String::deserialize(deserializer)?;
+    if source == expected {
+        Ok(source)
+    } else {
+        Err(serde::de::Error::invalid_value(
+            serde::de::Unexpected::Str(&source),
+            &expected,
+        ))
+    }
+}
+
 pub trait IntoActivityEntry {
     fn into_activity_entry(self) -> ActivityEntry;
 }

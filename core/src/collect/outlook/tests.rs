@@ -5,8 +5,8 @@ use crate::model::{
 };
 
 use super::{
-    OutlookFallback, busy_status_from_com, busy_status_from_mac, normalize_outlook_events,
-    parse_outlook_columns,
+    OutlookFallback, busy_status_from_com, busy_status_from_mac, is_organizer_from_com,
+    normalize_outlook_events, parse_outlook_columns,
 };
 
 /// Whole UTC days `since..=until`.
@@ -481,4 +481,61 @@ fn missing_or_repeated_ids_count_as_no_id() {
         Some("Room B"),
         "distinct ids keep everything"
     );
+}
+
+/// B73: a `MeetingStatus` Outlook would not give is no proof the user organized the event.
+#[test]
+fn a_meeting_status_that_could_not_be_read_leaves_the_organizer_unknown() {
+    assert_eq!(is_organizer_from_com(None), None);
+    assert_eq!(is_organizer_from_com(Some(0)), Some(true));
+    assert_eq!(is_organizer_from_com(Some(1)), Some(true));
+    // Received (3) and cancelled received (7) meetings are someone else's.
+    assert_eq!(is_organizer_from_com(Some(3)), Some(false));
+    assert_eq!(is_organizer_from_com(Some(7)), Some(false));
+}
+
+/// B73: an unknown role stays unknown in the entry and on the wire, never "attendee".
+#[test]
+fn an_unknown_organizer_is_left_out_of_the_entry() {
+    let unknown = RawOutlookEvent {
+        id: Some("meeting".to_string()),
+        subject: Some("Planning".to_string()),
+        start: "2026-03-25T09:00:00Z".to_string(),
+        end: "2026-03-25T09:30:00Z".to_string(),
+        location: None,
+        organizer: Some("Alex".to_string()),
+        is_organizer: None,
+        is_default_calendar: Some(true),
+        busy_status: None,
+        body: None,
+    };
+
+    let entries = normalize_outlook_events(vec![unknown], &options("2026-03-25", "2026-03-25"));
+
+    assert_eq!(entries[0].is_organizer, None);
+    let wire = serde_json::to_value(&entries[0]).unwrap();
+    assert!(wire.get("isOrganizer").is_none(), "{wire}");
+}
+
+/// Entries are untagged: with `isOrganizer` optional, only the source tells an Outlook entry
+/// from a Calendar one with the same fields.
+#[test]
+fn an_outlook_entry_without_a_role_and_a_calendar_entry_read_as_their_own_kinds() {
+    use crate::model::ActivityEntry;
+
+    let entry = |source: &str| {
+        serde_json::from_value::<ActivityEntry>(serde_json::json!({
+            "source": source,
+            "connection": "default",
+            "id": "planning",
+            "timestamp": "2026-03-25T09:00:00Z",
+            "title": "Planning",
+            "durationMinutes": 30,
+            "meetingWeight": "busy",
+        }))
+        .unwrap()
+    };
+
+    assert!(matches!(entry("outlook"), ActivityEntry::Outlook(_)));
+    assert!(matches!(entry("calendar"), ActivityEntry::Calendar(_)));
 }
