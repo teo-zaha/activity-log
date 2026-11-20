@@ -139,7 +139,7 @@ The Timeline view has a **Filter activity…** field that narrows the collected 
 | <kbd>⌘F</kbd> / <kbd>Ctrl+F</kbd>                                     | Switch to the Timeline, keeping the range, and focus its filter                                              | Desktop app                   |
 | <kbd>⌘[</kbd> on macOS, <kbd>Alt+←</kbd> on Windows and Linux         | Back: from an event of a group to its list, out of the details or a settings section, else the previous view | Desktop app, not while typing |
 
-Keys that type a character never fire in a text field.
+Keys that type a character never fire in a text field. In the desktop app on Windows the web view's own browser keys (reload, print, find, back) are off, so these keys are the dashboard's; copy, paste and the other editing keys work as usual.
 
 ### Source filter
 
