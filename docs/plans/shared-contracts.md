@@ -1098,6 +1098,17 @@ Coordinator decision, 2026-11-20 (merged plan, "the read half of 6a moves into s
 
 ---
 
+### As built in step 6b (typed errors)
+
+- Every API error body and every desktop command's error is one `BackendError { kind, error }`, which replaces `ErrorResponse` and keeps its `error` field (additive on the wire; statuses unchanged). `kind` is the generated `BackendErrorKind`; `BACKEND_ERROR_KINDS` lists it for the dashboard. Rocket's own refusals answer it too, through a default catcher.
+- The desktop's `get_activity` and `get_providers` commands are gone: since step 6 nothing called them. So `GET /api/activity` is the only place an `ActivityState` becomes an old-shape answer; `runtime::answer_collect` and `runtime::answer_recheck` give the collect and recheck answers to both the API and the desktop.
+- `save_export` answers `ExportOutcome` (`saved`, `cancelled`).
+- Both dashboard transports reject only with `BackendFailure` (a `BackendErrorKind`, `unreachable` or `unsupported`); a timed-out read or command is `unreachable`.
+- Rocket's catcher keeps Rocket's status: a body that is no JSON `400`, a JSON body of the wrong shape `422`, an unknown route or a body of another media type than JSON (`text/plain` to `POST /api/collect`: route matching fails before any handler) `404` with `notFound`, a body over the JSON limit `413`, a panic `500`. A media-type mismatch therefore reads as a route the server lacks, not as a refused request.
+- A recheck of a connection the host still lists, after it shut down, is `internal` (`RecheckRefused::ShutDown`), never `notFound`.
+- `OutlookEntry.isOrganizer` is optional: absent when Outlook did not say. Its readers had `true` or `false` before, and an unknown role was sent as `false`.
+- A state read the backend refuses for good (`notFound`, `invalidRequest`, …) ends the polling attempt at once as `refused`, with that failure; only failures another read may fix are retried.
+
 ## 6. Additive DTO fields
 
 ### 6.1 Field issues for settings (R-B2, B64; step 7)
