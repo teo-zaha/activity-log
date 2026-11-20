@@ -1,4 +1,6 @@
+import type { DayKey } from '../utils/local-day'
+
 export interface DayGroup<T> {
-  date: string
+  date: DayKey
   entries: T[]
 }

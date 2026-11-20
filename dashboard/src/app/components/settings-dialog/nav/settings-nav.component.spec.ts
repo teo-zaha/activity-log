@@ -37,7 +37,7 @@ describe('SettingsNavComponent', () => {
     await userEvent.click(screen.getByRole('button', { name: /GitLab/ }))
     await userEvent.click(screen.getByRole('button', { name: /Add source/ }))
 
-    expect(selected.mock.calls).toEqual([['connection:gitlab/gitlab'], ['add']])
+    expect(selected.mock.calls).toEqual([['gitlab/gitlab'], ['add']])
   })
 
   it('is the settings home on a phone, a tab: rows that open their section and no close button', async () => {

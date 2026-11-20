@@ -14,13 +14,10 @@ import type { MatDialogRef } from '@angular/material/dialog'
 import { mediaQuery } from '@signality/core/browser/media-query'
 import { ActivityService } from '../../services/activity.service'
 import { ActivityViewStateService } from '../../services/activity-view-state.service'
+import { failureWhile } from '../../services/failure'
 import { downQuery } from '../../utils/breakpoints'
 import type { SettingsDialogOpener } from './settings-dialog-opener.service'
-import {
-  type SettingsSelection,
-  type SettingsTarget,
-  connectionSelection,
-} from './settings-dialog.types'
+import { type SettingsSelection, type SettingsTarget } from './settings-dialog.types'
 
 /**
  * The settings are a URL state: `?settings=<section>` shows them over the view. Opening them
@@ -93,10 +90,16 @@ export class SettingsDialogLauncher {
     let opener: SettingsDialogOpener
     try {
       opener = await this.loadOpener()
-    } catch {
+    } catch (error) {
       // `injectAsync` caches a failed load, so start over for the next attempt.
       this.loadOpener = runInInjectionContext(this.injector, () => this.createOpenerLoader())
-      this.activity.error.set('Settings could not be loaded. Try again.')
+      // Only a dialog still wanted failed: the phone page shows without this code, and settings
+      // the URL left meanwhile are closed already.
+      if (this.host() !== 'dialog' || !this.requested()) return
+      this.activity.notice.set({
+        origin: 'settings',
+        failure: failureWhile('Loading the settings', error),
+      })
       this.host.set(null)
       void this.viewState.closeSettings()
       return
@@ -130,5 +133,5 @@ export class SettingsDialogLauncher {
 
 function selectionFor(target: SettingsTarget | undefined, phone: boolean): SettingsSelection {
   if (target === undefined) return phone ? 'home' : 'general'
-  return target === 'add' ? 'add' : connectionSelection(target)
+  return target
 }

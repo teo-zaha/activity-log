@@ -1,24 +1,18 @@
 import type {
-  ActivityLog,
   AddConnectionRequestDto,
   AddConnectionResponseDto,
+  CollectAnswer,
   CollectRequest,
   ConnectionId,
-  CollectionFailedResponse,
   ExportFile,
   ExportRequest,
   LogsResponse,
   ProviderConfigSaveRequestDto,
   ProviderConfigSaveResponseDto,
   ProviderConfigSnapshotDto,
-  ProvidersResponse,
+  RecheckAnswer,
+  RuntimeState,
 } from '../../generated/activity'
-
-/**
- * The log of the last collection, partial while `meta.pending` names connections it still waits
- * for, or the range and error of one that failed.
- */
-export type ActivityResponse = ActivityLog | CollectionFailedResponse
 
 export type HttpMethod = 'GET' | 'POST' | 'DELETE'
 
@@ -67,22 +61,18 @@ function command<Req, Res>(
 }
 
 export const BackendOperations = {
-  activity: read<ActivityResponse>({
-    label: 'Activity',
-    tauri: 'get_activity',
-    route: '/api/activity',
-  }),
-  providers: read<ProvidersResponse>({
-    label: 'Providers',
-    tauri: 'get_providers',
-    route: '/api/providers',
+  /** Both parts of the host's state, as one coherent pair with the host's stamps. */
+  runtimeState: read<RuntimeState>({
+    label: 'Runtime state',
+    tauri: 'get_runtime_state',
+    route: '/api/runtime-state',
   }),
   providerConfig: read<ProviderConfigSnapshotDto>({
     label: 'Provider configuration',
     tauri: 'get_provider_config',
   }),
   logs: read<LogsResponse>({ label: 'Logs', tauri: 'get_logs', route: '/api/logs' }),
-  collect: command<CollectRequest, ActivityResponse>({
+  collect: command<CollectRequest, CollectAnswer>({
     label: 'Collect',
     tauri: 'collect',
     http: { method: 'POST', url: '/api/collect' },
@@ -96,7 +86,7 @@ export const BackendOperations = {
     tauri: 'add_connection',
   }),
   /** Runs a source's startup check again; the backend then collects its kind again. */
-  recheckConnection: command<ConnectionId, ProvidersResponse>({
+  recheckConnection: command<ConnectionId, RecheckAnswer>({
     label: 'Check again',
     tauri: 'recheck_connection',
     http: { method: 'POST', url: '/api/connections/recheck' },

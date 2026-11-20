@@ -19,31 +19,21 @@ export class ProviderConfigFacade {
     return this.backend.getProviderConfig()
   }
 
+  // A settings change shows its sources and the collection the backend starts for them: it
+  // collects its last range again, so a new source's entries show up by themselves.
+
   saveProviderConfig(
     request: ProviderConfigSaveRequestDto
   ): Promise<ProviderConfigSaveResponseDto> {
-    return this.changed(this.backend.saveProviderConfig(request))
+    return this.data.saveSettings(() => this.backend.saveProviderConfig(request))
   }
 
   /** Adds a connection; the providers list then shows it with its startup check. */
   addConnection(request: AddConnectionRequestDto): Promise<AddConnectionResponseDto> {
-    return this.changed(this.backend.addConnection(request))
+    return this.data.saveSettings(() => this.backend.addConnection(request))
   }
 
   removeConnection(connection: ConnectionId): Promise<ProviderConfigSaveResponseDto> {
-    return this.changed(this.backend.removeConnection(connection))
-  }
-
-  /**
-   * Shows the sources a settings change answers with, and the collection the backend starts for
-   * them: it collects its last range again, so a new source's entries show up by themselves.
-   */
-  private async changed<Response extends ProviderConfigSaveResponseDto>(
-    change: Promise<Response>
-  ): Promise<Response> {
-    const response = await change
-    this.data.applyProviders(response.providersResponse.providers, true)
-    void this.data.followCollection()
-    return response
+    return this.data.saveSettings(() => this.backend.removeConnection(connection))
   }
 }

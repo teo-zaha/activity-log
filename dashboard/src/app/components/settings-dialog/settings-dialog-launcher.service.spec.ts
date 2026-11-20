@@ -1,6 +1,6 @@
 import { Location } from '@angular/common'
 import { provideLocationMocks, SpyLocation } from '@angular/common/testing'
-import { signal, type Type } from '@angular/core'
+import { ApplicationRef, signal, type Type } from '@angular/core'
 import { TestBed } from '@angular/core/testing'
 import { MatDialog } from '@angular/material/dialog'
 import { Router } from '@angular/router'
@@ -8,6 +8,7 @@ import { Subject } from 'rxjs'
 import { describe, expect, it, vi } from 'vitest'
 import { provideAppRouter } from '../../app.routes'
 import { ActivityService } from '../../services/activity.service'
+import type { Notice } from '../../services/failure'
 import { SettingsDialogLauncher } from './settings-dialog-launcher.service'
 import type { SettingsDialogOpener } from './settings-dialog-opener.service'
 import { SettingsDialogComponent } from './settings-dialog.component'
@@ -17,7 +18,7 @@ async function setup(
 ): Promise<{
   open: ReturnType<typeof vi.fn>
   close: ReturnType<typeof vi.fn<() => void>>
-  error: ReturnType<typeof signal<string | null>>
+  notice: ReturnType<typeof signal<Notice | null>>
   launcher: SettingsDialogLauncher
   router: Router
   location: SpyLocation
@@ -25,14 +26,14 @@ async function setup(
   const closed = new Subject<void>()
   const close = vi.fn<() => void>(() => closed.next())
   const open = vi.fn(() => ({ afterClosed: (): Subject<void> => closed, close }))
-  const error = signal<string | null>(null)
+  const notice = signal<Notice | null>(null)
   TestBed.configureTestingModule({
     providers: [
       provideAppRouter(),
       provideLocationMocks(),
       { provide: SettingsDialogLauncher, useClass: launcherClass },
       { provide: MatDialog, useValue: { open } },
-      { provide: ActivityService, useValue: { error } },
+      { provide: ActivityService, useValue: { notice } },
     ],
   })
   const router = TestBed.inject(Router)
@@ -43,7 +44,7 @@ async function setup(
   location.urlChanges = []
   const launcher = TestBed.inject(SettingsDialogLauncher)
   launcher.followUrl()
-  return { open, close, error, launcher, router, location }
+  return { open, close, notice, launcher, router, location }
 }
 
 describe('SettingsDialogLauncher', () => {
@@ -123,10 +124,17 @@ describe('SettingsDialogLauncher', () => {
           : super.importOpener()
       }
     }
-    const { open, error, launcher, router } = await setup(FlakyLauncher)
+    const { open, notice, launcher, router } = await setup(FlakyLauncher)
 
     launcher.open()
-    await vi.waitFor(() => expect(error()).toBe('Settings could not be loaded. Try again.'))
+    await vi.waitFor(() =>
+      expect(notice()).toMatchObject({
+        origin: 'settings',
+        failure: {
+          message: 'Loading the settings failed: Failed to fetch dynamically imported module',
+        },
+      })
+    )
     await vi.waitFor(() => expect(router.url).toBe('/timeline'))
     expect(open).not.toHaveBeenCalled()
 
@@ -150,6 +158,38 @@ describe('SettingsDialogLauncher', () => {
     finishLoading()
     await new Promise(resolve => setTimeout(resolve, 20))
     expect(open).not.toHaveBeenCalled()
+  })
+
+  it('keeps the phone page open when the dialog code fails to load after the window narrowed', async () => {
+    let failLoading = (): void => undefined
+    class FailingLauncher extends SettingsDialogLauncher {
+      protected override importOpener(): Promise<Type<SettingsDialogOpener>> {
+        return new Promise((_, reject) => {
+          failLoading = (): void => reject(new Error('Failed to fetch dynamically imported module'))
+        })
+      }
+    }
+    const phone = mockPhone(false)
+    try {
+      const { open, notice, launcher, router } = await setup(FailingLauncher)
+      const app = TestBed.inject(ApplicationRef)
+      launcher.open('add')
+      await app.whenStable()
+      expect(router.url).toBe('/timeline?settings=add')
+
+      phone.set(true)
+      await app.whenStable()
+      expect(launcher.pageOpen()).toBe(true)
+      failLoading()
+      await app.whenStable()
+
+      expect(launcher.pageOpen()).toBe(true)
+      expect(router.url).toBe('/timeline?settings=add')
+      expect(notice()).toBeNull()
+      expect(open).not.toHaveBeenCalled()
+    } finally {
+      phone.restore()
+    }
   })
 
   it('shows the settings as the Settings tab on a phone', async () => {

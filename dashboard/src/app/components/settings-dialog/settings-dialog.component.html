@@ -51,7 +51,7 @@
             </app-empty-state>
           }
         } @else if (section() === 'add') {
-          <app-settings-add-source-pane (opened)="select(connectionSelection($event))" />
+          <app-settings-add-source-pane (opened)="select($event)" />
         } @else if (section() === 'logs') {
           <app-settings-logs-pane />
         } @else {

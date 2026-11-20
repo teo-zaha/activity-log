@@ -6,7 +6,7 @@ import type {
   ProviderInfo,
   Source,
 } from '../generated/activity'
-import { clockTime, dayKeyOf } from '../utils/local-day'
+import { clockTime, type DayKey, dayKeyOf } from '../utils/local-day'
 import { type ConnectionKey, type EntryKey, entryConnectionKeys } from './connection'
 
 export type EntryBySource<S extends Source> = Extract<ActivityEntry, { source: S }>
@@ -84,9 +84,9 @@ export abstract class EntryUiAdapter<TEntry extends ActivityEntry = ActivityEntr
   readonly source: TEntry['source']
   readonly timestamp: string
   /** The local day the entry falls on, `YYYY-MM-DD`. */
-  readonly dayKey: string
+  readonly dayKey: DayKey
   /** The local day of the entry's last minute: later than `dayKey` for a meeting past midnight. */
-  readonly lastDayKey: string
+  readonly lastDayKey: DayKey
   /** The local time, `14:05`; worked out once, since lists show it for every entry. */
   readonly timeLabel: string
   readonly title: string

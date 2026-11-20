@@ -1,8 +1,8 @@
 import { Clipboard } from '@angular/cdk/clipboard'
-import { TestBed } from '@angular/core/testing'
+import { type ComponentFixture, TestBed } from '@angular/core/testing'
 import { render, screen, within } from '@testing-library/angular'
 import userEvent from '@testing-library/user-event'
-import { describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { LogEntry } from '../../../generated/activity'
 import { MockBackendTransport, provideMockBackend } from '../../../testing/activity-fixtures'
 import { LOGS_POLL_INTERVAL_MS, SettingsLogsPaneComponent } from './settings-logs-pane.component'
@@ -31,17 +31,29 @@ const logs: LogEntry[] = [
   },
 ]
 
-async function setup(pollIntervalMs = 60_000, entries = logs): Promise<MockBackendTransport> {
+const POLL_MS = 2000
+
+/**
+ * Renders the pane over `entries`. The poll's timer is fake: `poll()` fires it once and waits
+ * until the pane has shown the answer, so no test waits on the clock.
+ */
+async function setup(entries = logs): Promise<{
+  backend: MockBackendTransport
+  poll: () => Promise<void>
+  fixture: ComponentFixture<SettingsLogsPaneComponent>
+}> {
   const backend = new MockBackendTransport()
   backend.logs = [...entries]
-  await render(SettingsLogsPaneComponent, {
-    providers: [
-      provideMockBackend(backend),
-      { provide: LOGS_POLL_INTERVAL_MS, useValue: pollIntervalMs },
-    ],
+  const { fixture } = await render(SettingsLogsPaneComponent, {
+    providers: [provideMockBackend(backend), { provide: LOGS_POLL_INTERVAL_MS, useValue: POLL_MS }],
   })
-  await screen.findByText('Collection failed')
-  return backend
+  await fixture.whenStable()
+  expect(screen.getByText('Collection failed')).toBeTruthy()
+  const poll = async (): Promise<void> => {
+    vi.advanceTimersByTime(POLL_MS)
+    await fixture.whenStable()
+  }
+  return { backend, poll, fixture }
 }
 
 function messages(): string[] {
@@ -50,6 +62,10 @@ function messages(): string[] {
 }
 
 describe('SettingsLogsPaneComponent', () => {
+  // Only the poll's interval: the pane's other timers and Testing Library's run as usual.
+  beforeEach(() => vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] }))
+  afterEach(() => vi.useRealTimers())
+
   it('shows entries newest first', async () => {
     await setup()
     expect(messages()).toEqual([
@@ -69,7 +85,7 @@ describe('SettingsLogsPaneComponent', () => {
   })
 
   it('clears the backend log', async () => {
-    const backend = await setup()
+    const { backend } = await setup()
     await userEvent.click(screen.getByRole('button', { name: /Clear/ }))
 
     expect(backend.logs).toEqual([])
@@ -77,35 +93,38 @@ describe('SettingsLogsPaneComponent', () => {
   })
 
   it('copies the visible entries as text', async () => {
-    await setup()
+    const { fixture } = await setup()
     const clipboard = TestBed.inject(Clipboard)
     const copy = vi.spyOn(clipboard, 'copy').mockReturnValue(true)
 
     await userEvent.click(screen.getByRole('button', { name: /Copy/ }))
 
     expect(copy).toHaveBeenCalledWith(expect.stringContaining('ERROR [outlook] Collection failed'))
-    expect(await screen.findByRole('button', { name: /Copied/ })).toBeTruthy()
+    await fixture.whenStable()
+    expect(screen.getByRole('button', { name: /Copied/ })).toBeTruthy()
   })
 
   it('keeps the last entries and shows the error when a poll fails', async () => {
-    const backend = await setup(20)
+    const { backend, poll } = await setup()
     backend.logsError = new Error('backend went away')
 
-    expect(await screen.findByRole('alert')).toHaveProperty(
-      'textContent',
-      expect.stringContaining('backend went away')
-    )
+    await poll()
+
+    expect(screen.getByRole('alert').textContent).toContain('backend went away')
     expect(messages()).toContain('Collection failed')
   })
 
   it('drops a failed clear error once a later poll succeeds', async () => {
-    const backend = await setup(40)
+    const { backend, poll, fixture } = await setup()
     backend.clearLogsError = new Error('disk is read-only')
 
     await userEvent.click(screen.getByRole('button', { name: /Clear/ }))
-    expect((await screen.findByRole('alert')).textContent).toContain('disk is read-only')
+    await fixture.whenStable()
+    expect(screen.getByRole('alert').textContent).toContain('disk is read-only')
 
-    await vi.waitFor(() => expect(screen.queryByRole('alert')).toBeNull())
+    await poll()
+
+    expect(screen.queryByRole('alert')).toBeNull()
     expect(messages()).toContain('Collection failed')
   })
 })

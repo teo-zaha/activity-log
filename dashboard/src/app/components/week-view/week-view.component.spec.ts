@@ -7,8 +7,8 @@ import { createEntryAdapter } from '../../providers/provider-adapter'
 import type { EntryUiAdapter } from '../../providers/types'
 import { ActivityService } from '../../services/activity.service'
 import { meetingWeightOf } from '../../testing/activity-fixtures'
-import type { ViewMode } from '../../services/types'
-import { addDaysToKey } from '../../utils/local-day'
+import type { ViewMode } from '../../utils/app-url'
+import { addDaysToKey, type DayKey } from '../../utils/local-day'
 import { WeekViewComponent } from './week-view.component'
 
 // Tuesday 17 November 2026, 09:41 local time; the week runs Mon 16 to Sun 22.
@@ -48,7 +48,10 @@ interface WeekActivityMock {
   openGroup: (keys: readonly EntryKey[]) => Promise<boolean>
 }
 
-function mockActivity(entries: EntryUiAdapter[], selectedDay = '2026-11-17'): WeekActivityMock {
+function mockActivity(
+  entries: EntryUiAdapter[],
+  selectedDay: DayKey = '2026-11-17'
+): WeekActivityMock {
   const selected = signal(selectedDay)
   const weekDays = computed(() => {
     const date = new Date(`${selected()}T12:00:00`)
@@ -168,5 +171,24 @@ describe('WeekViewComponent', () => {
     await fixture.whenStable()
 
     expect(screen.getByLabelText('Meetings this week: 1h')).toBeTruthy()
+  })
+
+  it('packs meetings past midnight into as few rows as they need, whatever their order', async () => {
+    // Mon–Tue, Tue–Wed and Wed–Thu, listed newest first as the log has them: two rows do.
+    const { container } = await renderWeek(
+      mockActivity([
+        meeting('Wed night', 18, 20, 25 * 60),
+        meeting('Tue night', 17, 20, 25 * 60),
+        meeting('Mon night', 16, 20, 25 * 60),
+      ])
+    )
+
+    const bars = [...container.querySelectorAll<HTMLElement>('.cal-allday-bar')]
+    expect(bars).toHaveLength(3)
+    const rowOf = (title: string): string =>
+      bars.find(bar => bar.textContent?.includes(title))?.style.top ?? ''
+    expect(new Set(bars.map(bar => bar.style.top)).size).toBe(2)
+    expect(rowOf('Mon night')).toBe(rowOf('Wed night'))
+    expect(rowOf('Tue night')).not.toBe(rowOf('Mon night'))
   })
 })

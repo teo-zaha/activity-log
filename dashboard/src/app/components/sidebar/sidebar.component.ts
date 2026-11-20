@@ -7,7 +7,9 @@ import { mediaQuery } from '@signality/core/browser/media-query'
 import type { ConnectionKey } from '../../providers/connection'
 import { VIEW_OPTIONS } from '../../models/view-option'
 import { ActivityService } from '../../services/activity.service'
-import type { ProviderViewModel, ViewMode } from '../../services/types'
+import { failureWhile } from '../../services/failure'
+import type { ProviderViewModel } from '../../services/types'
+import type { ViewMode } from '../../utils/app-url'
 import { viewCommands } from '../../utils/app-url'
 import { downQuery } from '../../utils/breakpoints'
 import { IconButtonComponent } from '../button/icon-button.component'
@@ -86,8 +88,15 @@ export class SidebarComponent {
     return provider.info.problem !== 'unsupported'
   }
 
-  protected recheck(provider: ProviderViewModel): void {
-    void this.activity.recheckConnection(provider.info.connection)
+  protected async recheck(provider: ProviderViewModel): Promise<void> {
+    try {
+      await this.activity.recheckConnection(provider.info.connection)
+    } catch (error) {
+      this.activity.notice.set({
+        origin: 'recheck',
+        failure: failureWhile(`Checking ${provider.label} again`, error),
+      })
+    }
   }
 
   /** Tapping the open tab again keeps the page it is on. */

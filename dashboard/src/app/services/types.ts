@@ -1,10 +1,6 @@
 import type { ProviderInfo, Source } from '../generated/activity'
 import type { ConnectionKey } from '../providers/connection'
 
-export const VIEW_MODES = ['list', 'day', 'workweek', 'week'] as const
-
-export type ViewMode = (typeof VIEW_MODES)[number]
-
 export interface ProviderViewModel {
   info: ProviderInfo
   key: ConnectionKey
@@ -30,3 +26,10 @@ export type CollectionStatus =
     }
   | { readonly kind: 'timedOut'; readonly operation: CollectionOperation; readonly message: string }
   | { readonly kind: 'failed'; readonly operation: CollectionOperation; readonly message: string }
+
+/**
+ * Where a save's install receipt stands against the state on screen (`receiptStanding`): its
+ * host with nothing later installed (or no host on screen yet), its host with a later providers
+ * revision installed, or another host.
+ */
+export type ReceiptStanding = 'current' | 'superseded' | 'otherHost'

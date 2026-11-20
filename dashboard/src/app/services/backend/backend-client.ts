@@ -1,5 +1,6 @@
 import { Service, inject, type ResourceRef } from '@angular/core'
 import type {
+  CollectAnswer,
   CollectRequest,
   AddConnectionRequestDto,
   AddConnectionResponseDto,
@@ -8,9 +9,10 @@ import type {
   ProviderConfigSaveRequestDto,
   ProviderConfigSaveResponseDto,
   ProviderConfigSnapshotDto,
-  ProvidersResponse,
+  RecheckAnswer,
+  RuntimeState,
 } from '../../generated/activity'
-import { type ActivityResponse, BackendOperations, type ReadOperation } from './backend-contract'
+import { BackendOperations, type ReadOperation } from './backend-contract'
 import { BackendTransport } from './backend-transport'
 
 /** Every backend operation, defined once over whichever transport the runtime picked. */
@@ -23,15 +25,11 @@ export class ActivityBackendClient {
     return this.transport.resource(read)
   }
 
-  getActivity(): Promise<ActivityResponse> {
-    return this.transport.call(BackendOperations.activity, undefined)
+  getRuntimeState(signal?: AbortSignal): Promise<RuntimeState> {
+    return this.transport.call(BackendOperations.runtimeState, undefined, signal)
   }
 
-  getProviders(): Promise<ProvidersResponse> {
-    return this.transport.call(BackendOperations.providers, undefined)
-  }
-
-  collect(request: CollectRequest): Promise<ActivityResponse> {
+  collect(request: CollectRequest): Promise<CollectAnswer> {
     return this.transport.call(BackendOperations.collect, request)
   }
 
@@ -49,7 +47,7 @@ export class ActivityBackendClient {
     return this.transport.call(BackendOperations.addConnection, request)
   }
 
-  recheckConnection(connection: ConnectionId): Promise<ProvidersResponse> {
+  recheckConnection(connection: ConnectionId): Promise<RecheckAnswer> {
     return this.transport.call(BackendOperations.recheckConnection, connection)
   }
 

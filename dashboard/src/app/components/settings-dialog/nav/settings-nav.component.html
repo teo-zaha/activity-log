@@ -32,7 +32,7 @@
     <h3 class="nav-group-label">Sources</h3>
     <div class="nav-group" appAutoAnimate>
       @for (provider of providers(); track provider.key) {
-        @let id = connectionSelection(provider.key);
+        @let id = provider.key;
         <button
           type="button"
           class="nav-item source-item"

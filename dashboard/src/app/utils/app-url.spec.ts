@@ -1,12 +1,13 @@
 import { DefaultUrlSerializer } from '@angular/router'
 import { describe, expect, it } from 'vitest'
 import {
+  collectableRange,
   DEFAULT_LOCATION,
   deepLinkPath,
+  isCalendarView,
   parseAppUrl,
   parseSettingsParam,
   queryParamsOf,
-  settingsParam,
   viewCommands,
 } from './app-url'
 
@@ -22,8 +23,8 @@ describe('app URLs', () => {
       view: 'day',
       day: '2026-11-17',
     })
-    expect(parse('/workweek')).toEqual({ ...DEFAULT_LOCATION, view: 'workweek' })
-    expect(parse('/week/2026-02-30')).toEqual({ ...DEFAULT_LOCATION, view: 'week' })
+    expect(parse('/workweek')).toEqual({ ...DEFAULT_LOCATION, view: 'workweek', day: null })
+    expect(parse('/week/2026-02-30')).toEqual({ ...DEFAULT_LOCATION, view: 'week', day: null })
   })
 
   it('reads no view from other paths', () => {
@@ -44,12 +45,9 @@ describe('app URLs', () => {
     expect(parse('/timeline?q=a&q=b&from=1.11.2026&settings=general%2Fx')).toEqual(DEFAULT_LOCATION)
   })
 
-  it('round-trips a connection section through the settings parameter', () => {
-    expect(settingsParam('connection:gitlab/oss')).toBe('gitlab/oss')
-    expect(parseSettingsParam('gitlab/oss')).toBe('connection:gitlab/oss')
-    expect(parseSettingsParam(settingsParam('connection:calendar/team-a'))).toBe(
-      'connection:calendar/team-a'
-    )
+  it('reads a settings page or a connection key from the settings parameter', () => {
+    expect(parseSettingsParam('gitlab/oss')).toBe('gitlab/oss')
+    expect(parseSettingsParam('calendar/team-a')).toBe('calendar/team-a')
     expect(parseSettingsParam('add')).toBe('add')
     expect(parseSettingsParam('github/me')).toBeNull()
     expect(parseSettingsParam('gitlab/')).toBeNull()
@@ -63,7 +61,7 @@ describe('app URLs', () => {
       queryParamsOf({
         ...DEFAULT_LOCATION,
         from: '2026-11-01',
-        settings: 'connection:jira/default',
+        settings: 'jira/default',
       })
     ).toEqual({
       q: null,
@@ -118,5 +116,31 @@ describe('app URLs', () => {
       Object.entries(params).filter(([, value]) => value !== null)
     )
     expect(parse(serializer.serialize(tree))).toEqual(location)
+  })
+
+  it('reads no day on the timeline', () => {
+    expect(parse('/timeline/2026-11-17')).toBeNull()
+    expect(parse('/timeline')).not.toHaveProperty('day')
+  })
+
+  it('reads no range the backend would refuse', () => {
+    expect(parse('/timeline?from=2026-06-05&to=2026-05-01')).toMatchObject({ from: null, to: null })
+    expect(parse('/timeline?from=2026-06-05')).toMatchObject({ from: '2026-06-05', to: null })
+  })
+
+  it('declares the calendar views one by one', () => {
+    expect(isCalendarView('day')).toBe(true)
+    expect(isCalendarView('workweek')).toBe(true)
+    expect(isCalendarView('week')).toBe(true)
+    expect(isCalendarView('list')).toBe(false)
+  })
+
+  it('checks a range as the backend does', () => {
+    expect(collectableRange(null, null)).toBe(true)
+    expect(collectableRange('2026-11-01', null)).toBe(true)
+    expect(collectableRange('2026-11-01', '2026-11-01')).toBe(true)
+    expect(collectableRange('2026-11-02', '2026-11-01')).toBe(false)
+    expect(collectableRange('2026-02-30', '2026-03-01')).toBe(false)
+    expect(collectableRange('1000-01-01', '9999-12-31')).toBe(false)
   })
 })

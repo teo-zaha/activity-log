@@ -1,4 +1,5 @@
-import { signal, type WritableSignal } from '@angular/core'
+import { ApplicationRef, signal, type WritableSignal } from '@angular/core'
+import { TestBed } from '@angular/core/testing'
 import { render, screen } from '@testing-library/angular'
 import userEvent from '@testing-library/user-event'
 import { describe, expect, it } from 'vitest'
@@ -23,7 +24,9 @@ describe('SearchBarComponent', () => {
     expect(query()).toBe('abcd')
 
     query.set('xyz')
-    expect(await screen.findByDisplayValue('xyz')).toBe(input)
+    // Rendered by the app's change detection, which the fixture waits for.
+    await TestBed.inject(ApplicationRef).whenStable()
+    expect(input).toHaveProperty('value', 'xyz')
   })
 
   it('clears with the button and with Escape', async () => {

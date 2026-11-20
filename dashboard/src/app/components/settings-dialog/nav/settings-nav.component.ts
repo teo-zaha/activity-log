@@ -10,7 +10,6 @@ import { providerStatusLabel } from '../../ui-status/provider-status-label'
 import { StatusDotComponent } from '../../ui-status/status-dot.component'
 import {
   SETTINGS_SECTIONS,
-  connectionSelection,
   type SettingsProviderRow,
   type SettingsSelection,
 } from '../settings-dialog.types'
@@ -46,7 +45,6 @@ export class SettingsNavComponent {
     () => THEMES.find(option => option.id === this.theme())?.label ?? ''
   )
   protected readonly sections = SETTINGS_SECTIONS
-  protected readonly connectionSelection = connectionSelection
   protected readonly providerStatusLabel = providerStatusLabel
 
   /** What a source's row says under its name: the reason it is not fine, else its status. */

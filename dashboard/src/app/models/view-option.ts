@@ -1,4 +1,4 @@
-import type { ViewMode } from '../services/types'
+import type { ViewMode } from '../utils/app-url'
 
 export interface ViewOption {
   readonly id: ViewMode

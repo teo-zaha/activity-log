@@ -1,4 +1,12 @@
-import { Component, OnInit, afterNextRender, effect, inject } from '@angular/core'
+import {
+  Component,
+  type ElementRef,
+  OnInit,
+  afterNextRender,
+  effect,
+  inject,
+  viewChild,
+} from '@angular/core'
 import { MatProgressBarModule } from '@angular/material/progress-bar'
 import {
   MatSnackBar,
@@ -45,40 +53,35 @@ export class AppComponent implements OnInit {
   /** On a phone the settings are a tab: they take the view's place in the main content. */
   protected readonly settingsTab = this.settings.pageOpen
   private readonly snackBar = inject(MatSnackBar)
+  private readonly main = viewChild.required<ElementRef<HTMLElement>>('main')
   private snackRef: MatSnackBarRef<TextOnlySnackBar> | null = null
-  private activeErrorMessage: string | null = null
 
   constructor() {
     this.settings.followUrl()
     // The shell is in the DOM now; the data streams in later and does not hold the splash.
     afterNextRender(() => dismissSplash())
 
+    // Collection failures are not among these: <app-collection-status> shows them with Retry.
     effect(() => {
-      const error = this.activity.error()
-      const status = this.activity.collectionStatus()
-      // Collection failures are shown inline by <app-collection-status> with a retry action.
-      const shownInline =
-        (status.kind === 'timedOut' || status.kind === 'failed') && status.message === error
-
-      if (!error || shownInline) {
-        this.snackRef?.dismiss()
-        this.snackRef = null
-        this.activeErrorMessage = null
-        return
+      const notice = this.activity.notice()
+      if (notice?.failure.cause !== undefined) {
+        console.warn(notice.failure.message, notice.failure.cause)
       }
-
-      if (this.activeErrorMessage === error) {
-        return
-      }
-
       this.snackRef?.dismiss()
-      this.activeErrorMessage = error
-      this.snackRef = this.snackBar.open(error, 'Dismiss', {
-        horizontalPosition: 'center',
-        verticalPosition: 'bottom',
-        panelClass: ['error-alert-snackbar'],
-      })
+      this.snackRef =
+        notice &&
+        this.snackBar.open(notice.failure.message, 'Dismiss', {
+          horizontalPosition: 'center',
+          verticalPosition: 'bottom',
+          panelClass: ['error-alert-snackbar'],
+        })
     })
+  }
+
+  /** The skip link's target is the `main` on screen; the URL stays as it is. */
+  protected skipToMain(event: MouseEvent): void {
+    event.preventDefault()
+    this.main().nativeElement.focus()
   }
 
   ngOnInit(): void {

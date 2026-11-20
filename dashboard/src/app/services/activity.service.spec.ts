@@ -1,7 +1,16 @@
 import { TestBed } from '@angular/core/testing'
 import { describe, expect, it, vi } from 'vitest'
-import { activityLog, MockBackendTransport, provideMockBackend } from '../testing/activity-fixtures'
-import { ACTIVITY_POLL_DELAY_MS, ActivityDataService } from './activity-data.service'
+import { Router } from '@angular/router'
+import type { ActivityEntry } from '../generated/activity'
+import { provideAppRouter } from '../app.routes'
+import {
+  activityLog,
+  MockBackendTransport,
+  providerInfo,
+  provideMockBackend,
+} from '../testing/activity-fixtures'
+import { ActivityDataService } from './activity-data.service'
+import { ACTIVITY_POLL_DELAY_MS } from './runtime-state/polling-state-source'
 import { ActivityExportService } from './activity-export.service'
 import { ActivityService } from './activity.service'
 
@@ -38,7 +47,10 @@ describe('ActivityService exports', () => {
 
     await service.exportJson()
 
-    expect(service.error()).toBe('Export failed: Unknown time zone "X"')
+    expect(service.notice()).toMatchObject({
+      origin: 'export',
+      failure: { message: 'Export failed: Unknown time zone "X"' },
+    })
   })
 
   it('has nothing to export before the first collection', async () => {
@@ -48,6 +60,54 @@ describe('ActivityService exports', () => {
     await service.exportJson()
 
     expect(exportFn).not.toHaveBeenCalled()
-    expect(service.error()).toBe('Export failed: nothing has been collected yet')
+    expect(service.notice()).toEqual({
+      origin: 'export',
+      failure: { message: 'Export failed: nothing has been collected yet' },
+    })
+  })
+
+  it('exports what a calendar view draws, a meeting that runs into the range included', async () => {
+    const backend = new MockBackendTransport()
+    const overnight: ActivityEntry = {
+      source: 'calendar',
+      connection: 'team',
+      id: 'night-shift',
+      // 16 May 22:00 to 17 May 02:00 local; the range starts on the 17th.
+      timestamp: new Date(2026, 4, 16, 22).toISOString(),
+      title: 'Night shift',
+      durationMinutes: 240,
+      meetingWeight: 'busy',
+    }
+    backend.providersResponse = {
+      currentOs: 'linux',
+      providers: [
+        ...providerInfo,
+        { ...providerInfo[0]!, connection: { source: 'calendar', name: 'team' }, label: 'Team' },
+      ],
+    }
+    backend.activityResponses = []
+    backend.activityResponse = { ...activityLog, entries: [...activityLog.entries, overnight] }
+    const exportFn = vi.fn<ActivityExportService['export']>(() => Promise.resolve())
+    TestBed.configureTestingModule({
+      providers: [
+        provideMockBackend(backend),
+        provideAppRouter(),
+        { provide: ActivityExportService, useValue: { export: exportFn } },
+      ],
+    })
+    const service = TestBed.inject(ActivityService)
+    await service.initLoad()
+    await TestBed.inject(Router).navigateByUrl('/week/2026-05-18')
+
+    await service.exportMarkdown()
+
+    const exported = exportFn.mock.calls[0]?.[1] ?? []
+    expect(exported.map(entry => entry.id)).toContain('night-shift')
+    expect(exported).toHaveLength(3)
+
+    await TestBed.inject(Router).navigateByUrl('/timeline')
+    await service.exportMarkdown()
+    // The timeline lists entries by the day they start: the night shift is the 16th's.
+    expect(exportFn.mock.calls[1]?.[1].map(entry => entry.id)).not.toContain('night-shift')
   })
 })

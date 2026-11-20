@@ -5,7 +5,7 @@ import type {
   DayIndexMonthRow,
   MonthDensity,
 } from '../models/day-index'
-import { addDaysToKey, dateOfKey, monthLabel } from './local-day'
+import { addDaysToKey, dateOfKey, type DayKey, monthLabel } from './local-day'
 
 /**
  * Every day from `toKey` back to `fromKey` (newest first, like the timeline), with a month
@@ -13,10 +13,10 @@ import { addDaysToKey, dateOfKey, monthLabel } from './local-day'
  * when the range spans years the oldest heading shows its month and year (`Nov ’25`).
  */
 export function buildDayIndex(
-  fromKey: string,
-  toKey: string,
-  counts: ReadonlyMap<string, number>,
-  todayKey: string
+  fromKey: DayKey,
+  toKey: DayKey,
+  counts: ReadonlyMap<DayKey, number>,
+  todayKey: DayKey
 ): DayIndexItem[] {
   if (fromKey > toKey) return []
   const max = Math.max(1, ...counts.values())
@@ -30,6 +30,7 @@ export function buildDayIndex(
       items.push({
         kind: 'month',
         key: key.slice(0, 7),
+        day: key,
         label: yearChanged ? `${monthLabel(key)} ${shortYear(date)}` : monthLabel(key),
       })
     }
@@ -50,11 +51,12 @@ export function buildDayIndex(
   if (fromKey.slice(0, 4) !== toKey.slice(0, 4)) {
     const oldest = items.map(item => item.kind).lastIndexOf('month')
     const month = items[oldest].key
-    const first = `${month}-01`
+    // The oldest heading is the month of the range's first day.
     items[oldest] = {
       kind: 'month',
       key: month,
-      label: `${monthLabel(first)} ${shortYear(dateOfKey(first))}`,
+      day: fromKey,
+      label: `${monthLabel(fromKey)} ${shortYear(dateOfKey(fromKey))}`,
     }
   }
   return items
@@ -65,7 +67,7 @@ export function buildDayIndex(
  * the oldest, with the empty days between them, so the rail spans the list rather than the whole
  * collected range. Empty with fewer than two days.
  */
-export function dayIndexOf(counts: ReadonlyMap<string, number>, todayKey: string): DayIndexItem[] {
+export function dayIndexOf(counts: ReadonlyMap<DayKey, number>, todayKey: DayKey): DayIndexItem[] {
   const days = [...counts.keys()].filter(day => (counts.get(day) ?? 0) > 0).sort()
   if (days.length < 2) return []
   return buildDayIndex(days[0], days[days.length - 1], counts, todayKey)
@@ -130,7 +132,7 @@ export function monthRows(items: readonly DayIndexItem[]): DayIndexMonthRow[] {
   const rows: { key: string; label: string; days: number; count: number }[] = []
   for (const item of items) {
     if (item.kind === 'month') {
-      rows.push({ key: item.key, label: monthLabel(`${item.key}-01`), days: 0, count: 0 })
+      rows.push({ key: item.key, label: monthLabel(item.day), days: 0, count: 0 })
     } else if (rows.length > 0) {
       const row = rows[rows.length - 1]
       row.days++

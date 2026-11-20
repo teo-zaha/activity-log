@@ -18,10 +18,14 @@ import { TauriBackendTransport } from './tauri-backend-transport'
 export abstract class BackendTransport {
   /** A read as a signal resource: `value()`, `status()`, `error()` and `reload()` come with it. */
   abstract resource<Res>(read: ReadOperation<Res>): ResourceRef<Res | undefined>
-  /** `request` is checked against the operation, never used to infer its type. */
+  /**
+   * `request` is checked against the operation, never used to infer its type. Aborting `signal`
+   * rejects the call and, where the transport can, cancels the request itself.
+   */
   abstract call<Req, Res>(
     operation: BackendOperation<Req, Res>,
-    request: NoInfer<Req>
+    request: NoInfer<Req>,
+    signal?: AbortSignal
   ): Promise<Res>
   /** Saves an export: a browser download over HTTP, a native save dialog on desktop. */
   abstract saveExport(request: ExportRequest): Promise<void>

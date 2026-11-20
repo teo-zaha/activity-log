@@ -21,7 +21,7 @@ import type { EntryUiAdapter } from '../../providers/types'
 import { busyMarkerOf } from '../../providers/utils'
 import { dayIndexOf } from '../../utils/day-index'
 import { injectMinuteClock } from '../../utils/clock'
-import { dayKeyOf, longDayLabel, relativeDayLabel } from '../../utils/local-day'
+import { dayKeyOf, longDayLabel, relativeDayLabel, type DayKey } from '../../utils/local-day'
 import { AutoAnimateDirective } from '../auto-animate/auto-animate.directive'
 import { DayIndexComponent } from './day-index/day-index.component'
 
@@ -41,7 +41,7 @@ interface TimelineRow {
 }
 
 interface TimelineDay {
-  readonly date: string
+  readonly date: DayKey
   /** `Monday, 16 November 2026` */
   readonly label: string
   /** `Today` or `Yesterday`, else null. */
@@ -188,7 +188,7 @@ export class TimelineComponent {
   })
 
   private timelineDay(
-    date: string,
+    date: DayKey,
     relative: string | null,
     rows: readonly TimelineRow[]
   ): TimelineDay {

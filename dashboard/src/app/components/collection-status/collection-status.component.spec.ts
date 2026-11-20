@@ -1,19 +1,23 @@
 import { signal } from '@angular/core'
+import type { ComponentFixture } from '@angular/core/testing'
 import { render, screen } from '@testing-library/angular'
 import userEvent from '@testing-library/user-event'
 import { describe, expect, it, vi } from 'vitest'
 import { ActivityService } from '../../services/activity.service'
+import type { SourceLink } from '../../services/activity-data.service'
 import type { CollectionStatus } from '../../services/types'
 import { SettingsDialogLauncher } from '../settings-dialog/settings-dialog-launcher.service'
 import { CollectionStatusComponent } from './collection-status.component'
 
 async function setup(
   status: CollectionStatus,
-  collecting: readonly string[] = []
+  collecting: readonly string[] = [],
+  link: SourceLink = { status: { kind: 'open' }, since: 0, episode: 0 }
 ): Promise<{
   retryCollection: ReturnType<typeof vi.fn>
   dismissCollectionStatus: ReturnType<typeof vi.fn>
   open: ReturnType<typeof vi.fn>
+  fixture: ComponentFixture<CollectionStatusComponent>
 }> {
   const retryCollection = vi.fn(() => Promise.resolve())
   const dismissCollectionStatus = vi.fn()
@@ -26,16 +30,17 @@ async function setup(
     unusableProviders: signal([{ key: 'outlook/default' }]),
     retryCollection,
     dismissCollectionStatus,
+    connection: signal(link),
   }
 
-  await render(CollectionStatusComponent, {
+  const { fixture } = await render(CollectionStatusComponent, {
     providers: [
       { provide: ActivityService, useValue: activity },
       { provide: SettingsDialogLauncher, useValue: { open } },
     ],
   })
 
-  return { retryCollection, dismissCollectionStatus, open }
+  return { retryCollection, dismissCollectionStatus, open, fixture }
 }
 
 describe('CollectionStatusComponent', () => {
@@ -79,6 +84,27 @@ describe('CollectionStatusComponent', () => {
     expect(retryCollection).toHaveBeenCalled()
     expect(open).toHaveBeenCalledWith('outlook/default')
     expect(dismissCollectionStatus).toHaveBeenCalled()
+  })
+
+  it('shows a reconnect over the state, and says when it is out of date', async () => {
+    vi.useFakeTimers({ toFake: ['Date', 'setInterval', 'clearInterval'] })
+    try {
+      vi.setSystemTime(10_000)
+      const reconnecting: SourceLink = {
+        status: { kind: 'reconnecting', failure: { message: 'connection reset' } },
+        since: 10_000,
+        episode: 0,
+      }
+      const { fixture } = await setup({ kind: 'idle' }, [], reconnecting)
+      expect(screen.getByRole('status').textContent).toContain('Reconnecting')
+      expect(screen.getByRole('status').textContent).not.toContain('out of date')
+
+      vi.advanceTimersByTime(5000)
+      await fixture.whenStable()
+      expect(screen.getByRole('status').textContent).toContain('may be out of date')
+    } finally {
+      vi.useRealTimers()
+    }
   })
 
   it('shows failures without the source shortcut', async () => {

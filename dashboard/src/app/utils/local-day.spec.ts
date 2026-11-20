@@ -70,10 +70,10 @@ describe('labels', () => {
     expect(monthLabel('2026-09-01')).toBe('Sep')
   })
 
-  it('keeps the keys within a range, an empty bound not limiting', () => {
+  it('keeps the keys within a range, a missing bound not limiting', () => {
     const keys = ['2026-11-16', '2026-11-17', '2026-11-18']
     expect(keysWithin(keys, '2026-11-17', '2026-11-17')).toEqual(['2026-11-17'])
-    expect(keysWithin(keys, '2026-11-17', '')).toEqual(['2026-11-17', '2026-11-18'])
-    expect(keysWithin(keys, '', '')).toEqual(keys)
+    expect(keysWithin(keys, '2026-11-17', null)).toEqual(['2026-11-17', '2026-11-18'])
+    expect(keysWithin(keys, null, null)).toEqual(keys)
   })
 })

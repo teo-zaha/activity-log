@@ -6,6 +6,8 @@ import { fireEvent, render, screen } from '@testing-library/angular'
 import { describe, expect, it, vi } from 'vitest'
 import { provideAppRouter } from '../../app.routes'
 import { ActivityDataService } from '../../services/activity-data.service'
+import { ActivityService } from '../../services/activity.service'
+import { failure } from '../../services/failure'
 import { MockBackendTransport, provideMockBackend } from '../../testing/activity-fixtures'
 import { SettingsDialogLauncher } from './settings-dialog-launcher.service'
 import { LOGS_POLL_INTERVAL_MS } from './logs-pane/settings-logs-pane.component'
@@ -72,11 +74,24 @@ describe('SettingsPageHostComponent', () => {
     expect(screen.getByRole('status').textContent).toContain('Loading sources')
     expect(screen.queryByText('Theme')).toBeNull()
 
-    await injector.get(ActivityDataService).loadProviders()
+    await injector.get(ActivityDataService).initLoad()
 
     expect(await screen.findByRole('heading', { name: 'Source not found' })).toBeTruthy()
     expect(screen.getByText('This source is not set up')).toBeTruthy()
     fireEvent.click(screen.getByRole('button', { name: 'Show Appearance' }))
     await vi.waitFor(() => expect(router.url).toBe('/timeline?settings=general'))
+  })
+
+  it('keeps waiting for the sources while a notice about something else shows', async () => {
+    const { injector, settle } = await openSettings('/timeline?settings=jira%2Fgone')
+
+    injector.get(ActivityService).notice.set({
+      origin: 'export',
+      failure: failure('Exporting failed: the disk is full'),
+    })
+    await settle()
+
+    expect(screen.getByRole('status').textContent).toContain('Loading sources')
+    expect(screen.queryByRole('heading', { name: 'Source not found' })).toBeNull()
   })
 })

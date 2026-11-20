@@ -2,16 +2,16 @@ import { Component, computed, inject, linkedSignal } from '@angular/core'
 import { form, FormField, FormRoot } from '@angular/forms/signals'
 import { MatTooltipModule } from '@angular/material/tooltip'
 import { MatDatepickerModule } from '@angular/material/datepicker'
-import { MatNativeDateModule } from '@angular/material/core'
 import { MatIconModule } from '@angular/material/icon'
 import { Router } from '@angular/router'
 import { IconButtonComponent } from '../button/icon-button.component'
 import { ButtonComponent } from '../button/button.component'
 import { ActivityService } from '../../services/activity.service'
+import { RuntimeEnvironmentService } from '../../services/backend/runtime-environment.service'
 import { WindowChromeService } from '../../services/window-chrome.service'
 import { SettingsDialogLauncher } from '../settings-dialog/settings-dialog-launcher.service'
-import { appLink, injectShareLink } from '../share/share-link'
-import { dateOfKey, localDateKey } from '../../utils/local-day'
+import { appLink, injectLinkBase, injectShareLink, pageLink } from '../share/share-link'
+import { dateOfKey, localDateKey, type DayKey } from '../../utils/local-day'
 
 interface DateRange {
   readonly from: Date | null
@@ -28,7 +28,6 @@ interface DateRange {
     FormRoot,
     MatTooltipModule,
     MatDatepickerModule,
-    MatNativeDateModule,
   ],
   templateUrl: './header.component.html',
   styleUrl: './header.component.scss',
@@ -40,6 +39,8 @@ export class HeaderComponent {
   /** On a phone the settings are a tab, without the range that filters the views. */
   protected readonly settingsTab = inject(SettingsDialogLauncher).pageOpen
   private readonly shareLink = injectShareLink()
+  private readonly linkBase = injectLinkBase()
+  private readonly desktop = inject(RuntimeEnvironmentService).isTauri()
 
   protected readonly dateFromObj = computed(() => this.parseDateStr(this.activity.dateFrom()))
   protected readonly dateToObj = computed(() => this.parseDateStr(this.activity.dateTo()))
@@ -58,18 +59,19 @@ export class HeaderComponent {
       // The pickers' own min/max validators only grey out dates; they never blocked collecting.
       ignoreValidators: 'all',
       action: async () => {
-        await this.activity.collect(this.activity.dateFrom(), this.activity.dateTo())
+        const [from, to] = [this.activity.dateFrom(), this.activity.dateTo()]
+        if (from && to) await this.activity.collect(from, to)
       },
     },
   })
 
-  protected parseDateStr(s: string): Date | null {
-    if (!s) return null
-    return dateOfKey(s)
+  protected parseDateStr(day: DayKey | null): Date | null {
+    return day === null ? null : dateOfKey(day)
   }
 
-  protected fmtDate(d: Date | null): string {
-    return d ? localDateKey(d) : ''
+  /** The day a picker holds; none for no date or one it could not read. */
+  protected fmtDate(date: Date | null): DayKey | null {
+    return date && !Number.isNaN(date.getTime()) ? localDateKey(date) : null
   }
 
   protected exportMd(): void {
@@ -80,9 +82,17 @@ export class HeaderComponent {
     void this.activity.exportJson()
   }
 
-  /** Shares the link to this view, with the details open in it, if any. */
+  /**
+   * Shares the link to this view, with the details open in it, if any. In the browser that is the
+   * page's own address, its whole query included; the desktop app's link keeps what the view
+   * shows.
+   */
   protected shareView(): Promise<void> {
-    return this.shareLink(appLink(this.router, ['q', 'from', 'to', 'event', 'events']))
+    return this.shareLink(
+      this.desktop
+        ? appLink(this.router, ['q', 'from', 'to', 'event', 'events'])
+        : pageLink(this.router, this.linkBase)
+    )
   }
 
   protected startHeaderDrag(event: MouseEvent): void {

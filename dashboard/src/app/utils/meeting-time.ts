@@ -1,6 +1,6 @@
 import type { MeetingWeight } from '../generated/activity'
 import { formatDuration } from '../providers/utils'
-import { addDaysToKey, dateOfKey } from './local-day'
+import { addDaysToKey, dateOfKey, type DayKey } from './local-day'
 
 /** The parts of an entry that meeting time reads; `EntryUiAdapter` has them. */
 export interface MeetingLike {
@@ -25,7 +25,7 @@ interface Interval {
 }
 
 /** Local midnight starting a `YYYY-MM-DD` day, in epoch milliseconds. */
-function startOfDay(key: string): number {
+function startOfDay(key: DayKey): number {
   const date = dateOfKey(key)
   date.setHours(0, 0, 0, 0)
   return date.getTime()
@@ -54,7 +54,7 @@ function unionLength(intervals: Interval[]): number {
  */
 export function meetingTimeByDay(
   entries: readonly MeetingLike[],
-  dayKeys: readonly string[]
+  dayKeys: readonly DayKey[]
 ): Map<string, MeetingTime> {
   const meetings = entries.flatMap(entry => {
     const minutes = entry.calendarDurationMinutes

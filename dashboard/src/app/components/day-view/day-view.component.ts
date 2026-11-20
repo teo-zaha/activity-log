@@ -7,7 +7,7 @@ import { ActivityService } from '../../services/activity.service'
 import type { EntryUiAdapter } from '../../providers/types'
 import { downQuery } from '../../utils/breakpoints'
 import { injectMinuteClock } from '../../utils/clock'
-import { dateOfKey, dayKeyOf, keysWithin } from '../../utils/local-day'
+import { dateOfKey, dayKeyOf, keysWithin, type DayKey } from '../../utils/local-day'
 import {
   NO_MEETING_TIME,
   meetingTimeByDay,
@@ -99,7 +99,7 @@ export class DayViewComponent {
     return (HOUR_END - HOUR_START + 1) * this.activity.hourHeight()
   }
 
-  protected formatDayHeader(dateStr: string): string {
+  protected formatDayHeader(dateStr: DayKey): string {
     const compact = this.isPhone()
     return dateOfKey(dateStr).toLocaleDateString('en-GB', {
       weekday: compact ? 'short' : 'long',

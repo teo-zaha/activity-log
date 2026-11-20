@@ -4,6 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { DayIndexItem } from '../../../models/day-index'
 import { stubLayoutObservers } from '../../../testing/observers'
 import { buildDayIndex } from '../../../utils/day-index'
+import { type DayKey, localDateKey } from '../../../utils/local-day'
 import { DayIndexComponent } from './day-index.component'
 
 // Mon 16 Nov to Mon 2 Nov 2026; the weekend of 14–15 Nov has no events.
@@ -32,12 +33,11 @@ async function renderRail(activeDay: string): Promise<{ rail: HTMLElement; jumps
 
 // 18 Nov 2023 to 17 Nov 2026, with events on the 1st and 30th of every month and today.
 const threeYears: DayIndexItem[] = ((): DayIndexItem[] => {
-  const counts = new Map<string, number>([['2026-11-17', 2]])
+  const counts = new Map<DayKey, number>([['2026-11-17', 2]])
   for (let year = 2023; year <= 2026; year++) {
     for (let month = 1; month <= 12; month++) {
-      const prefix = `${year}-${String(month).padStart(2, '0')}`
-      counts.set(`${prefix}-01`, 1)
-      if (month !== 2) counts.set(`${prefix}-30`, 1)
+      counts.set(localDateKey(new Date(year, month - 1, 1)), 1)
+      if (month !== 2) counts.set(localDateKey(new Date(year, month - 1, 30)), 1)
     }
   }
   return buildDayIndex('2023-11-18', '2026-11-17', counts, '2026-11-17')
