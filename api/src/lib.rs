@@ -7,12 +7,25 @@ use activity_log_core::{
         ActivityState, BackendError, BackendErrorKind, CollectRequest, ConnectionId, ExportRequest,
         LogsResponse, RuntimeState, ShownActivity,
     },
-    runtime::{BadConfig, Host, RunSpawner, answer_collect, answer_recheck},
+    runtime::{
+        BadConfig, Forwarder, Host, PING_INTERVAL, RunSpawner, RuntimeMessage, answer_collect,
+        answer_recheck,
+    },
     settings::ConfigFile,
 };
 use rocket::{
-    Build, Data, Request, Rocket, State, catch, data::ByteUnit, delete, fairing::AdHoc, get,
-    http::Status, post, response::status, serde::json::Json,
+    Build, Data, Request, Rocket, Shutdown, State, catch,
+    data::ByteUnit,
+    delete,
+    fairing::AdHoc,
+    get,
+    http::Status,
+    post,
+    response::{
+        status,
+        stream::{Event, EventStream},
+    },
+    serde::json::Json,
 };
 
 type JsonResponse = status::Custom<Json<serde_json::Value>>;
@@ -73,6 +86,55 @@ async fn get_activity(host: &State<Host>) -> JsonResponse {
 async fn get_runtime_state(host: &State<Host>) -> Json<RuntimeState> {
     host.reload_if_changed().await;
     Json(host.runtime_state())
+}
+
+/// The host's state as server-sent events (`docs/plans/shared-contracts.md` §5): a `state` with
+/// both parts first, then each part as it changes (`activity`, `providers`), and another `state`
+/// whenever the authority changed since the last one; `ping` after `PING_INTERVAL` without one. A slow reader skips values, never parts:
+/// it gets the latest of each. The stream ends when the server or the host shuts down. It does
+/// not reload the config itself; the watcher does.
+#[get("/api/events")]
+fn get_events(host: &State<Host>, mut shutdown: Shutdown) -> EventStream![] {
+    let mut feed = host.feed();
+    let stream = EventStream! {
+        let mut forwarder = Forwarder::default();
+        let mut ping = rocket::tokio::time::interval_at(
+            rocket::tokio::time::Instant::now() + PING_INTERVAL,
+            PING_INTERVAL,
+        );
+        let mut latest = None;
+        loop {
+            let next = rocket::tokio::select! {
+                value = feed.next() => value.map_or(Next::End, Next::Value),
+                () = &mut shutdown => Next::End,
+                _ = ping.tick() => Next::Ping,
+            };
+            let messages = match next {
+                Next::End => break,
+                Next::Value(value) => {
+                    let messages = forwarder.take(&value);
+                    latest = Some(value);
+                    messages
+                }
+                Next::Ping => latest.as_deref().map(RuntimeMessage::ping).into_iter().collect(),
+            };
+            if !messages.is_empty() {
+                ping.reset();
+            }
+            for message in messages {
+                yield Event::data(message.to_json()).event(message.event());
+            }
+        }
+    };
+    // `ping` is the stream's heartbeat: an event a browser sees, unlike a comment.
+    stream.heartbeat(None)
+}
+
+/// What the event stream does next.
+enum Next {
+    Value(std::sync::Arc<activity_log_core::runtime::Published>),
+    Ping,
+    End,
 }
 
 #[get("/api/providers")]
@@ -196,6 +258,7 @@ pub fn build_rocket_with(host: Host, start_initial_collection: bool) -> Rocket<B
             rocket::routes![
                 get_activity,
                 get_runtime_state,
+                get_events,
                 get_providers,
                 post_collect,
                 post_recheck,
