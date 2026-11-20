@@ -3,9 +3,11 @@ import { emit } from '@tauri-apps/api/event'
 import { mockIPC } from '@tauri-apps/api/mocks'
 import { clearTauriMocks } from '../../testing/tauri-mocks'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { collectingLog, exportRequest } from '../../testing/activity-fixtures'
+import { collectingLog, exportRequest, MockBackendTransport } from '../../testing/activity-fixtures'
+import type { RuntimeState } from '../../generated/activity'
 import { BackendOperations } from './backend-contract'
 import { BackendFailure } from './backend-failure'
+import type { RuntimeStreamHandlers } from './runtime-stream'
 import { TauriBackendTransport } from './tauri-backend-transport'
 
 interface Invocation {
@@ -200,5 +202,196 @@ describe('TauriBackendTransport', () => {
     expect(call).toBeInstanceOf(Promise)
     await expect(call).rejects.toBe(reason)
     expect(invocations).toEqual([])
+  })
+
+  describe('the state stream', () => {
+    /** A pair of host `epoch` at `revision`. */
+    function pairOf(epoch: string, revision: number): RuntimeState {
+      const host = new MockBackendTransport()
+      host.epoch = epoch
+      const { activity, providers } = host.runtimeState()
+      return { activity: { ...activity, revision }, providers: { ...providers, revision } }
+    }
+
+    function recording(): { handlers: RuntimeStreamHandlers; seen: unknown[] } {
+      const seen: unknown[] = []
+      return {
+        seen,
+        handlers: {
+          state: pair => seen.push(['state', pair.activity.epoch, pair.activity.revision]),
+          activity: update => seen.push(['activity', update.epoch, update.revision]),
+          providers: update => seen.push(['providers', update.epoch, update.revision]),
+          lost: failure => seen.push(['lost', failure]),
+          progress: () => undefined,
+        },
+      }
+    }
+
+    it('reads the pair once it listens, then hands over what came meanwhile and later', async () => {
+      const pair = pairOf('a', 3)
+      mockIPC(
+        async command => {
+          if (command !== 'get_runtime_state') return null
+          // Sent while the pair is on its way: one of this host, one of a host before it.
+          await emit('activity', { ...pair.activity, revision: 4 })
+          await emit('providers', { ...pairOf('old', 9).providers })
+          return pair
+        },
+        { shouldMockEvents: true }
+      )
+      const { handlers, seen } = recording()
+
+      setup().openRuntimeStream(handlers)
+      await vi.waitFor(() => expect(seen).toHaveLength(2))
+      await emit('providers', { ...pair.providers, revision: 5 })
+
+      expect(seen).toEqual([
+        ['state', 'a', 3],
+        ['activity', 'a', 4],
+        ['providers', 'a', 5],
+      ])
+    })
+
+    it('ends with the read’s failure and delivers nothing after it', async () => {
+      mockIPC(
+        command => {
+          if (command === 'get_runtime_state') throw { kind: 'internal', error: 'boom' }
+          return null
+        },
+        { shouldMockEvents: true }
+      )
+      const { handlers, seen } = recording()
+
+      setup().openRuntimeStream(handlers)
+      await vi.waitFor(() => expect(seen).toHaveLength(1))
+      await emit('activity', pairOf('a', 4).activity)
+
+      expect(seen).toEqual([
+        ['lost', expect.objectContaining({ kind: 'internal', message: 'boom' })],
+      ])
+      expect(seen[0]).toEqual(['lost', expect.any(BackendFailure)])
+    })
+
+    it('ends with a refused listener as a BackendFailure, its cause kept', async () => {
+      mockInvoke(command => {
+        if (command === 'plugin:event|listen') throw 'event.listen not allowed'
+        return null
+      })
+      const { handlers, seen } = recording()
+
+      setup().openRuntimeStream(handlers)
+
+      await vi.waitFor(() => expect(seen).toHaveLength(1))
+      expect(seen[0]).toEqual([
+        'lost',
+        expect.objectContaining({ kind: 'internal', cause: 'event.listen not allowed' }),
+      ])
+    })
+
+    it('keeps only the latest message of each event until the pair is in', async () => {
+      const pair = pairOf('a', 3)
+      mockIPC(
+        async command => {
+          if (command !== 'get_runtime_state') return null
+          await emit('activity', { ...pair.activity, revision: 4 })
+          await emit('activity', { ...pair.activity, revision: 5 })
+          await emit('state', pairOf('a', 6))
+          await emit('state', pairOf('a', 7))
+          return pair
+        },
+        { shouldMockEvents: true }
+      )
+      const { handlers, seen } = recording()
+
+      setup().openRuntimeStream(handlers)
+
+      await vi.waitFor(() => expect(seen).toHaveLength(3))
+      expect(seen).toEqual([
+        ['state', 'a', 3],
+        ['state', 'a', 7],
+        ['activity', 'a', 5],
+      ])
+    })
+
+    it('ends at a payload it cannot read, before the pair or after', async () => {
+      const pair = pairOf('a', 3)
+      mockIPC(
+        async command => {
+          if (command !== 'get_runtime_state') return null
+          await emit('activity', { ...pair.activity, state: {} })
+          return pair
+        },
+        { shouldMockEvents: true }
+      )
+      const { handlers, seen } = recording()
+
+      setup().openRuntimeStream(handlers)
+
+      await vi.waitFor(() => expect(seen).toHaveLength(1))
+      expect(seen).toEqual([['lost', expect.objectContaining({ kind: 'internal' })]])
+    })
+
+    it('ends at a handshake read it cannot read', async () => {
+      mockIPC(command => (command === 'get_runtime_state' ? {} : null), {
+        shouldMockEvents: true,
+      })
+      const { handlers, seen } = recording()
+
+      setup().openRuntimeStream(handlers)
+
+      await vi.waitFor(() => expect(seen).toHaveLength(1))
+      expect(seen).toEqual([['lost', expect.objectContaining({ kind: 'internal' })]])
+    })
+
+    it('removes a listener registered after the stream closed, once', async () => {
+      const unlistened: unknown[] = []
+      const registrations: (() => void)[] = []
+      let ids = 0
+      mockIPC(command => {
+        if (command === 'plugin:event|unlisten') {
+          unlistened.push(command)
+          return null
+        }
+        if (command !== 'plugin:event|listen') return null
+        const id = ++ids
+        // The third registration is answered only after the stream closed.
+        if (id < 3) return id
+        return new Promise<number>(resolve => registrations.push(() => resolve(id)))
+      })
+      const stream = setup().openRuntimeStream(recording().handlers)
+      await vi.waitFor(() => expect(registrations).toHaveLength(1))
+
+      stream.close()
+      expect(unlistened).toHaveLength(0)
+      await vi.waitFor(() => expect(unlistened).toHaveLength(2))
+      registrations[0]?.()
+      await vi.waitFor(() => expect(unlistened).toHaveLength(3))
+      stream.close()
+      await new Promise(resolve => setTimeout(resolve, 0))
+
+      expect(unlistened).toHaveLength(3)
+    })
+
+    it('delivers nothing once closed, also a pair that comes after', async () => {
+      const handshake: { answer?: (pair: RuntimeState) => void } = {}
+      mockIPC(
+        command =>
+          command === 'get_runtime_state'
+            ? new Promise<RuntimeState>(resolve => (handshake.answer = resolve))
+            : null,
+        { shouldMockEvents: true }
+      )
+      const { handlers, seen } = recording()
+      const stream = setup().openRuntimeStream(handlers)
+      // Listening, and the pair asked for.
+      await vi.waitFor(() => expect(handshake.answer).toBeDefined())
+
+      stream.close()
+      handshake.answer?.(pairOf('a', 3))
+      await emit('activity', pairOf('a', 4).activity)
+      await new Promise(resolve => setTimeout(resolve, 0))
+
+      expect(seen).toEqual([])
+    })
   })
 })

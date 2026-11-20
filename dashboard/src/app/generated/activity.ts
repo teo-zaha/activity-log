@@ -82,9 +82,10 @@ export type ProviderConfigSaveRequestDto = { connection: ConnectionId, label?: s
 
 export type ProviderConfigSaveResponseDto = { snapshot: ProviderConfigSnapshotDto, providersResponse: ProvidersResponse, 
 /**
- * Where the change became visible, see [`InstallReceipt`].
+ * Where the change became visible, see [`InstallReceipt`]; `null` when it was written but
+ * the host shut down before it installed it: the file holds it, no revision shows it.
  */
-installed: InstallReceipt, };
+installed: InstallReceipt | null, };
 
 export type AddConnectionRequestDto = { source: Source, 
 /**
@@ -98,9 +99,10 @@ wslDistro?: string, };
 
 export type AddConnectionResponseDto = { created: ConnectionId, snapshot: ProviderConfigSnapshotDto, providersResponse: ProvidersResponse, 
 /**
- * Where the change became visible, see [`InstallReceipt`].
+ * Where the change became visible, see [`InstallReceipt`]; `null` when it was written but
+ * the host shut down before it installed it: the file holds it, no revision shows it.
  */
-installed: InstallReceipt, };
+installed: InstallReceipt | null, };
 
 export type GitLabType = "pushedTo" | "created" | "opened" | "closed" | "reopened" | "updated" | "merged" | "accepted" | "commentedOn" | "approved" | "joined" | "destroyed" | "expired" | "unknown";
 
@@ -296,6 +298,8 @@ export type ProvidersUpdate = { epoch: string, authority: string, revision: numb
 
 export type RuntimeState = { activity: ActivityUpdate, providers: ProvidersUpdate, };
 
+export type RuntimePing = { epoch: string, };
+
 export type InstallReceipt = { epoch: string, revision: number, };
 
 export type ShownActivity = { "kind": "running" } & ActivityLog | { "kind": "ready" } & ActivityLog | { "kind": "failed" } & CollectionFailedResponse;
@@ -309,3 +313,6 @@ export const COLLECT_MAX_DAYS = 3653
 
 /** Every `BackendErrorKind`, for telling a backend error body from any other. */
 export const BACKEND_ERROR_KINDS = ["noData", "invalidRequest", "notFound", "alreadyExists", "busy", "conflict", "noLocation", "unprotectable", "badConfig", "tooLarge", "internal"] as const satisfies readonly BackendErrorKind[]
+
+/** How often `GET /api/events` sends its `ping` event, in seconds (`runtime::PING_INTERVAL`). */
+export const RUNTIME_PING_SECONDS = 15

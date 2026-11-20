@@ -5,6 +5,8 @@ import type { ExportOutcome, ExportRequest, OutputFormat } from '../../generated
 import { type BackendOperation, BackendOperations, type ReadOperation } from './backend-contract'
 import { BackendFailure, httpFailureOf, unsupportedIn } from './backend-failure'
 import type { BackendTransport } from './backend-transport'
+import { openEventStream } from './http-runtime-stream'
+import type { RuntimeStream, RuntimeStreamHandlers } from './runtime-stream'
 import { isWebLink } from '../../utils/text-links'
 
 /** How long a downloaded export's object URL stays valid; FileSaver.js waits as long. */
@@ -81,6 +83,11 @@ export class HttpBackendTransport implements BackendTransport {
     inBrowser('The browser could not open the link', () =>
       window.open(url, '_blank', 'noopener,noreferrer')
     )
+  }
+
+  /** One connection to `GET /api/events` (`openEventStream`). */
+  openRuntimeStream(handlers: RuntimeStreamHandlers): RuntimeStream {
+    return openEventStream(handlers)
   }
 
   /** A browser opens `activity-log:` links in no tab of its own. */

@@ -2,7 +2,7 @@ import { provideHttpClient } from '@angular/common/http'
 import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing'
 import { TestBed } from '@angular/core/testing'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { collectingLog, exportRequest, MockBackendTransport } from '../../testing/activity-fixtures'
+import { collectingLog, exportRequest } from '../../testing/activity-fixtures'
 import { BackendOperations } from './backend-contract'
 import { BackendFailure } from './backend-failure'
 import { HttpBackendTransport } from './http-backend-transport'
@@ -24,24 +24,24 @@ describe('HttpBackendTransport', () => {
     TestBed.inject(HttpTestingController).verify()
   })
 
-  it('reads the host’s state over GET /api/runtime-state', async () => {
+  it('reads the logs over GET /api/logs', async () => {
     const { transport, http } = setup()
-    const state = new MockBackendTransport().runtimeState()
+    const logs = { entries: [] }
 
-    const result = transport.call(BackendOperations.runtimeState, undefined)
-    const req = http.expectOne('/api/runtime-state')
+    const result = transport.call(BackendOperations.logs, undefined)
+    const req = http.expectOne('/api/logs')
     expect(req.request.method).toBe('GET')
-    req.flush(state)
+    req.flush(logs)
 
-    await expect(result).resolves.toEqual(state)
+    await expect(result).resolves.toEqual(logs)
   })
 
   it('cancels the request itself when the call is aborted', async () => {
     const { transport, http } = setup()
     const controller = new AbortController()
 
-    const result = transport.call(BackendOperations.runtimeState, undefined, controller.signal)
-    const req = http.expectOne('/api/runtime-state')
+    const result = transport.call(BackendOperations.logs, undefined, controller.signal)
+    const req = http.expectOne('/api/logs')
     controller.abort(new Error('stopped'))
 
     await expect(result).rejects.toThrow('stopped')
@@ -78,6 +78,10 @@ describe('HttpBackendTransport', () => {
     await expect(transport.call(BackendOperations.providerConfig, undefined)).rejects.toMatchObject(
       { kind: 'unsupported' }
     )
+    // The browser follows the event stream instead of reading the pair.
+    await expect(transport.call(BackendOperations.runtimeState, undefined)).rejects.toMatchObject({
+      kind: 'unsupported',
+    })
     await expect(
       transport.call(BackendOperations.saveProviderConfig, {
         connection: { source: 'git', name: 'default' },
@@ -110,8 +114,8 @@ describe('HttpBackendTransport', () => {
   it('rejects as unreachable when no answer came at all', async () => {
     const { transport, http } = setup()
 
-    const lost = transport.call(BackendOperations.runtimeState, undefined)
-    http.expectOne('/api/runtime-state').error(new ProgressEvent('error'), { status: 0 })
+    const lost = transport.call(BackendOperations.logs, undefined)
+    http.expectOne('/api/logs').error(new ProgressEvent('error'), { status: 0 })
 
     await expect(lost).rejects.toMatchObject({ kind: 'unreachable' })
   })
@@ -119,9 +123,9 @@ describe('HttpBackendTransport', () => {
   it('never shows a body outside the contract, such as a proxy’s page', async () => {
     const { transport, http } = setup()
 
-    const proxied = transport.call(BackendOperations.runtimeState, undefined)
+    const proxied = transport.call(BackendOperations.logs, undefined)
     http
-      .expectOne('/api/runtime-state')
+      .expectOne('/api/logs')
       .flush('<html>Bad Gateway</html>', { status: 502, statusText: 'Bad Gateway' })
 
     const failure: unknown = await proxied.catch((error: unknown) => error)
@@ -133,9 +137,9 @@ describe('HttpBackendTransport', () => {
   it('reads an error body with a kind it does not know as internal', async () => {
     const { transport, http } = setup()
 
-    const odd = transport.call(BackendOperations.runtimeState, undefined)
+    const odd = transport.call(BackendOperations.logs, undefined)
     http
-      .expectOne('/api/runtime-state')
+      .expectOne('/api/logs')
       .flush({ kind: 'later', error: 'from a newer backend' }, { status: 500, statusText: 'Error' })
 
     await expect(odd).rejects.toMatchObject({ kind: 'internal' })
@@ -271,11 +275,11 @@ describe('HttpBackendTransport', () => {
     const reason = new Error('stopped')
     controller.abort(reason)
 
-    const call = transport.call(BackendOperations.runtimeState, undefined, controller.signal)
+    const call = transport.call(BackendOperations.logs, undefined, controller.signal)
 
     expect(call).toBeInstanceOf(Promise)
     await expect(call).rejects.toBe(reason)
-    http.expectNone('/api/runtime-state')
+    http.expectNone('/api/logs')
   })
 
   it('rejects with a BackendFailure when the browser refuses the download', async () => {

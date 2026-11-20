@@ -15,6 +15,7 @@ import { BackendOperations, type BackendOperation, type ReadOperation } from './
 import { BackendTransport } from './backend-transport'
 import { HttpBackendTransport } from './http-backend-transport'
 import { RuntimeEnvironmentService } from './runtime-environment.service'
+import type { RuntimeStream } from './runtime-stream'
 import { TauriBackendTransport } from './tauri-backend-transport'
 
 /** Records which concrete transports actually get constructed. */
@@ -101,6 +102,10 @@ class RecordingTransport implements BackendTransport {
   listenForDeepLinks(): Promise<void> {
     return new Promise<void>(() => undefined)
   }
+
+  openRuntimeStream(): RuntimeStream {
+    return { close: () => undefined }
+  }
 }
 
 describe('ActivityBackendClient', () => {
@@ -113,7 +118,6 @@ describe('ActivityBackendClient', () => {
   }
 
   it.each([
-    ['getRuntimeState', BackendOperations.runtimeState],
     ['getProviderConfig', BackendOperations.providerConfig],
     ['clearLogs', BackendOperations.clearLogs],
   ] as const)('%s calls its operation without a request', (method, operation) => {

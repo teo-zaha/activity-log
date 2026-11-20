@@ -26,6 +26,7 @@ import {
 import type { ConnectionKey } from '../providers/connection'
 import { BackendFailure } from '../services/backend/backend-failure'
 import { BackendTransport } from '../services/backend/backend-transport'
+import type { RuntimeStream, RuntimeStreamHandlers } from '../services/backend/runtime-stream'
 
 /**
  * What the mock host shows, in the shape `GET /api/activity` has it: a log, partial while
@@ -117,23 +118,41 @@ export const collectingLog: ActivityLog = {
   entries: activityLog.entries.filter(entry => entry.source === 'git'),
 }
 
+/** A stream the mock host pushes to, and what it pushed last. */
+interface MockStream {
+  readonly handlers: RuntimeStreamHandlers
+  open: boolean
+  epoch: string
+  authority: string
+  activity: number
+  providers: number
+}
+
 /**
- * In-memory stand-in for the transport seam: the real `ActivityBackendClient` runs on top of it.
- * Tune the public fields per test.
+ * In-memory stand-in for the transport seam: the real `ActivityBackendClient` runs on top of it,
+ * and it is a host that pushes its state. A stream starts with a pair; then, every `stepMs` while
+ * the host is busy (a state still queued, a collection running, a source being checked, sources
+ * with nothing collected yet) and once after each command, it moves on and pushes each part that
+ * changed. Tune the public fields per test.
  */
 export class MockBackendTransport implements BackendTransport {
   /**
-   * What the host shows at the next reads, before `activityResponse`: a `BackendFailure` fails
-   * that read, and `null` is the host before its first collection.
+   * What the host shows at its next steps (a stream's first pair is one), before
+   * `activityResponse`: a `BackendFailure` drops the streams with it, and `null` is the host
+   * before its first collection.
    */
   activityResponses: (ActivityResponse | BackendFailure | null)[] = [activityLog]
-  /** What the host shows at every read once `activityResponses` is used up. */
+  /** What the host shows once `activityResponses` is used up. */
   activityResponse: ActivityResponse | null = activityLog
   providersResponse = providersResponse
-  /** Fails every read while set. */
+  /** While set, no stream opens, and the next step drops the open ones with it. */
   stateError: BackendFailure | null = null
-  /** When set, a read answers once it resolves, with the state as of the request. */
+  /** When set, a new stream's first pair waits for it, with the state as of opening. */
   stateGate: Promise<void> | null = null
+  /** How often a busy host moves on. */
+  stepMs = 1
+  /** How many streams were opened. */
+  streamsOpened = 0
   /** The host's epoch and authority, as its stamps carry them. */
   epoch = 'mock-host'
   authority = '1'
@@ -159,6 +178,117 @@ export class MockBackendTransport implements BackendTransport {
   private revision = 0
   private shownActivity: ActivityUpdate | null = null
   private shownProviders: ProvidersUpdate | null = null
+  private readonly streams = new Set<MockStream>()
+  private stepping: ReturnType<typeof setTimeout> | null = null
+
+  /** A stream of this host: a pair first (after the current turn), then what each step changes. */
+  openRuntimeStream(handlers: RuntimeStreamHandlers): RuntimeStream {
+    this.streamsOpened++
+    const stream: MockStream = {
+      handlers,
+      open: true,
+      epoch: this.epoch,
+      authority: this.authority,
+      activity: 0,
+      providers: 0,
+    }
+    void this.startStream(stream)
+    return {
+      close: (): void => {
+        stream.open = false
+        this.streams.delete(stream)
+      },
+    }
+  }
+
+  private async startStream(stream: MockStream): Promise<void> {
+    await Promise.resolve()
+    if (!stream.open) return
+    if (this.stateError) return this.drop(stream, this.stateError)
+    const next = this.nextShown()
+    if (next instanceof BackendFailure) return this.drop(stream, next)
+    const pair: RuntimeState = {
+      activity: this.showActivity(next),
+      providers: this.showProviders(),
+    }
+    if (this.stateGate) await this.stateGate
+    if (!stream.open) return
+    this.streams.add(stream)
+    this.send(stream, pair)
+    this.keepGoing()
+  }
+
+  /**
+   * The host moves on once soon, whether or not it is busy: a command, or a test standing in
+   * for one, changed something it pushes.
+   */
+  publish(): void {
+    this.stepping ??= setTimeout(() => this.step(), this.stepMs)
+  }
+
+  private keepGoing(): void {
+    if (this.busy()) this.publish()
+  }
+
+  private step(): void {
+    this.stepping = null
+    if (this.streams.size === 0) return
+    const next = this.stateError ?? this.nextShown()
+    if (next instanceof BackendFailure) {
+      for (const stream of [...this.streams]) this.drop(stream, next)
+      return
+    }
+    const activity = this.showActivity(next)
+    const providers = this.showProviders()
+    for (const stream of [...this.streams]) {
+      if (stream.epoch !== this.epoch) {
+        // Another host now: this one's connection is gone.
+        this.drop(stream, new BackendFailure('unreachable', 'The backend restarted'))
+      } else if (stream.authority !== this.authority) {
+        this.send(stream, { activity, providers })
+      } else {
+        if (activity.revision > stream.activity) {
+          stream.activity = activity.revision
+          stream.handlers.activity(activity)
+        }
+        if (stream.open && providers.revision > stream.providers) {
+          stream.providers = providers.revision
+          stream.handlers.providers(providers)
+        }
+      }
+    }
+    this.keepGoing()
+  }
+
+  private send(stream: MockStream, pair: RuntimeState): void {
+    stream.epoch = pair.activity.epoch
+    stream.authority = pair.activity.authority
+    stream.activity = pair.activity.revision
+    stream.providers = pair.providers.revision
+    stream.handlers.state(pair)
+  }
+
+  private drop(stream: MockStream, failure: BackendFailure): void {
+    stream.open = false
+    this.streams.delete(stream)
+    stream.handlers.lost(failure)
+  }
+
+  private nextShown(): ActivityResponse | BackendFailure | null {
+    const next =
+      this.activityResponses.length > 0 ? this.activityResponses.shift() : this.activityResponse
+    return next ?? null
+  }
+
+  /** Whether the host will change by itself: the dashboard is told when it does. */
+  private busy(): boolean {
+    if (this.activityResponses.length > 0) return true
+    const providers = this.providersResponse.providers
+    if (providers.some(provider => provider.status === 'checking')) return true
+    const state = this.shownActivity?.state
+    if (state === undefined || state.kind === 'empty') return providers.length > 0
+    return state.kind === 'running'
+  }
 
   resource<Res>(read: ReadOperation<Res>): ResourceRef<Res | undefined> {
     return resource({ loader: () => this.call(read, undefined) })
@@ -229,24 +359,21 @@ export class MockBackendTransport implements BackendTransport {
     }
   }
 
+  /** `answer` once `gate` opens; the host moves on after a command either way. */
   private gated<T>(gate: Promise<void> | null, answer: T): Promise<T> {
+    this.publish()
     return (gate ?? Promise.resolve()).then(() => answer)
   }
 
   private respond(operation: BackendOperation<unknown, unknown>): Promise<unknown> {
     switch (operation) {
       case BackendOperations.runtimeState: {
-        const next =
-          this.activityResponses.length > 0 ? this.activityResponses.shift() : this.activityResponse
         if (this.stateError) return Promise.reject(this.stateError)
-        if (next instanceof BackendFailure) return Promise.reject(next)
-        const pair: RuntimeState = {
-          activity: this.showActivity(next ?? null),
-          providers: this.showProviders(),
-        }
-        return this.gated(this.stateGate, pair)
+        const pair: RuntimeState = this.runtimeState()
+        return (this.stateGate ?? Promise.resolve()).then(() => pair)
       }
       case BackendOperations.recheckConnection: {
+        this.publish()
         if (this.recheckError) return Promise.reject(this.recheckError)
         const { epoch, authority, revision } = this.showProviders()
         return Promise.resolve({ ...this.providersResponse, stamp: { epoch, authority, revision } })
@@ -263,6 +390,7 @@ export class MockBackendTransport implements BackendTransport {
           ...this.saveResponse(),
         })
       case BackendOperations.collect: {
+        this.publish()
         if (this.collectError) return Promise.reject(this.collectError)
         const response = this.collectResponses.shift() ?? this.collectResponse
         const { epoch, authority, revision, state } = this.showActivity(response)

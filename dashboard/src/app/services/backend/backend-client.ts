@@ -11,7 +11,6 @@ import type {
   ProviderConfigSaveResponseDto,
   ProviderConfigSnapshotDto,
   RecheckAnswer,
-  RuntimeState,
 } from '../../generated/activity'
 import { BackendOperations, type ReadOperation } from './backend-contract'
 import { BackendTransport } from './backend-transport'
@@ -24,10 +23,6 @@ export class ActivityBackendClient {
   /** A read from `BackendOperations` as a signal resource. */
   readResource<Res>(read: ReadOperation<Res>): ResourceRef<Res | undefined> {
     return this.transport.resource(read)
-  }
-
-  getRuntimeState(signal?: AbortSignal): Promise<RuntimeState> {
-    return this.transport.call(BackendOperations.runtimeState, undefined, signal)
   }
 
   collect(request: CollectRequest): Promise<CollectAnswer> {

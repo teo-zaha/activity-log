@@ -164,8 +164,15 @@ export class SettingsAddSourcePaneComponent {
     this.error.set(null)
     try {
       const response = await this.activity.addConnection(request)
-      this.config.set(response.snapshot)
-      this.opened.emit(connectionKey(response.created))
+      const standing = this.activity.receiptStanding(response.installed)
+      // The answer's snapshot shows only while nothing later is on screen; otherwise it is read
+      // again. The new source opens only if the host on screen installed it: one that another
+      // host answered, or that was written but never installed, would open as not found.
+      if (standing === 'current') this.config.set(response.snapshot)
+      else this.config.reload()
+      if (standing === 'current' || standing === 'superseded') {
+        this.opened.emit(connectionKey(response.created))
+      }
     } catch (error) {
       const failed = failureOf(error, 'Failed to add the source.')
       this.error.set(failed)

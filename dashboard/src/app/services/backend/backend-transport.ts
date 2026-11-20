@@ -3,6 +3,7 @@ import type { BackendOperation, ReadOperation } from './backend-contract'
 import type { ExportOutcome, ExportRequest } from '../../generated/activity'
 import { HttpBackendTransport } from './http-backend-transport'
 import { RuntimeEnvironmentService } from './runtime-environment.service'
+import type { RuntimeStream, RuntimeStreamHandlers } from './runtime-stream'
 import { TauriBackendTransport } from './tauri-backend-transport'
 
 /**
@@ -37,6 +38,12 @@ export abstract class BackendTransport {
   abstract saveExport(request: ExportRequest): Promise<ExportOutcome>
   /** Opens an http(s) link outside the app: a new browser tab, the default browser on desktop. */
   abstract openUrl(url: string): Promise<void>
+  /**
+   * Opens one connection to the host's state (`docs/plans/shared-contracts.md` §5): a `state`
+   * pair first, then parts and later pairs in the order they come, until `close` or `lost`.
+   * Reconnecting is the caller's (`PushStateSource`).
+   */
+  abstract openRuntimeStream(handlers: RuntimeStreamHandlers): RuntimeStream
   /**
    * Passes each `activity-log:` link the desktop app gets to `open`, the one that launched it
    * first. The browser gets none. The links are untrusted input.

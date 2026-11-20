@@ -125,7 +125,7 @@ export class TimelineComponent {
         action: null,
       }
     }
-    if (status.kind === 'timedOut' || status.kind === 'failed') {
+    if (status.kind === 'failed') {
       return {
         icon: 'cloud_off',
         title: 'No activity loaded',

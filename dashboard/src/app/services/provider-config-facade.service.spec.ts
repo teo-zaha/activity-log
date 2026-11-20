@@ -8,7 +8,6 @@ import {
   provideMockBackend,
 } from '../testing/activity-fixtures'
 import { ActivityDataService } from './activity-data.service'
-import { ACTIVITY_POLL_DELAY_MS } from './runtime-state/polling-state-source'
 import { ProviderConfigFacade } from './provider-config-facade.service'
 
 describe('ProviderConfigFacade', () => {
@@ -17,7 +16,7 @@ describe('ProviderConfigFacade', () => {
     onTestFinished(() => void vi.useRealTimers())
     const backend = new MockBackendTransport()
     TestBed.configureTestingModule({
-      providers: [provideMockBackend(backend), { provide: ACTIVITY_POLL_DELAY_MS, useValue: 1 }],
+      providers: [provideMockBackend(backend)],
     })
     const data = TestBed.inject(ActivityDataService)
     await data.initLoad()
@@ -29,8 +28,8 @@ describe('ProviderConfigFacade', () => {
 
     await TestBed.inject(ProviderConfigFacade).addConnection({ source: 'gitlab' })
 
-    // The answer has the host read at once: the new source, and the collection started for it.
-    await vi.advanceTimersByTimeAsync(0)
+    // The host pushes the new source and the collection it started for it.
+    await vi.advanceTimersByTimeAsync(backend.stepMs)
     expect(data.providers().map(p => p.key)).toContain('gitlab/default')
     expect(data.isLoading()).toBe(true)
     expect(data.collectionStatus()).toMatchObject({ kind: 'collecting', operation: 'collect' })
