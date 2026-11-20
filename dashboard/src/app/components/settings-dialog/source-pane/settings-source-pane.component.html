@@ -1,37 +1,10 @@
 <div class="source-detail">
-  <section
-    class="health"
-    [attr.data-status]="provider().info.status"
-    aria-labelledby="source-health-title"
-  >
-    <mat-icon class="health-icon">{{ health().icon }}</mat-icon>
-    <div class="health-copy">
-      <h3 id="source-health-title" class="health-title">{{ health().title }}</h3>
-      <p class="health-reason">{{ health().reason }}</p>
-      <p class="health-meta">
-        {{ health().checking ? 'Started' : 'Checked' }} {{ checkedAtLabel() }} ·
-        <span role="list" aria-label="Supported operating systems">
-          @for (os of provider().info.supportedOs; track os; let last = $last) {
-            <span role="listitem">{{ supportedOsLabel(os) }}</span
-            >{{ last ? '' : ', ' }}
-          }
-        </span>
-      </p>
-    </div>
-    @if (canRecheck() || rechecking()) {
-      <button
-        appButton
-        size="sm"
-        icon="refresh"
-        class="health-action"
-        [busy]="rechecking()"
-        [disabled]="rechecking()"
-        (click)="recheck()"
-      >
-        Check again
-      </button>
-    }
-  </section>
+  <app-source-health
+    [info]="provider().info"
+    [rechecking]="rechecking()"
+    [failure]="recheckError()"
+    (recheck)="recheck()"
+  />
 
   <section class="config" aria-label="Connection settings">
     @if (!isDesktop) {

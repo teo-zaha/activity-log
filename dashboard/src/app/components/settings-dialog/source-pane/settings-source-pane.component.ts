@@ -7,7 +7,6 @@ import {
   linkedSignal,
   output,
   resource,
-  signal,
   untracked,
 } from '@angular/core'
 import { applyEach, disabled, form, FormField, FormRoot, validate } from '@angular/forms/signals'
@@ -23,56 +22,36 @@ import { ButtonComponent } from '../../button/button.component'
 import type {
   ProviderConfigFieldStateDto,
   ProviderConfigSaveRequestDto,
-  ProviderProblem,
-  ProviderStatus,
 } from '../../../generated/activity'
 import { connectionKey } from '../../../providers/connection'
-import { supportedOsLabel } from '../../../providers/source-catalog'
 import { ActivityService } from '../../../services/activity.service'
-import { extractBackendErrorMessage } from '../../../services/backend/error-message'
+import { type Failure, FailureError, failureOf } from '../../../services/failure'
 import { RuntimeEnvironmentService } from '../../../services/backend/runtime-environment.service'
 import { ToastService } from '../../../services/toast.service'
 import { confirmAction } from '../../confirm-dialog/confirm-dialog.component'
 import { validateProviderConfigValue } from './provider-config-validation'
 import type { SettingsProviderRow } from '../settings-dialog.types'
-import { type SourceDraft, SourceDrafts } from './source-drafts.service'
-
-interface ProviderHealthVm {
-  readonly icon: string
-  readonly title: string
-  readonly reason: string
-  /** The startup check has not finished; `checkedAt` is when it started. */
-  readonly checking: boolean
-}
-
-/** Field values by key. A secret is `null` once the user chose to clear it, `''` while untouched. */
-type DraftValues = Record<string, string | null>
-/** Items of `list` fields by key; blank rows are dropped on save. */
-type ListDrafts = Record<string, string[]>
-
-type SingleField = Extract<ProviderConfigFieldStateDto, { shape: 'single' }>
-type ListField = Extract<ProviderConfigFieldStateDto, { shape: 'list' }>
-
-function isSingleField(field: ProviderConfigFieldStateDto): field is SingleField {
-  return field.shape === 'single'
-}
-
-function isListField(field: ProviderConfigFieldStateDto): field is ListField {
-  return field.shape === 'list'
-}
-
-/** Trimmed, without blank rows: what the backend would store. */
-function cleanItems(items: readonly string[]): string[] {
-  return items.map(item => item.trim()).filter(item => item !== '')
-}
-
-function sameItems(a: readonly string[], b: readonly string[]): boolean {
-  return a.length === b.length && a.every((item, index) => item === b[index])
-}
+import { SourceDrafts } from './source-drafts.service'
+import { SourceHealthComponent } from './source-health/source-health.component'
+import { SourceOperations } from './source-operations'
+import {
+  type DraftForm,
+  type DraftValues,
+  type ListDrafts,
+  type ListField,
+  type SingleField,
+  type SourceDraft,
+  draftOf,
+  formOf,
+  isListField,
+  isSingleField,
+  saveRequestOf,
+} from './source-draft-request'
 
 @Component({
   selector: 'app-settings-source-pane',
   imports: [
+    SourceHealthComponent,
     AutoAnimateDirective,
     FeedbackComponent,
     IconButtonComponent,
@@ -99,17 +78,42 @@ export class SettingsSourcePaneComponent {
   readonly removed = output<void>()
 
   protected readonly isDesktop = this.runtime.isTauri()
-  protected readonly savingConfig = signal(false)
 
   private readonly selectionKey = computed(() => this.provider().key)
+  /**
+   * A save, a removal or a check runs for the connection it was started on, also once another one
+   * is shown: its answer, and its failure, belong to that connection.
+   */
+  private readonly operations = new SourceOperations()
+  protected readonly savingConfig = computed(() =>
+    this.operations.isRunning(this.selectionKey(), 'save')
+  )
 
-  /** The snapshot holds every connection; it reloads whenever another one is selected. */
+  /** Snapshot reads that came back, so a save answered after one does not replace it. */
+  private snapshotReads = 0
+  /**
+   * The snapshot holds every connection; it reloads whenever another one is selected, and a read
+   * for one no longer selected is dropped. A read that comes back, or fails, under another host
+   * than it was sent under is sent again under the one on screen.
+   */
   private readonly config = resource({
     params: () => (this.isDesktop ? this.selectionKey() : undefined),
-    loader: () =>
-      this.activity.loadProviderConfig().catch((error: unknown) => {
-        throw new Error(extractBackendErrorMessage(error, 'Failed to load provider settings.'))
-      }),
+    loader: async () => {
+      for (;;) {
+        const host = untracked(this.activity.hostEpoch)
+        try {
+          const snapshot = await this.activity.loadProviderConfig()
+          if (untracked(this.activity.hostEpoch) === host) {
+            this.snapshotReads++
+            return snapshot
+          }
+        } catch (error) {
+          if (untracked(this.activity.hostEpoch) === host) {
+            throw new FailureError(failureOf(error, 'Failed to load provider settings.'))
+          }
+        }
+      }
+    },
   })
 
   protected readonly loadingConfig = this.config.isLoading
@@ -138,50 +142,35 @@ export class SettingsSourcePaneComponent {
     return this.connectionState() ? untracked(() => this.drafts.get(key)) : undefined
   })
 
+  /** The fields as the snapshot holds them, with the saved draft's edits over them. */
+  private readonly loadedForm = computed<DraftForm | null>(() => {
+    const state = this.connectionState()
+    return state && formOf(state, this.savedDraft())
+  })
+
   /** The label the user is typing. */
-  protected readonly labelDraft = linkedSignal(
-    () => this.savedDraft()?.label ?? this.connectionState()?.label ?? ''
-  )
+  protected readonly labelDraft = linkedSignal(() => this.loadedForm()?.label ?? '')
   protected readonly labelForm = form(this.labelDraft, path => {
     disabled(path, { when: () => this.savingConfig() })
   })
-  protected readonly removing = signal(false)
+  protected readonly removing = computed(() =>
+    this.operations.isRunning(this.selectionKey(), 'remove')
+  )
 
   private readonly fieldByKey = computed(
     () => new Map(this.configFields().map(field => [field.key, field]))
   )
 
-  private readonly initialValues = computed<DraftValues>(() =>
-    Object.fromEntries(
-      this.configFields()
-        .filter(isSingleField)
-        .map(field => [field.key, this.initialValueFor(field)])
-    )
-  )
   private readonly draftValues = linkedSignal<DraftValues>(() => ({
-    ...this.initialValues(),
-    ...this.savedDraft()?.values,
+    ...this.loadedForm()?.values,
   }))
-
-  /** The configured items, or the default the provider uses while the key is unset. */
-  private readonly initialLists = computed<ListDrafts>(() =>
-    Object.fromEntries(
-      this.configFields()
-        .filter(isListField)
-        .map(field => [field.key, [...field.items]])
-    )
-  )
-  protected readonly listDrafts = linkedSignal<ListDrafts>(() => {
-    const drafted = this.savedDraft()?.lists ?? {}
-    return Object.fromEntries(
-      Object.entries(this.initialLists()).map(([key, items]) => [key, [...(drafted[key] ?? items)]])
-    )
-  })
+  protected readonly listDrafts = linkedSignal<ListDrafts>(() => ({
+    ...this.loadedForm()?.lists,
+  }))
   /** List keys the user reset, so their default applies again after saving. */
-  private readonly resetLists = linkedSignal<ListDrafts, ReadonlySet<string>>({
-    source: this.initialLists,
-    computation: () => new Set(this.savedDraft()?.resets),
-  })
+  private readonly resetLists = linkedSignal<ReadonlySet<string>>(
+    () => new Set(this.loadedForm()?.resets)
+  )
 
   /** Every item is checked against the field's value type, like a single value. */
   protected readonly listForm = form(this.listDrafts, path => {
@@ -200,104 +189,49 @@ export class SettingsSourcePaneComponent {
     })
   })
 
-  private readonly saveError = linkedSignal<string, string | null>({
-    source: this.selectionKey,
-    computation: () => null,
+  protected readonly configError = computed(() => {
+    const key = this.selectionKey()
+    const failure =
+      this.operations.failure(key, 'save') ??
+      this.operations.failure(key, 'remove') ??
+      loadFailureOf(this.config.error())
+    return failure?.message ?? null
   })
-  protected readonly configError = computed(
-    () => this.saveError() ?? this.config.error()?.message ?? null
+
+  /** From the press until the backend has accepted the new check. */
+  protected readonly rechecking = computed(() =>
+    this.operations.isRunning(this.selectionKey(), 'recheck')
+  )
+  protected readonly recheckError = computed(
+    () => this.operations.failure(this.selectionKey(), 'recheck')?.message ?? null
   )
 
-  protected readonly health = computed<ProviderHealthVm>(() => {
-    const { status, reason, problem } = this.provider().info
-    const checking = status === 'checking'
-    return {
-      icon: problem === 'timedOut' ? 'timer_off' : this.statusIcon(status),
-      title: this.statusTitle(status, problem),
-      reason:
-        reason ??
-        (checking
-          ? 'The startup check is still running.'
-          : 'No issues were reported during the latest provider inspection.'),
-      checking,
-    }
-  })
-
-  /** A source whose check or collection failed can be checked again; one on another OS cannot. */
-  protected readonly canRecheck = computed(() => {
-    const { status, problem } = this.provider().info
-    return (status === 'unavailable' || status === 'degraded') && problem !== 'unsupported'
-  })
-  /** From the press until the collection after the new check has ended. */
-  protected readonly rechecking = signal(false)
-
   protected async recheck(): Promise<void> {
-    this.rechecking.set(true)
-    try {
-      await this.activity.recheckConnection(this.provider().info.connection)
-    } finally {
-      this.rechecking.set(false)
-    }
+    const { key, info } = this.provider()
+    await this.operations.run(key, 'recheck', 'Checking the source again failed.', () =>
+      this.activity.recheckConnection(info.connection)
+    )
   }
 
-  protected readonly checkedAtLabel = computed(() => {
-    const checkedAt = new Date(this.provider().info.checkedAt)
-    if (Number.isNaN(checkedAt.getTime())) return 'at startup'
-    return checkedAt.toLocaleString('en-GB', {
-      day: 'numeric',
-      month: 'short',
-      hour: '2-digit',
-      minute: '2-digit',
-    })
+  /** What the user changed, against the settings on screen; null before they are loaded. */
+  private readonly draft = computed<SourceDraft | null>(() => {
+    const state = this.connectionState()
+    return (
+      state &&
+      draftOf(state, {
+        label: this.labelDraft(),
+        values: this.draftValues(),
+        lists: this.listDrafts(),
+        resets: this.resetLists(),
+      })
+    )
   })
 
+  /** The edits as one save request for this connection, or null when nothing changed. */
   protected readonly pendingRequest = computed<ProviderConfigSaveRequestDto | null>(() => {
-    const values: ProviderConfigSaveRequestDto['values'] = []
-    const draft = this.draftValues()
-    const initial = this.initialValues()
-
-    for (const field of this.configFields()) {
-      if (isListField(field)) {
-        const change = this.pendingListValue(field)
-        if (change !== undefined) values.push({ key: field.key, value: change })
-        continue
-      }
-
-      const value = draft[field.key] ?? null
-
-      if (field.secret) {
-        if (value === null) {
-          values.push({ key: field.key, value: null })
-        } else if (value.trim()) {
-          values.push({ key: field.key, value: value.trim() })
-        }
-        continue
-      }
-
-      const current = (value ?? '').trim()
-      if (current !== (initial[field.key] ?? '')) {
-        values.push({
-          key: field.key,
-          value: current === '' ? null : current,
-        })
-      }
-    }
-
     const state = this.connectionState()
-    if (!state) {
-      return null
-    }
-    const label = this.labelDraft().trim()
-    const labelChanged = label !== '' && label !== state.label
-    if (values.length === 0 && !labelChanged) {
-      return null
-    }
-
-    return {
-      connection: state.connection,
-      ...(labelChanged ? { label } : {}),
-      values,
-    }
+    const draft = this.draft()
+    return state && draft && saveRequestOf(state, draft)
   })
 
   /** Only changed values are checked, so a stored value that no longer validates never blocks saving. */
@@ -349,23 +283,17 @@ export class SettingsSourcePaneComponent {
       this.listForm().valid()
   )
 
-  protected readonly supportedOsLabel = supportedOsLabel
-
   constructor() {
     // Keeps the edits of the loaded connection for when it is opened again; see `SourceDrafts`.
     effect(() => {
       const key = this.selectionKey()
-      if (this.connectionState() === null) return
+      const draft = this.draft()
+      if (draft === null) return
       if (!this.dirty()) {
         this.drafts.delete(key)
         return
       }
-      this.drafts.set(key, {
-        label: this.labelDraft(),
-        values: this.draftValues(),
-        lists: this.listDrafts(),
-        resets: [...this.resetLists()],
-      })
+      this.drafts.set(key, draft)
     })
   }
 
@@ -386,15 +314,14 @@ export class SettingsSourcePaneComponent {
 
   /** Drops every edit: the fields show what is saved again. */
   protected discard(): void {
+    const state = this.connectionState()
     this.drafts.delete(this.selectionKey())
-    this.labelDraft.set(this.connectionState()?.label ?? '')
-    this.draftValues.set({ ...this.initialValues() })
-    this.listDrafts.set(
-      Object.fromEntries(
-        Object.entries(this.initialLists()).map(([key, items]) => [key, [...items]])
-      )
-    )
-    this.resetLists.set(new Set())
+    if (state === null) return
+    const saved = formOf(state)
+    this.labelDraft.set(saved.label)
+    this.draftValues.set(saved.values)
+    this.listDrafts.set(saved.lists)
+    this.resetLists.set(saved.resets)
   }
 
   protected addListItem(field: ListField): void {
@@ -437,26 +364,31 @@ export class SettingsSourcePaneComponent {
   protected async removeConnection(): Promise<void> {
     const state = this.connectionState()
     if (!state || this.removing()) return
+    // The source asked about, whatever is shown once the question is answered.
+    const { key, label } = this.provider()
     const confirmed = await confirmAction(this.dialog, {
-      title: `Remove ${this.provider().label}?`,
+      title: `Remove ${label}?`,
       message: 'Its settings are deleted from the config file. You can add it again later.',
       confirmLabel: 'Remove',
       tone: 'danger',
     })
     if (!confirmed) return
-    const label = this.provider().label
-    this.removing.set(true)
-    this.saveError.set(null)
-    try {
-      await this.activity.removeConnection(state.connection)
-      this.drafts.delete(this.selectionKey())
-      this.toast.success(`${label} removed`)
-      this.removed.emit()
-    } catch (error) {
-      this.saveError.set(extractBackendErrorMessage(error, 'Failed to remove the source.'))
-    } finally {
-      this.removing.set(false)
+    // The draft the removal drops: one made while it is out stays.
+    const revision = this.drafts.revisionOf(key)
+    const removed = await this.operations.run(key, 'remove', 'Failed to remove the source.', () =>
+      this.activity.removeConnection(state.connection)
+    )
+    if (!removed.ok) return
+    this.toast.success(`${label} removed`)
+    // Answered by a host that is gone: the connection of that name on screen is another's, so
+    // its draft and its section stay, and the snapshot is read again.
+    if (this.activity.receiptStanding(removed.value.installed) === 'otherHost') {
+      this.config.reload()
+      return
     }
+    this.drafts.settled(key, revision)
+    // Another source shown meanwhile stays.
+    if (this.selectionKey() === key) this.removed.emit()
   }
 
   protected reload(): void {
@@ -518,78 +450,39 @@ export class SettingsSourcePaneComponent {
       return
     }
 
-    this.savingConfig.set(true)
-    this.saveError.set(null)
-
-    try {
-      const response = await this.activity.saveProviderConfig(request)
-      // Before the new snapshot resets the fields, which would read the draft again.
-      this.drafts.delete(this.selectionKey())
-      this.config.set(response.snapshot)
-      this.toast.success(`${request.label ?? this.provider().label} saved`)
-    } catch (error) {
-      this.saveError.set(extractBackendErrorMessage(error, 'Failed to save provider settings.'))
-    } finally {
-      this.savingConfig.set(false)
+    const draft = this.draft()
+    if (draft === null) return
+    const key = this.selectionKey()
+    const label = request.label ?? this.provider().label
+    // The draft sent: edits made after it (in a pane opened again) are not cleared by its answer.
+    const revision = this.drafts.set(key, draft)
+    const readsAtSend = this.snapshotReads
+    const saved = await this.operations.run(key, 'save', 'Failed to save provider settings.', () =>
+      this.activity.saveProviderConfig(request)
+    )
+    if (!saved.ok) return
+    // Before the new snapshot resets the fields, which would read the draft again.
+    this.drafts.settled(key, revision)
+    this.toast.success(`${label} saved`)
+    // Another source shown meanwhile keeps its fields and edits; it reads the snapshot anew when
+    // it is opened again.
+    if (this.selectionKey() !== key) return
+    // The answer's snapshot shows only if it is still the newest: of the host on screen, with no
+    // later install of the sources on screen and no read of the file since the save was sent,
+    // which may be newer than both. Otherwise the snapshot is read again.
+    const newest =
+      this.activity.receiptStanding(saved.value.installed) === 'current' &&
+      this.snapshotReads === readsAtSend
+    if (newest) {
+      this.config.set(saved.value.snapshot)
+    } else {
+      this.config.reload()
     }
   }
+}
 
-  /**
-   * `null` resets a configured list to its default, an array replaces it (empty means none), and
-   * `undefined` means unchanged.
-   */
-  private pendingListValue(field: ListField): string[] | null | undefined {
-    if (this.resetLists().has(field.key)) {
-      return field.isSet ? null : undefined
-    }
-
-    const items = cleanItems(this.listDrafts()[field.key] ?? [])
-    return sameItems(items, this.initialLists()[field.key] ?? []) ? undefined : items
-  }
-
-  private initialValueFor(field: SingleField): string {
-    const value = field.secret ? '' : (field.value ?? '')
-    if (field.valueType !== 'bool') {
-      return value
-    }
-
-    const normalized = value.trim().toLowerCase()
-    return normalized === 'true' || normalized === 'false' ? normalized : value
-  }
-
-  private statusIcon(status: ProviderStatus): string {
-    switch (status) {
-      case 'checking':
-        return 'hourglass_empty'
-      case 'available':
-        return 'check_circle'
-      case 'degraded':
-        return 'warning_amber'
-      case 'unavailable':
-        return 'block'
-    }
-  }
-
-  private statusTitle(status: ProviderStatus, problem: ProviderProblem | undefined): string {
-    switch (status) {
-      case 'checking':
-        return 'Checking'
-      case 'available':
-        return 'Ready to collect'
-      case 'degraded':
-        return 'Running with issues'
-      case 'unavailable':
-        switch (problem) {
-          case 'timedOut':
-            return 'Startup check timed out'
-          case 'unsupported':
-            return 'Not supported on this system'
-          case 'notConfigured':
-            return 'Not configured'
-          case 'failed':
-          case undefined:
-            return 'Not available'
-        }
-    }
-  }
+/** Why the snapshot could not be read, as the loader made it. */
+function loadFailureOf(error: Error | undefined): Failure | null {
+  if (error === undefined) return null
+  return error instanceof FailureError ? error.failure : failureOf(error)
 }

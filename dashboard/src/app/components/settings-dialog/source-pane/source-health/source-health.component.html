@@ -1,0 +1,32 @@
+<section class="health" [attr.data-status]="info().status" aria-labelledby="source-health-title">
+  <mat-icon class="health-icon">{{ health().icon }}</mat-icon>
+  <div class="health-copy">
+    <h3 id="source-health-title" class="health-title">{{ health().title }}</h3>
+    <p class="health-reason">{{ health().reason }}</p>
+    <p class="health-meta">
+      {{ health().checking ? 'Started' : 'Checked' }} {{ checkedAtLabel() }} ·
+      <span role="list" aria-label="Supported operating systems">
+        @for (os of info().supportedOs; track os; let last = $last) {
+          <span role="listitem">{{ supportedOsLabel(os) }}</span
+          >{{ last ? '' : ', ' }}
+        }
+      </span>
+    </p>
+  </div>
+  @if (canRecheck() || rechecking()) {
+    <button
+      appButton
+      size="sm"
+      icon="refresh"
+      class="health-action"
+      [busy]="rechecking()"
+      [disabled]="rechecking()"
+      (click)="recheck.emit()"
+    >
+      Check again
+    </button>
+  }
+</section>
+@if (failure(); as failure) {
+  <app-feedback tone="error" block>{{ failure }}</app-feedback>
+}

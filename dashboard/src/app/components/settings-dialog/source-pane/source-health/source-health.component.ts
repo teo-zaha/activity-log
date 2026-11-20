@@ -1,0 +1,100 @@
+import { Component, computed, input, output } from '@angular/core'
+import { MatIconModule } from '@angular/material/icon'
+import type { ProviderInfo, ProviderProblem, ProviderStatus } from '../../../../generated/activity'
+import { supportedOsLabel } from '../../../../providers/source-catalog'
+import { ButtonComponent } from '../../../button/button.component'
+import { FeedbackComponent } from '../../../feedback/feedback.component'
+
+interface ProviderHealthVm {
+  readonly icon: string
+  readonly title: string
+  readonly reason: string
+  /** The startup check has not finished; `checkedAt` is when it started. */
+  readonly checking: boolean
+}
+
+/** A source's startup check: how it went, when, on which systems, and "Check again". */
+@Component({
+  selector: 'app-source-health',
+  imports: [ButtonComponent, FeedbackComponent, MatIconModule],
+  templateUrl: './source-health.component.html',
+  styleUrl: './source-health.component.scss',
+})
+export class SourceHealthComponent {
+  readonly info = input.required<ProviderInfo>()
+  /** From the press until the backend has accepted the new check. */
+  readonly rechecking = input(false)
+  /** Why the last "Check again" was refused. */
+  readonly failure = input<string | null>(null)
+  readonly recheck = output<void>()
+
+  protected readonly supportedOsLabel = supportedOsLabel
+
+  protected readonly health = computed<ProviderHealthVm>(() => {
+    const { status, reason, problem } = this.info()
+    const checking = status === 'checking'
+    return {
+      icon: problem === 'timedOut' ? 'timer_off' : statusIcon(status),
+      title: statusTitle(status, problem),
+      reason:
+        reason ??
+        (checking
+          ? 'The startup check is still running.'
+          : 'No issues were reported during the latest provider inspection.'),
+      checking,
+    }
+  })
+
+  /** A source whose check or collection failed can be checked again; one on another OS cannot. */
+  protected readonly canRecheck = computed(() => {
+    const { status, problem } = this.info()
+    return (status === 'unavailable' || status === 'degraded') && problem !== 'unsupported'
+  })
+
+  protected readonly checkedAtLabel = computed(() => {
+    const checkedAt = new Date(this.info().checkedAt)
+    if (Number.isNaN(checkedAt.getTime())) return 'at startup'
+    return checkedAt.toLocaleString('en-GB', {
+      day: 'numeric',
+      month: 'short',
+      hour: '2-digit',
+      minute: '2-digit',
+    })
+  })
+}
+
+function statusIcon(status: ProviderStatus): string {
+  switch (status) {
+    case 'checking':
+      return 'hourglass_empty'
+    case 'available':
+      return 'check_circle'
+    case 'degraded':
+      return 'warning_amber'
+    case 'unavailable':
+      return 'block'
+  }
+}
+
+function statusTitle(status: ProviderStatus, problem: ProviderProblem | undefined): string {
+  switch (status) {
+    case 'checking':
+      return 'Checking'
+    case 'available':
+      return 'Ready to collect'
+    case 'degraded':
+      return 'Running with issues'
+    case 'unavailable':
+      switch (problem) {
+        case 'timedOut':
+          return 'Startup check timed out'
+        case 'unsupported':
+          return 'Not supported on this system'
+        case 'notConfigured':
+          return 'Not configured'
+        case 'failed':
+        case undefined:
+          return 'Not available'
+      }
+  }
+}
