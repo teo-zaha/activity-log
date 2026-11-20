@@ -1,13 +1,16 @@
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
-use crate::model::{BusyStatus, DescriptionBlock, MeetingWeight};
+use crate::model::{
+    BusyStatus, DescriptionBlock, MeetingWeight, activity::activity_entry::source_named,
+};
 
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
 #[ts(export, rename_all = "camelCase")]
 pub struct OutlookEntry {
     #[ts(type = "\"outlook\"")]
+    #[serde(deserialize_with = "outlook_source")]
     pub source: String,
     /// The name of the connection within its kind, such as `oss`; set by the runtime.
     #[serde(default)]
@@ -23,7 +26,10 @@ pub struct OutlookEntry {
     #[serde(skip_serializing_if = "Option::is_none")]
     #[ts(optional)]
     pub organizer: Option<String>,
-    pub is_organizer: bool,
+    /// Whether the user organizes it; absent when Outlook did not say (a read it refused).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub is_organizer: Option<bool>,
     pub duration_minutes: i32,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[ts(optional)]
@@ -43,4 +49,8 @@ pub struct OutlookEntry {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[ts(optional)]
     pub join_url: Option<String>,
+}
+
+fn outlook_source<'de, D: serde::Deserializer<'de>>(deserializer: D) -> Result<String, D::Error> {
+    source_named(deserializer, "outlook")
 }

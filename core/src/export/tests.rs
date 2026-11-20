@@ -28,7 +28,7 @@ fn meeting(timestamp: &str) -> ActivityEntry {
         title: "Planning".to_string(),
         location: Some("Room 1".to_string()),
         organizer: None,
-        is_organizer: true,
+        is_organizer: Some(true),
         duration_minutes: 30,
         busy_status: None,
         meeting_weight: MeetingWeight::Busy,

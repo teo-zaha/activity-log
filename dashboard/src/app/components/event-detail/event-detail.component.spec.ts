@@ -141,6 +141,28 @@ describe('EventDetailComponent', () => {
     expect(screen.getByText('Status').nextElementSibling?.textContent).toBe('Working elsewhere')
   })
 
+  it('shows the role only when Outlook said it, never an unknown one as attendee', async () => {
+    const meeting = {
+      source: 'outlook' as const,
+      connection: 'default',
+      timestamp: '2026-11-17T09:00:00Z',
+      title: 'Planning',
+      organizer: 'Alex',
+      durationMinutes: 30,
+      meetingWeight: 'busy' as const,
+    }
+    const attended = createEntryAdapter({ ...meeting, id: 'attended', isOrganizer: false })
+    const unknown = createEntryAdapter({ ...meeting, id: 'unknown' })
+
+    const { activity } = await renderDetails([attended, unknown], { event: attended.trackKey })
+    expect(screen.getByText('Role').nextElementSibling?.textContent).toBe('Attendee')
+
+    activity.openEventKey.set(unknown.trackKey)
+    await vi.waitFor(() => expect(screen.queryByText('Role')).toBeNull())
+    expect(screen.getByText('Organizer').nextElementSibling?.textContent).toBe('Alex')
+    expect(unknown.meta).not.toMatch(/attendee|organizer/)
+  })
+
   it('closes on Escape', async () => {
     const entry = createEntryAdapter(activityLog.entries[0])
     const { activity } = await renderDetails([entry], { event: entry.trackKey })

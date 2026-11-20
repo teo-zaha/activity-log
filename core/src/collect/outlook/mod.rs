@@ -275,7 +275,7 @@ fn normalize_outlook_event(event: RawOutlookEvent) -> OutlookEntry {
         title: event.subject.unwrap_or_else(|| "(No title)".to_string()),
         location: event.location,
         organizer: event.organizer,
-        is_organizer: event.is_organizer.unwrap_or(false),
+        is_organizer: event.is_organizer,
         duration_minutes: duration_minutes as i32,
         busy_status: event.busy_status,
         meeting_weight: MeetingWeight::of(event.busy_status),
@@ -283,6 +283,14 @@ fn normalize_outlook_event(event: RawOutlookEvent) -> OutlookEntry {
         description_blocks: meeting.blocks,
         join_url: meeting.join_url,
     }
+}
+
+/// Whether the user organizes an event, from `AppointmentItem.MeetingStatus`: a plain
+/// appointment (`olNonMeeting`, 0) or a meeting they set up (`olMeeting`, 1). A read that failed
+/// (Outlook's Object Model Guard can refuse it) leaves it unknown.
+#[cfg(any(target_os = "windows", test))]
+pub(crate) fn is_organizer_from_com(meeting_status: Option<i32>) -> Option<bool> {
+    meeting_status.map(|status| matches!(status, 0 | 1))
 }
 
 /// `AppointmentItem.BusyStatus` (`OlBusyStatus`).
