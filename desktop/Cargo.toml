@@ -25,6 +25,8 @@ tauri-plugin-window-state = "2.5.0"
 tokio.workspace = true
 
 [target.'cfg(windows)'.dependencies]
+# The version Tauri's wry uses, for the controller `WebviewWindow::with_webview` hands out.
+webview2-com = "0.39.1"
 windows = { version = "0.62.2", features = [
     "Win32_Foundation",
     "Win32_Graphics_Gdi",

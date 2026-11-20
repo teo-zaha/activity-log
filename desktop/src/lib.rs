@@ -1,4 +1,5 @@
 mod app_state;
+mod browser_keys;
 mod commands;
 mod deep_link;
 mod devtools;
@@ -49,6 +50,7 @@ pub fn run() {
             deep_link::setup(app.handle());
             if let Some(window) = app.get_webview_window(deep_link::MAIN_WINDOW) {
                 window_state::restore_before_show(&window);
+                browser_keys::leave_to_page(&window);
                 devtools::open_if_asked(&window);
                 after_show(window);
             }
