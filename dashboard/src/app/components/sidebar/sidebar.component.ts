@@ -1,102 +1,42 @@
-import { Component, computed, inject } from '@angular/core'
+import { NgTemplateOutlet } from '@angular/common'
+import { Component, type TemplateRef, inject, input } from '@angular/core'
 import { MatIconModule } from '@angular/material/icon'
 import { MatTooltipModule } from '@angular/material/tooltip'
 import { RouterLink, RouterLinkActive } from '@angular/router'
-import { AutoAnimateDirective } from '../auto-animate/auto-animate.directive'
-import { mediaQuery } from '@signality/core/browser/media-query'
-import type { ConnectionKey } from '../../providers/connection'
-import { VIEW_OPTIONS } from '../../models/view-option'
+import { NAV_GROUPS } from '../../models/nav'
 import { ActivityService } from '../../services/activity.service'
-import { failureWhile } from '../../services/failure'
-import type { ProviderViewModel } from '../../services/types'
+import { BreakpointState } from '../../services/breakpoint-state.service'
 import type { ViewMode } from '../../utils/app-url'
 import { viewCommands } from '../../utils/app-url'
-import { downQuery } from '../../utils/breakpoints'
-import { IconButtonComponent } from '../button/icon-button.component'
-import { ProviderIconComponent } from '../provider-icon/provider-icon.component'
 import { SettingsDialogLauncher } from '../settings-dialog/settings-dialog-launcher.service'
-import type { SettingsTarget } from '../settings-dialog/settings-dialog.types'
-import { StatusDotComponent } from '../ui-status/status-dot.component'
 
+/**
+ * The navigation, drawn from `NAV_GROUPS`, and Settings: a column on wide screens, a rail of icons
+ * on narrower ones, and on a phone the bottom bar, with Settings as its last tab.
+ */
 @Component({
   selector: 'app-sidebar',
-  imports: [
-    AutoAnimateDirective,
-    IconButtonComponent,
-    MatIconModule,
-    MatTooltipModule,
-    RouterLink,
-    RouterLinkActive,
-    ProviderIconComponent,
-    StatusDotComponent,
-  ],
+  imports: [MatIconModule, MatTooltipModule, NgTemplateOutlet, RouterLink, RouterLinkActive],
   templateUrl: './sidebar.component.html',
   styleUrl: './sidebar.component.scss',
 })
 export class SidebarComponent {
-  protected readonly activity = inject(ActivityService)
+  /** The layout's part of the sidebar, such as the views' source chips; none on other pages. */
+  readonly sources = input<TemplateRef<unknown> | null>(null)
+
+  private readonly activity = inject(ActivityService)
   private readonly settings = inject(SettingsDialogLauncher)
-  private readonly belowTablet = mediaQuery(downQuery('tablet'))
+  private readonly breakpoints = inject(BreakpointState)
 
-  protected readonly views = VIEW_OPTIONS
-  protected readonly isPhone = mediaQuery(downQuery('phone'))
-  protected readonly isRail = computed(() => this.belowTablet() && !this.isPhone())
-  /**
-   * On a phone the settings are the bottom bar's last tab: its views are not current then, and the
-   * source chips, which filter the views, are left out.
-   */
+  protected readonly groups = NAV_GROUPS
+  protected readonly isPhone = this.breakpoints.phone
+  protected readonly isRail = this.breakpoints.rail
+  /** On a phone the settings are the bottom bar's last tab: its views are not current then. */
   protected readonly settingsTab = this.settings.pageOpen
-
-  protected readonly issuesTooltip = computed(() =>
-    this.activity
-      .unusableProviders()
-      .map(provider => `${provider.label}: ${provider.info.reason ?? 'Unavailable'}`)
-      .join('\n')
-  )
-
-  protected readonly issuesAriaLabel = computed(() => {
-    const count = this.activity.unusableProviders().length
-    return `${count} ${count === 1 ? 'source' : 'sources'} unavailable. ${this.issuesTooltip()}. Open settings`
-  })
 
   /** A calendar view opens on the day shown last. */
   protected viewLink(view: ViewMode): string[] {
     return viewCommands(view, this.activity.selectedDay())
-  }
-
-  protected isActive(key: ConnectionKey): boolean {
-    return this.activity.activeConnections().has(key)
-  }
-
-  protected sourceTooltip(provider: ProviderViewModel): string {
-    if (provider.info.status === 'checking') return `${provider.label}: checking`
-    if (provider.collecting) return `${provider.label}: collecting`
-    const parts = this.isRail() ? [`${provider.label} · ${provider.count}`] : []
-    if (provider.tooltip) parts.push(provider.tooltip)
-    return parts.join('\n')
-  }
-
-  protected sourceAriaLabel(provider: ProviderViewModel): string {
-    if (provider.info.status === 'checking') return `${provider.label}, checking`
-    if (provider.collecting) return `${provider.label}, collecting`
-    const reason = provider.tooltip ? `, ${provider.tooltip}` : ''
-    return `${provider.label}, ${provider.count} events${reason}`
-  }
-
-  /** The backend says which problems a new check can fix (`ProviderInfo.recheckable`). */
-  protected canRecheck(provider: ProviderViewModel): boolean {
-    return provider.info.recheckable
-  }
-
-  protected async recheck(provider: ProviderViewModel): Promise<void> {
-    try {
-      await this.activity.recheckConnection(provider.info.connection)
-    } catch (error) {
-      this.activity.notice.set({
-        origin: 'recheck',
-        failure: failureWhile(`Checking ${provider.label} again`, error),
-      })
-    }
   }
 
   /** Tapping the open tab again keeps the page it is on. */
@@ -104,7 +44,7 @@ export class SidebarComponent {
     if (!this.settingsTab()) this.openSettings()
   }
 
-  protected openSettings(target?: SettingsTarget): void {
-    this.settings.open(target)
+  protected openSettings(): void {
+    this.settings.open()
   }
 }

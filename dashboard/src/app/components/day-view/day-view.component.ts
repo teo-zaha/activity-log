@@ -22,6 +22,7 @@ import {
   nowMarker,
 } from '../calendar-layout'
 import { injectCalendarZoom } from '../calendar-zoom'
+import { NavigationMotionService } from '../../navigation-motion'
 
 export const HOUR_START = 0
 export const HOUR_END = 23
@@ -71,9 +72,15 @@ interface PositionedAllDayEntry {
   imports: [IconButtonComponent, ButtonComponent, MatIconModule],
   templateUrl: './day-view.component.html',
   styleUrl: './day-view.component.scss',
+  // Cross-fades with the calendar view it replaces (`navigation-motion.ts`, `styles.scss`).
+  host: {
+    '(animate.enter)': "motion.enter($event, 'view')",
+    '(animate.leave)': "motion.leave($event, 'view')",
+  },
 })
 export class DayViewComponent {
   protected readonly activity = inject(ActivityService)
+  protected readonly motion = inject(NavigationMotionService)
   private readonly isPhone = mediaQuery(downQuery('phone'))
   private readonly now = injectMinuteClock()
   private readonly today = computed(() => dayKeyOf(this.now()))

@@ -11,12 +11,14 @@ import {
   Injector,
   input,
   linkedSignal,
+  viewChild,
 } from '@angular/core'
 import { mediaQuery } from '@signality/core/browser/media-query'
 import { connectionKey, isSource } from '../../providers/connection'
 import { getProviderAdapter } from '../../providers/provider-adapter'
 import { ActivityService } from '../../services/activity.service'
 import { downQuery } from '../../utils/breakpoints'
+import { NavigationMotionService } from '../../navigation-motion'
 import { PageHeaderComponent } from '../page-header/page-header.component'
 import { ButtonComponent } from '../button/button.component'
 import { EmptyStateComponent } from '../empty-state/empty-state.component'
@@ -74,6 +76,9 @@ export class SettingsDialogComponent {
   /** `page` fills the window it is in; `dialog` is a panel of its own. */
   readonly chrome = input<'dialog' | 'page'>('dialog')
   protected readonly isPhone = mediaQuery(downQuery('phone'))
+  protected readonly motion = inject(NavigationMotionService)
+  private readonly nav = viewChild(SettingsNavComponent)
+  private readonly pageTitle = viewChild<ElementRef<HTMLElement>>('pageTitle')
 
   /** The URL's section; while the settings close, the URL has none and the last one stays. */
   private readonly selection = linkedSignal<SettingsSelection | null, SettingsSelection>({
@@ -154,17 +159,15 @@ export class SettingsDialogComponent {
 
   constructor() {
     // On a phone the page that had focus is gone after moving between the list and a section:
-    // the new page's title takes it, so it is read out.
+    // the new page's title takes it, so it is read out. The page that leaves is still in the DOM
+    // while it slides out; the queries no longer hold it.
     const host = inject<ElementRef<HTMLElement>>(ElementRef).nativeElement
     const injector = inject(Injector)
     let shown: SettingsSelection | null = null
     effect(() => {
       const page = this.isPhone() ? (this.showsHome() ? 'home' : this.section()) : null
       if (page !== null && shown !== null && page !== shown) {
-        afterNextRender(
-          () => host.querySelector<HTMLElement>('#settings-page-title, .home-title')?.focus(),
-          { injector }
-        )
+        afterNextRender(() => this.titleOnScreen()?.focus(), { injector })
       }
       shown = page
     })
@@ -181,8 +184,18 @@ export class SettingsDialogComponent {
       }
       const lost = active === null || active === document.body || host.contains(active)
       if (!lost || !hadFocus || this.activity.settings() === null) return
-      host.querySelector<HTMLElement>('#settings-page-title, .home-title')?.focus()
+      this.titleOnScreen()?.focus()
     })
+  }
+
+  /** Focus to the open section's title, or to the phone's list title. */
+  focusTitle(): void {
+    this.titleOnScreen()?.focus()
+  }
+
+  /** The open section's title, or the phone's list title. */
+  private titleOnScreen(): HTMLElement | undefined {
+    return (this.pageTitle() ?? this.nav()?.homeTitle())?.nativeElement
   }
 
   /** From the list: on a phone the section is a page of its own, Back returns to the list. */

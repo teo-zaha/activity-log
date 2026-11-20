@@ -1,0 +1,108 @@
+<section class="sources" aria-labelledby="source-list-label">
+  <div class="section-head">
+    <span id="source-list-label" class="section-label">Sources</span>
+    @if (activity.providers().length > 1 && !isRail()) {
+      <span class="section-hint">Double-click to solo</span>
+    }
+  </div>
+
+  <div class="source-list" appAutoAnimate>
+    @for (provider of activity.providers(); track provider.key) {
+      <button
+        type="button"
+        class="source-chip"
+        [class.active]="isActive(provider.key)"
+        [class.is-checking]="provider.info.status === 'checking'"
+        [attr.aria-pressed]="isActive(provider.key)"
+        [attr.aria-disabled]="provider.info.status === 'checking' || null"
+        [attr.data-src]="provider.chipKey"
+        [attr.aria-label]="sourceAriaLabel(provider)"
+        (click)="activity.toggleConnection(provider.key)"
+        (dblclick)="activity.isolateConnection(provider.key)"
+        [matTooltip]="sourceTooltip(provider)"
+        [matTooltipDisabled]="!sourceTooltip(provider)"
+        [matTooltipPosition]="isRail() ? 'right' : 'above'"
+      >
+        <app-provider-icon class="source-icon" [source]="provider.chipKey" size="sm" />
+        <span class="source-label">{{ provider.label }}</span>
+        @if (provider.info.status === 'degraded') {
+          <app-status-dot class="source-warn" status="degraded" size="sm" />
+        }
+        @if (provider.info.status === 'checking' || provider.collecting) {
+          <span class="source-checking" aria-hidden="true"></span>
+        } @else {
+          <span class="source-count">{{ provider.count }}</span>
+        }
+      </button>
+    }
+
+    <button
+      type="button"
+      class="add-source"
+      (click)="openSettings('add')"
+      matTooltip="Add source"
+      [matTooltipDisabled]="!isRail()"
+      matTooltipPosition="right"
+    >
+      <span class="add-icon" aria-hidden="true">
+        <mat-icon>add</mat-icon>
+      </span>
+      <span class="source-label">Add source</span>
+    </button>
+
+    @if (activity.unusableProviders().length && (isRail() || isPhone())) {
+      <button
+        type="button"
+        class="issues-chip"
+        (click)="openSettings(activity.unusableProviders()[0].key)"
+        [matTooltip]="issuesTooltip()"
+        [matTooltipPosition]="isRail() ? 'right' : 'above'"
+        [attr.aria-label]="issuesAriaLabel()"
+      >
+        <mat-icon>report_gmailerrorred</mat-icon>
+        <span class="issues-count">{{ activity.unusableProviders().length }}</span>
+        <span class="issues-label">unavailable</span>
+      </button>
+    }
+  </div>
+</section>
+
+@if (activity.unusableProviders().length && !isRail() && !isPhone()) {
+  <section class="issues" aria-labelledby="source-issues-label">
+    <span id="source-issues-label" class="section-label">Unavailable</span>
+    @for (provider of activity.unusableProviders(); track provider.key) {
+      <div class="issue-row">
+        <button
+          type="button"
+          class="issue"
+          [class.has-action]="canRecheck(provider)"
+          (click)="openSettings(provider.key)"
+          [matTooltip]="provider.info.reason ?? ''"
+          [matTooltipDisabled]="!provider.info.reason"
+          matTooltipPosition="right"
+        >
+          <app-provider-icon class="issue-icon" [source]="provider.chipKey" size="sm" />
+          <span class="issue-copy">
+            <span class="issue-name">{{ provider.label }}</span>
+            <span class="issue-reason">{{ provider.info.reason ?? 'Unavailable' }}</span>
+          </span>
+          @if (!canRecheck(provider)) {
+            <app-status-dot [status]="provider.info.status" size="sm" [glow]="false" />
+          }
+        </button>
+        @if (canRecheck(provider)) {
+          <button
+            appIconButton
+            size="sm"
+            icon="refresh"
+            class="issue-action"
+            [label]="'Check ' + provider.label + ' again'"
+            matTooltip="Check again"
+            matTooltipPosition="right"
+            (click)="recheck(provider)"
+          ></button>
+        }
+      </div>
+    }
+  </section>
+}

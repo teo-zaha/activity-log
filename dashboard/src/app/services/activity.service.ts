@@ -57,6 +57,7 @@ export class ActivityService {
   readonly selectedDay = this.viewState.selectedDay
   readonly openEventKey = this.viewState.openEventKey
   readonly openGroupKeys = this.viewState.openGroupKeys
+  readonly detailsOpen = this.viewState.detailsOpen
   readonly hourHeight = this.viewState.hourHeight
   readonly weekDays = this.viewState.weekDays
   readonly settings = this.viewState.settings

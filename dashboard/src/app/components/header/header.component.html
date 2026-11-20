@@ -16,61 +16,10 @@
       <span class="brand-title">Activity Log</span>
     </div>
 
-    <!-- The Settings tab on a phone is a sub-layout: no range and no chips, they filter views. -->
-    @if (!settingsTab()) {
-      <form class="range-form" [formRoot]="rangeForm" aria-label="Collection date range">
-        <div class="range" [class.is-disabled]="activity.isLoading()">
-          <label class="range-field">
-            <span class="range-label">From</span>
-            <input
-              class="range-input"
-              aria-label="From date"
-              [matDatepicker]="pickerFrom"
-              [formField]="rangeForm.from"
-              [max]="dateToObj()"
-              (dateChange)="activity.setDateFrom(fmtDate($event.value))"
-            />
-            <mat-datepicker-toggle class="range-toggle" [for]="pickerFrom" />
-            <mat-datepicker #pickerFrom />
-          </label>
-
-          <mat-icon class="range-sep">arrow_forward</mat-icon>
-
-          <label class="range-field">
-            <span class="range-label">To</span>
-            <input
-              class="range-input"
-              aria-label="To date"
-              [matDatepicker]="pickerTo"
-              [formField]="rangeForm.to"
-              [min]="dateFromObj()"
-              (dateChange)="activity.setDateTo(fmtDate($event.value))"
-            />
-            <mat-datepicker-toggle class="range-toggle" [for]="pickerTo" />
-            <mat-datepicker #pickerTo />
-          </label>
-        </div>
-
-        <button
-          appButton
-          type="submit"
-          variant="primary"
-          size="lg"
-          icon="sync"
-          class="btn-collect"
-          [busy]="activity.isLoading()"
-          [disabled]="activity.isLoading()"
-          [attr.aria-label]="activity.isLoading() ? 'Collecting activity' : 'Collect activity'"
-          matTooltip="Collect activity for the selected range"
-        >
-          <!-- Both labels share one grid cell so the button keeps its width while busy. -->
-          <span class="btn-collect-label" aria-hidden="true">
-            <span [class.is-inactive]="activity.isLoading()">Collect</span>
-            <span [class.is-inactive]="!activity.isLoading()">Collecting…</span>
-          </span>
-        </button>
-      </form>
-    }
+    <!-- What the layout on screen puts in the header row, such as the views' range. -->
+    <div class="header-center">
+      <ng-container *ngTemplateOutlet="center()" />
+    </div>
 
     <div class="header-actions" role="group" aria-label="Export and share">
       <button

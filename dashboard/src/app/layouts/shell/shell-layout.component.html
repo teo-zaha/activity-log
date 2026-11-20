@@ -1,0 +1,20 @@
+<!-- Under modal details everything else is out of reach: focus, keyboard, pointer, a11y tree. -->
+<app-header [center]="headerSlot()" [attr.inert]="underDetails() ? '' : null" />
+
+<div class="shell-body" [attr.inert]="underDetails() ? '' : null">
+  <app-sidebar [sources]="sidebarSlot()" />
+
+  <main
+    id="main-content"
+    class="main-content"
+    tabindex="-1"
+    [attr.aria-busy]="activity.isLoading()"
+  >
+    <div class="view" [class.under-settings]="settingsTab()">
+      <router-outlet />
+    </div>
+    <app-settings-page-host />
+  </main>
+</div>
+
+<app-event-detail />

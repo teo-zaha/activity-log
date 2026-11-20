@@ -1,6 +1,9 @@
 <div class="settings-shell" [class.shows-home]="showsHome()">
+  <!-- On a phone the list and a section are pages: one slides over the other (`styles.scss`). -->
   @if (!isPhone() || showsHome()) {
     <app-settings-nav
+      (animate.enter)="motion.enter($event, 'page')"
+      (animate.leave)="motion.leave($event, 'page')"
       [selection]="section()"
       [providers]="providerRows()"
       [home]="isPhone()"
@@ -9,7 +12,12 @@
   }
 
   @if (!showsHome()) {
-    <section class="settings-content" aria-labelledby="settings-page-title">
+    <section
+      class="settings-content"
+      aria-labelledby="settings-page-title"
+      (animate.enter)="motion.enter($event, 'page')"
+      (animate.leave)="motion.leave($event, 'page')"
+    >
       <app-page-header
         class="content-header"
         [backLabel]="isPhone() ? 'Back to settings' : null"
@@ -20,7 +28,7 @@
         @if (selectedProvider(); as provider) {
           <app-provider-icon [source]="provider.info.connection.source" size="sm" />
         }
-        <h2 id="settings-page-title" tabindex="-1" cdkFocusInitial>{{ title() }}</h2>
+        <h2 #pageTitle id="settings-page-title" tabindex="-1" cdkFocusInitial>{{ title() }}</h2>
         @if (pageActions(); as actions) {
           <div pageAction class="page-actions">
             <ng-container *ngTemplateOutlet="actions" />

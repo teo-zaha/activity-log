@@ -1,4 +1,5 @@
 @use '@angular/material' as mat;
+@use './app/components/dashboard-shared' as ui;
 @use './app/components/dashboard-utilities';
 @use './splash';
 
@@ -8,11 +9,13 @@
 @import '@fontsource/inter/600.css';
 @import '@fontsource/inter/700.css';
 
+// Icons are ligatures: a fallback font would draw their names (`timeline`) clipped in their box.
+// `block` keeps them blank until the font is in, then draws them, however late it comes.
 @font-face {
   font-family: 'Material Icons';
   font-style: normal;
   font-weight: 400;
-  font-display: optional;
+  font-display: block;
   src:
     url('material-icons/iconfont/material-icons.woff2') format('woff2'),
     url('material-icons/iconfont/material-icons.woff') format('woff');
@@ -732,106 +735,95 @@ body {
   }
 }
 
-// ── View transitions ─────────────────────────────────────────────────────────
-// Router navigations between views (`view-transitions.ts`): only the main content moves, the
-// header and sidebar stay still. `data-view-transition` on <html> says how it moves.
+// ── Navigation motion ────────────────────────────────────────────────────────
+// What a navigation puts in or takes out gets its motion as classes (`navigation-motion.ts`):
+// `view-enter`/`view-leave` on the calendar views, `page-enter`/`page-leave` on the pages of the
+// event details and the settings, each with `motion-switch`, `motion-page-in` or
+// `motion-page-out`, until its own animation ends. Without them it comes and goes at once. What
+// leaves is `inert` and takes no pointer.
 
-#main-content {
-  view-transition-name: main-content;
+.view-leave,
+.page-leave {
+  pointer-events: none;
 }
 
-::view-transition-old(root),
-::view-transition-new(root) {
-  animation: none;
-}
-
-// The old view fades out quickly; the new one fades in while rising a little.
-::view-transition-group(main-content) {
-  animation-duration: 280ms;
-  animation-timing-function: var(--ease-out);
-}
-
-html[data-view-transition='switch'] {
-  &::view-transition-old(main-content) {
-    animation: vt-fade-out 120ms ease-out both;
+@media (prefers-reduced-motion: no-preference) {
+  // The old view fades out quickly; the new one fades in while rising a little.
+  .view-enter.motion-switch {
+    animation: motion-rise-in 280ms var(--ease-out) both;
   }
 
-  &::view-transition-new(main-content) {
-    animation: vt-rise-in 280ms var(--ease-out) both;
+  .view-leave.motion-switch {
+    animation: motion-fade-out 120ms ease-out both;
+  }
+
+  // On a phone the details and the settings are pages: they slide in from the right and back
+  // out. The page on top moves; the one under it only dims and shifts a little.
+  @include ui.down('phone') {
+    .page-enter.motion-page-in {
+      animation: motion-page-from-right 240ms var(--ease-out) both;
+    }
+
+    .page-leave.motion-page-in {
+      animation: motion-page-to-left 240ms var(--ease-out) both;
+    }
+
+    .page-enter.motion-page-out {
+      animation: motion-page-from-left 240ms var(--ease-out) both;
+    }
+
+    .page-leave.motion-page-out {
+      animation: motion-page-to-right 240ms var(--ease-out) both;
+    }
+
+    // Two pages in one place: the one that slides is drawn over the other. Without weight, so a
+    // layer's own stacking (the details over the app) stays.
+    :where(.page-enter.motion-page-in, .page-leave.motion-page-out) {
+      z-index: 1;
+    }
+
+    // A page inside one that slides moves with it (the details' page as they open or close).
+    .page-enter .page-enter,
+    .page-leave .page-leave {
+      animation: none;
+    }
   }
 }
 
-@keyframes vt-fade-out {
+@keyframes motion-fade-out {
   to {
     opacity: 0;
   }
 }
 
-@keyframes vt-rise-in {
+@keyframes motion-rise-in {
   from {
     opacity: 0;
     transform: translateY(12px);
   }
 }
 
-// On a phone the event details and the settings are pages (`event-detail`, `settings-page`): they
-// slide in from the right and back out. The view underneath does not move, so it is not
-// snapshotted on its own; a long timeline would cost more to draw than the slide takes.
-html[data-view-transition^='page'] #main-content {
-  view-transition-name: none;
-}
-
-::view-transition-group(event-detail),
-::view-transition-group(settings-page) {
-  animation-duration: 240ms;
-  animation-timing-function: var(--ease-out);
-}
-
-html[data-view-transition='page-in'] {
-  &::view-transition-old(event-detail),
-  &::view-transition-old(settings-page) {
-    animation: vt-page-to-left 240ms var(--ease-out) both;
-  }
-
-  &::view-transition-new(event-detail),
-  &::view-transition-new(settings-page) {
-    animation: vt-page-from-right 240ms var(--ease-out) both;
-  }
-}
-
-html[data-view-transition='page-out'] {
-  &::view-transition-old(event-detail),
-  &::view-transition-old(settings-page) {
-    animation: vt-page-to-right 240ms var(--ease-out) both;
-  }
-
-  &::view-transition-new(event-detail),
-  &::view-transition-new(settings-page) {
-    animation: vt-page-from-left 240ms var(--ease-out) both;
-  }
-}
-
-@keyframes vt-page-from-right {
+@keyframes motion-page-from-right {
   from {
     transform: translateX(100%);
   }
 }
 
-@keyframes vt-page-to-right {
+@keyframes motion-page-to-right {
   to {
     transform: translateX(100%);
   }
 }
 
-// The page underneath only dims: it stays opaque, or the view below would show through it.
-@keyframes vt-page-to-left {
+// The page underneath only dims: it stays opaque, or what is below it would show through.
+@keyframes motion-page-to-left {
   to {
     transform: translateX(-30%);
     filter: brightness(0.92);
   }
 }
 
-@keyframes vt-page-from-left {
+@keyframes motion-page-from-left {
   from {
     transform: translateX(-30%);
     filter: brightness(0.92);

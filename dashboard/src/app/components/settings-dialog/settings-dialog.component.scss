@@ -5,7 +5,7 @@
   box-sizing: border-box;
   width: 100%;
   max-width: 100%;
-  overflow: hidden;
+  overflow: clip;
 }
 
 // ── Dialog on wide screens: the list beside the page ────────────────────────
@@ -24,7 +24,8 @@
     $background: var(--surface),
     $shadow: var(--panel-shadow-strong)
   );
-  overflow: hidden;
+  // Clipped, never scrolled: a page sliding in would otherwise let focus scroll it sideways.
+  overflow: clip;
   animation: u-rise 0.26s var(--ease-out);
 }
 
@@ -137,8 +138,13 @@
 // ── Phone: one page at a time ───────────────────────────────────────────────
 
 @include ui.down('phone') {
+  // The list and a section share one cell, so the one that comes slides over the one that goes.
   .settings-shell {
-    grid-template-columns: minmax(0, 1fr);
+    grid-template: minmax(0, 1fr) / minmax(0, 1fr);
+
+    > * {
+      grid-area: 1 / 1;
+    }
   }
 
   .content-header {

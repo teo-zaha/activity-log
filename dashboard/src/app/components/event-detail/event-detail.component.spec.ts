@@ -3,7 +3,7 @@ import { provideRouter } from '@angular/router'
 import { fireEvent, render, screen, within } from '@testing-library/angular'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { EntryKey } from '../../providers/connection'
-import type { SettingsSelection } from '../settings-dialog/settings-dialog.types'
+import { SettingsDialogLauncher } from '../settings-dialog/settings-dialog-launcher.service'
 import { createEntryAdapter } from '../../providers/provider-adapter'
 import type { EntryUiAdapter } from '../../providers/types'
 import { ActivityService } from '../../services/activity.service'
@@ -27,7 +27,7 @@ interface OpenDetails {
 interface FakeActivity {
   readonly openEventKey: WritableSignal<EntryKey | null>
   readonly openGroupKeys: WritableSignal<readonly EntryKey[]>
-  readonly settings: WritableSignal<SettingsSelection | null>
+  readonly detailsOpen: Signal<boolean>
   readonly dateFrom: Signal<string>
   readonly dateTo: Signal<string>
   readonly isLoading: WritableSignal<boolean>
@@ -42,6 +42,12 @@ interface FakeActivity {
   closeDetail(): void
 }
 
+/** Where the settings show, which decides the layer on top (`TopLayer`). */
+interface FakeSettings {
+  readonly dialogOpen: WritableSignal<boolean>
+  readonly pageOpen: WritableSignal<boolean>
+}
+
 function fakeActivity(entries: readonly EntryUiAdapter[], open: OpenDetails): FakeActivity {
   const openEventKey = signal<EntryKey | null>(open.event ?? null)
   const openGroupKeys = signal<readonly EntryKey[]>(open.events ?? [])
@@ -50,7 +56,7 @@ function fakeActivity(entries: readonly EntryUiAdapter[], open: OpenDetails): Fa
   return {
     openEventKey,
     openGroupKeys,
-    settings: signal<SettingsSelection | null>(null),
+    detailsOpen: computed(() => openEventKey() !== null || openGroupKeys().length > 0),
     // The collected range: the URL names none.
     dateFrom: signal('2026-11-01'),
     dateTo: signal('2026-11-30'),
@@ -80,12 +86,22 @@ async function renderDetails(
   entries: readonly EntryUiAdapter[],
   open: OpenDetails,
   providers: Provider[] = []
-): Promise<{ activity: FakeActivity; settle: () => Promise<void> }> {
+): Promise<{
+  activity: FakeActivity
+  settings: FakeSettings
+  settle: () => Promise<void>
+}> {
   const activity = fakeActivity(entries, open)
+  const settings: FakeSettings = { dialogOpen: signal(false), pageOpen: signal(false) }
   const { fixture } = await render(EventDetailComponent, {
-    providers: [provideRouter([]), ...providers, { provide: ActivityService, useValue: activity }],
+    providers: [
+      provideRouter([]),
+      ...providers,
+      { provide: ActivityService, useValue: activity },
+      { provide: SettingsDialogLauncher, useValue: settings },
+    ],
   })
-  return { activity, settle: () => fixture.whenStable() }
+  return { activity, settings, settle: () => fixture.whenStable() }
 }
 
 describe('EventDetailComponent', () => {
@@ -172,16 +188,16 @@ describe('EventDetailComponent', () => {
     expect(activity.openEventKey()).toBeNull()
   })
 
-  it('leaves Escape to the settings open over it, and to a dialog that handled it', async () => {
+  it('leaves Escape to the settings dialog open over it, and to a dialog that handled it', async () => {
     const entry = createEntryAdapter(activityLog.entries[0])
-    const { activity } = await renderDetails([entry], { event: entry.trackKey })
+    const { activity, settings } = await renderDetails([entry], { event: entry.trackKey })
     const drawer = screen.getByRole('dialog', { name: entry.title })
 
-    activity.settings.set('logs')
+    settings.dialogOpen.set(true)
     fireEvent.keyDown(drawer, { key: 'Escape' })
     expect(activity.openEventKey()).toBe(entry.trackKey)
 
-    activity.settings.set(null)
+    settings.dialogOpen.set(false)
     const handled = new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true })
     handled.preventDefault()
     drawer.dispatchEvent(handled)

@@ -2,10 +2,8 @@ import { TestBed } from '@angular/core/testing'
 import { emit } from '@tauri-apps/api/event'
 import { mockIPC, mockWindows } from '@tauri-apps/api/mocks'
 import { clearTauriMocks } from '../../testing/tauri-mocks'
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { RuntimeEnvironmentService } from './runtime-environment.service'
-
-const settled = async (): Promise<void> => new Promise(resolve => setTimeout(resolve))
 
 describe('RuntimeEnvironmentService', () => {
   afterEach(() => {
@@ -33,9 +31,11 @@ describe('RuntimeEnvironmentService', () => {
     )
 
     TestBed.inject(RuntimeEnvironmentService)
-    for (let tick = 0; tick < 5; tick++) await settled()
 
+    // The window API loads on demand and each read is a round trip: wait for what they show.
+    await vi.waitFor(() =>
+      expect(document.documentElement.classList.contains('fullscreen')).toBe(true)
+    )
     expect(reads).toBeGreaterThan(1)
-    expect(document.documentElement.classList.contains('fullscreen')).toBe(true)
   })
 })
