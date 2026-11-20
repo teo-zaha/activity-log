@@ -8,5 +8,6 @@ pub mod recheck_answer;
 pub mod run_end;
 pub mod run_id;
 pub mod run_outcome;
+pub mod runtime_ping;
 pub mod runtime_state;
 pub mod shown_activity;

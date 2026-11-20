@@ -25,6 +25,18 @@ impl CollectionKey {
     pub(crate) const UNKEYED: Self = Self(0);
 }
 
+/// How a recorded check changed a connection's collection key.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum KeyChange {
+    /// The check said what was known already, or nothing usable.
+    Kept,
+    /// The first answer for these values. Nothing is held under the key before it: a
+    /// connection is collected only once its check is recorded.
+    First,
+    /// Another answer than the one entries may be held under: whose entries they are changed.
+    Replaced,
+}
+
 /// What the checks of a connection's current values said about whose token it is.
 #[derive(Debug, Clone, PartialEq, Eq)]
 enum IdentityState {
@@ -98,13 +110,13 @@ impl KeyTable {
     }
 
     /// Records what a check of `id` said about its token's owner and returns the connection's
-    /// key with whether it changed; `None` for a connection not installed. A check that read
+    /// key with how it changed; `None` for a connection not installed. A check that read
     /// something replaces the state; one without a usable answer keeps it.
     pub(crate) fn record(
         &mut self,
         id: &ConnectionId,
         evidence: &IdentityEvidence,
-    ) -> Option<(CollectionKey, bool)> {
+    ) -> Option<(CollectionKey, KeyChange)> {
         let identity = match evidence {
             IdentityEvidence::Verified(identity) => Some(IdentityState::Verified(identity.clone())),
             IdentityEvidence::Unnamed => {
@@ -116,13 +128,18 @@ impl KeyTable {
         };
         let current = self.entries.get(id)?;
         let Some(identity) = identity.filter(|identity| *identity != current.identity) else {
-            return Some((current.key, false));
+            return Some((current.key, KeyChange::Kept));
+        };
+        let change = if current.identity == IdentityState::Unknown {
+            KeyChange::First
+        } else {
+            KeyChange::Replaced
         };
         let key = self.next_key();
         let entry = self.entries.get_mut(id)?;
         entry.identity = identity;
         entry.key = key;
-        Some((key, true))
+        Some((key, change))
     }
 
     fn next_key(&mut self) -> CollectionKey {

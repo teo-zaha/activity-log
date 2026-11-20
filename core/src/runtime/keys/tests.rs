@@ -5,7 +5,7 @@ use crate::{
     provider::connection::{Connection, ConnectionLocation, ConnectionValues},
 };
 
-use super::KeyTable;
+use super::{KeyChange, KeyTable};
 
 fn jira(label: &str, token: &str) -> Connection {
     Connection::new(
@@ -72,11 +72,17 @@ fn the_same_principal_found_again_keeps_the_key_and_another_one_changes_it() {
     let unknown = keys.key(&id()).unwrap();
 
     let (a, changed) = keys.record(&id(), &verified("a")).unwrap();
-    assert!(changed && a != unknown, "unknown to verified changes it");
-    assert_eq!(keys.record(&id(), &verified("a")), Some((a, false)));
+    assert!(
+        changed == KeyChange::First && a != unknown,
+        "unknown to verified changes it"
+    );
+    assert_eq!(
+        keys.record(&id(), &verified("a")),
+        Some((a, KeyChange::Kept))
+    );
 
     let (b, changed) = keys.record(&id(), &verified("b")).unwrap();
-    assert!(changed && b != a);
+    assert!(changed == KeyChange::Replaced && b != a);
 }
 
 #[test]
@@ -85,9 +91,9 @@ fn every_unnamed_check_gives_a_new_key() {
     let (a, _) = keys.record(&id(), &verified("a")).unwrap();
 
     let (first, changed) = keys.record(&id(), &IdentityEvidence::Unnamed).unwrap();
-    assert!(changed && first != a);
+    assert!(changed == KeyChange::Replaced && first != a);
     let (second, changed) = keys.record(&id(), &IdentityEvidence::Unnamed).unwrap();
-    assert!(changed && second != first);
+    assert!(changed == KeyChange::Replaced && second != first);
 }
 
 #[test]
@@ -97,10 +103,10 @@ fn a_refusal_changes_the_key_and_no_answer_keeps_it() {
 
     assert_eq!(
         keys.record(&id(), &IdentityEvidence::None),
-        Some((a, false))
+        Some((a, KeyChange::Kept))
     );
     let (denied, changed) = keys.record(&id(), &IdentityEvidence::Denied).unwrap();
-    assert!(changed && denied != a);
+    assert!(changed == KeyChange::Replaced && denied != a);
     assert_eq!(
         keys.record(&ConnectionId::new(Source::Jira, "other"), &verified("a")),
         None
@@ -117,7 +123,7 @@ fn an_edit_forgets_the_principal_of_the_old_values() {
 
     // The same account behind the new token is still a change from "nothing said yet".
     let (found, changed) = keys.record(&id(), &verified("a")).unwrap();
-    assert!(changed && found != edited);
+    assert!(changed == KeyChange::First && found != edited);
 }
 
 #[test]
