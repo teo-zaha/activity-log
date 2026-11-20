@@ -1,9 +1,9 @@
 use chrono_tz::Europe::Berlin;
 
-use super::{render_export, render_export_request};
+use super::{ExportError, render_export, render_export_request};
 use crate::model::{
     ActivityEntry, ActivityLog, ExportRequest, GitEntry, MeetingWeight, OutlookEntry, OutputFormat,
-    Source,
+    RangeError, Source,
 };
 
 fn git(timestamp: &str) -> ActivityEntry {
@@ -117,10 +117,7 @@ fn rejects_an_unknown_zone_and_a_bad_range() {
         "Mars/Olympus",
     ))
     .unwrap_err();
-    assert!(
-        zone.to_string()
-            .contains("Unknown time zone \"Mars/Olympus\"")
-    );
+    assert_eq!(zone, ExportError::UnknownZone("Mars/Olympus".to_string()));
 
     let backwards = render_export_request(&request(
         OutputFormat::Json,
@@ -129,7 +126,7 @@ fn rejects_an_unknown_zone_and_a_bad_range() {
         "Europe/Berlin",
     ))
     .unwrap_err();
-    assert!(format!("{backwards:#}").contains("end must be after start"));
+    assert_eq!(backwards, ExportError::Range(RangeError::Empty));
 }
 
 #[test]

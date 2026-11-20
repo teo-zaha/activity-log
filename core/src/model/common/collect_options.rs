@@ -1,5 +1,7 @@
 use chrono::{DateTime, NaiveDate, Utc};
 
+use crate::model::common::range_error::RangeError;
+
 /// The instants to collect, as the half-open range `[start, end)`.
 ///
 /// The backend never decides where a day begins: callers (the dashboard in the browser, the
@@ -16,12 +18,12 @@ impl CollectOptions {
     pub const MAX_DAYS: i64 = 3_653;
 
     /// Why the range cannot be collected: empty, backwards or longer than `MAX_DAYS`.
-    pub fn check(&self) -> Result<(), &'static str> {
+    pub fn check(&self) -> Result<(), RangeError> {
         if self.end <= self.start {
-            return Err("end must be after start");
+            return Err(RangeError::Empty);
         }
         if self.end - self.start > chrono::Duration::days(Self::MAX_DAYS) {
-            return Err("A range can span at most 10 years (3653 days)");
+            return Err(RangeError::TooLong);
         }
         Ok(())
     }

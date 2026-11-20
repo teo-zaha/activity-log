@@ -6,7 +6,6 @@ version = 4
 name = "activity-log-desktop"
 version = "1.0.0"
 dependencies = [
- "anyhow",
  "core",
  "rfd",
  "serde",

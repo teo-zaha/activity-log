@@ -39,8 +39,8 @@ use crate::{
     },
     provider::{ProviderRuntime, connection::Connection, current_os, start_check},
     settings::{
-        ConfigFile, ContentId, EditError, Precondition, edit_config, read_config_bytes,
-        warn_no_location,
+        ConfigEditError, ConfigFile, ContentId, EditError, Precondition, edit_config,
+        read_config_bytes, warn_no_location,
     },
 };
 
@@ -92,6 +92,23 @@ pub struct Edit<T> {
 pub struct Answered<T> {
     pub value: T,
     pub stamp: PartStamp,
+}
+
+/// Why a read of the config file failed, as far as logging it again goes.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ReadFailure {
+    Io(std::io::ErrorKind),
+    /// The read's task stopped before it answered.
+    Stopped,
+}
+
+/// Why [`Host::recheck`] started no check.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RecheckRefused {
+    /// The host has no connection it can check by that id.
+    UnknownConnection,
+    /// The host has shut down: no check starts any more.
+    ShutDown,
 }
 
 /// How often the config file's content is compared with the installed one.
@@ -158,8 +175,8 @@ struct HostState {
     /// The installed config file's content; the last one that did not parse.
     content: Option<ContentId>,
     rejected: Option<ContentId>,
-    /// The last error reading the file, logged once.
-    reload_error: Option<String>,
+    /// What the last read of the file failed with, logged once until it fails otherwise.
+    reload_error: Option<ReadFailure>,
     shown: Shown,
     activity: Arc<ActivityState>,
     /// The connections whose last collection failed, with the error; shown as their status.
@@ -537,26 +554,34 @@ impl Host {
 
     /// Runs the check of `id` again and then collects its kind again for the range on screen;
     /// the other kinds keep what they show. A running collection starts over, so it waits for
-    /// the new check; a failed one runs whole. Answers with the providers, `id` checking; `None`
-    /// for a connection the host does not have.
-    pub fn recheck(&self, id: &ConnectionId) -> Option<Answered<ProvidersResponse>> {
+    /// the new check; a failed one runs whole. Answers with the providers, `id` checking.
+    pub fn recheck(
+        &self,
+        id: &ConnectionId,
+    ) -> Result<Answered<ProvidersResponse>, RecheckRefused> {
         let applied = self.apply(|inner, state| {
+            if state.shut_down {
+                return Err(RecheckRefused::ShutDown);
+            }
             let index = state
                 .checks
                 .iter()
-                .position(|check| check.id() == id && check.recheckable)?;
+                .position(|check| check.id() == id && check.recheckable)
+                .ok_or(RecheckRefused::UnknownConnection)?;
             let connection = state.checks[index].connection.clone();
-            let check = new_check(inner, state, &connection)?;
+            // Not shut down, so only a kind no provider checks starts nothing.
+            let check =
+                new_check(inner, state, &connection).ok_or(RecheckRefused::UnknownConnection)?;
             let old = std::mem::replace(&mut state.checks[index], check);
             state.retired.push(Box::new(old));
             state.failures.remove(id);
             state.log(LogLevel::Info, id.to_string(), "Checking again");
             collect_again(inner, state, &id.source);
-            Some(state.providers_response())
+            Ok(state.providers_response())
         });
         let stamp = applied.published.providers_stamp();
         let value = self.spawn(applied)?;
-        Some(Answered { value, stamp })
+        Ok(Answered { value, stamp })
     }
 
     /// Edits the config file (see [`edit_config`]) and installs the result. The write and the
@@ -565,7 +590,7 @@ impl Host {
     pub async fn edit<T: Send + 'static>(
         &self,
         precondition: Precondition,
-        change: impl FnOnce(&mut ConfigFile) -> anyhow::Result<T> + Send + 'static,
+        change: impl FnOnce(&mut ConfigFile) -> Result<T, ConfigEditError> + Send + 'static,
     ) -> Result<Edit<T>, EditError> {
         let Some(path) = self.inner.path.clone() else {
             return Err(EditError::NoLocation);
@@ -577,35 +602,31 @@ impl Host {
         });
         answered
             .await
-            .unwrap_or_else(|_| Err(EditError::Io(anyhow!("Saving the settings stopped"))))
+            .unwrap_or_else(|_| Err(EditError::Internal(anyhow!("Saving the settings stopped"))))
     }
 
     async fn edit_owned<T: Send + 'static>(
         self,
         path: PathBuf,
         precondition: Precondition,
-        change: impl FnOnce(&mut ConfigFile) -> anyhow::Result<T> + Send + 'static,
+        change: impl FnOnce(&mut ConfigFile) -> Result<T, ConfigEditError> + Send + 'static,
     ) -> Result<Edit<T>, EditError> {
         let config = self.inner.config.clone().lock_owned().await;
         if self.lock().shut_down {
-            return Err(EditError::Io(anyhow!(
+            return Err(EditError::Internal(anyhow!(
                 "Activity Log is quitting; the settings were not saved"
             )));
         }
         // The config lock may wait for another process, so it is not taken on an async worker.
         let edited = tokio::task::spawn_blocking(move || edit_config(&path, precondition, change))
             .await
-            .map_err(|err| EditError::Io(anyhow!("Saving the settings failed: {err}")))??;
+            .map_err(|err| EditError::Internal(anyhow!("Saving the settings failed: {err}")))??;
         #[cfg(test)]
         self.pause(|pauses| pauses.after_edit_write.clone()).await;
         for warning in &edited.warnings {
             diagnostics::warn("config", warning);
         }
-        let connections = edited
-            .file
-            .connections()
-            .map_err(EditError::Rejected)?
-            .connections;
+        let connections = edited.file.connections().connections;
         let installed = self.lock().content == Some(edited.content);
         let applied = if installed {
             // Nothing changed anywhere: the providers as they are.
@@ -652,9 +673,7 @@ impl Host {
             // Still being written: the next look installs it.
             return;
         }
-        let parsed = ConfigFile::parse(&path, &bytes)
-            .map_err(anyhow::Error::from)
-            .and_then(|file| file.logged_connections());
+        let parsed = ConfigFile::parse(&path, &bytes).map(|file| file.logged_connections());
         let connections = match parsed {
             Ok(connections) => connections,
             Err(err) => {
@@ -1011,22 +1030,20 @@ impl Host {
     async fn read_config(&self, path: &Path) -> Option<Vec<u8>> {
         let owned = path.to_path_buf();
         let read = tokio::task::spawn_blocking(move || read_config_bytes(&owned)).await;
-        let message = match read {
+        let (failure, message) = match read {
             Ok(Ok(bytes)) => {
                 self.lock().reload_error = None;
                 return Some(bytes.unwrap_or_default());
             }
-            Ok(Err(err)) => format!("Could not read {}: {err}", path.display()),
-            Err(err) => format!("Could not read {}: {err}", path.display()),
+            Ok(Err(err)) => (ReadFailure::Io(err.kind()), err.to_string()),
+            Err(err) => (ReadFailure::Stopped, err.to_string()),
         };
-        let first = {
-            let mut state = self.lock();
-            let first = state.reload_error.as_ref() != Some(&message);
-            state.reload_error = Some(message.clone());
-            first
-        };
+        let first = self.lock().reload_error.replace(failure) != Some(failure);
         if first {
-            diagnostics::error("config", message);
+            diagnostics::error(
+                "config",
+                format!("Could not read {}: {message}", path.display()),
+            );
         }
         None
     }
@@ -1041,9 +1058,8 @@ fn load(path: &Path) -> Result<(Vec<Connection>, ContentId), (anyhow::Error, Opt
         .unwrap_or_default();
     let content = ContentId::of(&bytes);
     let connections = ConfigFile::parse(path, &bytes)
-        .map_err(anyhow::Error::from)
-        .and_then(|file| file.logged_connections())
-        .map_err(|err| (err, Some(content)))?;
+        .map(|file| file.logged_connections())
+        .map_err(|err| (err.into(), Some(content)))?;
     Ok((connections, content))
 }
 

@@ -1,3 +1,4 @@
+use activity_log_core::model::RangeError;
 use chrono::{FixedOffset, NaiveDate, TimeZone, Utc};
 
 use super::{RangePreset, day_range, resolve_preset};
@@ -54,6 +55,9 @@ fn day_range_rejects_reversed_dates() {
 #[test]
 fn day_range_rejects_more_than_ten_years() {
     let error = day_range(&Utc, date("1000-01-01"), date("9999-12-31")).unwrap_err();
-    assert!(error.to_string().contains("at most 10 years"));
+    assert_eq!(
+        error.downcast_ref::<RangeError>(),
+        Some(&RangeError::TooLong)
+    );
     assert!(day_range(&Utc, date("2016-01-01"), date("2025-12-31")).is_ok());
 }

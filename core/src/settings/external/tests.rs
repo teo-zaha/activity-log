@@ -144,13 +144,21 @@ fn a_file_changed_during_the_edit_keeps_the_copy_and_publishes_nothing() {
     })
     .unwrap_err();
 
-    let ExternalEditError::Kept { copy, reason } = kept else {
+    let message = kept.to_string();
+    let source =
+        std::error::Error::source(&kept).and_then(|cause| cause.downcast_ref::<EditError>());
+    assert!(
+        matches!(source, Some(EditError::FileChanged { .. })),
+        "{kept:?}"
+    );
+    let ExternalEditError::Kept { copy, cause } = kept else {
         panic!("expected the copy to be kept");
     };
+    assert!(matches!(cause, EditError::FileChanged { .. }), "{cause:?}");
     assert_eq!(fs::read_to_string(&path).unwrap(), "[[system]]\n");
     assert_eq!(fs::read_to_string(&copy).unwrap(), "[[jira]]\n");
     assert_eq!(
-        reason,
+        message,
         format!(
             "config.toml changed while you were editing; your version is in {}",
             copy.display()
@@ -166,11 +174,14 @@ fn an_invalid_copy_is_kept_with_a_redacted_error() {
 
     let kept = edit_externally(&path, writes("[[gitlab]]\ntoken = \"glpat-SECRET\n")).unwrap_err();
 
-    let ExternalEditError::Kept { copy, reason } = kept else {
+    let message = kept.to_string();
+    let ExternalEditError::Kept { copy, cause } = kept else {
         panic!("expected the copy to be kept");
     };
-    assert!(reason.contains("line 2, column"), "{reason}");
-    assert!(!reason.contains("SECRET"), "{reason}");
+    assert!(matches!(cause, EditError::Invalid(_)), "{cause:?}");
+    // What the terminal shows names the place and never the file's text.
+    assert!(message.contains("line 2, column"), "{message}");
+    assert!(!message.contains("SECRET"), "{message}");
     assert!(copy.exists());
     assert_eq!(fs::read_to_string(&path).unwrap(), "[[git]]\n");
 }
@@ -302,7 +313,7 @@ fn a_dotted_instance_is_replaced_not_rewritten_into_a_key() {
 
         let written = fs::read_to_string(&path).unwrap();
         let file = ConfigFile::load(&path).unwrap();
-        assert!(file.connections().unwrap().warnings.is_empty(), "{written}");
+        assert!(file.connections().warnings.is_empty(), "{written}");
         assert_eq!(instance_lines(&written).len(), 1, "{written}");
         let refused = edit_config(&path, Precondition::Unchanged(stale), |file| {
             file.rename(&work, "Company")

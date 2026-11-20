@@ -13,8 +13,8 @@ use futures::{FutureExt, future::BoxFuture};
 use tokio::sync::{Semaphore, mpsc, watch};
 
 use super::{
-    BadConfig, CheckStarter, Host, HostInner, HostWork, Published, RunSpawner, Shown, load,
-    planned_collector,
+    BadConfig, CheckStarter, Host, HostInner, HostWork, Published, RecheckRefused, RunSpawner,
+    Shown, load, planned_collector,
 };
 use crate::{
     model::{
@@ -444,7 +444,28 @@ async fn recheck_answers_checking_even_when_the_check_ends_at_once() {
     assert!(handed_over_at < host.subscribe().borrow().providers.revision);
     assert!(
         host.recheck(&ConnectionId::new(Source::Calendar, "other"))
-            .is_none()
+            .err()
+            == Some(RecheckRefused::UnknownConnection)
+    );
+}
+
+/// A connection the host still lists is not missing once the host shut down: it only cannot
+/// be checked any more.
+#[tokio::test]
+async fn a_recheck_after_shutdown_is_refused_as_such_not_as_unknown() {
+    let host = Host::fixed(
+        &[unconfigured_calendar()],
+        eager_spawner(Default::default()).0,
+    );
+    let calendar = ConnectionId::new(Source::Calendar, "team");
+    host.shutdown();
+
+    assert!(host.recheck(&calendar).err() == Some(RecheckRefused::ShutDown));
+    assert!(
+        host.providers_response()
+            .providers
+            .iter()
+            .any(|info| info.connection == calendar)
     );
 }
 
@@ -535,7 +556,7 @@ async fn a_recheck_racing_a_collect_of_another_range_never_restarts_the_old_one(
             move || {
                 let _entered = runtime.enter();
                 barrier.wait();
-                host.recheck(&jira());
+                assert!(host.recheck(&jira()).is_ok());
             }
         });
         collect.join().unwrap();

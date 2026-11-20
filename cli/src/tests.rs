@@ -130,3 +130,24 @@ fn provider_summary_includes_skipped_and_usable_providers() {
         "  - outlook/outlook (Outlook) — skipped (OS not supported)"
     );
 }
+
+/// The terminal gets the message with the connection's label; the typed cause stays reachable.
+#[test]
+fn an_edit_failure_keeps_its_typed_cause() {
+    use activity_log_core::settings::{Conflict, ConflictKind, EditError};
+
+    let id = ConnectionId::new(Source::Gitlab, "work");
+    let conflict = EditError::Conflict(Conflict {
+        connection: id.clone(),
+        kind: ConflictKind::Removed,
+        fields: Vec::new(),
+    });
+
+    let failure = super::edit_failure(conflict, |_| Some("Work GitLab".to_string()));
+
+    assert!(failure.to_string().starts_with("Work GitLab "), "{failure}");
+    assert!(matches!(
+        failure.downcast_ref::<EditError>(),
+        Some(EditError::Conflict(conflict)) if conflict.connection == id
+    ));
+}

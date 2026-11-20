@@ -1,6 +1,6 @@
 use std::path::Path;
 
-use super::{ConfigError, ConfigFile};
+use super::{ConfigEditError, ConfigError, ConfigFile};
 use crate::{
     model::{ConnectionId, Source},
     provider::{
@@ -17,7 +17,7 @@ fn file(text: &str) -> ConfigFile {
 }
 
 fn connections(file: &ConfigFile) -> Vec<Connection> {
-    file.connections().unwrap().connections
+    file.connections().connections
 }
 
 fn ids(connections: &[Connection], source: Source) -> Vec<String> {
@@ -120,9 +120,7 @@ insecure = true
 
 #[test]
 fn reports_unknown_fields_without_failing() {
-    let resolved = file("[[gitlab]]\nlabel = \"Work\"\ntokn = \"x\"\n")
-        .connections()
-        .unwrap();
+    let resolved = file("[[gitlab]]\nlabel = \"Work\"\ntokn = \"x\"\n").connections();
 
     assert_eq!(resolved.connections.len(), 1);
     assert_eq!(resolved.warnings, ["gitlab/work: unknown setting `tokn`"]);
@@ -131,9 +129,7 @@ fn reports_unknown_fields_without_failing() {
 /// B9: one table the app cannot read no longer takes every connection down.
 #[test]
 fn skips_wsl_outside_git_and_a_kind_that_is_not_a_list() {
-    let resolved = file("gitlab = \"x\"\n\n[[jira]]\nwsl = \"NixOS\"\n\n[[git]]\n")
-        .connections()
-        .unwrap();
+    let resolved = file("gitlab = \"x\"\n\n[[jira]]\nwsl = \"NixOS\"\n\n[[git]]\n").connections();
 
     assert_eq!(ids(&resolved.connections, Source::Git), ["this-computer"]);
     assert!(ids(&resolved.connections, Source::Jira).is_empty());
@@ -194,17 +190,16 @@ label = "Second"
 fn reads_only_the_first_table_of_a_single_connection_kind() {
     let mut config =
         file("[[outlook]]\nlabel = \"Mail\"\n\n[[outlook]]\nlabel = \"Other\"\n\n[[system]]\n");
-    let resolved = config.connections().unwrap();
+    let resolved = config.connections();
 
     assert_eq!(ids(&resolved.connections, Source::Outlook), ["mail"]);
     assert_eq!(
         resolved.warnings,
         ["outlook: there can be only one connection; connection 2 is skipped"]
     );
-    assert!(
-        config
-            .add(&Source::Outlook, None, ConnectionLocation::Local)
-            .is_err()
+    assert_eq!(
+        config.add(&Source::Outlook, None, ConnectionLocation::Local),
+        Err(ConfigEditError::SingleInstance(Source::Outlook))
     );
     config
         .rename(&ConnectionId::new(Source::Outlook, "mail"), "Work mail")
@@ -272,8 +267,7 @@ label = "C"
 instance = "NOT-HEX"
 "#,
     )
-    .connections()
-    .unwrap();
+    .connections();
 
     assert_eq!(resolved.connections.len(), 3);
     assert_eq!(
@@ -333,24 +327,32 @@ fn refuses_a_second_single_connection_and_wsl_outside_git() {
         .add(&Source::Outlook, None, ConnectionLocation::Local)
         .unwrap();
 
-    assert!(
-        config
-            .add(&Source::Outlook, None, ConnectionLocation::Local)
-            .is_err()
+    assert_eq!(
+        config.add(&Source::Outlook, None, ConnectionLocation::Local),
+        Err(ConfigEditError::SingleInstance(Source::Outlook))
     );
-    assert!(
-        config
-            .add(
-                &Source::Gitlab,
-                None,
-                ConnectionLocation::Wsl("NixOS".to_string())
-            )
-            .is_err()
+    assert_eq!(
+        config.add(
+            &Source::Gitlab,
+            None,
+            ConnectionLocation::Wsl("NixOS".to_string())
+        ),
+        Err(ConfigEditError::WslOnlyForGit)
     );
-    assert!(
-        config
-            .add(&Source::Gitlab, Some("  "), ConnectionLocation::Local)
-            .is_err()
+    assert_eq!(
+        config.add(&Source::Gitlab, Some("  "), ConnectionLocation::Local),
+        Err(ConfigEditError::EmptyLabel)
+    );
+}
+
+/// A kind written as something other than tables is the file's problem, not the edit's.
+#[test]
+fn adding_to_a_kind_that_is_not_a_list_of_tables_is_refused() {
+    let mut config = file("gitlab = \"work\"\n");
+
+    assert_eq!(
+        config.add(&Source::Gitlab, None, ConnectionLocation::Local),
+        Err(ConfigEditError::NotATableList(Source::Gitlab))
     );
 }
 
@@ -363,10 +365,12 @@ fn removing_the_last_connection_removes_the_kind() {
 
     assert!(connections(&config).is_empty());
     assert!(!config.to_string().contains("system"));
-    assert!(
-        config
-            .remove(&ConnectionId::new(Source::System, "system"))
-            .is_err()
+    assert_eq!(
+        config.remove(&ConnectionId::new(Source::System, "system")),
+        Err(ConfigEditError::UnknownConnection(ConnectionId::new(
+            Source::System,
+            "system"
+        )))
     );
 }
 
@@ -415,7 +419,13 @@ fn writes_values_with_their_toml_type() {
     let text = config.to_string();
     assert!(text.contains(r#"dirs = ["~/a", "~/b"]"#), "{text}");
     assert!(text.contains("insecure = true"), "{text}");
-    assert!(config.set(&git, GITLAB_URL, Some("x")).is_err());
+    assert_eq!(
+        config.set(&git, GITLAB_URL, Some("x")),
+        Err(ConfigEditError::UnknownSetting {
+            source: Source::Git,
+            key: GITLAB_URL.name,
+        })
+    );
 }
 
 #[test]
@@ -452,8 +462,7 @@ name = "work-2"
 label = "Third"
 "#,
     )
-    .connections()
-    .unwrap();
+    .connections();
 
     assert_eq!(
         ids(&resolved.connections, Source::Gitlab),
@@ -473,7 +482,7 @@ fn an_edit_writes_the_numbered_name_of_a_repeated_one() {
     let second = "gitlab/work-2".parse::<ConnectionId>().unwrap();
     config.rename(&second, "Second").unwrap();
 
-    let resolved = config.connections().unwrap();
+    let resolved = config.connections();
     assert!(resolved.warnings.is_empty());
     assert_eq!(
         ids(&resolved.connections, Source::Gitlab),

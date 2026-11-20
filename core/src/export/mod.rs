@@ -3,14 +3,13 @@
 
 use std::collections::BTreeMap;
 
-use anyhow::{Context, Result, anyhow};
 use chrono::{DateTime, Duration, TimeZone};
 use chrono_tz::Tz;
 
 use crate::{
     model::{
         ActivityEntry, ActivityLog, ActivityLogMeta, CollectRequest, CollectedActivitySummary,
-        ConnectionCount, ConnectionId, ExportFile, ExportRequest, OutputFormat,
+        ConnectionCount, ConnectionId, ExportFile, ExportRequest, OutputFormat, RangeError,
     },
     runtime::resolve_collect_options,
     utils::now_iso,
@@ -36,18 +35,35 @@ pub fn render_export<Z: TimeZone>(log: &ActivityLog, format: OutputFormat, tz: &
     }
 }
 
+/// Why an export request cannot be rendered. Both are the request's fault.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ExportError {
+    UnknownZone(String),
+    Range(RangeError),
+}
+
+impl std::fmt::Display for ExportError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::UnknownZone(zone) => write!(f, "Unknown time zone \"{zone}\""),
+            Self::Range(err) => write!(f, "Invalid export range: {err}"),
+        }
+    }
+}
+
+impl std::error::Error for ExportError {}
+
 /// The entries of `request` as a file: the range must be valid and the zone an IANA name.
-pub fn render_export_request(request: &ExportRequest) -> Result<ExportFile> {
+pub fn render_export_request(request: &ExportRequest) -> Result<ExportFile, ExportError> {
     let tz = request
         .time_zone
         .parse::<Tz>()
-        .map_err(|_| anyhow!("Unknown time zone \"{}\"", request.time_zone))?;
+        .map_err(|_| ExportError::UnknownZone(request.time_zone.clone()))?;
     let options = resolve_collect_options(&CollectRequest {
         start: request.start.clone(),
         end: request.end.clone(),
     })
-    .map_err(|message| anyhow!(message))
-    .context("Invalid export range")?;
+    .map_err(ExportError::Range)?;
     let log = ActivityLog {
         meta: ActivityLogMeta {
             generated: now_iso(),

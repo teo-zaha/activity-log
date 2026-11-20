@@ -35,19 +35,31 @@ pub enum ExternalEditError {
     /// Nothing was saved and nothing is left behind.
     Failed(EditError),
     /// Nothing was saved; the user's version stays at `copy`.
-    Kept { copy: PathBuf, reason: String },
+    Kept { copy: PathBuf, cause: EditError },
 }
 
 impl std::fmt::Display for ExternalEditError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::Failed(err) => write!(f, "{err}"),
-            Self::Kept { reason, .. } => write!(f, "{reason}"),
+            Self::Kept { copy, cause } => write!(
+                f,
+                "{}; your version is in {}",
+                cause.to_string().trim_end_matches('.'),
+                copy.display()
+            ),
         }
     }
 }
 
-impl std::error::Error for ExternalEditError {}
+impl std::error::Error for ExternalEditError {
+    /// The typed cause, which the message above already says.
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        match self {
+            Self::Failed(cause) | Self::Kept { cause, .. } => Some(cause),
+        }
+    }
+}
 
 /// The command to run the user's editor with: whatever it creates in the session folder
 /// (backups, swap files) is owner-only too.
@@ -65,10 +77,12 @@ pub fn edit_externally(
 ) -> Result<ExternalEdit, ExternalEditError> {
     let (folder, path) = write::open_parent(path).map_err(ExternalEditError::Failed)?;
     let name = write::file_name(&path).map_err(ExternalEditError::Failed)?;
-    let failed = |err: std::io::Error| ExternalEditError::Failed(EditError::Io(anyhow!(err)));
+    let failed = |err: std::io::Error| ExternalEditError::Failed(EditError::Internal(anyhow!(err)));
     let session = folder
         .staging(&name)
-        .map_err(write::unprotectable_or(|err| EditError::Io(anyhow!(err))))
+        .map_err(write::unprotectable_or(|err| {
+            EditError::Internal(anyhow!(err))
+        }))
         .map_err(ExternalEditError::Failed)?;
     let original = folder.read(&name).map_err(failed)?;
     if original.is_some() {
@@ -90,38 +104,30 @@ pub fn edit_externally(
     if read.is_ok() && edited == original.as_deref().unwrap_or_default() {
         return match ran {
             Ok(()) => Ok(ExternalEdit::Unchanged),
-            Err(err) => Err(ExternalEditError::Failed(EditError::Io(err))),
+            Err(err) => Err(ExternalEditError::Failed(EditError::Internal(err))),
         };
     }
     // From here on the user's version is never removed unless it was saved.
-    let keep = |reason: String| {
-        let copy = session.keep().join(&name);
-        ExternalEditError::Kept {
-            reason: format!(
-                "{}; your version is in {}",
-                reason.trim_end_matches('.'),
-                copy.display()
-            ),
-            copy,
-        }
+    let keep = |cause: EditError| ExternalEditError::Kept {
+        copy: session.keep().join(&name),
+        cause,
     };
     if let Err(err) = ran {
-        return Err(keep(format!("{err:#}")));
+        return Err(keep(EditError::Internal(err)));
     }
     if let Err(err) = read {
-        return Err(keep(format!("Reading your version failed: {err}")));
+        return Err(keep(EditError::Internal(
+            anyhow!(err).context("Reading your version failed"),
+        )));
     }
 
     let saved = (|| {
         let locked = write::lock_in(folder, path)?;
         let current = locked.read()?;
         if current != original {
-            return Err(EditError::Rejected(anyhow!(
-                "{name} changed while you were editing"
-            )));
+            return Err(EditError::FileChanged { name: name.clone() });
         }
-        let mut file = ConfigFile::parse(&copy_path, &edited)
-            .map_err(|err| EditError::Rejected(err.into()))?;
+        let mut file = ConfigFile::parse(&copy_path, &edited).map_err(EditError::Invalid)?;
         // A file that did not parse is being repaired: every table of the copy is new.
         let original = original
             .as_deref()
@@ -146,7 +152,7 @@ pub fn edit_externally(
                 reads_back(&content, &fresh).then_some(content)
             });
             content.ok_or_else(|| {
-                EditError::Rejected(anyhow!(
+                EditError::Internal(anyhow!(
                     "Activity Log could not give the connections their `instance` ids"
                 ))
             })?
@@ -156,7 +162,7 @@ pub fn edit_externally(
     })();
     match saved {
         Ok(warnings) => Ok(ExternalEdit::Saved { warnings }),
-        Err(err) => Err(keep(err.to_string())),
+        Err(err) => Err(keep(err)),
     }
 }
 

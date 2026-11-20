@@ -9,8 +9,8 @@ use activity_log_core::{
     model::{CollectOptions, CollectedActivity, ConnectionId, OutputFormat, ProviderInfo, Source},
     provider::{connection::ConnectionLocation, inspect_provider_runtimes_with},
     settings::{
-        ConfigFile, EditError, ExternalEdit, FieldId, NO_LOCATION, Precondition, edit_config,
-        edit_externally, editor_command, load_connections,
+        ConfigEditError, ConfigFile, EditError, ExternalEdit, FieldId, NO_LOCATION, Precondition,
+        edit_config, edit_externally, editor_command, load_connections,
     },
 };
 use anyhow::{Result, anyhow};
@@ -166,14 +166,14 @@ async fn list_sources(config: Option<&Path>) -> Result<()> {
 }
 
 /// A change of the settings, applied to the file as read under the lock.
-type Change = Box<dyn FnOnce(&mut ConfigFile) -> Result<Option<String>>>;
+type Change = Box<dyn FnOnce(&mut ConfigFile) -> Result<Option<String>, ConfigEditError>>;
 
 /// Asks what it needs first, then edits the file once. A command that showed the user a value
 /// (a question) saves only if the connection is still as it was then.
 fn change_sources(action: SourcesCommand, config: Option<&Path>) -> Result<()> {
     let path = config_path(config)?;
     let file = ConfigFile::load(&path)?;
-    let connections = file.logged_connections()?;
+    let connections = file.logged_connections();
     let mut terminal = Terminal;
     let (precondition, change): (Precondition, Change) = match action {
         SourcesCommand::Add { kind, label, wsl } => {
@@ -239,13 +239,8 @@ fn change_sources(action: SourcesCommand, config: Option<&Path>) -> Result<()> {
             .find(|connection| connection.id == *id)
             .map(|connection| connection.label.clone())
     };
-    let edited = edit_config(&path, precondition, change).map_err(|err| {
-        let label = match &err {
-            EditError::Conflict(conflict) => label(&conflict.connection),
-            _ => None,
-        };
-        anyhow!(err.message(label.as_deref()))
-    })?;
+    let edited =
+        edit_config(&path, precondition, change).map_err(|err| edit_failure(err, label))?;
     if let Some(message) = edited.value {
         println!("{message}");
     }
@@ -254,6 +249,17 @@ fn change_sources(action: SourcesCommand, config: Option<&Path>) -> Result<()> {
     }
     println!("Saved {}", path.display());
     Ok(())
+}
+
+/// An edit's failure as the terminal says it, a conflicting connection named by `label`; the
+/// typed `EditError` stays below the message as its cause.
+fn edit_failure(err: EditError, label: impl Fn(&ConnectionId) -> Option<String>) -> anyhow::Error {
+    let label = match &err {
+        EditError::Conflict(conflict) => label(&conflict.connection),
+        _ => None,
+    };
+    let message = err.message(label.as_deref());
+    anyhow::Error::new(err).context(message)
 }
 
 fn edit_in_editor(config: Option<&Path>) -> Result<()> {

@@ -1,4 +1,5 @@
 pub mod aggregator;
+mod backend_error;
 pub mod cache;
 pub mod collect;
 pub mod diagnostics;

@@ -4,8 +4,8 @@ use std::{
 };
 
 use activity_log_core::model::{
-    CollectOptions, CollectionFailedResponse, ConnectionId, ErrorResponse, ExportFile,
-    LogsResponse, ProviderInfo, ProviderStatus, Source, SupportedOs,
+    BackendError, BackendErrorKind, CollectOptions, CollectionFailedResponse, ConnectionId,
+    ExportFile, LogsResponse, ProviderInfo, ProviderStatus, Source, SupportedOs,
 };
 use activity_log_core::provider::connection::{Connection, ConnectionLocation, ConnectionValues};
 use activity_log_core::runtime::{
@@ -99,6 +99,15 @@ async fn post_collect<'a>(
         .await
 }
 
+/// The error a response carries, after checking its status.
+async fn error_with_status(
+    response: rocket::local::asynchronous::LocalResponse<'_>,
+    status: Status,
+) -> BackendError {
+    assert_eq!(response.status(), status);
+    response.into_json().await.expect("an error body")
+}
+
 /// Asks for the activity until it answers `status`.
 async fn activity_with_status(client: &Client, status: Status) -> serde_json::Value {
     for _ in 0..50 {
@@ -116,7 +125,24 @@ async fn returns_503_without_cache() {
     let client = client(collector_ok()).await;
 
     let response = client.get("/api/activity").dispatch().await;
-    assert_eq!(response.status(), Status::ServiceUnavailable);
+    let error = error_with_status(response, Status::ServiceUnavailable).await;
+    assert_eq!(error.kind, BackendErrorKind::NoData);
+}
+
+/// A host that shows nothing (it is quitting before its first collection) has nothing to
+/// answer a collect with; the desktop's `collect` agrees.
+#[rocket::async_test]
+async fn a_collect_with_nothing_to_show_has_no_data() {
+    let host = Host::with_collector(collector_ok(), fixture_providers(), spawner());
+    host.shutdown();
+    let client = Client::tracked(build_rocket_with(host, false))
+        .await
+        .unwrap();
+
+    let response = post_collect(&client, MARCH_FIRST_WEEK).await;
+
+    let error = error_with_status(response, Status::ServiceUnavailable).await;
+    assert_eq!(error.kind, BackendErrorKind::NoData);
 }
 
 #[rocket::async_test]
@@ -197,7 +223,27 @@ async fn post_collect_rejects_plain_dates() {
     let client = client(collector_ok()).await;
 
     let response = post_collect(&client, r#"{"start":"2026-03-01","end":"2026-03-05"}"#).await;
-    assert_eq!(response.status(), Status::BadRequest);
+    let error = error_with_status(response, Status::BadRequest).await;
+    assert_eq!(error.kind, BackendErrorKind::InvalidRequest);
+}
+
+/// Rocket's own answers keep the contract: a body that is no JSON, a body that is not the
+/// route's request and an unknown route all answer a `BackendError`.
+#[rocket::async_test]
+async fn answers_rocket_makes_itself_are_backend_errors() {
+    let client = client(collector_ok()).await;
+
+    let broken = post_collect(&client, r#"{"start":"#).await;
+    let error = error_with_status(broken, Status::BadRequest).await;
+    assert_eq!(error.kind, BackendErrorKind::InvalidRequest);
+
+    let other_shape = post_collect(&client, r#"{"from":"2026-03-01"}"#).await;
+    let error = error_with_status(other_shape, Status::UnprocessableEntity).await;
+    assert_eq!(error.kind, BackendErrorKind::InvalidRequest);
+
+    let unknown = client.get("/api/nothing-here").dispatch().await;
+    let error = error_with_status(unknown, Status::NotFound).await;
+    assert_eq!(error.kind, BackendErrorKind::NotFound);
 }
 
 #[rocket::async_test]
@@ -308,9 +354,8 @@ async fn rejects_an_export_in_an_unknown_zone() {
     )
     .await;
 
-    assert_eq!(response.status(), Status::BadRequest);
-    let body: ErrorResponse = response.into_json().await.expect("error json");
-    assert_eq!(body.error, r#"Unknown time zone "Local""#);
+    let error = error_with_status(response, Status::BadRequest).await;
+    assert_eq!(error.kind, BackendErrorKind::InvalidRequest);
 }
 
 /// A week of meetings with long descriptions, as the dashboard sends it: past Rocket's 1 MiB JSON
@@ -378,13 +423,8 @@ async fn rejects_a_body_that_is_not_an_export_request() {
 
     let response = post_export(&client, r#"{"format":"pdf"}"#).await;
 
-    assert_eq!(response.status(), Status::BadRequest);
-    let body: ErrorResponse = response.into_json().await.expect("error json");
-    assert!(
-        body.error.starts_with("Not an export request"),
-        "{}",
-        body.error
-    );
+    let error = error_with_status(response, Status::BadRequest).await;
+    assert_eq!(error.kind, BackendErrorKind::InvalidRequest);
 }
 
 #[rocket::async_test]
@@ -397,9 +437,8 @@ async fn post_collect_rejects_a_range_of_centuries() {
     )
     .await;
 
-    assert_eq!(response.status(), Status::BadRequest);
-    let body: ErrorResponse = response.into_json().await.expect("error json");
-    assert_eq!(body.error, "A range can span at most 10 years (3653 days)");
+    let error = error_with_status(response, Status::BadRequest).await;
+    assert_eq!(error.kind, BackendErrorKind::InvalidRequest);
 }
 
 #[rocket::async_test]
@@ -444,7 +483,8 @@ async fn recheck_answers_with_the_connection_checking_and_404_for_an_unknown_one
         .body(r#"{"source":"calendar","name":"other"}"#)
         .dispatch()
         .await;
-    assert_eq!(response.status(), Status::NotFound);
+    let error = error_with_status(response, Status::NotFound).await;
+    assert_eq!(error.kind, BackendErrorKind::NotFound);
 }
 
 /// A file that does not parse stops the server with the place, never the text on the bad line.
@@ -540,4 +580,48 @@ async fn a_collect_answers_its_log_as_before_with_the_stamp_of_the_state_it_inst
     assert_eq!(state["activity"]["state"]["kind"], "running");
     assert_eq!(state["activity"]["state"]["log"]["meta"], started["meta"]);
     release.notify_one();
+}
+
+/// A host that shut down still lists its connections; a recheck of one is refused as the
+/// host's failure, never as a connection it does not have. The desktop's command agrees.
+#[rocket::async_test]
+async fn a_recheck_after_shutdown_is_internal_not_not_found() {
+    let calendar = Connection::new(
+        ConnectionId::new(Source::Calendar, "team"),
+        "Team",
+        ConnectionLocation::Local,
+        ConnectionValues::default(),
+    );
+    let host = Host::fixed(&[calendar], spawner());
+    host.shutdown();
+    let client = Client::tracked(build_rocket_with(host, false))
+        .await
+        .unwrap();
+
+    let response = client
+        .post("/api/connections/recheck")
+        .header(rocket::http::ContentType::JSON)
+        .body(r#"{"source":"calendar","name":"team"}"#)
+        .dispatch()
+        .await;
+
+    let error = error_with_status(response, Status::InternalServerError).await;
+    assert_eq!(error.kind, BackendErrorKind::Internal);
+}
+
+/// A body of another media type matches no route, so it answers a route Rocket does not have
+/// (`404`, `notFound`), not a refused request.
+#[rocket::async_test]
+async fn a_collect_sent_as_plain_text_matches_no_route() {
+    let client = client(collector_ok()).await;
+
+    let response = client
+        .post("/api/collect")
+        .header(rocket::http::ContentType::Plain)
+        .body(MARCH_FIRST_WEEK)
+        .dispatch()
+        .await;
+
+    let error = error_with_status(response, Status::NotFound).await;
+    assert_eq!(error.kind, BackendErrorKind::NotFound);
 }

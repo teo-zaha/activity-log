@@ -9,7 +9,13 @@ use std::{
 
 use chrono::{DateTime, Duration, Utc};
 
-use crate::model::{CollectOptions, CollectRequest};
+use crate::{
+    backend_error::refused_recheck,
+    model::{
+        BackendError, CollectAnswer, CollectOptions, CollectRequest, ConnectionId, RangeError,
+        RecheckAnswer, ShownActivity,
+    },
+};
 
 pub mod host;
 pub(crate) mod keys;
@@ -18,7 +24,9 @@ pub(crate) mod result_store;
 #[cfg(test)]
 mod tests;
 
-pub use host::{Answered, BadConfig, Edit, Host, HostWork, Part, Published, RunSpawner};
+pub use host::{
+    Answered, BadConfig, Edit, Host, HostWork, Part, Published, RecheckRefused, RunSpawner,
+};
 pub use report::{
     Checked, CollectionKey, Collector, Outcome, Plan, Progress, RunReport, Slot, Stored, Superseded,
 };
@@ -37,13 +45,11 @@ fn panic_message(panic: &(dyn Any + Send)) -> &str {
         .unwrap_or("panic")
 }
 
-pub fn resolve_collect_options(
-    request: &CollectRequest,
-) -> std::result::Result<CollectOptions, &'static str> {
+pub fn resolve_collect_options(request: &CollectRequest) -> Result<CollectOptions, RangeError> {
     let parse = |value: &str| {
         DateTime::parse_from_rfc3339(value)
             .map(|instant| instant.with_timezone(&Utc))
-            .map_err(|_| "start and end must be RFC 3339 timestamps")
+            .map_err(|_| RangeError::NotRfc3339)
     };
     let options = CollectOptions {
         start: parse(&request.start)?,
@@ -51,6 +57,33 @@ pub fn resolve_collect_options(
     };
     options.check()?;
     Ok(options)
+}
+
+/// What the API and the desktop app answer a collect request with: the activity the host
+/// installed or shows, with its stamp. A range the host would not collect is refused; a host that
+/// shows nothing yet (it is quitting) has no data.
+pub fn answer_collect(
+    host: &Host,
+    request: &CollectRequest,
+) -> Result<CollectAnswer, BackendError> {
+    let answered = host.collect(resolve_collect_options(request)?);
+    let activity = ShownActivity::of(answered.value).ok_or_else(BackendError::no_data)?;
+    Ok(CollectAnswer {
+        activity,
+        stamp: answered.stamp,
+    })
+}
+
+/// What the API and the desktop app answer a recheck of `id` with: the providers, `id`
+/// checking, and their stamp; a connection the host does not have is not found.
+pub fn answer_recheck(host: &Host, id: &ConnectionId) -> Result<RecheckAnswer, BackendError> {
+    let answered = host
+        .recheck(id)
+        .map_err(|refused| refused_recheck(refused, id))?;
+    Ok(RecheckAnswer {
+        providers: answered.value,
+        stamp: answered.stamp,
+    })
 }
 
 /// The last 30 days up to now; the dashboard re-collects whole local days when asked.

@@ -8,8 +8,7 @@ use crate::model::{
     common::collection_failed_response::CollectionFailedResponse,
 };
 
-/// The collection a host shows: what `GET /api/activity` and the desktop's `get_activity`
-/// answer with, and on the wire the `state` of an [`ActivityUpdate`](super::activity_update::ActivityUpdate).
+/// The collection a host shows: what `GET /api/activity` answers with, and on the wire the `state` of an [`ActivityUpdate`](super::activity_update::ActivityUpdate).
 #[derive(Debug, Clone, Serialize, TS)]
 #[serde(tag = "kind", rename_all = "camelCase")]
 #[ts(export, tag = "kind", rename_all = "camelCase")]
