@@ -1,15 +1,18 @@
 import type { ProviderInfo } from '../../generated/activity'
 import type { ConnectionKey } from '../../providers/connection'
-import type { Theme } from '../../services/theme.service'
 
 /**
- * A settings page. `home` is the phone's list of sections; wider screens list them beside the
- * page and show General for it.
+ * The settings pages that are not a source. `home` is the phone's list of sections; wider
+ * screens list them beside the page and show General for it.
  */
-export type SettingsSelection = 'home' | 'general' | 'logs' | 'add' | `connection:${ConnectionKey}`
+export const SETTINGS_PAGES = ['home', 'general', 'logs', 'add'] as const
+export type SettingsPage = (typeof SETTINGS_PAGES)[number]
 
-export function connectionSelection(key: ConnectionKey): SettingsSelection {
-  return `connection:${key}`
+/** What the settings show: a page, or a source by its key. It is also the URL's `settings`. */
+export type SettingsSelection = SettingsPage | ConnectionKey
+
+export function isSettingsPage(selection: SettingsSelection): selection is SettingsPage {
+  return SETTINGS_PAGES.some(page => page === selection)
 }
 
 /** What the settings dialog opens on, besides General. */
@@ -29,9 +32,4 @@ export interface SettingsProviderRow {
   /** The kind's name, such as `GitLab`. */
   readonly kindLabel: string
   readonly tooltip: string | null
-}
-
-export interface SettingsThemeOption {
-  readonly id: Theme
-  readonly label: string
 }

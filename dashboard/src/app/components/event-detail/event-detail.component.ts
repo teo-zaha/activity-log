@@ -22,7 +22,7 @@ import { IconButtonComponent } from '../button/icon-button.component'
 import { ExternalLinkDirective } from '../external-link/external-link.directive'
 import { MeetingDescriptionComponent } from '../meeting-description/meeting-description.component'
 import { PageHeaderComponent } from '../page-header/page-header.component'
-import { appLink, injectShareLink } from '../share/share-link'
+import { appLink, injectLinkBase, injectShareLink } from '../share/share-link'
 import { SourceBadgeComponent } from '../source-badge/source-badge.component'
 import { downQuery } from '../../utils/breakpoints'
 
@@ -56,6 +56,7 @@ export class EventDetailComponent {
   private readonly injector = inject(Injector)
   private readonly router = inject(Router)
   private readonly shareLink = injectShareLink()
+  private readonly linkBase = injectLinkBase()
   /** On a phone the details are a page of their own, left with a back arrow. */
   protected readonly isPhone = mediaQuery(downQuery('phone'))
   private readonly title = viewChild<ElementRef<HTMLElement>>('detailTitle')
@@ -206,7 +207,9 @@ export class EventDetailComponent {
   protected shareEntry(entry: EntryUiAdapter): Promise<void> {
     const [from, to] = [this.activity.dateFrom(), this.activity.dateTo()]
     const range = from && to ? { from, to } : {}
-    return this.shareLink(appLink(this.router, [], { ...range, event: entry.trackKey }))
+    return this.shareLink(
+      appLink(this.router, [], { ...range, event: entry.trackKey }, this.linkBase)
+    )
   }
 
   protected formatDateTime(ts: string): string {

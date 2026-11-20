@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest'
+import { type DayKey, localDateKey } from './local-day'
 import type { MeetingWeight } from '../generated/activity'
 import {
   type MeetingLike,
@@ -23,7 +24,7 @@ function meeting(
   }
 }
 
-function on(day: string, entries: MeetingLike[]): { busy: number; tentative: number } {
+function on(day: DayKey, entries: MeetingLike[]): { busy: number; tentative: number } {
   const time = meetingTimeByDay(entries, [day]).get(day)!
   return { busy: time.busyMinutes, tentative: time.tentativeMinutes }
 }
@@ -92,7 +93,7 @@ describe('meetingTimeByDay', () => {
       const start = new Date(2026, month, day - 1, 22, 0)
       const midnight = new Date(2026, month, day).getTime()
       const nextMidnight = new Date(2026, month, day + 1).getTime()
-      const key = `2026-${String(month + 1).padStart(2, '0')}-${day}`
+      const key = localDateKey(new Date(2026, month, day))
       const allDayAndMore: MeetingLike = {
         timestamp: start.toISOString(),
         calendarDurationMinutes: 72 * 60,

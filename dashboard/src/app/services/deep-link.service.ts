@@ -1,7 +1,14 @@
 import { Service, inject } from '@angular/core'
 import { Router, UrlSerializer, type UrlTree } from '@angular/router'
-import { deepLinkPath, parseAppUrl, queryParamsOf, viewCommands } from '../utils/app-url'
-import { dateOfKey, todayKey } from '../utils/local-day'
+import {
+  DEFAULT_LOCATION,
+  dayOf,
+  deepLinkPath,
+  parseAppUrl,
+  queryParamsOf,
+  viewCommands,
+} from '../utils/app-url'
+import { todayKey } from '../utils/local-day'
 import { ActivityService } from './activity.service'
 
 /**
@@ -23,10 +30,8 @@ export class DeepLinkService {
     const target = this.resolve(link)
     if (target === null) return false
     const navigated = await this.router.navigateByUrl(target)
-    const { from, to } = target.queryParams
-    if (navigated && typeof from === 'string' && typeof to === 'string') {
-      void this.activity.collect(from, to)
-    }
+    const { from, to } = parseAppUrl(target) ?? DEFAULT_LOCATION
+    if (navigated && from && to) void this.activity.collect(from, to)
     return navigated
   }
 
@@ -40,25 +45,12 @@ export class DeepLinkService {
     } catch {
       return null
     }
-    const found = parseAppUrl(parsed)
-    if (found === null) return null
-    const location = collectable(found.from, found.to) ? found : { ...found, from: null, to: null }
-    return this.router.createUrlTree(viewCommands(location.view, location.day ?? todayKey()), {
+    // A link is untrusted; a range the backend would refuse is read as none (`parseAppUrl`).
+    const location = parseAppUrl(parsed)
+    if (location === null) return null
+    return this.router.createUrlTree(viewCommands(location.view, dayOf(location) ?? todayKey()), {
       queryParams: queryParamsOf(location),
       queryParamsHandling: 'replace',
     })
   }
-}
-
-/** The longest range the backend collects (`CollectOptions::MAX_DAYS`, ten years). */
-const MAX_COLLECT_DAYS = 3_653
-
-/**
- * Whether a link's range is one the backend would collect; a link is untrusted, so a backwards
- * or longer range is dropped instead of being sent. No range at all passes.
- */
-function collectable(from: string | null, to: string | null): boolean {
-  if (from === null || to === null) return true
-  const days = Math.round((dateOfKey(to).getTime() - dateOfKey(from).getTime()) / 86_400_000) + 1
-  return days >= 1 && days <= MAX_COLLECT_DAYS
 }

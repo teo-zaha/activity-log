@@ -54,11 +54,25 @@ export class MeetingDescriptionComponent {
     resizeObserver(this.body, () => this.measure())
   }
 
-  /** Measures again; also when an image is in, which changes the height of the text. */
+  /**
+   * The clamp's height, read while the clamped text overflows it: then the box is exactly the
+   * clamp. An open description is measured against it, without clamping it again to look.
+   */
+  private clampHeight: number | null = null
+
+  /**
+   * Measures again: after rendering, when an image is in and when the column changes size, both
+   * of which change the height of the text.
+   */
   protected measure(): void {
-    if (this.expanded()) return
     const element = this.body().nativeElement
-    this.overflowing.set(element.scrollHeight > element.clientHeight + 1)
+    if (!this.expanded()) {
+      const overflowing = element.scrollHeight > element.clientHeight + 1
+      if (overflowing) this.clampHeight = element.clientHeight
+      this.overflowing.set(overflowing)
+    } else if (this.clampHeight !== null) {
+      this.overflowing.set(element.scrollHeight > this.clampHeight + 1)
+    }
   }
 
   protected imageFailed(index: number): void {

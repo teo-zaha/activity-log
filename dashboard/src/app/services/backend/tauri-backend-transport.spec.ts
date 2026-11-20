@@ -126,7 +126,7 @@ describe('TauriBackendTransport', () => {
       throw 'No data yet'
     })
 
-    const failure = setup().call(BackendOperations.activity, undefined)
+    const failure = setup().call(BackendOperations.runtimeState, undefined)
 
     await expect(failure).rejects.toBeInstanceOf(Error)
     await expect(failure).rejects.toThrow('No data yet')

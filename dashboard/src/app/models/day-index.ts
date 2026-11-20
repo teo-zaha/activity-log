@@ -1,15 +1,19 @@
+import type { DayKey } from '../utils/local-day'
+
 /** A month heading on the day index rail: `Nov`, or `Dec ’25` where the year changes. */
 export interface DayIndexMonth {
   readonly kind: 'month'
+  /** `YYYY-MM` */
   readonly key: string
+  /** A day of the month, for its name. */
+  readonly day: DayKey
   readonly label: string
 }
 
 /** One calendar day on the day index rail, with or without events. */
 export interface DayIndexDay {
   readonly kind: 'day'
-  /** `YYYY-MM-DD` */
-  readonly key: string
+  readonly key: DayKey
   readonly count: number
   readonly dayOfMonth: number
   readonly isWeekend: boolean

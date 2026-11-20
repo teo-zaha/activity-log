@@ -1,8 +1,9 @@
-import { Service, computed, inject } from '@angular/core'
+import { Service, computed, inject, signal } from '@angular/core'
 import type {
   AddConnectionRequestDto,
   AddConnectionResponseDto,
   ConnectionId,
+  InstallReceipt,
   OutputFormat,
   ProviderConfigSaveRequestDto,
   ProviderConfigSaveResponseDto,
@@ -13,12 +14,13 @@ import type { ConnectionKey, EntryKey } from '../providers/connection'
 import type { DayGroup } from '../models/day-group'
 import type { EntryUiAdapter } from '../providers/types'
 import { ActivityDataService } from './activity-data.service'
-import { extractBackendErrorMessage } from './backend/error-message'
+import { failure, failureOf, type Notice } from './failure'
 import { ActivityExportService } from './activity-export.service'
 import { ActivityViewStateService } from './activity-view-state.service'
 import { ProviderConfigFacade } from './provider-config-facade.service'
-import type { ViewMode } from './types'
-import { localDayRange } from '../utils/local-day'
+import type { ReceiptStanding } from './types'
+import type { ViewMode } from '../utils/app-url'
+import { localDayRange, type DayKey } from '../utils/local-day'
 
 @Service()
 export class ActivityService {
@@ -38,8 +40,10 @@ export class ActivityService {
   readonly connectionCounts = this.data.connectionCounts
   readonly meta = this.data.meta
   readonly isLoading = this.data.isLoading
-  readonly error = this.data.error
+  /** The snackbar's notice: a failure of an action that has no place of its own to show it. */
+  readonly notice = signal<Notice | null>(null)
   readonly collectionStatus = this.data.collectionStatus
+  readonly connection = this.data.connection
 
   readonly dateFrom = this.viewState.dateFrom
   readonly dateTo = this.viewState.dateTo
@@ -104,7 +108,7 @@ export class ActivityService {
   })
 
   readonly groupedByDay = computed<DayGroup<EntryUiAdapter>[]>(() => {
-    const byDay = new Map<string, EntryUiAdapter[]>()
+    const byDay = new Map<DayKey, EntryUiAdapter[]>()
     for (const entry of this.filteredEntries()) {
       const day = entry.dayKey
       if (!byDay.has(day)) byDay.set(day, [])
@@ -170,7 +174,7 @@ export class ActivityService {
     return this.viewState.setView(view)
   }
 
-  openDay(day: string): Promise<boolean> {
+  openDay(day: DayKey): Promise<boolean> {
     return this.viewState.openDay(day)
   }
 
@@ -178,11 +182,11 @@ export class ActivityService {
     this.viewState.setSearchQuery(query)
   }
 
-  setDateFrom(day: string): Promise<boolean> {
+  setDateFrom(day: DayKey | null): Promise<boolean> {
     return this.viewState.setDateFrom(day)
   }
 
-  setDateTo(day: string): Promise<boolean> {
+  setDateTo(day: DayKey | null): Promise<boolean> {
     return this.viewState.setDateTo(day)
   }
 
@@ -217,15 +221,13 @@ export class ActivityService {
   }
 
   /** Collects the local days `fromKey` to `toKey`, inclusive. */
-  collect(fromKey: string, toKey: string): Promise<void> {
+  collect(fromKey: DayKey, toKey: DayKey): Promise<void> {
     return this.data.collect(fromKey, toKey)
   }
 
-  /** Re-runs the last collection: the startup load if no range is known yet, else the range. */
+  /** Retry for the collection failure shown, see `ActivityDataService.retryCollection`. */
   retryCollection(): Promise<void> {
-    const from = this.dateFrom()
-    const to = this.dateTo()
-    return from && to ? this.data.collect(from, to) : this.data.initLoad()
+    return this.data.retryCollection()
   }
 
   dismissCollectionStatus(): void {
@@ -240,25 +242,33 @@ export class ActivityService {
     return this.exportAs('markdown')
   }
 
-  /** The entries the list shows, over the chosen local days or else the collected range. */
+  /**
+   * The entries the view shows, over the chosen local days or else the collected range: the
+   * timeline's list, or what a calendar view draws, a meeting that runs into the range included.
+   */
   private async exportAs(format: OutputFormat): Promise<void> {
-    this.error.set(null)
+    if (this.notice()?.origin === 'export') this.notice.set(null)
     const from = this.dateFrom()
     const to = this.dateTo()
     const meta = this.meta()
     const range = from && to ? localDayRange(from, to) : meta
     if (!range) {
-      this.error.set('Export failed: nothing has been collected yet')
+      this.notice.set({
+        origin: 'export',
+        failure: failure('Export failed: nothing has been collected yet'),
+      })
       return
     }
     try {
+      const shown = this.currentView() === 'list' ? this.filteredEntries() : this.calendarEntries()
       await this.exportService.export(
         format,
-        this.filteredEntries().map(entry => entry.entry),
+        shown.map(entry => entry.entry),
         range
       )
     } catch (error) {
-      this.error.set(error instanceof Error ? error.message : 'Export failed: Unknown error')
+      // `ActivityExportService` names the export in its message.
+      this.notice.set({ origin: 'export', failure: failureOf(error) })
     }
   }
 
@@ -280,12 +290,16 @@ export class ActivityService {
     return this.providerConfig.removeConnection(connection)
   }
 
-  /** Checks a source again and collects it again; a request that fails shows as the error. */
-  async recheckConnection(connection: ConnectionId): Promise<void> {
-    try {
-      await this.data.recheckConnection(connection)
-    } catch (error) {
-      this.error.set(`Checking the source again failed: ${extractBackendErrorMessage(error)}`)
-    }
+  /** Where a save's receipt stands against the state on screen, see `ReceiptStanding`. */
+  receiptStanding(receipt: InstallReceipt): ReceiptStanding {
+    return this.data.receiptStanding(receipt)
+  }
+
+  /** The host on screen, null before any. */
+  readonly hostEpoch = this.data.hostEpoch
+
+  /** Checks a source again and collects it again; a refused request rejects, for its caller. */
+  recheckConnection(connection: ConnectionId): Promise<void> {
+    return this.data.recheckConnection(connection)
   }
 }

@@ -113,8 +113,7 @@ describe('ActivityBackendClient', () => {
   }
 
   it.each([
-    ['getActivity', BackendOperations.activity],
-    ['getProviders', BackendOperations.providers],
+    ['getRuntimeState', BackendOperations.runtimeState],
     ['getProviderConfig', BackendOperations.providerConfig],
     ['clearLogs', BackendOperations.clearLogs],
   ] as const)('%s calls its operation without a request', (method, operation) => {

@@ -2,12 +2,7 @@ import { provideHttpClient } from '@angular/common/http'
 import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing'
 import { TestBed } from '@angular/core/testing'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import {
-  activityLog,
-  collectingLog,
-  exportRequest,
-  providersResponse,
-} from '../../testing/activity-fixtures'
+import { collectingLog, exportRequest, MockBackendTransport } from '../../testing/activity-fixtures'
 import { BackendOperations, DesktopOnlyBackendError } from './backend-contract'
 import { HttpBackendTransport } from './http-backend-transport'
 
@@ -28,26 +23,28 @@ describe('HttpBackendTransport', () => {
     TestBed.inject(HttpTestingController).verify()
   })
 
-  it('reads the activity over GET /api/activity', async () => {
+  it('reads the host’s state over GET /api/runtime-state', async () => {
     const { transport, http } = setup()
+    const state = new MockBackendTransport().runtimeState()
 
-    const result = transport.call(BackendOperations.activity, undefined)
-    const req = http.expectOne('/api/activity')
+    const result = transport.call(BackendOperations.runtimeState, undefined)
+    const req = http.expectOne('/api/runtime-state')
     expect(req.request.method).toBe('GET')
-    req.flush(activityLog)
+    req.flush(state)
 
-    await expect(result).resolves.toEqual(activityLog)
+    await expect(result).resolves.toEqual(state)
   })
 
-  it('reads the providers over GET /api/providers', async () => {
+  it('cancels the request itself when the call is aborted', async () => {
     const { transport, http } = setup()
+    const controller = new AbortController()
 
-    const result = transport.call(BackendOperations.providers, undefined)
-    const req = http.expectOne('/api/providers')
-    expect(req.request.method).toBe('GET')
-    req.flush(providersResponse)
+    const result = transport.call(BackendOperations.runtimeState, undefined, controller.signal)
+    const req = http.expectOne('/api/runtime-state')
+    controller.abort(new Error('stopped'))
 
-    await expect(result).resolves.toEqual(providersResponse)
+    await expect(result).rejects.toThrow('stopped')
+    expect(req.cancelled).toBe(true)
   })
 
   it('collects over POST /api/collect with the request as body', async () => {
@@ -118,23 +115,38 @@ describe('HttpBackendTransport', () => {
     const revokeObjectURL = vi.fn()
     vi.stubGlobal('URL', { createObjectURL, revokeObjectURL })
     let downloaded = ''
+    let attached = false
     const click = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(function (
       this: HTMLAnchorElement
     ) {
       downloaded = this.download
+      attached = this.isConnected
     })
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
 
-    const saved = transport.saveExport(exportRequest)
-    const req = http.expectOne('/api/export')
-    expect(req.request.method).toBe('POST')
-    expect(req.request.body).toEqual(exportRequest)
-    req.flush({ fileName: 'activity-2026-05-17-2026-05-18.md', content: '# hi' })
-    await saved
+    try {
+      const saved = transport.saveExport(exportRequest)
+      const req = http.expectOne('/api/export')
+      expect(req.request.method).toBe('POST')
+      expect(req.request.body).toEqual(exportRequest)
+      req.flush({ fileName: 'activity-2026-05-17-2026-05-18.md', content: '# hi' })
+      await saved
 
-    expect(click).toHaveBeenCalledOnce()
-    expect(downloaded).toBe('activity-2026-05-17-2026-05-18.md')
-    expect(createObjectURL).toHaveBeenCalledWith(expect.objectContaining({ type: 'text/markdown' }))
-    expect(revokeObjectURL).toHaveBeenCalledWith('blob:export')
+      expect(click).toHaveBeenCalledOnce()
+      expect(downloaded).toBe('activity-2026-05-17-2026-05-18.md')
+      // Firefox follows a click only on a link in the document; it goes again afterwards.
+      expect(attached).toBe(true)
+      expect(document.querySelector('a[download]')).toBeNull()
+      expect(createObjectURL).toHaveBeenCalledWith(
+        expect.objectContaining({ type: 'text/markdown' })
+      )
+      // The browser reads the file after the click returns: the URL stays valid until then.
+      expect(revokeObjectURL).not.toHaveBeenCalled()
+      vi.runAllTimers()
+      expect(revokeObjectURL).toHaveBeenCalledWith('blob:export')
+    } finally {
+      vi.useRealTimers()
+    }
   })
 
   it('downloads nothing when the API rejects an export', async () => {

@@ -1,9 +1,10 @@
 import { provideLocationMocks } from '@angular/common/testing'
 import { TestBed } from '@angular/core/testing'
 import { Router } from '@angular/router'
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 import { provideAppRouter } from '../app.routes'
 import { ActivityService } from './activity.service'
+import { appLink } from '../components/share/share-link'
 import { DeepLinkService } from './deep-link.service'
 
 describe('DeepLinkService', () => {
@@ -86,6 +87,45 @@ describe('DeepLinkService', () => {
     expect(router.url).toBe('/timeline?from=2016-11-18&to=2026-11-17')
 
     expect(collect.mock.calls).toEqual([['2016-11-18', '2026-11-17']])
+  })
+
+  describe('in Berlin, across a change to summer time', () => {
+    beforeAll(() => vi.stubEnv('TZ', 'Europe/Berlin'))
+    afterAll(() => vi.unstubAllEnvs())
+
+    it('checks a link’s range as the backend does, in instants', async () => {
+      // 30 March 2020 is summer time, 31 March 2030 00:00 is still winter time.
+      expect(new Date(2020, 2, 30).getTimezoneOffset()).toBe(-120)
+      expect(new Date(2030, 2, 31).getTimezoneOffset()).toBe(-60)
+      const { links, router, collect } = await setup()
+
+      // Ten years of days, inclusive, last one hour longer than 3653 days: refused.
+      await links.open('activity-log://timeline?from=2020-03-30&to=2030-03-30')
+      expect(router.url).toBe('/timeline')
+      // A day less is 3652 days and one hour.
+      await links.open('activity-log://timeline?from=2020-03-30&to=2030-03-29')
+      expect(router.url).toBe('/timeline?from=2020-03-30&to=2030-03-29')
+
+      expect(collect.mock.calls).toEqual([['2020-03-30', '2030-03-29']])
+    })
+  })
+
+  it('opens a shared link to an event with / and # in its id as that event', async () => {
+    const { links, router } = await setup()
+    // A numbered id (`make_ids_unique`) holds `#`; ids also hold `/`.
+    for (const key of ['git/work/1f3a#2', 'calendar/team/uid/1@example.org#2']) {
+      await router.navigate(['/day', '2026-11-17'], { queryParams: { event: key } })
+      const shared = appLink(router, ['event'])
+      expect(shared).not.toContain('#')
+      await router.navigateByUrl('/timeline')
+
+      expect(await links.open(shared)).toBe(true)
+      expect(router.parseUrl(router.url).queryParams['event']).toBe(key)
+      // A reload reads the same address again.
+      expect(
+        router.parseUrl(router.serializeUrl(router.parseUrl(router.url))).queryParams['event']
+      ).toBe(key)
+    }
   })
 
   it('ignores a link to no view or another scheme', async () => {

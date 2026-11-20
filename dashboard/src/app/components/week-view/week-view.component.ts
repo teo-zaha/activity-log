@@ -12,7 +12,7 @@ import {
   nowMarker,
 } from '../calendar-layout'
 import { injectMinuteClock } from '../../utils/clock'
-import { dateOfKey, dayKeyOf, keysWithin } from '../../utils/local-day'
+import { dateOfKey, dayKeyOf, keysWithin, type DayKey } from '../../utils/local-day'
 import {
   type MeetingTime,
   NO_MEETING_TIME,
@@ -102,7 +102,7 @@ export class WeekViewComponent {
     return (HOUR_END - HOUR_START + 1) * this.activity.hourHeight()
   }
 
-  protected formatWeekRange(days: string[]): string {
+  protected formatWeekRange(days: readonly DayKey[]): string {
     if (!days.length) return ''
     const s = dateOfKey(days[0])
     const e = dateOfKey(days[days.length - 1])
@@ -113,7 +113,7 @@ export class WeekViewComponent {
     return month
   }
 
-  protected formatDayCol(dateStr: string): { weekday: string; date: string } {
+  protected formatDayCol(dateStr: DayKey): { weekday: string; date: string } {
     const d = dateOfKey(dateStr)
     return {
       weekday: d.toLocaleDateString('en-GB', { weekday: 'short' }),
@@ -121,7 +121,7 @@ export class WeekViewComponent {
     }
   }
 
-  protected isToday(dateStr: string): boolean {
+  protected isToday(dateStr: DayKey): boolean {
     return dateStr === this.today()
   }
 
@@ -144,21 +144,21 @@ export class WeekViewComponent {
 
   protected readonly weekMeetingTimeLabel = computed(() => meetingTimeLabel(this.weekMeetingTime()))
 
-  private meetingTimeOf(day: string): MeetingTime {
+  private meetingTimeOf(day: DayKey): MeetingTime {
     return this.meetingTimes().get(day) ?? NO_MEETING_TIME
   }
 
-  protected dayMeetingTimeParts(day: string): ReturnType<typeof meetingTimeParts> {
+  protected dayMeetingTimeParts(day: DayKey): ReturnType<typeof meetingTimeParts> {
     return meetingTimeParts(this.meetingTimeOf(day))
   }
 
   protected readonly eventClass = calendarEventClass
 
-  protected isSelectedDay(dateStr: string): boolean {
+  protected isSelectedDay(dateStr: DayKey): boolean {
     return dateStr === this.activity.selectedDay()
   }
 
-  protected readonly days = computed<string[]>(() =>
+  protected readonly days = computed<DayKey[]>(() =>
     this.activity.currentView() === 'workweek'
       ? this.activity.workWeekDays()
       : this.activity.weekDays()
@@ -196,7 +196,9 @@ export class WeekViewComponent {
       }
     })
 
-    // Greedy row packing
+    // Greedy row packing in order of the first column, longer bars first: that needs only as
+    // many rows as bars overlap on one day (the log lists entries newest first).
+    bars.sort((a, b) => a.startCol - b.startCol || b.spanCols - a.spanCols)
     const rowEnds: number[] = [] // tracks the last endCol+1 used per row
     return bars.map(bar => {
       let row = rowEnds.findIndex(end => end <= bar.startCol)
@@ -225,7 +227,7 @@ export class WeekViewComponent {
     return maxRow < 0 ? 0 : (maxRow + 1) * (ALLDAY_BAR_HEIGHT + ALLDAY_BAR_GAP) + ALLDAY_BAR_GAP * 2
   }
 
-  protected dayHasMultiDayEvent(dateStr: string): boolean {
+  protected dayHasMultiDayEvent(dateStr: DayKey): boolean {
     return this.multiDayLayout().some(bar => {
       const start = this.days()[bar.startCol]
       const end = this.days()[bar.startCol + bar.spanCols - 1]
@@ -235,7 +237,7 @@ export class WeekViewComponent {
 
   // ── Per-day layout ────────────────────────────────────────────────────────
 
-  protected getEntriesForDay(dateStr: string): EntryUiAdapter[] {
+  protected getEntriesForDay(dateStr: DayKey): EntryUiAdapter[] {
     return this.activity.weekEntriesByDay().get(dateStr) ?? []
   }
 
@@ -291,7 +293,7 @@ export class WeekViewComponent {
       Array.from(this.layoutsByDay().values()).every(layout => layout.length === 0)
   )
 
-  protected getLayoutForDay(dateStr: string): (PositionedWeekEvent | PositionedWeekOverflow)[] {
+  protected getLayoutForDay(dateStr: DayKey): (PositionedWeekEvent | PositionedWeekOverflow)[] {
     return this.layoutsByDay().get(dateStr) ?? []
   }
 
@@ -318,7 +320,7 @@ export class WeekViewComponent {
     return 20
   }
 
-  protected selectDay(dateStr: string): void {
+  protected selectDay(dateStr: DayKey): void {
     void this.activity.openDay(dateStr)
   }
 
@@ -342,7 +344,7 @@ export class WeekViewComponent {
     return `Open ${entries.length} additional events`
   }
 
-  protected dayAriaLabel(day: string): string {
+  protected dayAriaLabel(day: DayKey): string {
     const label = `Open day view for ${this.formatDayCol(day).weekday} ${this.formatDayCol(day).date}`
     const meetings = meetingTimeLabel(this.meetingTimeOf(day))
     return meetings ? `${label}, meetings ${meetings}` : label

@@ -11,7 +11,7 @@ import {
   type ViewTransitionsFeature,
   withViewTransitions,
 } from '@angular/router'
-import { type AppLocation, parseAppUrl } from './utils/app-url'
+import { type AppLocation, dayOf, parseAppUrl } from './utils/app-url'
 import { downQuery } from './utils/breakpoints'
 
 /**
@@ -42,7 +42,7 @@ function pageDepth(location: AppLocation): number {
 export function viewTransitionKind(from: UrlTree, to: UrlTree, phone = false): ViewTransitionKind {
   const [before, after] = [parseAppUrl(from), parseAppUrl(to)]
   if (before === null || after === null) return 'none'
-  const sameView = before.view === after.view && before.day === after.day
+  const sameView = before.view === after.view && dayOf(before) === dayOf(after)
   const tabSwitch = (before.settings === null) !== (after.settings === null)
   if (phone && sameView && !tabSwitch) {
     const [depthBefore, depthAfter] = [pageDepth(before), pageDepth(after)]

@@ -28,13 +28,14 @@ import { SettingsAddSourcePaneComponent } from './add-source-pane/settings-add-s
 import { SettingsSourcePaneComponent } from './source-pane/settings-source-pane.component'
 import { SettingsPageActions } from './settings-page-actions'
 import {
-  connectionSelection,
+  isSettingsPage,
   type SettingsProviderRow,
+  type SettingsPage,
   type SettingsSelection,
 } from './settings-dialog.types'
 
 /** What each section says under its title; one short line at most. */
-const DESCRIPTIONS: Partial<Record<SettingsSelection, string>> = {
+const DESCRIPTIONS: Partial<Record<SettingsPage, string>> = {
   general: 'Applies at once and is kept for next time.',
   add: 'A source can be added more than once, such as two GitLab accounts.',
 }
@@ -97,15 +98,16 @@ export class SettingsDialogComponent {
   })
   protected readonly selectedProvider = computed<SettingsProviderRow | null>(() => {
     const section = this.section()
-    return this.providerRows().find(provider => section === `connection:${provider.key}`) ?? null
+    return this.providerRows().find(provider => section === provider.key) ?? null
   })
   /**
    * A connection the URL names that is not among the sources (a stale link, a removed source):
    * `loading` until the sources are in.
    */
   protected readonly missingSource = computed<'loading' | 'missing' | null>(() => {
-    if (!this.section().startsWith('connection:') || this.selectedProvider() !== null) return null
-    const known = this.activity.providersLoaded() || this.activity.error() !== null
+    if (isSettingsPage(this.section()) || this.selectedProvider() !== null) return null
+    const known =
+      this.activity.providersLoaded() || this.activity.connection().status.kind === 'failed'
     return known ? 'missing' : 'loading'
   })
   protected readonly title = computed(() => {
@@ -124,9 +126,10 @@ export class SettingsDialogComponent {
         )
     }
   })
-  protected readonly description = computed(() => DESCRIPTIONS[this.section()] ?? null)
-
-  protected readonly connectionSelection = connectionSelection
+  protected readonly description = computed(() => {
+    const section = this.section()
+    return isSettingsPage(section) ? (DESCRIPTIONS[section] ?? null) : null
+  })
 
   constructor() {
     // On a phone the page that had focus is gone after moving between the list and a section:

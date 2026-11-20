@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest'
+import type { DayKey } from './local-day'
 import type { DayIndexDay, DayIndexItem } from '../models/day-index'
 import {
   buildDayIndex,
@@ -29,7 +30,7 @@ describe('buildDayIndex', () => {
   })
 
   it('gives the oldest heading its year only when the range spans years', () => {
-    const labels = (from: string, to: string): string[] =>
+    const labels = (from: DayKey, to: DayKey): string[] =>
       buildDayIndex(from, to, new Map(), to).flatMap(item =>
         item.kind === 'month' ? [item.label] : []
       )
@@ -42,11 +43,11 @@ describe('buildDayIndex', () => {
   it('cuts every month label to three letters', () => {
     const [heading] = buildDayIndex('2026-09-01', '2026-09-01', new Map(), '2026-09-01')
 
-    expect(heading).toEqual({ kind: 'month', key: '2026-09', label: 'Sep' })
+    expect(heading).toEqual({ kind: 'month', key: '2026-09', day: '2026-09-01', label: 'Sep' })
   })
 
   it('marks today, weekends, Mondays, empty days and relative weight', () => {
-    const counts = new Map([
+    const counts = new Map<DayKey, number>([
       ['2026-11-16', 4],
       ['2026-11-14', 2],
     ])
@@ -133,7 +134,10 @@ describe('nearestDayWithEntries', () => {
 
   it('finds nothing without events', () => {
     expect(
-      nearestDayWithEntries(daysOf(buildDayIndex('2026-11-10', '2026-11-12', new Map(), '')), 1)
+      nearestDayWithEntries(
+        daysOf(buildDayIndex('2026-11-10', '2026-11-12', new Map(), '2026-11-20')),
+        1
+      )
     ).toBe(-1)
   })
 })

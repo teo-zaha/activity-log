@@ -19,6 +19,7 @@ import {
 import { VIEW_LABELS } from './models/view-option'
 import { provideViewTransitionGate, withAppViewTransitions } from './view-transitions'
 import { ActivityService } from './services/activity.service'
+import { failureWhile } from './services/failure'
 import { type CalendarView, VIEW_PATHS, viewCommands } from './utils/app-url'
 import { isDayKey, longDayLabel, todayKey } from './utils/local-day'
 
@@ -37,7 +38,10 @@ function redirectKeepingQuery(commands: () => string[]): RedirectFunction {
 }
 
 function dayTitle(view: CalendarView): ResolveFn<string> {
-  return route => `${VIEW_LABELS[view]} · ${longDayLabel(route.paramMap.get('date') ?? todayKey())}`
+  return route => {
+    const date = route.paramMap.get('date')
+    return `${VIEW_LABELS[view]} · ${longDayLabel(date !== null && isDayKey(date) ? date : todayKey())}`
+  }
 }
 
 function calendarRoutes(view: CalendarView, loadComponent: () => Promise<Type<unknown>>): Routes {
@@ -62,7 +66,7 @@ export const APP_ROUTES: Routes = [
   ...calendarRoutes('workweek', loadWeekView),
   ...calendarRoutes('week', loadWeekView),
   // `/` and unknown paths show the timeline.
-  { path: '**', redirectTo: redirectKeepingQuery(() => viewCommands('list', '')) },
+  { path: '**', redirectTo: redirectKeepingQuery(() => viewCommands('list', todayKey())) },
 ]
 
 /** `Day · Tuesday, 17 November 2026 · Activity Log`. */
@@ -118,8 +122,11 @@ export function provideAppRouter(): (Provider | EnvironmentProviders)[] {
       withRouterConfig({ defaultQueryParamsHandling: 'merge' }),
       withAppViewTransitions(),
       // A view's code failed to load (an app update, a dropped dev server): say so and stay.
-      withNavigationErrorHandler(() =>
-        inject(ActivityService).error.set('This view could not be opened. Try again.')
+      withNavigationErrorHandler(error =>
+        inject(ActivityService).notice.set({
+          origin: 'view',
+          failure: failureWhile('Opening this view', error.error),
+        })
       )
     ),
     { provide: TitleStrategy, useClass: AppTitleStrategy },

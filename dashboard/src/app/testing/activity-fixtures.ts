@@ -1,6 +1,13 @@
 import { resource, type Provider, type ResourceRef } from '@angular/core'
 import type {
   ActivityLog,
+  ActivityState,
+  ActivityUpdate,
+  CollectAnswer,
+  CollectionFailedResponse,
+  PartStamp,
+  ProvidersUpdate,
+  RuntimeState,
   BusyStatus,
   ExportRequest,
   LogEntry,
@@ -11,13 +18,18 @@ import type {
   Source,
 } from '../generated/activity'
 import {
-  type ActivityResponse,
   BackendOperations,
   type BackendOperation,
   type ReadOperation,
 } from '../services/backend/backend-contract'
 import type { ConnectionKey } from '../providers/connection'
 import { BackendTransport } from '../services/backend/backend-transport'
+
+/**
+ * What the mock host shows, in the shape `GET /api/activity` has it: a log, partial while
+ * `meta.pending` names connections, or a failed collection's range and error.
+ */
+export type ActivityResponse = ActivityLog | CollectionFailedResponse
 
 export const providerInfo: ProviderInfo[] = [
   {
@@ -108,15 +120,30 @@ export const collectingLog: ActivityLog = {
  * Tune the public fields per test.
  */
 export class MockBackendTransport implements BackendTransport {
-  activityResponses: ActivityResponse[] = [activityLog]
+  /**
+   * What the host shows at the next reads, before `activityResponse`: an `Error` fails that
+   * read, and `null` is the host before its first collection.
+   */
+  activityResponses: (ActivityResponse | Error | null)[] = [activityLog]
+  /** What the host shows at every read once `activityResponses` is used up. */
+  activityResponse: ActivityResponse | null = activityLog
   providersResponse = providersResponse
-  providersError: Error | null = null
-  /** When set, a providers answer waits for it; the answer is the response as of the request. */
-  providersGate: Promise<void> | null = null
+  /** Fails every read while set. */
+  stateError: Error | null = null
+  /** When set, a read answers once it resolves, with the state as of the request. */
+  stateGate: Promise<void> | null = null
+  /** The host's epoch and authority, as its stamps carry them. */
+  epoch = 'mock-host'
+  authority = '1'
   collectResponse: ActivityResponse = activityLog
   /** Answers to the next collect requests, before `collectResponse`. */
   collectResponses: ActivityResponse[] = []
   collectError: Error | null = null
+  /** When set, a collect answer waits for it; the gate is taken when the request is sent. */
+  collectGate: Promise<void> | null = null
+  /** When set, a settings change's answer waits for it; taken when the request is sent. */
+  saveGate: Promise<void> | null = null
+  recheckError: Error | null = null
   exports: ExportRequest[] = []
   /** Every link passed to `openUrl`, in order. */
   openedUrls: string[] = []
@@ -126,16 +153,26 @@ export class MockBackendTransport implements BackendTransport {
   logsError: Error | null = null
   clearLogsError: Error | null = null
 
+  /** The host's revisions: one counter, a part taking the next value when it changes. */
+  private revision = 0
+  private shownActivity: ActivityUpdate | null = null
+  private shownProviders: ProvidersUpdate | null = null
+
   resource<Res>(read: ReadOperation<Res>): ResourceRef<Res | undefined> {
     return resource({ loader: () => this.call(read, undefined) })
   }
 
-  call<Req, Res>(operation: BackendOperation<Req, Res>, request: NoInfer<Req>): Promise<Res> {
+  call<Req, Res>(
+    operation: BackendOperation<Req, Res>,
+    request: NoInfer<Req>,
+    signal?: AbortSignal
+  ): Promise<Res> {
     this.requests.push(request)
     // The response type is only a phantom on the operation, so an identity check in `respond`
     // cannot narrow `Res`; a typed handler map would need the same cast to store its entries.
     // Each case in `respond` returns the response its operation declares.
-    return this.respond(operation) as Promise<Res>
+    const answer = this.respond(operation) as Promise<Res>
+    return signal === undefined ? answer : Promise.race([answer, aborted(signal)])
   }
 
   saveExport(request: ExportRequest): Promise<void> {
@@ -155,40 +192,80 @@ export class MockBackendTransport implements BackendTransport {
     return Promise.resolve()
   }
 
+  /** The host's state now, both parts. */
+  runtimeState(): RuntimeState {
+    return { activity: this.showActivity(this.activityResponse), providers: this.showProviders() }
+  }
+
+  /** Shows `response` as the host's activity: a new revision only when it changed. */
+  private showActivity(response: ActivityResponse | null): ActivityUpdate {
+    const state = hostStateOf(response)
+    if (this.shownActivity === null || !sameJson(this.shownActivity.state, state)) {
+      this.shownActivity = { ...this.stamp(), state }
+    }
+    return { ...this.shownActivity, epoch: this.epoch, authority: this.authority }
+  }
+
+  private showProviders(): ProvidersUpdate {
+    const providers = this.providersResponse
+    if (this.shownProviders === null || !sameJson(this.shownProviders.providers, providers)) {
+      this.shownProviders = { ...this.stamp(), providers }
+    }
+    return { ...this.shownProviders, epoch: this.epoch, authority: this.authority }
+  }
+
+  private stamp(): PartStamp {
+    return { epoch: this.epoch, authority: this.authority, revision: ++this.revision }
+  }
+
   private saveResponse(): ProviderConfigSaveResponseDto {
+    const providers = this.showProviders()
     return {
       snapshot: { kinds: [], connections: [] },
       providersResponse: this.providersResponse,
-      installed: { epoch: 'mock-host', revision: 1 },
+      installed: { epoch: providers.epoch, revision: providers.revision },
     }
+  }
+
+  private gated<T>(gate: Promise<void> | null, answer: T): Promise<T> {
+    return (gate ?? Promise.resolve()).then(() => answer)
   }
 
   private respond(operation: BackendOperation<unknown, unknown>): Promise<unknown> {
     switch (operation) {
-      case BackendOperations.activity:
-        return Promise.resolve(this.activityResponses.shift() ?? activityLog)
-      case BackendOperations.providers: {
-        if (this.providersError) return Promise.reject(this.providersError)
-        const response = this.providersResponse
-        return (this.providersGate ?? Promise.resolve()).then(() => response)
+      case BackendOperations.runtimeState: {
+        const next =
+          this.activityResponses.length > 0 ? this.activityResponses.shift() : this.activityResponse
+        if (this.stateError) return Promise.reject(this.stateError)
+        if (next instanceof Error) return Promise.reject(next)
+        const pair: RuntimeState = {
+          activity: this.showActivity(next ?? null),
+          providers: this.showProviders(),
+        }
+        return this.gated(this.stateGate, pair)
       }
-      case BackendOperations.recheckConnection:
-        return Promise.resolve(this.providersResponse)
+      case BackendOperations.recheckConnection: {
+        if (this.recheckError) return Promise.reject(this.recheckError)
+        const { epoch, authority, revision } = this.showProviders()
+        return Promise.resolve({ ...this.providersResponse, stamp: { epoch, authority, revision } })
+      }
       case BackendOperations.saveProviderConfig:
       case BackendOperations.removeConnection:
-        return Promise.resolve(this.saveResponse())
+        return this.gated(this.saveGate, this.saveResponse())
       case BackendOperations.addConnection:
-        return Promise.resolve({
+        return this.gated(this.saveGate, {
           created: this.providersResponse.providers.at(-1)?.connection ?? {
             source: 'gitlab',
             name: 'default',
           },
           ...this.saveResponse(),
         })
-      case BackendOperations.collect:
-        return this.collectError
-          ? Promise.reject(this.collectError)
-          : Promise.resolve(this.collectResponses.shift() ?? this.collectResponse)
+      case BackendOperations.collect: {
+        if (this.collectError) return Promise.reject(this.collectError)
+        const response = this.collectResponses.shift() ?? this.collectResponse
+        const { epoch, authority, revision, state } = this.showActivity(response)
+        return this.gated(this.collectGate, collectAnswerOf(state, { epoch, authority, revision }))
+      }
       case BackendOperations.logs:
         return this.logsError
           ? Promise.reject(this.logsError)
@@ -201,6 +278,40 @@ export class MockBackendTransport implements BackendTransport {
         return Promise.reject(new Error(`${operation.label} is not implemented`))
     }
   }
+}
+
+/** The state a host shows for `response`, as `ActivityState` in core puts it. */
+function hostStateOf(response: ActivityResponse | null): ActivityState {
+  if (response === null) return { kind: 'empty' }
+  if ('error' in response) return { kind: 'failed', failure: response }
+  return (response.meta.pending ?? []).length > 0
+    ? { kind: 'running', log: response }
+    : { kind: 'ready', log: response }
+}
+
+/** What `collect` answers for the state the host shows. */
+function collectAnswerOf(state: ActivityState, stamp: PartStamp): CollectAnswer {
+  switch (state.kind) {
+    case 'empty':
+      throw new Error('The mock host answers a collect only with a collection')
+    case 'failed':
+      return { ...state.failure, kind: 'failed', stamp }
+    case 'running':
+    case 'ready':
+      return { ...state.log, kind: state.kind, stamp }
+  }
+}
+
+function sameJson(a: unknown, b: unknown): boolean {
+  return JSON.stringify(a) === JSON.stringify(b)
+}
+
+/** Rejects once `signal` is aborted, as a transport does. */
+function aborted(signal: AbortSignal): Promise<never> {
+  return new Promise((_, reject) => {
+    if (signal.aborted) reject(signal.reason)
+    else signal.addEventListener('abort', () => reject(signal.reason), { once: true })
+  })
 }
 
 export function provideMockBackend(backend: MockBackendTransport): Provider {

@@ -2,7 +2,7 @@ import { Location } from '@angular/common'
 import { provideLocationMocks, SpyLocation } from '@angular/common/testing'
 import { TestBed } from '@angular/core/testing'
 import { Router } from '@angular/router'
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 import { provideAppRouter } from '../app.routes'
 import { connectionSet, gitlabProvider as gitlab, providerInfo } from '../testing/activity-fixtures'
 import { ActivityViewStateService } from './activity-view-state.service'
@@ -87,6 +87,26 @@ describe('ActivityViewStateService URL state', () => {
   describe('event details', () => {
     const query = (router: Router): Record<string, unknown> =>
       router.parseUrl(router.url).queryParams
+
+    it('keeps the settings’ history depth when details open over them', async () => {
+      const { service, location } = await open('/timeline')
+      await service.openSettings('general')
+      await service.openEvent('git/default/a')
+
+      expect(location.getState()).toMatchObject({ detailDepth: 1, settingsDepth: 1 })
+    })
+
+    it('keeps the details’ history depth when the range replaces the entry', async () => {
+      const { service, router, location } = await open('/timeline')
+      await service.openEvent('git/default/a')
+      await service.setDateFrom('2026-05-17')
+      expect(location.getState()).toMatchObject({ detailDepth: 1 })
+
+      // Closing goes back past the details, to the entry before them.
+      await service.closeDetail()
+      expect(router.url).toBe('/timeline')
+      expect(location.getState()).not.toMatchObject({ detailDepth: 1 })
+    })
 
     it('opens an event over the view and closes it with Back', async () => {
       const { service, router, location } = await open('/day/2026-11-17?q=x')
@@ -183,7 +203,7 @@ describe('ActivityViewStateService URL state', () => {
     expect(service.searchQuery()).toBe('review')
     expect(service.dateFrom()).toBe('2026-11-01')
     expect(service.dateTo()).toBe('2026-11-14')
-    expect(service.settings()).toBe('connection:gitlab/oss')
+    expect(service.settings()).toBe('gitlab/oss')
   })
 
   it('shows the timeline for / and unknown paths, keeping the query', async () => {
@@ -207,8 +227,8 @@ describe('ActivityViewStateService URL state', () => {
   it('ignores invalid query values', async () => {
     const { service } = await open('/timeline?from=yesterday&to=2026-13-01&settings=nope%2Fx')
 
-    expect(service.dateFrom()).toBe('')
-    expect(service.dateTo()).toBe('')
+    expect(service.dateFrom()).toBeNull()
+    expect(service.dateTo()).toBeNull()
     expect(service.settings()).toBeNull()
   })
 
@@ -299,7 +319,7 @@ describe('ActivityViewStateService URL state', () => {
   it('opens the settings as a history entry, moves between sections in place and closes with Back', async () => {
     const { service, router, location } = await open('/day/2026-11-17')
 
-    await service.openSettings('connection:jira/default')
+    await service.openSettings('jira/default')
     expect(router.url).toBe('/day/2026-11-17?settings=jira%2Fdefault')
     await service.showSettings('logs')
     expect(service.settings()).toBe('logs')
@@ -355,5 +375,36 @@ describe('ActivityViewStateService URL state', () => {
 
     location.go('/day/2026-11-17?from=2026-11-01')
     expect(service.openedRange()).toBeNull()
+  })
+
+  it('shows no range from a URL the backend would refuse it for, and collects none', async () => {
+    TestBed.configureTestingModule({ providers: [provideAppRouter(), provideLocationMocks()] })
+    const router = TestBed.inject(Router)
+    router.initialNavigation()
+    await router.navigateByUrl('/timeline?from=2026-06-05&to=2026-05-01')
+    const service = TestBed.inject(ActivityViewStateService)
+    service.showCollectedRange({ from: '2026-05-17', to: '2026-05-18' })
+
+    expect([service.dateFrom(), service.dateTo()]).toEqual(['2026-05-17', '2026-05-18'])
+    TestBed.inject(Location).go('/timeline?from=2026-06-05&to=2026-05-01')
+    expect(service.openedRange()).toBeNull()
+  })
+
+  describe('in Berlin, across a change to summer time', () => {
+    beforeAll(() => vi.stubEnv('TZ', 'Europe/Berlin'))
+    afterAll(() => vi.unstubAllEnvs())
+
+    it('collects no range the URL names that the backend would refuse', () => {
+      TestBed.configureTestingModule({ providers: [provideAppRouter(), provideLocationMocks()] })
+      const location = TestBed.inject(Location)
+      const service = TestBed.inject(ActivityViewStateService)
+
+      location.go('/timeline?from=2020-03-30&to=2030-03-30')
+      expect(service.openedRange()).toBeNull()
+      location.go('/timeline?from=2026-11-14&to=2026-11-01')
+      expect(service.openedRange()).toBeNull()
+      location.go('/timeline?from=2020-03-30&to=2030-03-29')
+      expect(service.openedRange()).toEqual({ from: '2020-03-30', to: '2030-03-29' })
+    })
   })
 })

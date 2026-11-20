@@ -9,6 +9,9 @@ import { SettingsDialogLauncher } from '../settings-dialog/settings-dialog-launc
 
 type BannerTone = 'info' | 'warn' | 'error'
 
+/** How long a reconnect keeps the state on screen before it counts as out of date. */
+const STALE_AFTER_MS = 5000
+
 interface CollectionBannerVm {
   readonly tone: BannerTone
   readonly icon: string
@@ -38,6 +41,17 @@ export class CollectionStatusComponent {
 
   protected readonly banner = computed<CollectionBannerVm | null>(() => {
     const status = this.activity.collectionStatus()
+    const { status: link, since } = this.activity.connection()
+    if (link.kind === 'reconnecting') {
+      const stale = this.now() - since >= STALE_AFTER_MS
+      return {
+        tone: stale ? 'warn' : 'info',
+        icon: 'cloud_sync',
+        title: stale ? 'Reconnecting; the activity shown may be out of date' : 'Reconnecting',
+        message: link.failure.message,
+        busy: true,
+      }
+    }
     switch (status.kind) {
       case 'idle':
         return null
@@ -80,10 +94,15 @@ export class CollectionStatusComponent {
   })
 
   constructor() {
-    // Ticks only while collecting: an interval of 0 stops it.
+    // Ticks only while collecting or reconnecting: an interval of 0 stops it.
     interval(
       () => this.now.set(Date.now()),
-      computed(() => (this.activity.collectionStatus().kind === 'collecting' ? 1000 : 0))
+      computed(() =>
+        this.activity.collectionStatus().kind === 'collecting' ||
+        this.activity.connection().status.kind === 'reconnecting'
+          ? 1000
+          : 0
+      )
     )
   }
 

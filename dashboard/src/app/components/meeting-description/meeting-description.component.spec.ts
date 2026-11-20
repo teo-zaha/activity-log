@@ -186,4 +186,41 @@ describe('MeetingDescriptionComponent', () => {
     fireEvent.click(less)
     expect(await screen.findByRole('button', { name: 'Show more' })).toBeTruthy()
   })
+
+  it('measures an open description again when its column changes size', async () => {
+    // As a browser lays it out: the clamp caps the box at 216 px, open it is as tall as its text.
+    let textHeight = 600
+    vi.spyOn(HTMLElement.prototype, 'scrollHeight', 'get').mockImplementation(() => textHeight)
+    vi.spyOn(HTMLElement.prototype, 'clientHeight', 'get').mockImplementation(function (
+      this: HTMLElement
+    ) {
+      return this.classList.contains('clamped') ? Math.min(textHeight, 216) : textHeight
+    })
+    const { fixture } = await render(MeetingDescriptionComponent, {
+      inputs: {
+        blocks: [
+          paragraph(text(Array.from({ length: 30 }, (_, line) => `Line ${line}`).join('\n'))),
+        ],
+      },
+      providers: [provideMockBackend(new MockBackendTransport())],
+    })
+    await fixture.whenStable()
+    fireEvent.click(screen.getByRole('button', { name: 'Show more' }))
+    await fixture.whenStable()
+    expect(screen.getByRole('button', { name: 'Show less' })).toBeTruthy()
+    const resized = async (): Promise<void> => {
+      const observer = new ResizeObserver(() => {})
+      for (const callback of resizeCallbacks.slice(0, -1)) callback([], observer)
+      await fixture.whenStable()
+    }
+
+    // A wider column: all of it fits the clamp now, so there is nothing to show less of.
+    textHeight = 200
+    await resized()
+    expect(screen.queryByRole('button')).toBeNull()
+
+    textHeight = 600
+    await resized()
+    expect(screen.getByRole('button', { name: 'Show less' })).toBeTruthy()
+  })
 })

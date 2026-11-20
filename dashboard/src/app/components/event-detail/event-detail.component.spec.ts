@@ -113,6 +113,8 @@ describe('EventDetailComponent', () => {
 
       await vi.waitFor(() => expect(copied).toHaveBeenCalledOnce())
       const link = new URL(copied.mock.calls[0]?.[0] ?? '')
+      // In the browser the link is this page's own address.
+      expect(link.origin).toBe(document.location.origin)
       expect(link.searchParams.get('from')).toBe('2026-11-01')
       expect(link.searchParams.get('to')).toBe('2026-11-30')
       expect(link.searchParams.get('event')).toBe(entry.trackKey)
