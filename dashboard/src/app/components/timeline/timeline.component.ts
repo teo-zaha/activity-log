@@ -24,6 +24,7 @@ import { injectMinuteClock } from '../../utils/clock'
 import { dayKeyOf, longDayLabel, relativeDayLabel, type DayKey } from '../../utils/local-day'
 import { AutoAnimateDirective } from '../auto-animate/auto-animate.directive'
 import { DayIndexComponent } from './day-index/day-index.component'
+import { refusedRange, retryable } from '../../services/collection-failure'
 
 /** How many frames after a jump its landing is corrected, see `jumpTo`. */
 const ALIGN_FRAMES = 4
@@ -108,6 +109,22 @@ export class TimelineComponent {
   protected readonly emptyState = computed<TimelineEmptyState>(() => {
     const query = this.activity.searchQuery().trim()
     const status = this.activity.collectionStatus()
+    if (status.kind === 'failed' && refusedRange(status)) {
+      return {
+        icon: 'cloud_off',
+        title: 'No activity loaded',
+        message: 'The backend refused to collect this range. Choose another one.',
+        action: null,
+      }
+    }
+    if (status.kind === 'failed' && !retryable(status)) {
+      return {
+        icon: 'cloud_off',
+        title: 'No activity loaded',
+        message: 'The backend refused to show its activity; check source status in Settings.',
+        action: null,
+      }
+    }
     if (status.kind === 'timedOut' || status.kind === 'failed') {
       return {
         icon: 'cloud_off',

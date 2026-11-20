@@ -1,6 +1,6 @@
 import { Service, inject, type ResourceRef } from '@angular/core'
 import type { BackendOperation, ReadOperation } from './backend-contract'
-import type { ExportRequest } from '../../generated/activity'
+import type { ExportOutcome, ExportRequest } from '../../generated/activity'
 import { HttpBackendTransport } from './http-backend-transport'
 import { RuntimeEnvironmentService } from './runtime-environment.service'
 import { TauriBackendTransport } from './tauri-backend-transport'
@@ -16,7 +16,10 @@ import { TauriBackendTransport } from './tauri-backend-transport'
       : inject(HttpBackendTransport),
 })
 export abstract class BackendTransport {
-  /** A read as a signal resource: `value()`, `status()`, `error()` and `reload()` come with it. */
+  /**
+   * A read as a signal resource: `value()`, `status()`, `error()` and `reload()` come with it.
+   * Every call and resource fails with a `BackendFailure`.
+   */
   abstract resource<Res>(read: ReadOperation<Res>): ResourceRef<Res | undefined>
   /**
    * `request` is checked against the operation, never used to infer its type. Aborting `signal`
@@ -27,8 +30,11 @@ export abstract class BackendTransport {
     request: NoInfer<Req>,
     signal?: AbortSignal
   ): Promise<Res>
-  /** Saves an export: a browser download over HTTP, a native save dialog on desktop. */
-  abstract saveExport(request: ExportRequest): Promise<void>
+  /**
+   * Saves an export: a browser download over HTTP, a native save dialog on desktop, which the
+   * user may close without saving.
+   */
+  abstract saveExport(request: ExportRequest): Promise<ExportOutcome>
   /** Opens an http(s) link outside the app: a new browser tab, the default browser on desktop. */
   abstract openUrl(url: string): Promise<void>
   /**

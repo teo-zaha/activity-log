@@ -5,6 +5,7 @@ import { AutoAnimateDirective } from '../auto-animate/auto-animate.directive'
 import { ButtonComponent } from '../button/button.component'
 import { IconButtonComponent } from '../button/icon-button.component'
 import { ActivityService } from '../../services/activity.service'
+import { retryable } from '../../services/collection-failure'
 import { SettingsDialogLauncher } from '../settings-dialog/settings-dialog-launcher.service'
 
 type BannerTone = 'info' | 'warn' | 'error'
@@ -18,6 +19,8 @@ interface CollectionBannerVm {
   readonly title: string
   readonly message: string
   readonly busy: boolean
+  /** Asking again could end otherwise (`retryable`). */
+  readonly retry: boolean
 }
 
 @Component({
@@ -50,6 +53,7 @@ export class CollectionStatusComponent {
         title: stale ? 'Reconnecting; the activity shown may be out of date' : 'Reconnecting',
         message: link.failure.message,
         busy: true,
+        retry: false,
       }
     }
     switch (status.kind) {
@@ -72,6 +76,7 @@ export class CollectionStatusComponent {
               ? `From ${sources.join(', ')}`
               : 'Waiting for sources',
           busy: true,
+          retry: false,
         }
       }
       case 'timedOut':
@@ -81,14 +86,16 @@ export class CollectionStatusComponent {
           title: 'Collection timed out',
           message: `${status.message} A source may still be starting up or responding slowly.`,
           busy: false,
+          retry: true,
         }
       case 'failed':
         return {
           tone: 'error',
           icon: 'error_outline',
           title: status.operation === 'initial' ? 'Could not load activity' : 'Collection failed',
-          message: status.message,
+          message: status.failure.message,
           busy: false,
+          retry: retryable(status),
         }
     }
   })

@@ -20,7 +20,8 @@ import { createEntryAdapters, getProviderAdapter } from '../providers/provider-a
 import type { EntryUiAdapter } from '../providers/types'
 import { ActivityBackendClient } from './backend/backend-client'
 import { ActivityViewStateService } from './activity-view-state.service'
-import { type Failure, failureOf } from './failure'
+import { type Failure, failure, failureOf } from './failure'
+import { BackendFailure } from './backend/backend-failure'
 import {
   RuntimeStateSource,
   type SourceFailure,
@@ -185,7 +186,12 @@ export class ActivityDataService {
       outcomes.push({
         origin: 'command',
         id: command.token,
-        status: { kind: 'failed', operation: command.operation, message: command.failure.message },
+        status: {
+          kind: 'failed',
+          operation: command.operation,
+          origin: 'collect',
+          failure: command.failure,
+        },
       })
     }
     const { status, episode } = this.link()
@@ -200,7 +206,8 @@ export class ActivityDataService {
         status: {
           kind: 'failed',
           operation: this.operation(),
-          message: activity.state.failure.error,
+          origin: 'collection',
+          failure: failure(activity.state.failure.error),
         },
       })
     }
@@ -409,7 +416,12 @@ export class ActivityDataService {
       // A plain one-shot timer per command, which no Signality composable covers.
       const timer = setTimeout(() => {
         lost = true
-        reject(new Error(`The backend did not answer within ${COMMAND_ANSWER_TIMEOUT_MS / 1000} s`))
+        reject(
+          new BackendFailure(
+            'unreachable',
+            `The backend did not answer within ${COMMAND_ANSWER_TIMEOUT_MS / 1000} s`
+          )
+        )
       }, COMMAND_ANSWER_TIMEOUT_MS)
       const settle = (done: () => void): void => {
         clearTimeout(timer)
@@ -617,7 +629,9 @@ export class ActivityDataService {
               : 'Timed out waiting for collection.',
         }
       case 'unreachable':
-        return { kind: 'failed', operation, message: cause.failure.message }
+        return { kind: 'failed', operation, origin: 'lostBackend', failure: cause.failure }
+      case 'refused':
+        return { kind: 'failed', operation, origin: 'refusedRead', failure: cause.failure }
     }
   }
 

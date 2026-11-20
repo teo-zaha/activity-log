@@ -31,6 +31,7 @@ import {
 import { ActivityViewStateService } from './activity-view-state.service'
 import { ProviderConfigFacade } from './provider-config-facade.service'
 import { localDayRange } from '../utils/local-day'
+import { BackendFailure } from './backend/backend-failure'
 
 /**
  * A collection still running with nothing in yet, 4–6 May (noon to noon, so every time zone
@@ -150,7 +151,7 @@ describe('ActivityDataService', () => {
   it('reports a backend it cannot reach, and Retry reconnects without collecting', async () => {
     const { backend, service } = setup(3)
     vi.spyOn(backend, 'call')
-    const unreachable = new Error('connection refused')
+    const unreachable = new BackendFailure('unreachable', 'connection refused')
     backend.activityResponses = [unreachable, unreachable, unreachable]
 
     const load = service.initLoad()
@@ -166,7 +167,8 @@ describe('ActivityDataService', () => {
     expect(service.collectionStatus()).toEqual({
       kind: 'failed',
       operation: 'initial',
-      message: 'connection refused',
+      origin: 'lostBackend',
+      failure: { kind: 'backend', message: 'connection refused', cause: unreachable },
     })
 
     await service.retryCollection()
@@ -177,7 +179,7 @@ describe('ActivityDataService', () => {
 
   it('follows a collection asked for after it gave up on the backend', async () => {
     const { backend, service } = setup(2)
-    const unreachable = new Error('connection refused')
+    const unreachable = new BackendFailure('unreachable', 'connection refused')
     backend.activityResponses = [unreachable, unreachable]
     const load = service.initLoad()
     await vi.runAllTimersAsync()
@@ -392,7 +394,7 @@ describe('ActivityDataService', () => {
       await settleAnswers()
       expect(service.providerInfo()[1]?.status).toBe('checking')
 
-      backend.stateError = new Error('connection reset')
+      backend.stateError = new BackendFailure('unreachable', 'connection reset')
       await vi.advanceTimersByTimeAsync(1)
       backend.stateError = null
       backend.providersResponse = { currentOs: 'linux', providers: providerInfo }
@@ -405,7 +407,11 @@ describe('ActivityDataService', () => {
     it('keeps reading after one failed read among good ones', async () => {
       // The third read fails: that is one failure in a row, not the budget used up.
       const { backend, service } = setup(3)
-      backend.activityResponses = [collectingLog, collectingLog, new Error('connection reset')]
+      backend.activityResponses = [
+        collectingLog,
+        collectingLog,
+        new BackendFailure('unreachable', 'connection reset'),
+      ]
 
       const load = service.initLoad()
       await vi.runAllTimersAsync()
@@ -553,7 +559,7 @@ describe('ActivityDataService', () => {
       await vi.runAllTimersAsync()
       expect(service.isLoading()).toBe(false)
 
-      refuse(new Error('refused old range'))
+      refuse(new BackendFailure('internal', 'refused old range'))
       await first
       expect(service.collectionStatus()).toEqual({ kind: 'idle' })
     })
@@ -570,7 +576,7 @@ describe('ActivityDataService', () => {
       await vi.runAllTimersAsync()
       expect(service.isLoading()).toBe(false)
 
-      refuse(new Error('refused old range'))
+      refuse(new BackendFailure('internal', 'refused old range'))
       await collect
       expect(service.collectionStatus()).toEqual({ kind: 'idle' })
     })
@@ -633,7 +639,7 @@ describe('ActivityDataService', () => {
       })
       backend.saveGate = null
       // A check of Jira, sent after it, is refused: Jira is gone, which the read it brings shows.
-      backend.recheckError = new Error('No source jira/default')
+      backend.recheckError = new BackendFailure('internal', 'No source jira/default')
       await expect(service.recheckConnection({ source: 'jira', name: 'default' })).rejects.toThrow()
       await settleAnswers()
       expect(service.providerInfo().map(info => info.connection.source)).toEqual(['git'])
@@ -653,13 +659,13 @@ describe('ActivityDataService', () => {
       await settleAnswers()
       backend.collectGate = new Promise(() => undefined)
       void service.collect('2026-05-10', '2026-05-11')
-      backend.stateError = new Error('connection refused')
+      backend.stateError = new BackendFailure('unreachable', 'connection refused')
       // The reads give up long before the collect's answer would count as lost.
       await vi.advanceTimersByTimeAsync(1000)
 
       expect(service.collectionStatus()).toMatchObject({
         kind: 'failed',
-        message: 'connection refused',
+        failure: { kind: 'backend', message: 'connection refused' },
       })
     })
 
@@ -681,14 +687,15 @@ describe('ActivityDataService', () => {
     it('tracks a refused collect, until it is dismissed', async () => {
       const { backend, service } = setup()
       await service.initLoad()
-      backend.collectError = new Error('boom')
+      backend.collectError = new BackendFailure('internal', 'boom')
 
       await service.collect('2026-05-18', '2026-05-18')
 
       expect(service.collectionStatus()).toEqual({
         kind: 'failed',
         operation: 'collect',
-        message: 'boom',
+        origin: 'collect',
+        failure: { kind: 'backend', message: 'boom', cause: backend.collectError },
       })
       service.dismissCollectionStatus()
       expect(service.collectionStatus()).toEqual({ kind: 'idle' })
@@ -697,7 +704,7 @@ describe('ActivityDataService', () => {
     it('stops showing a refused collect once a later check is accepted', async () => {
       const { backend, service } = setup()
       await service.initLoad()
-      backend.collectError = new Error('bad range')
+      backend.collectError = new BackendFailure('internal', 'bad range')
       await service.collect('2026-05-20', '2026-05-10')
       expect(service.collectionStatus().kind).toBe('failed')
 
@@ -754,7 +761,7 @@ describe('ActivityDataService', () => {
     await service.initLoad()
     backend.collectGate = new Promise(() => undefined)
     void service.collect('2026-05-10', '2026-05-11')
-    backend.stateError = new Error('connection refused')
+    backend.stateError = new BackendFailure('unreachable', 'connection refused')
 
     await vi.advanceTimersByTimeAsync(60 * 60 * 1000)
 
@@ -772,12 +779,12 @@ describe('ActivityDataService', () => {
         // The host checks again and evicts the entries, but its answer never arrives.
         backend.activityResponses = []
         backend.activityResponse = withEntries(activityLog, [])
-        return Promise.reject(new Error('connection reset'))
+        return Promise.reject(new BackendFailure('unreachable', 'connection reset'))
       })
 
-    await expect(service.recheckConnection({ source: 'jira', name: 'default' })).rejects.toThrow(
-      'connection reset'
-    )
+    await expect(
+      service.recheckConnection({ source: 'jira', name: 'default' })
+    ).rejects.toMatchObject({ kind: 'unreachable' })
     await vi.advanceTimersByTimeAsync(60 * 60 * 1000)
 
     expect(service.allEntries()).toEqual([])
@@ -801,7 +808,7 @@ describe('ActivityDataService', () => {
         })
       const refused = expect(
         service.recheckConnection({ source: 'jira', name: 'default' })
-      ).rejects.toThrow('30 s')
+      ).rejects.toMatchObject({ kind: 'unreachable' })
       await vi.advanceTimersByTimeAsync(31_000)
       await refused
       expect(reads).toHaveBeenCalledTimes(1)
@@ -865,7 +872,7 @@ describe('ActivityDataService', () => {
       const client = TestBed.inject(ActivityBackendClient)
       const reads = vi.spyOn(client, 'getRuntimeState')
       const send = vi.spyOn(client, 'recheckConnection')
-      backend.recheckError = new Error('lost')
+      backend.recheckError = new BackendFailure('internal', 'lost')
 
       await expect(service.recheckConnection({ source: 'jira', name: 'default' })).rejects.toBe(
         backend.recheckError
@@ -928,7 +935,7 @@ describe('ActivityDataService', () => {
 
     it('drops a read of the attempt Retry replaced', async () => {
       const { backend, service } = setup(1)
-      backend.activityResponses = [new Error('connection refused')]
+      backend.activityResponses = [new BackendFailure('unreachable', 'connection refused')]
       await service.initLoad()
       expect(service.collectionStatus()).toMatchObject({ kind: 'failed' })
       // A read from the host before a restart is held; Retry reconnects to the new one.
@@ -962,7 +969,8 @@ describe('ActivityDataService', () => {
     expect(service.collectionStatus()).toEqual({
       kind: 'failed',
       operation: 'initial',
-      message: 'GitLab unreachable: connection refused',
+      origin: 'collection',
+      failure: { kind: 'other', message: 'GitLab unreachable: connection refused' },
     })
     expect(viewState.dateFrom()).toBe('2026-05-04')
     expect(viewState.dateTo()).toBe('2026-05-06')
@@ -974,16 +982,17 @@ describe('ActivityDataService', () => {
     backend.activityResponses = []
     backend.activityResponse = failed
     await service.initLoad()
-    expect(service.collectionStatus()).toMatchObject({ kind: 'failed', message: 'invalid report' })
+    const failedWith = (message: string): object => ({ kind: 'failed', failure: { message } })
+    expect(service.collectionStatus()).toMatchObject(failedWith('invalid report'))
 
-    backend.stateError = new Error('offline')
+    backend.stateError = new BackendFailure('unreachable', 'offline')
     await save()
     await vi.runAllTimersAsync()
-    expect(service.collectionStatus()).toMatchObject({ kind: 'failed', message: 'offline' })
+    expect(service.collectionStatus()).toMatchObject(failedWith('offline'))
 
     backend.stateError = null
     await service.retryCollection()
-    expect(service.collectionStatus()).toMatchObject({ kind: 'failed', message: 'invalid report' })
+    expect(service.collectionStatus()).toMatchObject(failedWith('invalid report'))
   })
 
   it('dismisses one failure at a time, whatever their wording', async () => {
@@ -992,12 +1001,15 @@ describe('ActivityDataService', () => {
     backend.activityResponses = []
     backend.activityResponse = failed
     await service.initLoad()
-    backend.collectError = new Error('boom')
+    backend.collectError = new BackendFailure('internal', 'boom')
     await service.collect('2026-05-04', '2026-05-05')
 
     service.dismissCollectionStatus()
     // The refused request is dismissed; the failed collection, worded the same, still shows.
-    expect(service.collectionStatus()).toMatchObject({ kind: 'failed', message: 'boom' })
+    expect(service.collectionStatus()).toMatchObject({
+      kind: 'failed',
+      failure: { kind: 'other', message: 'boom' },
+    })
     service.dismissCollectionStatus()
     expect(service.collectionStatus()).toEqual({ kind: 'idle' })
     await vi.advanceTimersByTimeAsync(5)
@@ -1293,7 +1305,7 @@ describe('ActivityDataService', () => {
       const { source, service } = connect()
       const post = held()
       vi.spyOn(TestBed.inject(ActivityBackendClient), 'collect').mockImplementationOnce(() =>
-        post.gate.then(() => Promise.reject(new Error('refused by a')))
+        post.gate.then(() => Promise.reject(new BackendFailure('internal', 'refused by a')))
       )
       const sending = service.collect('2026-05-17', '2026-05-18')
       source.feed().state(pair('a', 2), true)
@@ -1342,7 +1354,7 @@ describe('ActivityDataService', () => {
     it('shows no refusal of one host on the next', async () => {
       const { source, backend, service } = connect()
       source.feed().state(pair('a', 1), true)
-      backend.collectError = new Error('refused by a')
+      backend.collectError = new BackendFailure('internal', 'refused by a')
       await service.collect('2026-05-01', '2026-05-02')
       expect(service.collectionStatus()).toMatchObject({ kind: 'failed' })
 

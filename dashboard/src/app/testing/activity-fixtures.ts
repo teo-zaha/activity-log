@@ -9,6 +9,7 @@ import type {
   ProvidersUpdate,
   RuntimeState,
   BusyStatus,
+  ExportOutcome,
   ExportRequest,
   LogEntry,
   MeetingWeight,
@@ -23,6 +24,7 @@ import {
   type ReadOperation,
 } from '../services/backend/backend-contract'
 import type { ConnectionKey } from '../providers/connection'
+import { BackendFailure } from '../services/backend/backend-failure'
 import { BackendTransport } from '../services/backend/backend-transport'
 
 /**
@@ -121,15 +123,15 @@ export const collectingLog: ActivityLog = {
  */
 export class MockBackendTransport implements BackendTransport {
   /**
-   * What the host shows at the next reads, before `activityResponse`: an `Error` fails that
-   * read, and `null` is the host before its first collection.
+   * What the host shows at the next reads, before `activityResponse`: a `BackendFailure` fails
+   * that read, and `null` is the host before its first collection.
    */
-  activityResponses: (ActivityResponse | Error | null)[] = [activityLog]
+  activityResponses: (ActivityResponse | BackendFailure | null)[] = [activityLog]
   /** What the host shows at every read once `activityResponses` is used up. */
   activityResponse: ActivityResponse | null = activityLog
   providersResponse = providersResponse
   /** Fails every read while set. */
-  stateError: Error | null = null
+  stateError: BackendFailure | null = null
   /** When set, a read answers once it resolves, with the state as of the request. */
   stateGate: Promise<void> | null = null
   /** The host's epoch and authority, as its stamps carry them. */
@@ -138,20 +140,20 @@ export class MockBackendTransport implements BackendTransport {
   collectResponse: ActivityResponse = activityLog
   /** Answers to the next collect requests, before `collectResponse`. */
   collectResponses: ActivityResponse[] = []
-  collectError: Error | null = null
+  collectError: BackendFailure | null = null
   /** When set, a collect answer waits for it; the gate is taken when the request is sent. */
   collectGate: Promise<void> | null = null
   /** When set, a settings change's answer waits for it; taken when the request is sent. */
   saveGate: Promise<void> | null = null
-  recheckError: Error | null = null
+  recheckError: BackendFailure | null = null
   exports: ExportRequest[] = []
   /** Every link passed to `openUrl`, in order. */
   openedUrls: string[] = []
   /** Every request passed to `call`, in order. */
   requests: unknown[] = []
   logs: LogEntry[] = []
-  logsError: Error | null = null
-  clearLogsError: Error | null = null
+  logsError: BackendFailure | null = null
+  clearLogsError: BackendFailure | null = null
 
   /** The host's revisions: one counter, a part taking the next value when it changes. */
   private revision = 0
@@ -175,9 +177,9 @@ export class MockBackendTransport implements BackendTransport {
     return signal === undefined ? answer : Promise.race([answer, aborted(signal)])
   }
 
-  saveExport(request: ExportRequest): Promise<void> {
+  saveExport(request: ExportRequest): Promise<ExportOutcome> {
     this.exports.push(request)
-    return Promise.resolve()
+    return Promise.resolve('saved')
   }
 
   /** Hands `deepLinks` to the listener the way the desktop shell would. */
@@ -237,7 +239,7 @@ export class MockBackendTransport implements BackendTransport {
         const next =
           this.activityResponses.length > 0 ? this.activityResponses.shift() : this.activityResponse
         if (this.stateError) return Promise.reject(this.stateError)
-        if (next instanceof Error) return Promise.reject(next)
+        if (next instanceof BackendFailure) return Promise.reject(next)
         const pair: RuntimeState = {
           activity: this.showActivity(next ?? null),
           providers: this.showProviders(),
@@ -275,7 +277,9 @@ export class MockBackendTransport implements BackendTransport {
         this.logs = []
         return Promise.resolve()
       default:
-        return Promise.reject(new Error(`${operation.label} is not implemented`))
+        return Promise.reject(
+          new BackendFailure('unsupported', `${operation.label} is not implemented`)
+        )
     }
   }
 }

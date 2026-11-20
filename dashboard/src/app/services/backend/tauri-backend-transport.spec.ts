@@ -1,9 +1,11 @@
 import { TestBed } from '@angular/core/testing'
 import { emit } from '@tauri-apps/api/event'
-import { clearMocks, mockIPC } from '@tauri-apps/api/mocks'
+import { mockIPC } from '@tauri-apps/api/mocks'
+import { clearTauriMocks } from '../../testing/tauri-mocks'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { collectingLog, exportRequest } from '../../testing/activity-fixtures'
 import { BackendOperations } from './backend-contract'
+import { BackendFailure } from './backend-failure'
 import { TauriBackendTransport } from './tauri-backend-transport'
 
 interface Invocation {
@@ -23,7 +25,7 @@ function mockInvoke(reply: (command: string) => unknown = () => undefined): Invo
 
 describe('TauriBackendTransport', () => {
   afterEach(() => {
-    clearMocks()
+    clearTauriMocks()
   })
 
   function setup(): TauriBackendTransport {
@@ -68,9 +70,10 @@ describe('TauriBackendTransport', () => {
     ])
   })
 
-  it('saves exports through save_export', async () => {
-    const invocations = mockInvoke()
-    await setup().saveExport(exportRequest)
+  it('saves exports through save_export, and says whether the user saved', async () => {
+    const invocations = mockInvoke(() => 'cancelled')
+
+    await expect(setup().saveExport(exportRequest)).resolves.toBe('cancelled')
 
     expect(invocations).toEqual([{ command: 'save_export', args: { request: exportRequest } }])
   })
@@ -78,8 +81,8 @@ describe('TauriBackendTransport', () => {
   it('has no command for a browser-only operation', async () => {
     const invocations = mockInvoke()
 
-    await expect(setup().call(BackendOperations.renderExport, exportRequest)).rejects.toThrow(
-      'Export is only available in the browser.'
+    await expect(setup().call(BackendOperations.renderExport, exportRequest)).rejects.toMatchObject(
+      { kind: 'unsupported' }
     )
     expect(invocations).toEqual([])
   })
@@ -121,25 +124,81 @@ describe('TauriBackendTransport', () => {
     ])
   })
 
-  it('turns the string rejection of a command into an Error', async () => {
+  it('rejects with the kind a command refused with', async () => {
     mockInvoke(() => {
-      throw 'No data yet'
+      throw { kind: 'busy', error: 'The settings file is busy; try again.' }
     })
 
-    const failure = setup().call(BackendOperations.runtimeState, undefined)
+    const failure = setup().call(BackendOperations.clearLogs, undefined)
 
-    await expect(failure).rejects.toBeInstanceOf(Error)
-    await expect(failure).rejects.toThrow('No data yet')
+    await expect(failure).rejects.toBeInstanceOf(BackendFailure)
+    await expect(failure).rejects.toMatchObject({
+      kind: 'busy',
+      message: 'The settings file is busy; try again.',
+    })
   })
 
-  it('loads reads as resources and surfaces failures as Errors', async () => {
+  it('reads Tauri’s own string refusal as internal, with its text', async () => {
     mockInvoke(() => {
-      throw 'boom'
+      throw 'invalid args `request` for command `collect`'
+    })
+
+    await expect(setup().call(BackendOperations.runtimeState, undefined)).rejects.toMatchObject({
+      kind: 'internal',
+      message: 'invalid args `request` for command `collect`',
+    })
+  })
+
+  it('never prints an object outside the contract as [object Object]', async () => {
+    mockInvoke(() => {
+      throw { code: 7 }
+    })
+
+    const failure: unknown = await setup()
+      .call(BackendOperations.runtimeState, undefined)
+      .catch((error: unknown) => error)
+
+    expect(failure).toMatchObject({ kind: 'internal' })
+    expect(String(failure)).not.toContain('[object Object]')
+  })
+
+  it('loads reads as resources and surfaces failures as BackendFailures', async () => {
+    mockInvoke(() => {
+      throw { kind: 'internal', error: 'boom' }
     })
 
     const logs = TestBed.runInInjectionContext(() => setup().resource(BackendOperations.logs))
     TestBed.tick()
 
-    await vi.waitFor(() => expect(logs.error()).toEqual(new Error('boom')))
+    await vi.waitFor(() => expect(logs.error()).toBeInstanceOf(BackendFailure))
+    expect(logs.error()).toMatchObject({ kind: 'internal', message: 'boom' })
+  })
+
+  it('rejects with a BackendFailure when the shell refuses the deep-link listener', async () => {
+    mockInvoke(command => {
+      if (command === 'plugin:event|listen') throw 'event.listen not allowed'
+      return null
+    })
+
+    const refused = setup().listenForDeepLinks(() => undefined)
+
+    await expect(refused).rejects.toBeInstanceOf(BackendFailure)
+    await expect(refused).rejects.toMatchObject({
+      kind: 'internal',
+      cause: 'event.listen not allowed',
+    })
+  })
+
+  it('invokes nothing for a call aborted before it is sent, and rejects with the reason', async () => {
+    const invocations = mockInvoke()
+    const controller = new AbortController()
+    const reason = new Error('stopped')
+    controller.abort(reason)
+
+    const call = setup().call(BackendOperations.clearLogs, undefined, controller.signal)
+
+    expect(call).toBeInstanceOf(Promise)
+    await expect(call).rejects.toBe(reason)
+    expect(invocations).toEqual([])
   })
 })

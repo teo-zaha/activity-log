@@ -1,6 +1,7 @@
 import { DestroyRef, InjectionToken, Service, inject } from '@angular/core'
 import type { RuntimeState } from '../../generated/activity'
 import { ActivityBackendClient } from '../backend/backend-client'
+import { BackendFailure, type BackendFailureKind } from '../backend/backend-failure'
 import { type Failure, failureOf } from '../failure'
 import type { RuntimeStateSink, RuntimeStateSource, SourceStatus } from './runtime-state-source'
 
@@ -21,6 +22,28 @@ export const ACTIVITY_POLL_DELAY_MS = new InjectionToken<number>('ACTIVITY_POLL_
 
 /** How long one read may take before it is aborted and counts as failed. */
 export const ACTIVITY_READ_TIMEOUT_MS = 10_000
+
+/** Whether reading again could get the state, by how the backend failed the read. */
+const READ_AGAIN: Readonly<Record<BackendFailureKind, boolean>> = {
+  unreachable: true,
+  internal: true,
+  busy: true,
+  noData: true,
+  invalidRequest: false,
+  notFound: false,
+  unsupported: false,
+  alreadyExists: false,
+  conflict: false,
+  noLocation: false,
+  unprotectable: false,
+  badConfig: false,
+  tooLarge: false,
+}
+
+/** A read failure no further read of this attempt can fix. */
+function endsAttempt(failure: Failure): boolean {
+  return failure.kind === 'backend' && !READ_AGAIN[failure.cause.kind]
+}
 
 /**
  * Reads the host's state (`get_runtime_state`, both parts from one moment with the host's own
@@ -137,6 +160,9 @@ export class PollingStateSource implements RuntimeStateSource {
         // reports for itself.
         if (attempt !== this.attempt) continue
         this.report({ kind: 'open' })
+      } else if (endsAttempt(read.failure)) {
+        this.report({ kind: 'failed', cause: { kind: 'refused', failure: read.failure } })
+        return this.end()
       } else {
         this.failures++
         this.failure = read.failure
@@ -156,7 +182,10 @@ export class PollingStateSource implements RuntimeStateSource {
     const timer = setTimeout(
       () =>
         controller.abort(
-          new Error(`The backend did not answer within ${ACTIVITY_READ_TIMEOUT_MS / 1000} s`)
+          new BackendFailure(
+            'unreachable',
+            `The backend did not answer within ${ACTIVITY_READ_TIMEOUT_MS / 1000} s`
+          )
         ),
       ACTIVITY_READ_TIMEOUT_MS
     )

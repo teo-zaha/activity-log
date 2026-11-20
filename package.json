@@ -24,7 +24,7 @@
     "types:generate": "cargo run -p cli --bin generate-ts --",
     "dashboard:install": "pnpm --dir dashboard install",
     "dashboard:dev": "pnpm --dir dashboard run dev",
-    "dashboard:lint": "eslint .",
+    "dashboard:lint": "eslint . && node --test scripts/eslint-message-rule.test.mjs",
     "dashboard:test": "pnpm --dir dashboard run test",
     "dashboard:typecheck": "pnpm --dir dashboard exec tsc -p tsconfig.json --noEmit",
     "dashboard:build": "pnpm run types:generate && pnpm --dir dashboard run build",

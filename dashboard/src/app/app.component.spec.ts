@@ -11,6 +11,7 @@ import { RuntimeEnvironmentService } from './services/backend/runtime-environmen
 import { ACTIVITY_POLL_ATTEMPTS } from './services/runtime-state/polling-state-source'
 import { MockBackendTransport, provideMockBackend } from './testing/activity-fixtures'
 import { provideDashboardDates } from './utils/date-adapter'
+import { BackendFailure } from './services/backend/backend-failure'
 
 /** The shell in a browser, whatever globals other specs left: no desktop window to ask. */
 function shell(backend: MockBackendTransport): (Provider | EnvironmentProviders)[] {
@@ -35,7 +36,7 @@ describe('AppComponent', () => {
     await fixture.whenStable()
     expect(data.hasNoSources()).toBe(true)
 
-    backend.stateError = new Error('activity inaccessible')
+    backend.stateError = new BackendFailure('unreachable', 'activity inaccessible')
     await data.retryCollection()
     await fixture.whenStable()
 

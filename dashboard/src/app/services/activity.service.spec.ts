@@ -1,7 +1,7 @@
 import { TestBed } from '@angular/core/testing'
 import { describe, expect, it, vi } from 'vitest'
 import { Router } from '@angular/router'
-import type { ActivityEntry } from '../generated/activity'
+import type { ActivityEntry, ExportOutcome } from '../generated/activity'
 import { provideAppRouter } from '../app.routes'
 import {
   activityLog,
@@ -13,6 +13,8 @@ import { ActivityDataService } from './activity-data.service'
 import { ACTIVITY_POLL_DELAY_MS } from './runtime-state/polling-state-source'
 import { ActivityExportService } from './activity-export.service'
 import { ActivityService } from './activity.service'
+import { BackendFailure } from './backend/backend-failure'
+import { ToastService } from './toast.service'
 
 function setup(exportFn: ActivityExportService['export']): ActivityService {
   TestBed.configureTestingModule({
@@ -27,7 +29,7 @@ function setup(exportFn: ActivityExportService['export']): ActivityService {
 
 describe('ActivityService exports', () => {
   it('exports the shown entries over the chosen local days', async () => {
-    const exportFn = vi.fn<ActivityExportService['export']>(() => Promise.resolve())
+    const exportFn = vi.fn<ActivityExportService['export']>(() => Promise.resolve('saved'))
     const service = setup(exportFn)
     await TestBed.inject(ActivityDataService).initLoad()
 
@@ -41,20 +43,35 @@ describe('ActivityService exports', () => {
     )
   })
 
-  it('shows why the backend refused an export', async () => {
-    const service = setup(() => Promise.reject(new Error('Export failed: Unknown time zone "X"')))
+  it('shows why the backend refused an export, and keeps its kind', async () => {
+    const refused = new BackendFailure('invalidRequest', 'Unknown time zone "X"')
+    const service = setup(() => Promise.reject(refused))
     await TestBed.inject(ActivityDataService).initLoad()
 
     await service.exportJson()
 
-    expect(service.notice()).toMatchObject({
+    expect(service.notice()).toEqual({
       origin: 'export',
-      failure: { message: 'Export failed: Unknown time zone "X"' },
+      failure: { kind: 'backend', message: 'Export failed: Unknown time zone "X"', cause: refused },
     })
   })
 
+  it('confirms an export that was saved, and says nothing when the dialog was closed', async () => {
+    const outcomes: ExportOutcome[] = ['saved', 'cancelled']
+    const service = setup(() => Promise.resolve(outcomes.shift() ?? 'cancelled'))
+    const success = vi.spyOn(TestBed.inject(ToastService), 'success')
+    await TestBed.inject(ActivityDataService).initLoad()
+
+    await service.exportJson()
+    expect(success).toHaveBeenCalledExactlyOnceWith('Exported')
+
+    await service.exportJson()
+    expect(success).toHaveBeenCalledOnce()
+    expect(service.notice()).toBeNull()
+  })
+
   it('has nothing to export before the first collection', async () => {
-    const exportFn = vi.fn<ActivityExportService['export']>(() => Promise.resolve())
+    const exportFn = vi.fn<ActivityExportService['export']>(() => Promise.resolve('saved'))
     const service = setup(exportFn)
 
     await service.exportJson()
@@ -62,7 +79,7 @@ describe('ActivityService exports', () => {
     expect(exportFn).not.toHaveBeenCalled()
     expect(service.notice()).toEqual({
       origin: 'export',
-      failure: { message: 'Export failed: nothing has been collected yet' },
+      failure: { kind: 'other', message: 'Export failed: nothing has been collected yet' },
     })
   })
 
@@ -87,7 +104,7 @@ describe('ActivityService exports', () => {
     }
     backend.activityResponses = []
     backend.activityResponse = { ...activityLog, entries: [...activityLog.entries, overnight] }
-    const exportFn = vi.fn<ActivityExportService['export']>(() => Promise.resolve())
+    const exportFn = vi.fn<ActivityExportService['export']>(() => Promise.resolve('saved'))
     TestBed.configureTestingModule({
       providers: [
         provideMockBackend(backend),

@@ -5,6 +5,7 @@ import type {
   AddConnectionRequestDto,
   AddConnectionResponseDto,
   ConnectionId,
+  ExportOutcome,
   ExportRequest,
   ProviderConfigSaveRequestDto,
   ProviderConfigSaveResponseDto,
@@ -55,7 +56,7 @@ export class ActivityBackendClient {
     return this.transport.call(BackendOperations.removeConnection, connection)
   }
 
-  export(request: ExportRequest): Promise<void> {
+  export(request: ExportRequest): Promise<ExportOutcome> {
     return this.transport.saveExport(request)
   }
 

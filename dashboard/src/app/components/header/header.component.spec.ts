@@ -243,6 +243,7 @@ describe('HeaderComponent share', () => {
 
     expect(success).not.toHaveBeenCalled()
     expect(failure).toHaveBeenCalledWith({
+      kind: 'other',
       message: 'Copying the link failed: this browser gives the page no clipboard',
     })
   })
@@ -257,6 +258,7 @@ describe('HeaderComponent share', () => {
     expect(writeText).toHaveBeenCalledWith(link)
     expect(success).not.toHaveBeenCalled()
     expect(failure).toHaveBeenCalledWith({
+      kind: 'other',
       message: 'Copying the link failed: Write permission denied.',
       cause: expect.any(DOMException),
     })
@@ -273,6 +275,7 @@ describe('HeaderComponent share', () => {
 
     expect(success).not.toHaveBeenCalled()
     expect(failure).toHaveBeenCalledWith({
+      kind: 'other',
       message:
         'Sharing the link failed: Sharing is not allowed here.; ' +
         'Copying the link failed: Write permission denied.',

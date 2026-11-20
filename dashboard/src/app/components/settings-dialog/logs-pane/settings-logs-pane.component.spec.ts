@@ -6,6 +6,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { LogEntry } from '../../../generated/activity'
 import { MockBackendTransport, provideMockBackend } from '../../../testing/activity-fixtures'
 import { LOGS_POLL_INTERVAL_MS, SettingsLogsPaneComponent } from './settings-logs-pane.component'
+import { BackendFailure } from '../../../services/backend/backend-failure'
 
 const logs: LogEntry[] = [
   {
@@ -106,7 +107,7 @@ describe('SettingsLogsPaneComponent', () => {
 
   it('keeps the last entries and shows the error when a poll fails', async () => {
     const { backend, poll } = await setup()
-    backend.logsError = new Error('backend went away')
+    backend.logsError = new BackendFailure('internal', 'backend went away')
 
     await poll()
 
@@ -116,7 +117,7 @@ describe('SettingsLogsPaneComponent', () => {
 
   it('drops a failed clear error once a later poll succeeds', async () => {
     const { backend, poll, fixture } = await setup()
-    backend.clearLogsError = new Error('disk is read-only')
+    backend.clearLogsError = new BackendFailure('internal', 'disk is read-only')
 
     await userEvent.click(screen.getByRole('button', { name: /Clear/ }))
     await fixture.whenStable()
@@ -126,5 +127,18 @@ describe('SettingsLogsPaneComponent', () => {
 
     expect(screen.queryByRole('alert')).toBeNull()
     expect(messages()).toContain('Collection failed')
+  })
+
+  it('logs the failed clear’s cause beside the message it shows', async () => {
+    const { backend, fixture } = await setup()
+    const refused = new BackendFailure('internal', 'disk is read-only')
+    backend.clearLogsError = refused
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined)
+
+    await userEvent.click(screen.getByRole('button', { name: /Clear/ }))
+    await fixture.whenStable()
+
+    expect(screen.getByRole('alert').textContent).toContain('disk is read-only')
+    expect(warn).toHaveBeenCalledWith('disk is read-only', refused)
   })
 })

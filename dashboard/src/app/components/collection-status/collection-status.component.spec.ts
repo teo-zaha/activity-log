@@ -4,6 +4,8 @@ import { render, screen } from '@testing-library/angular'
 import userEvent from '@testing-library/user-event'
 import { describe, expect, it, vi } from 'vitest'
 import { ActivityService } from '../../services/activity.service'
+import { BackendFailure } from '../../services/backend/backend-failure'
+import { failure, failureOf } from '../../services/failure'
 import type { SourceLink } from '../../services/activity-data.service'
 import type { CollectionStatus } from '../../services/types'
 import { SettingsDialogLauncher } from '../settings-dialog/settings-dialog-launcher.service'
@@ -91,7 +93,7 @@ describe('CollectionStatusComponent', () => {
     try {
       vi.setSystemTime(10_000)
       const reconnecting: SourceLink = {
-        status: { kind: 'reconnecting', failure: { message: 'connection reset' } },
+        status: { kind: 'reconnecting', failure: failure('connection reset') },
         since: 10_000,
         episode: 0,
       }
@@ -108,11 +110,56 @@ describe('CollectionStatusComponent', () => {
   })
 
   it('shows failures without the source shortcut', async () => {
-    await setup({ kind: 'failed', operation: 'initial', message: 'offline' })
+    await setup({
+      kind: 'failed',
+      operation: 'initial',
+      origin: 'lostBackend',
+      failure: failure('offline'),
+    })
 
     const alert = screen.getByRole('alert').textContent
     expect(alert).toContain('Could not load activity')
     expect(alert).toContain('offline')
+    expect(screen.getByRole('button', { name: /retry/i })).toBeTruthy()
     expect(screen.queryByRole('button', { name: 'Check sources' })).toBeNull()
+  })
+
+  it('offers no retry for a request the backend refused as invalid', async () => {
+    const refused = new BackendFailure('invalidRequest', 'A range can span at most 10 years')
+    await setup({
+      kind: 'failed',
+      operation: 'collect',
+      origin: 'collect',
+      failure: failureOf(refused),
+    })
+
+    expect(screen.getByRole('alert').textContent).toContain('at most 10 years')
+    expect(screen.queryByRole('button', { name: /retry/i })).toBeNull()
+    expect(screen.getByRole('button', { name: 'Dismiss' })).toBeTruthy()
+  })
+
+  it('offers retry for a request that may work when sent again', async () => {
+    const busy = new BackendFailure('internal', 'The collection could not start')
+    await setup({
+      kind: 'failed',
+      operation: 'collect',
+      origin: 'collect',
+      failure: failureOf(busy),
+    })
+
+    expect(screen.getByRole('button', { name: /retry/i })).toBeTruthy()
+  })
+
+  it('offers no retry for a state read the backend refuses for good', async () => {
+    const missing = new BackendFailure('notFound', '404 Not Found')
+    await setup({
+      kind: 'failed',
+      operation: 'initial',
+      origin: 'refusedRead',
+      failure: failureOf(missing),
+    })
+
+    expect(screen.getByRole('alert').textContent).toContain('404 Not Found')
+    expect(screen.queryByRole('button', { name: /retry/i })).toBeNull()
   })
 })

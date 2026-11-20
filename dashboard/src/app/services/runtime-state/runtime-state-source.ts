@@ -5,7 +5,10 @@ import { PollingStateSource } from './polling-state-source'
 
 /** Why a source stopped trying until `retry()`. */
 export type SourceFailure =
+  /** Reads kept failing in a way another read could fix; the last one's failure. */
   | { readonly kind: 'unreachable'; readonly failure: Failure }
+  /** The backend refused the read in a way reading again cannot fix (a route it lacks). */
+  | { readonly kind: 'refused'; readonly failure: Failure }
   /** A collection or a check went on for longer than the backend allows it. */
   | { readonly kind: 'timedOut' }
 

@@ -3,6 +3,7 @@ import { NavigationCancel, NavigationEnd, NavigationError, Router } from '@angul
 import { filter, firstValueFrom } from 'rxjs'
 import { BackendTransport } from './backend/backend-transport'
 import { DeepLinkService } from './deep-link.service'
+import { failureWhile } from './failure'
 
 /**
  * Hands the desktop app's `activity-log:` links to `DeepLinkService.open`: the one that launched
@@ -14,8 +15,14 @@ export class DeepLinkInboxService {
   private readonly deepLinks = inject(DeepLinkService)
   private readonly router = inject(Router)
 
-  start(): Promise<void> {
-    return this.transport.listenForDeepLinks(link => void this.open(link))
+  /** Never rejects: without the listener the app runs on, and the log says why. */
+  async start(): Promise<void> {
+    try {
+      await this.transport.listenForDeepLinks(link => void this.open(link))
+    } catch (error) {
+      const failed = failureWhile('Listening for activity-log: links', error)
+      console.warn(failed.message, failed.cause)
+    }
   }
 
   /** After the first navigation, so the launch URL's own route does not replace the link's. */

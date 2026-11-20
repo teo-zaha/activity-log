@@ -1,39 +1,47 @@
-import { extractBackendErrorMessage } from './backend/error-message'
+import { BackendFailure, type BackendFailureKind } from './backend/backend-failure'
 
 /**
  * Why an operation failed: a message for people and, where something was thrown, that error
- * itself for diagnostics. Code tells failures apart by where they are held, never by the text.
- * Made only by the constructors below, so a typed kind can join them there.
+ * itself for diagnostics. Code tells failures apart by where they are held and, for a backend
+ * call, by its `cause.kind`; never by the text. Made only by the constructors below.
  */
-export interface Failure {
-  readonly message: string
-  /** What was thrown, kept as it was; logged where the failure is shown. */
-  readonly cause?: unknown
-}
+export type Failure =
+  /** A backend call failed; `cause.kind` says how. */
+  | { readonly kind: 'backend'; readonly message: string; readonly cause: BackendFailure }
+  /** Anything else: a failure the dashboard names itself, a browser API's refusal. */
+  | { readonly kind: 'other'; readonly message: string; readonly cause?: unknown }
 
 /** A failure the dashboard itself names, with nothing thrown behind it. */
 export function failure(message: string): Failure {
-  return { message }
+  return { kind: 'other', message }
 }
 
 /** `error` as a failure: its message, and the error itself as the cause. */
-export function failureOf(error: unknown, fallback?: string): Failure {
-  // A browser API's refusal (the clipboard, sharing) is a `DOMException`, not always an `Error`.
-  const message =
-    error instanceof DOMException && error.message
-      ? error.message
-      : extractBackendErrorMessage(error, fallback)
-  return { message, cause: error }
+export function failureOf(error: unknown, fallback = 'Unknown error'): Failure {
+  if (error instanceof BackendFailure) {
+    return { kind: 'backend', message: error.message, cause: error }
+  }
+  return { kind: 'other', message: messageOf(error) ?? fallback, cause: error }
 }
 
 /** `error` as the failure of `action`, such as "Export": "Export failed: …". */
 export function failureWhile(action: string, error: unknown): Failure {
-  return { message: `${action} failed: ${failureOf(error).message}`, cause: error }
+  const failed = failureOf(error)
+  return { ...failed, message: `${action} failed: ${failed.message}` }
 }
 
 /** Two failures of one attempt, the first having led to the second, both reasons kept. */
 export function failureThen(first: Failure, then: Failure): Failure {
-  return { message: `${first.message}; ${then.message}`, cause: [first.cause, then.cause] }
+  return {
+    kind: 'other',
+    message: `${first.message}; ${then.message}`,
+    cause: [first.cause, then.cause],
+  }
+}
+
+/** Whether the backend refused the call as `kind`. */
+export function refusedAs(failure: Failure, kind: BackendFailureKind): boolean {
+  return failure.kind === 'backend' && failure.cause.kind === kind
 }
 
 /** A failure of an action that has no place of its own to show it, by the action it belongs to. */
@@ -50,4 +58,13 @@ export class FailureError extends Error {
   constructor(readonly failure: Failure) {
     super(failure.message, { cause: failure.cause })
   }
+}
+
+/** The message of a thrown value; a browser API's refusal is a `DOMException`, not always an `Error`. */
+function messageOf(error: unknown): string | null {
+  if ((error instanceof Error || error instanceof DOMException) && error.message.trim()) {
+    return error.message
+  }
+  if (typeof error === 'string' && error.trim()) return error
+  return null
 }

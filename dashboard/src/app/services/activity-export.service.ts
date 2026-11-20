@@ -1,7 +1,6 @@
 import { inject, Service } from '@angular/core'
-import type { ActivityEntry, OutputFormat } from '../generated/activity'
+import type { ActivityEntry, ExportOutcome, OutputFormat } from '../generated/activity'
 import { ActivityBackendClient } from './backend/backend-client'
-import { extractBackendErrorMessage } from './backend/error-message'
 
 /** The range `[start, end)` an export covers, as RFC 3339 instants. */
 export interface ExportRange {
@@ -18,17 +17,13 @@ export class ActivityExportService {
     format: OutputFormat,
     entries: readonly ActivityEntry[],
     range: ExportRange
-  ): Promise<void> {
-    try {
-      await this.backend.export({
-        format,
-        start: range.start,
-        end: range.end,
-        timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
-        entries: [...entries],
-      })
-    } catch (error) {
-      throw new Error(`Export failed: ${extractBackendErrorMessage(error)}`)
-    }
+  ): Promise<ExportOutcome> {
+    return this.backend.export({
+      format,
+      start: range.start,
+      end: range.end,
+      timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+      entries: [...entries],
+    })
   }
 }

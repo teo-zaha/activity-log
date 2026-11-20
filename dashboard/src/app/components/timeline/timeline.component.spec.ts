@@ -10,6 +10,8 @@ import { createEntryAdapter } from '../../providers/provider-adapter'
 import { ActivityService } from '../../services/activity.service'
 import { activityLog, meetingWeightOf } from '../../testing/activity-fixtures'
 import { stubLayoutObservers } from '../../testing/observers'
+import { BackendFailure } from '../../services/backend/backend-failure'
+import { failureOf } from '../../services/failure'
 import { TimelineComponent } from './timeline.component'
 
 interface TimelineActivityMock {
@@ -164,6 +166,34 @@ describe('TimelineComponent', () => {
     })
 
     expect(screen.getByText('No activity loaded')).toBeTruthy()
+  })
+
+  it.each([
+    [
+      'a collect refused as invalid asks for another range',
+      'collect',
+      'Choose another one',
+      'Retry above',
+    ],
+    [
+      'a state read refused as invalid offers no retry',
+      'refusedRead',
+      'check source status',
+      'Retry above',
+    ],
+  ] as const)('%s', async (_name, origin, says, never) => {
+    const refused = failureOf(new BackendFailure('invalidRequest', 'refused'))
+    const { activity } = mockActivity({
+      status: { kind: 'failed', operation: 'collect', origin, failure: refused },
+    })
+    activity.groupedByDay.set([])
+
+    await render(TimelineComponent, {
+      providers: [{ provide: ActivityService, useValue: activity }],
+    })
+
+    expect(screen.getByText(new RegExp(says))).toBeTruthy()
+    expect(screen.queryByText(new RegExp(never))).toBeNull()
   })
 
   it('labels the field as a filter', async () => {

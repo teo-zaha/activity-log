@@ -36,8 +36,8 @@
     </button>
   </ng-template>
 
-  @if (loadError(); as error) {
-    <app-feedback tone="error" block>Could not load logs: {{ error }}</app-feedback>
+  @if (loadError(); as failure) {
+    <app-feedback tone="error" block>Could not load logs: {{ failure.message }}</app-feedback>
   }
 
   <div

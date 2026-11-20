@@ -24,9 +24,11 @@
         <span class="toast-message">{{ banner.message }}</span>
       </div>
       <div class="toast-actions">
-        <button appButton variant="primary" size="sm" icon="refresh" (click)="retry()">
-          Retry
-        </button>
+        @if (banner.retry) {
+          <button appButton variant="primary" size="sm" icon="refresh" (click)="retry()">
+            Retry
+          </button>
+        }
         @if (banner.tone === 'warn') {
           <button appButton size="sm" (click)="openSources()">Check sources</button>
         }
