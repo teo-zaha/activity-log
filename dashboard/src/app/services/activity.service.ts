@@ -51,6 +51,8 @@ export class ActivityService {
 
   readonly dateFrom = this.viewState.dateFrom
   readonly dateTo = this.viewState.dateTo
+  /** The range the collection on screen covers, which may differ from this tab's own. */
+  readonly collectedRange = this.viewState.collectedRange
   readonly searchQuery = this.viewState.searchQuery
   readonly activeConnections = this.viewState.activeConnections
   readonly currentView = this.viewState.currentView
@@ -193,6 +195,11 @@ export class ActivityService {
 
   setDateTo(day: DayKey | null): Promise<boolean> {
     return this.viewState.setDateTo(day)
+  }
+
+  /** The range fields are edited, or no longer: the URL's range stays while they are. */
+  setRangeEditing(editing: boolean): void {
+    this.viewState.setRangeEditing(editing)
   }
 
   /** Moves the open settings to `selection` in place. */

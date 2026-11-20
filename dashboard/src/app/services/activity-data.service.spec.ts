@@ -1,6 +1,7 @@
 import { Location } from '@angular/common'
-import { provideLocationMocks } from '@angular/common/testing'
+import { provideLocationMocks, SpyLocation } from '@angular/common/testing'
 import { TestBed } from '@angular/core/testing'
+import { Router } from '@angular/router'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type {
   ActivityLog,
@@ -27,6 +28,7 @@ import { FIRST_PAIR_TIMEOUT_MS } from './runtime-state/push-state-source'
 import { ActivityViewStateService } from './activity-view-state.service'
 import { ProviderConfigFacade } from './provider-config-facade.service'
 import { localDayRange } from '../utils/local-day'
+import { provideAppRouter } from '../app.routes'
 import { BackendFailure } from './backend/backend-failure'
 
 /**
@@ -1121,6 +1123,208 @@ describe('ActivityDataService', () => {
       void service.initLoad()
       return { source, backend, service, viewState: TestBed.inject(ActivityViewStateService) }
     }
+
+    describe('the range the URL holds', () => {
+      const april: ActivityLog = {
+        ...activityLog,
+        meta: {
+          ...activityLog.meta,
+          start: new Date(2026, 3, 1).toISOString(),
+          end: new Date(2026, 3, 9).toISOString(),
+        },
+      }
+      /** Ready with `log`; `activityLog` covers 17–18 May. */
+      const shown = (epoch: string, revision: number, log: ActivityLog): RuntimeState => ({
+        activity: { ...stamp(epoch, revision), state: { kind: 'ready', log } },
+        providers: providers(epoch, revision),
+      })
+      const MAY = '/timeline?from=2026-05-17&to=2026-05-18'
+      const APRIL = '/timeline?from=2026-04-01&to=2026-04-08'
+
+      async function connectAt(
+        url: string
+      ): Promise<ReturnType<typeof connect> & { router: Router; location: SpyLocation }> {
+        TestBed.configureTestingModule({ providers: [provideAppRouter(), provideLocationMocks()] })
+        const parts = connect()
+        const router = TestBed.inject(Router)
+        router.initialNavigation()
+        await router.navigateByUrl(url)
+        const location = TestBed.inject(Location)
+        if (!(location instanceof SpyLocation)) throw new Error('location mocks are provided')
+        location.urlChanges = []
+        return { ...parts, router, location }
+      }
+
+      it('keeps a range picked when another client collects another', async () => {
+        const { source, viewState, router } = await connectAt(MAY)
+        source.feed().state(shown('a', 1, activityLog), true)
+        await viewState.setDateFrom('2026-05-01')
+
+        source.feed().activity({ ...stamp('a', 2), state: { kind: 'ready', log: april } })
+        await vi.runAllTimersAsync()
+
+        expect(router.url).toBe('/timeline?from=2026-05-01&to=2026-05-18')
+        expect([viewState.dateFrom(), viewState.dateTo()]).toEqual(['2026-05-01', '2026-05-18'])
+        // What the host shows stays on screen beside the range, as data of its own.
+        expect(viewState.collectedRange()).toEqual({ from: '2026-04-01', to: '2026-04-08' })
+      })
+
+      it('keeps the range even where it follows the collection, for another client’s', async () => {
+        const { source, router } = await connectAt(MAY)
+        source.feed().state(shown('a', 1, activityLog), true)
+
+        source.feed().activity({ ...stamp('a', 2), state: { kind: 'ready', log: april } })
+        await vi.runAllTimersAsync()
+
+        expect(router.url).toBe(MAY)
+      })
+
+      it('takes a restarted host’s range in place of the one it followed', async () => {
+        const { source, viewState, router, location } = await connectAt(MAY)
+        source.feed().state(shown('a', 1, activityLog), true)
+
+        source.feed().state(shown('b', 1, april), true)
+        await vi.runAllTimersAsync()
+
+        expect(router.url).toBe(APRIL)
+        expect([viewState.dateFrom(), viewState.dateTo()]).toEqual(['2026-04-01', '2026-04-08'])
+        expect(location.urlChanges).toEqual([`replace: ${APRIL}`])
+      })
+
+      it('takes it only once the restarted host shows a range', async () => {
+        const { source, router } = await connectAt(MAY)
+        source.feed().state(shown('a', 1, activityLog), true)
+
+        source.feed().state(
+          {
+            activity: { ...stamp('b', 1), state: { kind: 'empty' } },
+            providers: providers('b', 1),
+          },
+          true
+        )
+        await vi.runAllTimersAsync()
+        expect(router.url).toBe(MAY)
+
+        source.feed().activity({ ...stamp('b', 2), state: { kind: 'running', log: april } })
+        await vi.runAllTimersAsync()
+        expect(router.url).toBe(APRIL)
+      })
+
+      it('waits while the range is edited, and keeps one picked meanwhile', async () => {
+        const { source, viewState, router } = await connectAt(MAY)
+        source.feed().state(shown('a', 1, activityLog), true)
+        viewState.setRangeEditing(true)
+
+        source.feed().state(shown('b', 1, april), true)
+        await vi.runAllTimersAsync()
+        expect(router.url).toBe(MAY)
+
+        await viewState.setDateFrom('2026-05-01')
+        viewState.setRangeEditing(false)
+        await vi.runAllTimersAsync()
+        expect(router.url).toBe('/timeline?from=2026-05-01&to=2026-05-18')
+      })
+
+      it('takes it once an edit ends that picked nothing', async () => {
+        const { source, viewState, router } = await connectAt(MAY)
+        source.feed().state(shown('a', 1, activityLog), true)
+        viewState.setRangeEditing(true)
+
+        source.feed().state(shown('b', 1, april), true)
+        await vi.runAllTimersAsync()
+        viewState.setRangeEditing(false)
+        await vi.runAllTimersAsync()
+
+        expect(router.url).toBe(APRIL)
+      })
+
+      it('lets a navigation under way finish, then decides for where it went', async () => {
+        const { source, router } = await connectAt(MAY)
+        source.feed().state(shown('a', 1, activityLog), true)
+
+        // The day view loads its code on demand: the navigation is still on its way.
+        const day = router.navigateByUrl('/day/2026-05-18?from=2026-05-17&to=2026-05-18')
+        source.feed().state(shown('b', 1, april), true)
+        // What reacts to the new host runs now, while the day view's code is still loading.
+        TestBed.tick()
+        expect(router.currentNavigation()).not.toBeNull()
+
+        expect(await day).toBe(true)
+        await vi.runAllTimersAsync()
+        expect(router.url).toBe('/day/2026-05-18?from=2026-04-01&to=2026-04-08')
+      })
+
+      it('leaves the range to a collect on its way as the host restarts', async () => {
+        const { source, backend, service, router } = await connectAt(MAY)
+        source.feed().state(shown('a', 1, activityLog), true)
+        backend.collectGate = held().gate
+
+        void service.collect('2026-05-17', '2026-05-18')
+        source.feed().state(shown('b', 1, april), true)
+        await vi.advanceTimersByTimeAsync(1_000)
+
+        expect(router.url).toBe(MAY)
+      })
+    })
+
+    describe('the time of the run on screen', () => {
+      const running = (epoch: string, revision: number, log = collectingLog): ActivityUpdate => ({
+        ...stamp(epoch, revision),
+        state: { kind: 'running', log },
+      })
+      const startedAt = (service: ActivityDataService): number | null => {
+        const status = service.collectionStatus()
+        return status.kind === 'collecting' ? status.startedAt : null
+      }
+
+      it('keeps it across the updates of one run', () => {
+        const { source, service } = connect()
+        source.feed().state({ activity: running('a', 1), providers: providers('a', 1) }, true)
+        const started = Date.now()
+
+        vi.advanceTimersByTime(5_000)
+        source.feed().activity(running('a', 2))
+
+        expect(startedAt(service)).toBe(started)
+      })
+
+      it('starts it again for a run that follows a finished one at once', () => {
+        const { source, service } = connect()
+        source.feed().state({ activity: running('a', 1), providers: providers('a', 1) }, true)
+        expect(startedAt(service)).not.toBeNull()
+        vi.advanceTimersByTime(200_000)
+
+        // The run ends and the next begins, with nothing reading the status between them.
+        source.feed().activity(activity('a', 2))
+        source.feed().activity(running('a', 3))
+
+        expect(startedAt(service)).toBe(Date.now())
+      })
+
+      it('starts it again for another host’s run, already running as it comes', () => {
+        const { source, service } = connect()
+        source.feed().state({ activity: running('a', 1), providers: providers('a', 1) }, true)
+        expect(startedAt(service)).not.toBeNull()
+        vi.advanceTimersByTime(30_000)
+
+        source.feed().state({ activity: running('b', 1), providers: providers('b', 1) }, true)
+
+        expect(service.hostEpoch()).toBe('b')
+        expect(startedAt(service)).toBe(Date.now())
+      })
+
+      it('starts it again for a run of another range', () => {
+        const { source, service } = connect()
+        source.feed().state({ activity: running('a', 1), providers: providers('a', 1) }, true)
+        expect(startedAt(service)).not.toBeNull()
+        vi.advanceTimersByTime(30_000)
+
+        const april = { ...collectingLog.meta, start: new Date(2026, 3, 1).toISOString() }
+        source.feed().activity(running('a', 2, { ...collectingLog, meta: april }))
+
+        expect(startedAt(service)).toBe(Date.now())
+      })
+    })
 
     it('installs another host whole and shows every usable source again', () => {
       const { source, service, viewState } = connect()

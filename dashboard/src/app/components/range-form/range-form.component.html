@@ -1,10 +1,11 @@
 <form class="range-form" [formRoot]="rangeForm" aria-label="Collection date range">
-  <div class="range" [class.is-disabled]="activity.isLoading()">
+  <div #fields class="range" [class.is-disabled]="activity.isLoading()">
     <label class="range-field">
       <span class="range-label">From</span>
       <input
         class="range-input"
         aria-label="From date"
+        inputmode="decimal"
         [matDatepicker]="pickerFrom"
         [formField]="rangeForm.from"
         [max]="dateToObj()"
@@ -21,6 +22,7 @@
       <input
         class="range-input"
         aria-label="To date"
+        inputmode="decimal"
         [matDatepicker]="pickerTo"
         [formField]="rangeForm.to"
         [min]="dateFromObj()"

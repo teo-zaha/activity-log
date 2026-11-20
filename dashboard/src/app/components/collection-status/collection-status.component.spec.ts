@@ -8,19 +8,34 @@ import { BackendFailure } from '../../services/backend/backend-failure'
 import { failure, failureOf } from '../../services/failure'
 import type { SourceLink } from '../../services/activity-data.service'
 import type { CollectionStatus } from '../../services/types'
-import { CollectionStatusComponent } from './collection-status.component'
+import { CollectionStatusComponent, STATUS_CLEARANCE } from './collection-status.component'
+import { stubLayoutObservers } from '../../testing/observers'
+import type { DayKey } from '../../utils/local-day'
+
+/** This tab's range and the collection's, 17–18 May both unless a spec says otherwise. */
+interface Ranges {
+  readonly own?: { from: DayKey; to: DayKey }
+  readonly collected?: { from: DayKey; to: DayKey } | null
+}
+
+const MAY = { from: '2026-05-17', to: '2026-05-18' } as const
 
 async function setup(
   status: CollectionStatus,
   collecting: readonly string[] = [],
-  link: SourceLink = { status: { kind: 'open' }, since: 0, episode: 0 }
+  link: SourceLink = { status: { kind: 'open' }, since: 0, episode: 0 },
+  ranges: Ranges = {}
 ): Promise<{
   retryCollection: ReturnType<typeof vi.fn>
   dismissCollectionStatus: ReturnType<typeof vi.fn>
+  collectShownRange: ReturnType<typeof vi.fn>
   fixture: ComponentFixture<CollectionStatusComponent>
 }> {
+  stubLayoutObservers()
   const retryCollection = vi.fn(() => Promise.resolve())
   const dismissCollectionStatus = vi.fn()
+  const collectShownRange = vi.fn(() => Promise.resolve())
+  const own = ranges.own ?? MAY
   const activity = {
     collectionStatus: signal(status),
     providers: signal(
@@ -28,14 +43,18 @@ async function setup(
     ),
     retryCollection,
     dismissCollectionStatus,
+    collectShownRange,
     connection: signal(link),
+    dateFrom: signal(own.from),
+    dateTo: signal(own.to),
+    collectedRange: signal(ranges.collected === undefined ? MAY : ranges.collected),
   }
 
   const { fixture } = await render(CollectionStatusComponent, {
     providers: [{ provide: ActivityService, useValue: activity }],
   })
 
-  return { retryCollection, dismissCollectionStatus, fixture }
+  return { retryCollection, dismissCollectionStatus, collectShownRange, fixture }
 }
 
 describe('CollectionStatusComponent', () => {
@@ -61,6 +80,70 @@ describe('CollectionStatusComponent', () => {
     expect(status.textContent).toContain('Collecting activity')
     expect(status.textContent).toContain('Still collecting System')
     expect(status.textContent).not.toContain('Git')
+  })
+
+  it('says what the collection on screen covers where it leaves out this tab’s range', async () => {
+    const { collectShownRange } = await setup({ kind: 'idle' }, [], undefined, {
+      own: { from: '2026-05-01', to: '2026-05-18' },
+      collected: { from: '2026-04-01', to: '2026-04-08' },
+    })
+
+    const note = screen.getByRole('status')
+    expect(note.textContent).toContain('1 Apr – 8 Apr 2026')
+    await userEvent.click(screen.getByRole('button', { name: 'Collect 1 May – 18 May 2026' }))
+    expect(collectShownRange).toHaveBeenCalledOnce()
+  })
+
+  it('says nothing of a collection that covers this tab’s range', async () => {
+    await setup({ kind: 'idle' }, [], undefined, {
+      own: { from: '2026-05-17', to: '2026-05-17' },
+      collected: { from: '2026-05-01', to: '2026-05-31' },
+    })
+
+    expect(screen.queryByRole('button', { name: /^Collect/ })).toBeNull()
+    expect(screen.getByRole('status').textContent?.trim()).toBe('')
+  })
+
+  it('tells the notices how much of the window’s bottom its card takes, while it shows', async () => {
+    const status = signal<CollectionStatus>({
+      kind: 'failed',
+      operation: 'collect',
+      origin: 'collection',
+      failure: failure('GitLab unreachable'),
+    })
+    stubLayoutObservers()
+    const root = document.documentElement
+    const { fixture } = await render(CollectionStatusComponent, {
+      providers: [
+        {
+          provide: ActivityService,
+          useValue: {
+            collectionStatus: status,
+            providers: signal([]),
+            retryCollection: vi.fn(),
+            dismissCollectionStatus: vi.fn(),
+            collectShownRange: vi.fn(),
+            connection: signal({ status: { kind: 'open' }, since: 0, episode: 0 }),
+            dateFrom: signal(MAY.from),
+            dateTo: signal(MAY.to),
+            collectedRange: signal(MAY),
+          },
+        },
+      ],
+    })
+    await fixture.whenStable()
+    // jsdom lays nothing out, so the distance is no real one; it is set.
+    expect(root.style.getPropertyValue(STATUS_CLEARANCE)).toMatch(/^\d+px$/)
+
+    status.set({ kind: 'idle' })
+    await fixture.whenStable()
+    expect(root.style.getPropertyValue(STATUS_CLEARANCE)).toBe('')
+
+    status.set({ kind: 'collecting', operation: 'collect', startedAt: Date.now() })
+    await fixture.whenStable()
+    expect(root.style.getPropertyValue(STATUS_CLEARANCE)).toMatch(/^\d+px$/)
+    fixture.destroy()
+    expect(root.style.getPropertyValue(STATUS_CLEARANCE)).toBe('')
   })
 
   it('shows a reconnect over the state, and says when it is out of date', async () => {

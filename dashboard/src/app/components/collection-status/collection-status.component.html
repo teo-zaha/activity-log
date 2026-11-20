@@ -5,19 +5,28 @@
 <div class="live-region" appAutoAnimate role="status" aria-live="polite">
   @if (banner(); as banner) {
     @if (banner.busy) {
-      <div class="sync-pill" [attr.data-tone]="banner.tone" [title]="banner.message">
+      <div #shown class="sync-pill" [attr.data-tone]="banner.tone" [title]="banner.message">
         <mat-icon class="sync-icon u-spin">{{ banner.icon }}</mat-icon>
         <span class="sync-title">{{ banner.title }}</span>
         <span class="u-sr-only">{{ banner.message }}</span>
         <span class="sync-elapsed" aria-hidden="true">{{ elapsedSeconds() }}s</span>
       </div>
     }
+  } @else if (otherRange(); as range) {
+    <!-- The collection on screen leaves out this tab's range (another window collected). -->
+    <div #shown class="range-pill">
+      <mat-icon class="range-pill-icon">date_range</mat-icon>
+      <span class="range-pill-text">Showing {{ range.shown }}</span>
+      <button appButton variant="primary" size="sm" icon="sync" (click)="collectOwnRange()">
+        Collect {{ range.own }}
+      </button>
+    </div>
   }
 </div>
 
 @if (banner(); as banner) {
   @if (!banner.busy) {
-    <div class="toast" role="alert" [attr.data-tone]="banner.tone">
+    <div #shown class="toast" role="alert" [attr.data-tone]="banner.tone">
       <mat-icon>{{ banner.icon }}</mat-icon>
       <div class="toast-copy">
         <strong class="toast-title">{{ banner.title }}</strong>
