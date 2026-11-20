@@ -5,6 +5,7 @@ import type {
   CollectRequest,
   ConnectionId,
   ExportFile,
+  ExportOutcome,
   ExportRequest,
   LogsResponse,
   ProviderConfigSaveRequestDto,
@@ -96,7 +97,7 @@ export const BackendOperations = {
     tauri: 'remove_connection',
   }),
   /** Renders the export and saves it through a native dialog. */
-  saveExport: command<ExportRequest, void>({ label: 'Export', tauri: 'save_export' }),
+  saveExport: command<ExportRequest, ExportOutcome>({ label: 'Export', tauri: 'save_export' }),
   /** Renders the export for the browser to download. */
   renderExport: command<ExportRequest, ExportFile>({
     label: 'Export',
@@ -116,17 +117,3 @@ export const BackendOperations = {
     http: { method: 'DELETE', url: '/api/logs' },
   }),
 } as const
-
-export class BrowserOnlyBackendError extends Error {
-  constructor(operation: string) {
-    super(`${operation} is only available in the browser.`)
-    this.name = 'BrowserOnlyBackendError'
-  }
-}
-
-export class DesktopOnlyBackendError extends Error {
-  constructor(operation: string) {
-    super(`${operation} is only available in desktop mode.`)
-    this.name = 'DesktopOnlyBackendError'
-  }
-}

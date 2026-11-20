@@ -6,7 +6,7 @@ import type { AddConnectionRequestDto, ProviderKindDto } from '../../../generate
 import { type ConnectionKey, connectionKey } from '../../../providers/connection'
 import { UPCOMING_SOURCES, onlyOnLabel } from '../../../providers/source-catalog'
 import { ActivityService } from '../../../services/activity.service'
-import { extractBackendErrorMessage } from '../../../services/backend/error-message'
+import { type Failure, failureOf, refusedAs } from '../../../services/failure'
 import { RuntimeEnvironmentService } from '../../../services/backend/runtime-environment.service'
 import { ProviderIconComponent } from '../../provider-icon/provider-icon.component'
 
@@ -52,7 +52,10 @@ export class SettingsAddSourcePaneComponent {
     loader: () => this.activity.loadProviderConfig(),
   })
   protected readonly loading = this.config.isLoading
-  protected readonly loadError = computed(() => this.config.error()?.message ?? null)
+  protected readonly loadError = computed(() => {
+    const error = this.config.error()
+    return error ? failureOf(error).message : null
+  })
 
   protected readonly tiles = computed<SourceTile[]>(() => {
     if (!this.config.hasValue()) return []
@@ -93,7 +96,7 @@ export class SettingsAddSourcePaneComponent {
 
   /** The tile being added, so it can show progress while the others wait. */
   protected readonly adding = signal<string | null>(null)
-  protected readonly error = signal<string | null>(null)
+  protected readonly error = signal<Failure | null>(null)
 
   protected choose(tile: SourceTile): void {
     switch (tile.state.kind) {
@@ -164,7 +167,10 @@ export class SettingsAddSourcePaneComponent {
       this.config.set(response.snapshot)
       this.opened.emit(connectionKey(response.created))
     } catch (error) {
-      this.error.set(extractBackendErrorMessage(error, 'Failed to add the source.'))
+      const failed = failureOf(error, 'Failed to add the source.')
+      this.error.set(failed)
+      // Another program added it meanwhile: the snapshot shows it added, to open.
+      if (refusedAs(failed, 'alreadyExists')) this.config.reload()
     } finally {
       this.adding.set(null)
     }

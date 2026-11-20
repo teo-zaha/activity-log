@@ -27,7 +27,7 @@ import {
 import type { LogEntry, LogsResponse } from '../../../generated/activity'
 import { ActivityBackendClient } from '../../../services/backend/backend-client'
 import { BackendOperations } from '../../../services/backend/backend-contract'
-import { extractBackendErrorMessage } from '../../../services/backend/error-message'
+import { type Failure, failureOf } from '../../../services/failure'
 import {
   type LogLevelFilter,
   formatLogTime,
@@ -61,7 +61,7 @@ export class SettingsLogsPaneComponent {
 
   private readonly logs = this.backend.readResource(BackendOperations.logs)
   /** Shown until the next poll succeeds. */
-  private readonly clearError = linkedSignal<LogsResponse | undefined, string | null>({
+  private readonly clearError = linkedSignal<LogsResponse | undefined, Failure | null>({
     source: () => (this.logs.hasValue() ? this.logs.value() : undefined),
     computation: () => null,
   })
@@ -74,7 +74,7 @@ export class SettingsLogsPaneComponent {
   protected readonly loaded = computed(() => this.logs.hasValue() || this.logs.error() != null)
   protected readonly loadError = computed(() => {
     const error = this.logs.error()
-    return this.clearError() ?? (error ? extractBackendErrorMessage(error) : null)
+    return this.clearError() ?? (error ? failureOf(error) : null)
   })
   protected readonly copied = signal(false)
   protected readonly filter = signal<LogLevelFilter>('all')
@@ -133,7 +133,10 @@ export class SettingsLogsPaneComponent {
       this.logs.set({ entries: [] })
       this.clearError.set(null)
     } catch (error) {
-      this.clearError.set(extractBackendErrorMessage(error))
+      const failed = failureOf(error)
+      this.clearError.set(failed)
+      // The pane shows the message; the log keeps what failed, as the app's toasts do.
+      console.warn(failed.message, failed.cause)
     }
   }
 

@@ -1,6 +1,7 @@
 import { TestBed } from '@angular/core/testing'
 import { emit } from '@tauri-apps/api/event'
-import { clearMocks, mockIPC, mockWindows } from '@tauri-apps/api/mocks'
+import { mockIPC, mockWindows } from '@tauri-apps/api/mocks'
+import { clearTauriMocks } from '../../testing/tauri-mocks'
 import { afterEach, describe, expect, it } from 'vitest'
 import { RuntimeEnvironmentService } from './runtime-environment.service'
 
@@ -8,7 +9,7 @@ const settled = async (): Promise<void> => new Promise(resolve => setTimeout(res
 
 describe('RuntimeEnvironmentService', () => {
   afterEach(() => {
-    clearMocks()
+    clearTauriMocks()
     document.documentElement.classList.remove('fullscreen')
   })
 

@@ -7,6 +7,7 @@ import type {
   ProviderKindDto,
 } from '../../../generated/activity'
 import { ActivityService } from '../../../services/activity.service'
+import { BackendFailure } from '../../../services/backend/backend-failure'
 import { RuntimeEnvironmentService } from '../../../services/backend/runtime-environment.service'
 import { providerInfo } from '../../../testing/activity-fixtures'
 import { SettingsAddSourcePaneComponent } from './settings-add-source-pane.component'
@@ -120,6 +121,48 @@ describe('SettingsAddSourcePaneComponent', () => {
     expect(outlook).toHaveProperty('disabled', true)
     expect(outlook.textContent).toContain('Windows and macOS only')
     expect(addConnection).not.toHaveBeenCalled()
+  })
+
+  it('shows a source another program added meanwhile as added, with why it was not', async () => {
+    const reads = [snapshot([]), snapshot([{ source: 'system', name: 'system' }])]
+    const loadProviderConfig = vi.fn(() => Promise.resolve(reads.shift() ?? snapshot([])))
+    const refused = new BackendFailure('alreadyExists', 'System is already added')
+    await render(SettingsAddSourcePaneComponent, {
+      providers: [
+        {
+          provide: ActivityService,
+          useValue: { loadProviderConfig, addConnection: vi.fn().mockRejectedValue(refused) },
+        },
+        { provide: RuntimeEnvironmentService, useValue: { isTauri: (): boolean => true } },
+      ],
+    })
+
+    await userEvent.click(await screen.findByRole('button', { name: 'System' }))
+
+    await vi.waitFor(() =>
+      expect(screen.getByRole('button', { name: 'System' }).textContent).toContain('Added · Open')
+    )
+    expect(loadProviderConfig).toHaveBeenCalledTimes(2)
+    expect(screen.getByText('System is already added')).toBeTruthy()
+  })
+
+  it('reads the snapshot again only when another program got there first', async () => {
+    const loadProviderConfig = vi.fn(() => Promise.resolve(snapshot([])))
+    const refused = new BackendFailure('busy', 'The settings file is busy; try again.')
+    await render(SettingsAddSourcePaneComponent, {
+      providers: [
+        {
+          provide: ActivityService,
+          useValue: { loadProviderConfig, addConnection: vi.fn().mockRejectedValue(refused) },
+        },
+        { provide: RuntimeEnvironmentService, useValue: { isTauri: (): boolean => true } },
+      ],
+    })
+
+    await userEvent.click(await screen.findByRole('button', { name: 'System' }))
+
+    expect(await screen.findByText('The settings file is busy; try again.')).toBeTruthy()
+    expect(loadProviderConfig).toHaveBeenCalledTimes(1)
   })
 
   it('counts the connections a kind already has', async () => {

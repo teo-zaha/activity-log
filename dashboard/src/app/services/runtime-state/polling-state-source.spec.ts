@@ -3,7 +3,12 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { RuntimeState } from '../../generated/activity'
 import { activityLog, providersResponse } from '../../testing/activity-fixtures'
 import { ActivityBackendClient } from '../backend/backend-client'
-import { ACTIVITY_POLL_DELAY_MS, PollingStateSource } from './polling-state-source'
+import { BackendFailure } from '../backend/backend-failure'
+import {
+  ACTIVITY_POLL_ATTEMPTS,
+  ACTIVITY_POLL_DELAY_MS,
+  PollingStateSource,
+} from './polling-state-source'
 import type { RuntimeStateSink, SourceStatus } from './runtime-state-source'
 
 const pairOf = (epoch: string): RuntimeState => ({
@@ -104,5 +109,40 @@ describe('PollingStateSource', () => {
     expect(pairs).toEqual([])
     expect(statuses).toHaveLength(reported)
     expect(backend.answers).toHaveLength(1)
+  })
+
+  it.each([
+    ['ends at once on a read the backend refuses for good', 'notFound', 1],
+    ['tries again after a read that may work next time', 'unreachable', 3],
+  ] as const)('%s', async (_name, kind, reads) => {
+    const refused = new BackendFailure(kind, 'the read failed')
+    const getRuntimeState = vi.fn(() => Promise.reject(refused))
+    TestBed.configureTestingModule({
+      providers: [
+        { provide: ActivityBackendClient, useValue: { getRuntimeState } },
+        { provide: ACTIVITY_POLL_DELAY_MS, useValue: 1 },
+        { provide: ACTIVITY_POLL_ATTEMPTS, useValue: 3 },
+      ],
+    })
+    const statuses: SourceStatus[] = []
+    TestBed.inject(PollingStateSource).connect({
+      state: () => undefined,
+      activity: () => undefined,
+      providers: () => undefined,
+      connection: status => statuses.push(status),
+    })
+
+    await vi.runAllTimersAsync()
+
+    expect(getRuntimeState).toHaveBeenCalledTimes(reads)
+    const failed = statuses.at(-1)
+    expect(failed?.kind).toBe('failed')
+    // The read's own failure, never wrapped in another.
+    expect(failed).toMatchObject({
+      cause: {
+        kind: kind === 'notFound' ? 'refused' : 'unreachable',
+        failure: { kind: 'backend', cause: refused },
+      },
+    })
   })
 })

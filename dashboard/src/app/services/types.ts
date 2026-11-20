@@ -1,4 +1,5 @@
 import type { ProviderInfo, Source } from '../generated/activity'
+import type { Failure } from './failure'
 import type { ConnectionKey } from '../providers/connection'
 
 export interface ProviderViewModel {
@@ -25,7 +26,18 @@ export type CollectionStatus =
       readonly startedAt: number
     }
   | { readonly kind: 'timedOut'; readonly operation: CollectionOperation; readonly message: string }
-  | { readonly kind: 'failed'; readonly operation: CollectionOperation; readonly message: string }
+  | {
+      readonly kind: 'failed'
+      readonly operation: CollectionOperation
+      readonly origin: FailureOrigin
+      readonly failure: Failure
+    }
+
+/**
+ * Where a failure the shell shows comes from: the collect request the backend refused, the
+ * backend lost after reads kept failing, a read it refuses for good, or the collection itself.
+ */
+export type FailureOrigin = 'collect' | 'lostBackend' | 'refusedRead' | 'collection'
 
 /**
  * Where a save's install receipt stands against the state on screen (`receiptStanding`): its

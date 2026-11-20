@@ -3,7 +3,8 @@ import { HttpTestingController, provideHttpClientTesting } from '@angular/common
 import { TestBed } from '@angular/core/testing'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { collectingLog, exportRequest, MockBackendTransport } from '../../testing/activity-fixtures'
-import { BackendOperations, DesktopOnlyBackendError } from './backend-contract'
+import { BackendOperations } from './backend-contract'
+import { BackendFailure } from './backend-failure'
 import { HttpBackendTransport } from './http-backend-transport'
 
 function setup(): { transport: HttpBackendTransport; http: HttpTestingController } {
@@ -71,19 +72,73 @@ describe('HttpBackendTransport', () => {
     await result
   })
 
-  it('rejects desktop-only commands without touching the network', async () => {
+  it('rejects desktop-only commands as unsupported without touching the network', async () => {
     const { transport, http } = setup()
 
-    await expect(
-      transport.call(BackendOperations.providerConfig, undefined)
-    ).rejects.toBeInstanceOf(DesktopOnlyBackendError)
+    await expect(transport.call(BackendOperations.providerConfig, undefined)).rejects.toMatchObject(
+      { kind: 'unsupported' }
+    )
     await expect(
       transport.call(BackendOperations.saveProviderConfig, {
         connection: { source: 'git', name: 'default' },
         values: [],
       })
-    ).rejects.toThrow('Provider configuration is only available in desktop mode.')
+    ).rejects.toBeInstanceOf(BackendFailure)
     http.expectNone(() => true)
+  })
+
+  it('rejects a call the backend refused with the kind it answered', async () => {
+    const { transport, http } = setup()
+
+    const refused = transport.call(BackendOperations.recheckConnection, {
+      source: 'jira',
+      name: 'gone',
+    })
+    http
+      .expectOne('/api/connections/recheck')
+      .flush(
+        { kind: 'notFound', error: 'No source jira/gone' },
+        { status: 404, statusText: 'Not Found' }
+      )
+
+    await expect(refused).rejects.toMatchObject({
+      kind: 'notFound',
+      message: 'No source jira/gone',
+    })
+  })
+
+  it('rejects as unreachable when no answer came at all', async () => {
+    const { transport, http } = setup()
+
+    const lost = transport.call(BackendOperations.runtimeState, undefined)
+    http.expectOne('/api/runtime-state').error(new ProgressEvent('error'), { status: 0 })
+
+    await expect(lost).rejects.toMatchObject({ kind: 'unreachable' })
+  })
+
+  it('never shows a body outside the contract, such as a proxy’s page', async () => {
+    const { transport, http } = setup()
+
+    const proxied = transport.call(BackendOperations.runtimeState, undefined)
+    http
+      .expectOne('/api/runtime-state')
+      .flush('<html>Bad Gateway</html>', { status: 502, statusText: 'Bad Gateway' })
+
+    const failure: unknown = await proxied.catch((error: unknown) => error)
+    expect(failure).toBeInstanceOf(BackendFailure)
+    expect(failure).toMatchObject({ kind: 'internal' })
+    expect(String(failure)).not.toContain('<html>')
+  })
+
+  it('reads an error body with a kind it does not know as internal', async () => {
+    const { transport, http } = setup()
+
+    const odd = transport.call(BackendOperations.runtimeState, undefined)
+    http
+      .expectOne('/api/runtime-state')
+      .flush({ kind: 'later', error: 'from a newer backend' }, { status: 500, statusText: 'Error' })
+
+    await expect(odd).rejects.toMatchObject({ kind: 'internal' })
   })
 
   it('loads reads as GET resources', async () => {
@@ -98,7 +153,7 @@ describe('HttpBackendTransport', () => {
     await vi.waitFor(() => expect(logs.value()).toEqual({ entries: [] }))
   })
 
-  it('errors desktop-only resources with DesktopOnlyBackendError', async () => {
+  it('errors desktop-only resources as unsupported', async () => {
     const { transport } = setup()
 
     const config = TestBed.runInInjectionContext(() =>
@@ -106,7 +161,20 @@ describe('HttpBackendTransport', () => {
     )
     TestBed.tick()
 
-    await vi.waitFor(() => expect(config.error()).toBeInstanceOf(DesktopOnlyBackendError))
+    await vi.waitFor(() => expect(config.error()).toMatchObject({ kind: 'unsupported' }))
+  })
+
+  it('errors a read resource with the backend’s failure, as a call does', async () => {
+    const { transport, http } = setup()
+
+    const logs = TestBed.runInInjectionContext(() => transport.resource(BackendOperations.logs))
+    TestBed.tick()
+    http
+      .expectOne('/api/logs')
+      .flush({ kind: 'internal', error: 'log is gone' }, { status: 500, statusText: 'Error' })
+
+    await vi.waitFor(() => expect(logs.error()).toBeInstanceOf(BackendFailure))
+    expect(logs.error()).toMatchObject({ kind: 'internal', message: 'log is gone' })
   })
 
   it('has the API render an export and downloads it through a temporary object URL', async () => {
@@ -130,7 +198,7 @@ describe('HttpBackendTransport', () => {
       expect(req.request.method).toBe('POST')
       expect(req.request.body).toEqual(exportRequest)
       req.flush({ fileName: 'activity-2026-05-17-2026-05-18.md', content: '# hi' })
-      await saved
+      await expect(saved).resolves.toBe('saved')
 
       expect(click).toHaveBeenCalledOnce()
       expect(downloaded).toBe('activity-2026-05-17-2026-05-18.md')
@@ -157,11 +225,11 @@ describe('HttpBackendTransport', () => {
     http
       .expectOne('/api/export')
       .flush(
-        { error: 'Unknown time zone "Mars/Olympus"' },
+        { kind: 'invalidRequest', error: 'Unknown time zone "Mars/Olympus"' },
         { status: 400, statusText: 'Bad Request' }
       )
 
-    await expect(saved).rejects.toMatchObject({ status: 400 })
+    await expect(saved).rejects.toMatchObject({ kind: 'invalidRequest' })
     expect(click).not.toHaveBeenCalled()
   })
 
@@ -170,7 +238,9 @@ describe('HttpBackendTransport', () => {
     const open = vi.spyOn(window, 'open').mockImplementation(() => null)
 
     await transport.openUrl('https://example.org/a')
-    await expect(transport.openUrl('javascript:alert(1)')).rejects.toThrow('Only web links')
+    await expect(transport.openUrl('javascript:alert(1)')).rejects.toMatchObject({
+      kind: 'invalidRequest',
+    })
 
     expect(open).toHaveBeenCalledExactlyOnceWith(
       'https://example.org/a',
@@ -193,5 +263,48 @@ describe('HttpBackendTransport', () => {
     }
 
     expect(mismatches).toBeTypeOf('function')
+  })
+
+  it('sends nothing for a call aborted before it is sent, and rejects with the reason', async () => {
+    const { transport, http } = setup()
+    const controller = new AbortController()
+    const reason = new Error('stopped')
+    controller.abort(reason)
+
+    const call = transport.call(BackendOperations.runtimeState, undefined, controller.signal)
+
+    expect(call).toBeInstanceOf(Promise)
+    await expect(call).rejects.toBe(reason)
+    http.expectNone('/api/runtime-state')
+  })
+
+  it('rejects with a BackendFailure when the browser refuses the download', async () => {
+    const { transport, http } = setup()
+    const refusal = new DOMException('Blob URLs are off', 'SecurityError')
+    vi.stubGlobal('URL', {
+      createObjectURL: () => {
+        throw refusal
+      },
+      revokeObjectURL: vi.fn(),
+    })
+
+    const saved = transport.saveExport(exportRequest)
+    http.expectOne('/api/export').flush({ fileName: 'activity.md', content: '# hi' })
+
+    await expect(saved).rejects.toBeInstanceOf(BackendFailure)
+    await expect(saved).rejects.toMatchObject({ kind: 'internal', cause: refusal })
+  })
+
+  it('rejects with a BackendFailure when the browser refuses to open a link', async () => {
+    const { transport } = setup()
+    const refusal = new DOMException('Popups are off', 'SecurityError')
+    vi.spyOn(window, 'open').mockImplementation(() => {
+      throw refusal
+    })
+
+    await expect(transport.openUrl('https://example.org/')).rejects.toMatchObject({
+      kind: 'internal',
+      cause: refusal,
+    })
   })
 })

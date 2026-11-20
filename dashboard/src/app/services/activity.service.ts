@@ -14,10 +14,11 @@ import type { ConnectionKey, EntryKey } from '../providers/connection'
 import type { DayGroup } from '../models/day-group'
 import type { EntryUiAdapter } from '../providers/types'
 import { ActivityDataService } from './activity-data.service'
-import { failure, failureOf, type Notice } from './failure'
+import { failure, failureWhile, type Notice } from './failure'
 import { ActivityExportService } from './activity-export.service'
 import { ActivityViewStateService } from './activity-view-state.service'
 import { ProviderConfigFacade } from './provider-config-facade.service'
+import { ToastService } from './toast.service'
 import type { ReceiptStanding } from './types'
 import type { ViewMode } from '../utils/app-url'
 import { localDayRange, type DayKey } from '../utils/local-day'
@@ -28,6 +29,7 @@ export class ActivityService {
   private readonly viewState = inject(ActivityViewStateService)
   private readonly exportService = inject(ActivityExportService)
   private readonly providerConfig = inject(ProviderConfigFacade)
+  private readonly toast = inject(ToastService)
 
   readonly allEntries = this.data.allEntries
   readonly allEntryAdapters = this.data.allEntryAdapters
@@ -261,14 +263,14 @@ export class ActivityService {
     }
     try {
       const shown = this.currentView() === 'list' ? this.filteredEntries() : this.calendarEntries()
-      await this.exportService.export(
+      const outcome = await this.exportService.export(
         format,
         shown.map(entry => entry.entry),
         range
       )
+      if (outcome === 'saved') this.toast.success('Exported')
     } catch (error) {
-      // `ActivityExportService` names the export in its message.
-      this.notice.set({ origin: 'export', failure: failureOf(error) })
+      this.notice.set({ origin: 'export', failure: failureWhile('Export', error) })
     }
   }
 

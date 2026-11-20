@@ -1,8 +1,9 @@
-import { HttpErrorResponse } from '@angular/common/http'
 import { TestBed } from '@angular/core/testing'
+import type { ExportOutcome } from '../generated/activity'
 import { describe, expect, it } from 'vitest'
 import { activityLog, MockBackendTransport, provideMockBackend } from '../testing/activity-fixtures'
 import { ActivityExportService } from './activity-export.service'
+import { BackendFailure } from './backend/backend-failure'
 
 const range = { start: '2026-05-16T22:00:00Z', end: '2026-05-18T22:00:00Z' }
 
@@ -16,7 +17,7 @@ describe('ActivityExportService', () => {
     const backend = new MockBackendTransport()
     const service = setup(backend)
 
-    await service.export('markdown', activityLog.entries, range)
+    await expect(service.export('markdown', activityLog.entries, range)).resolves.toBe('saved')
 
     expect(backend.exports).toEqual([
       {
@@ -28,19 +29,12 @@ describe('ActivityExportService', () => {
     ])
   })
 
-  it("reports the backend's reason when it rejects an export", async () => {
+  it('rejects with the backend’s failure as it is, kind and all', async () => {
     const backend = new MockBackendTransport()
-    backend.saveExport = (): Promise<void> =>
-      Promise.reject(
-        new HttpErrorResponse({
-          status: 400,
-          error: { error: 'Unknown time zone "Mars/Olympus"' },
-        })
-      )
+    const refused = new BackendFailure('invalidRequest', 'Unknown time zone "Mars/Olympus"')
+    backend.saveExport = (): Promise<ExportOutcome> => Promise.reject(refused)
     const service = setup(backend)
 
-    await expect(service.export('json', [], range)).rejects.toThrow(
-      'Export failed: Unknown time zone "Mars/Olympus"'
-    )
+    await expect(service.export('json', [], range)).rejects.toBe(refused)
   })
 })

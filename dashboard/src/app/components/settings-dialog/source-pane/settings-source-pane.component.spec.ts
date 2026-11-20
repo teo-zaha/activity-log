@@ -20,6 +20,7 @@ import type { SettingsProviderRow } from '../settings-dialog.types'
 import { SettingsSourcePaneComponent } from './settings-source-pane.component'
 import { SourceDrafts } from './source-drafts.service'
 import { ToastService } from '../../../services/toast.service'
+import { BackendFailure } from '../../../services/backend/backend-failure'
 
 const row = (index: 0 | 1): SettingsProviderRow => ({
   info: providerInfo[index],
@@ -257,7 +258,7 @@ describe('SettingsSourcePaneComponent', () => {
 
       // Host b goes away with its read; host c is read instead, and its snapshot shows.
       hostEpoch.set('c')
-      fail(new Error('Host B exited'))
+      fail(new BackendFailure('internal', 'Host B exited'))
       await whenStable()
 
       expect(loadProviderConfig).toHaveBeenCalledTimes(3)
@@ -375,7 +376,9 @@ describe('SettingsSourcePaneComponent', () => {
       const { recheckConnection, switchProvider, whenStable } = await setup({
         provider: degraded(),
       })
-      recheckConnection.mockRejectedValueOnce(new Error('No source jira/default'))
+      recheckConnection.mockRejectedValueOnce(
+        new BackendFailure('notFound', 'No source jira/default')
+      )
       await userEvent.click(await screen.findByRole('button', { name: 'Check again' }))
       await whenStable()
       expect(screen.getByRole('alert').textContent).toContain('No source jira/default')
@@ -398,7 +401,7 @@ describe('SettingsSourcePaneComponent', () => {
       await switchProvider(row(0))
       await whenStable()
 
-      refuse(new Error('No source jira/default'))
+      refuse(new BackendFailure('notFound', 'No source jira/default'))
       await whenStable()
       expect(screen.queryByRole('alert')).toBeNull()
       await switchProvider(degraded())
@@ -460,7 +463,7 @@ describe('SettingsSourcePaneComponent', () => {
   it('shows the load error and retries', async () => {
     const load = vi
       .fn<() => Promise<ProviderConfigSnapshotDto>>()
-      .mockRejectedValueOnce(new Error('keychain locked'))
+      .mockRejectedValueOnce(new BackendFailure('internal', 'keychain locked'))
       .mockResolvedValue(snapshot())
     await setup({ load })
 
@@ -659,7 +662,7 @@ describe('SettingsSourcePaneComponent', () => {
         connections: [state('git', gitFields), state('jira', jiraFields)],
       })
     const { saveProviderConfig, switchProvider } = await setup({ load: both })
-    saveProviderConfig.mockRejectedValue(new Error('write refused'))
+    saveProviderConfig.mockRejectedValue(new BackendFailure('internal', 'write refused'))
 
     const baseUrl = await screen.findByLabelText('Base URL')
     await userEvent.clear(baseUrl)
@@ -762,7 +765,7 @@ describe('SettingsSourcePaneComponent', () => {
       await userEvent.click(screen.getByRole('button', { name: 'Save settings' }))
 
       await switchProvider(row(0))
-      refuse(new Error('write refused'))
+      refuse(new BackendFailure('internal', 'write refused'))
       await whenStable()
       expect(screen.queryByRole('alert')).toBeNull()
       expect(screen.getByLabelText('Git root')).toHaveProperty('value', '/work')

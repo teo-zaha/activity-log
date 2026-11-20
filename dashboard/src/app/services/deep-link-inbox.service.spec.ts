@@ -7,6 +7,8 @@ import { MockBackendTransport, provideMockBackend } from '../testing/activity-fi
 import { ActivityService } from './activity.service'
 import { DeepLinkInboxService } from './deep-link-inbox.service'
 import { DeepLinkService } from './deep-link.service'
+import { BackendFailure } from './backend/backend-failure'
+import { BackendTransport } from './backend/backend-transport'
 
 function setup(links: string[]): MockInstance<DeepLinkService['open']> {
   const backend = new MockBackendTransport()
@@ -47,5 +49,16 @@ describe('DeepLinkInboxService', () => {
     expect(open).not.toHaveBeenCalled()
     await TestBed.inject(Router).navigateByUrl('/week/2026-11-16')
     await vi.waitFor(() => expect(TestBed.inject(Router).url).toBe('/timeline'))
+  })
+
+  it('starts the app without the listener when the shell refuses it, and logs why', async () => {
+    setup([])
+    const refused = new BackendFailure('internal', 'event.listen not allowed')
+    vi.spyOn(TestBed.inject(BackendTransport), 'listenForDeepLinks').mockRejectedValue(refused)
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined)
+
+    await expect(TestBed.inject(DeepLinkInboxService).start()).resolves.toBeUndefined()
+
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining('event.listen not allowed'), refused)
   })
 })

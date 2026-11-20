@@ -120,7 +120,7 @@
     }
   }
 
-  @if (error(); as message) {
-    <app-feedback tone="error" block>{{ message }}</app-feedback>
+  @if (error(); as failure) {
+    <app-feedback tone="error" block>{{ failure.message }}</app-feedback>
   }
 </section>

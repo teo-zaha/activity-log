@@ -4,7 +4,7 @@ import type { ResourceRef } from '@angular/core'
 import { TestBed } from '@angular/core/testing'
 import { describe, expect, it, vi } from 'vitest'
 import type { ProviderConfigSaveRequestDto } from '../../generated/activity'
-import type { ExportRequest } from '../../generated/activity'
+import type { ExportOutcome, ExportRequest } from '../../generated/activity'
 import {
   exportRequest,
   MockBackendTransport,
@@ -88,9 +88,9 @@ class RecordingTransport implements BackendTransport {
     return new Promise<Res>(() => undefined)
   }
 
-  saveExport(request: ExportRequest): Promise<void> {
+  saveExport(request: ExportRequest): Promise<ExportOutcome> {
     this.exports.push(request)
-    return new Promise<void>(() => undefined)
+    return new Promise<ExportOutcome>(() => undefined)
   }
 
   openUrl(url: string): Promise<void> {

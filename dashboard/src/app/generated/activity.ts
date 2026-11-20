@@ -252,13 +252,21 @@ export type CollectRequest = { start: string, end: string, };
 
 export type CollectionFailedResponse = { start: string, end: string, error: string, };
 
-export type ErrorResponse = { error: string, };
+export type BackendErrorKind = "noData" | "invalidRequest" | "notFound" | "alreadyExists" | "busy" | "conflict" | "noLocation" | "unprotectable" | "badConfig" | "tooLarge" | "internal";
+
+export type BackendError = { kind: BackendErrorKind, 
+/**
+ * Sent as `error`, the field API error bodies always had.
+ */
+error: string, };
 
 export type OutputFormat = "json" | "markdown";
 
 export type ExportRequest = { format: OutputFormat, start: string, end: string, timeZone: string, entries: Array<ActivityEntry>, };
 
 export type ExportFile = { fileName: string, content: string, };
+
+export type ExportOutcome = "saved" | "cancelled";
 
 export type LogLevel = "info" | "warn" | "error";
 
@@ -298,3 +306,6 @@ export type RecheckAnswer = { stamp: PartStamp, currentOs: SupportedOs, provider
 
 /** The longest range the backend collects or exports, in days (`CollectOptions::MAX_DAYS`). */
 export const COLLECT_MAX_DAYS = 3653
+
+/** Every `BackendErrorKind`, for telling a backend error body from any other. */
+export const BACKEND_ERROR_KINDS = ["noData", "invalidRequest", "notFound", "alreadyExists", "busy", "conflict", "noLocation", "unprotectable", "badConfig", "tooLarge", "internal"] as const satisfies readonly BackendErrorKind[]
