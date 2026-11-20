@@ -41,6 +41,16 @@ impl GitLabApi {
         self.remote.get_json(url).await
     }
 
+    /// One page of a paged list, and the URL of the next as GitLab names it: `x-next-page`
+    /// (empty on the last page), else a `Link` header's `rel="next"`; `None` when there is none.
+    pub(crate) async fn get_page<T: DeserializeOwned>(
+        &self,
+        url: Url,
+    ) -> Result<(T, Option<Url>), ApiError> {
+        let (page, headers) = self.remote.get_json_with_headers(url.clone()).await?;
+        Ok((page, next_page(&url, &headers)))
+    }
+
     /// Who the token belongs to, which may differ from the configured user whose events are
     /// collected: `/user`'s `id` and `username`.
     pub(crate) async fn current_user(&self) -> Result<Option<RemoteIdentity>, ApiError> {
@@ -50,6 +60,41 @@ impl GitLabApi {
             "username",
         )
     }
+}
+
+/// The next page of `url` by GitLab's pagination headers.
+fn next_page(url: &Url, headers: &reqwest::header::HeaderMap) -> Option<Url> {
+    let text = |name: &str| headers.get(name).and_then(|value| value.to_str().ok());
+    if let Some(next) = text("x-next-page") {
+        let next = next.trim().parse::<u64>().ok()?;
+        let mut url = url.clone();
+        let pairs = url
+            .query_pairs()
+            .filter(|(name, _)| name != "page")
+            .map(|(name, value)| (name.into_owned(), value.into_owned()))
+            .collect::<Vec<_>>();
+        url.query_pairs_mut()
+            .clear()
+            .extend_pairs(pairs)
+            .append_pair("page", &next.to_string());
+        return Some(url);
+    }
+    // A server may send several `Link` header lines; each may list several links.
+    headers
+        .get_all("link")
+        .iter()
+        .filter_map(|value| value.to_str().ok())
+        .flat_map(|value| value.split(','))
+        .find_map(|link| {
+            let (target, params) = link.split_once(';')?;
+            params
+                .split(';')
+                .any(|param| param.trim() == r#"rel="next""#)
+                .then(|| {
+                    Url::parse(target.trim().trim_start_matches('<').trim_end_matches('>')).ok()
+                })
+                .flatten()
+        })
 }
 
 #[cfg(test)]

@@ -4,6 +4,8 @@
 use reqwest::{StatusCode, Url};
 use serde_json::Value;
 
+use crate::model::ProviderProblem;
+
 /// How long a cleaned remote message may be, in characters.
 const MESSAGE_LIMIT: usize = 300;
 const REDACTED: &str = "[redacted]";
@@ -35,6 +37,21 @@ impl ApiError {
         }
     }
 
+    /// The problem this is for its connection, when it is more than a failure: a refusal of
+    /// the credentials, a timeout, a server out of reach.
+    pub fn problem(&self) -> Option<ProviderProblem> {
+        match self {
+            Self::Status { status, .. }
+                if matches!(*status, StatusCode::UNAUTHORIZED | StatusCode::FORBIDDEN) =>
+            {
+                Some(ProviderProblem::Refused)
+            }
+            Self::Timeout => Some(ProviderProblem::TimedOut),
+            Self::Unreachable => Some(ProviderProblem::Unreachable),
+            Self::Status { .. } | Self::Decode => None,
+        }
+    }
+
     /// The message for a person; `service` names the remote ("Jira").
     pub fn message(&self, service: &str) -> String {
         match self {
@@ -53,6 +70,24 @@ impl ApiError {
         }
     }
 }
+
+/// A collector's request to `service` that failed, kept whole in its `anyhow` chain so the
+/// runtime can tell a refusal, a timeout and an unreachable server apart; it reads as
+/// [`ApiError::message`].
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RemoteFailure {
+    /// Who answered: a kind (`Jira`) or a host (a calendar feed's).
+    pub service: std::borrow::Cow<'static, str>,
+    pub error: ApiError,
+}
+
+impl std::fmt::Display for RemoteFailure {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.error.message(&self.service))
+    }
+}
+
+impl std::error::Error for RemoteFailure {}
 
 /// The explanation in an error body, cleaned for display: only Jira's `errorMessages` and
 /// `errors` or GitLab's `message` and `error` are read (an HTML page gives nothing), each of

@@ -27,18 +27,18 @@ use serde::{Deserialize, Serialize};
 
 use crate::{
     diagnostics,
-    model::{
-        ActivityEntry, CalendarEntry, CollectOptions, ConnectionId, GitEntry, GitLabEntry,
-        JiraEntry, OutlookEntry, SystemEntry,
-    },
+    model::{ActivityEntry, CollectOptions, ConnectionId},
     platform::private_file::{Folder, PrivateFileError, create_private_folder, open_folder},
 };
 
 #[cfg(test)]
 mod tests;
 
-/// Bump when the file layout changes; older files are then ignored and rewritten.
-const FILE_VERSION: u32 = 4;
+/// Bump when the file layout changes; older files are then ignored and rewritten. 5: entries
+/// as they are sent, read by their `source`, instead of wrapped in a `kind` tag. 6: entries
+/// stamped with their connection before they are stored, and GitLab's events as typed rows (an
+/// unreleased version-5 writer stored `connection: ""` and the older GitLab fields).
+const FILE_VERSION: u32 = 6;
 /// A day counts as settled once it was fetched at least this long after it ended, so late
 /// writes (clock skew, slow API indexing) are not frozen into the cache.
 const SETTLE_GRACE: Duration = Duration::from_secs(60 * 60);
@@ -171,7 +171,7 @@ where
         };
         let started = clock();
         let entries = fetch(CollectOptions { start, end }).await?;
-        let fetched = fetched_days(first, last, entries, started, &scope);
+        let fetched = fetched_days(first, last, entries, started);
         // Each run is written as soon as it is in, so a later run that fails or is cut off by
         // the connection's deadline does not cost the ones before it.
         let stored = blocking({
@@ -236,7 +236,6 @@ fn fetched_days(
     last: NaiveDate,
     fetched: Vec<ActivityEntry>,
     started: DateTime<Utc>,
-    scope: &str,
 ) -> BTreeMap<NaiveDate, CachedDay> {
     let fetched_at = started.timestamp_millis();
     let empty = || CachedDay {
@@ -246,24 +245,12 @@ fn fetched_days(
     let mut days: BTreeMap<NaiveDate, CachedDay> =
         days(first, last).map(|day| (day, empty())).collect();
 
-    let mut undated = 0;
     for entry in fetched {
-        match utc_day(entry.timestamp()) {
-            Some(day) => {
-                // Outside the run: the widened fetch overlaps neighbouring days, which are
-                // either cached already or outside the requested range.
-                if let Some(cached) = days.get_mut(&day) {
-                    cached.entries.push(entry.into());
-                }
-            }
-            None => undated += 1,
+        // Outside the run: the widened fetch overlaps neighbouring days, which are either
+        // cached already or outside the requested range.
+        if let Some(cached) = days.get_mut(&entry.timestamp().utc().date_naive()) {
+            cached.entries.push(entry);
         }
-    }
-    if undated > 0 {
-        diagnostics::warn(
-            scope,
-            format!("Dropped {undated} entries with unreadable timestamps"),
-        );
     }
     days
 }
@@ -278,46 +265,8 @@ struct CacheFile {
 struct CachedDay {
     /// Unix milliseconds.
     fetched_at: i64,
-    entries: Vec<StoredEntry>,
-}
-
-/// `ActivityEntry` is untagged on the wire; the cache stores an explicit tag so entries always
-/// deserialize back into the variant they came from.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(tag = "kind", content = "entry", rename_all = "lowercase")]
-enum StoredEntry {
-    Git(GitEntry),
-    GitLab(GitLabEntry),
-    Jira(JiraEntry),
-    Outlook(OutlookEntry),
-    System(SystemEntry),
-    Calendar(CalendarEntry),
-}
-
-impl From<ActivityEntry> for StoredEntry {
-    fn from(entry: ActivityEntry) -> Self {
-        match entry {
-            ActivityEntry::Git(entry) => Self::Git(entry),
-            ActivityEntry::GitLab(entry) => Self::GitLab(entry),
-            ActivityEntry::Jira(entry) => Self::Jira(entry),
-            ActivityEntry::Outlook(entry) => Self::Outlook(entry),
-            ActivityEntry::System(entry) => Self::System(entry),
-            ActivityEntry::Calendar(entry) => Self::Calendar(entry),
-        }
-    }
-}
-
-impl From<StoredEntry> for ActivityEntry {
-    fn from(entry: StoredEntry) -> Self {
-        match entry {
-            StoredEntry::Git(entry) => Self::Git(entry),
-            StoredEntry::GitLab(entry) => Self::GitLab(entry),
-            StoredEntry::Jira(entry) => Self::Jira(entry),
-            StoredEntry::Outlook(entry) => Self::Outlook(entry),
-            StoredEntry::System(entry) => Self::System(entry),
-            StoredEntry::Calendar(entry) => Self::Calendar(entry),
-        }
-    }
+    /// Each entry as it is sent: its `source` says its kind.
+    entries: Vec<ActivityEntry>,
 }
 
 impl Default for CacheFile {
@@ -382,8 +331,8 @@ impl CacheFile {
         let (first, last) = options.utc_days();
         self.days
             .range(first..=last)
-            .flat_map(|(_, cached)| cached.entries.iter().cloned().map(ActivityEntry::from))
-            .filter(|entry| instant(entry.timestamp()).is_some_and(|at| options.contains(at)))
+            .flat_map(|(_, cached)| cached.entries.iter().cloned())
+            .filter(|entry| options.contains(entry.timestamp().utc()))
             .collect()
     }
 }
@@ -398,16 +347,6 @@ fn start_of_day(day: NaiveDate) -> Option<DateTime<Utc>> {
 
 fn end_of_day(day: NaiveDate) -> Option<DateTime<Utc>> {
     start_of_day(day.succ_opt()?)
-}
-
-fn instant(timestamp: &str) -> Option<DateTime<Utc>> {
-    DateTime::parse_from_rfc3339(timestamp)
-        .ok()
-        .map(|parsed| parsed.with_timezone(&Utc))
-}
-
-fn utc_day(timestamp: &str) -> Option<NaiveDate> {
-    instant(timestamp).map(|at| at.date_naive())
 }
 
 /// The cache file before fetching; `None` when its folder cannot keep it private, so nothing

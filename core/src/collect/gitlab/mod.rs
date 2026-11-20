@@ -1,17 +1,34 @@
+use std::collections::HashSet;
+
 use anyhow::{Result, anyhow, bail};
-use chrono::{DateTime, Days};
-use serde_json::Value;
+use chrono::Days;
+use serde::Deserialize;
 
 use crate::{
-    model::{CollectOptions, GitLabEntry, GitLabType},
+    diagnostics,
+    model::{CollectOptions, GitLabEntry, GitLabTag, GitLabType, Timestamp},
     provider::{
         gitlab::{GitLabConfig, api::GitLabApi},
         provider_context::ProviderContext,
         remote_api::is_path_segment,
+        remote_error::RemoteFailure,
     },
 };
 
 const PAGE_SIZE: usize = 100;
+
+/// GitLab named a page it had already sent, or sent the same events again: read on, the list
+/// would never end.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct PagesRepeated;
+
+impl std::fmt::Display for PagesRepeated {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("GitLab sent a page of events it had sent before; stopped reading")
+    }
+}
+
+impl std::error::Error for PagesRepeated {}
 
 pub async fn collect_gitlab(
     options: &CollectOptions,
@@ -31,110 +48,139 @@ pub async fn collect_gitlab(
     let before = (last + Days::new(1)).format("%Y-%m-%d").to_string();
 
     let mut entries = Vec::new();
-    let mut page = 1;
+    let mut skipped = 0;
+    let mut url = api.endpoint(&["users", &config.user, "events"]);
+    url.query_pairs_mut()
+        .append_pair("after", &after)
+        .append_pair("before", &before)
+        .append_pair("per_page", &PAGE_SIZE.to_string())
+        .append_pair("page", "1");
+    let mut next = Some(url);
+    let mut asked = HashSet::new();
+    let mut collected = HashSet::new();
 
-    loop {
-        let mut url = api.endpoint(&["users", &config.user, "events"]);
-        url.query_pairs_mut()
-            .append_pair("after", &after)
-            .append_pair("before", &before)
-            .append_pair("per_page", &PAGE_SIZE.to_string())
-            .append_pair("page", &page.to_string());
-        let events = api
-            .get_json::<Vec<Value>>(url)
-            .await
-            .map_err(|err| anyhow!(err.message(GitLabApi::SERVICE)))?;
-        if events.is_empty() {
-            break;
+    // Pages follow GitLab's pagination headers, not the number of rows a page holds.
+    while let Some(url) = next.take() {
+        if !asked.insert(url.to_string()) {
+            bail!(PagesRepeated);
         }
-
-        entries.extend(events.iter().filter_map(map_gitlab_event).filter(|entry| {
-            DateTime::parse_from_rfc3339(&entry.timestamp)
-                .is_ok_and(|at| options.contains(at.to_utc()))
-        }));
-
-        if events.len() < PAGE_SIZE {
-            break;
+        // A page that is no JSON list fails the collection; a row that is no event is skipped.
+        let (rows, following) =
+            api.get_page::<Vec<serde_json::Value>>(url)
+                .await
+                .map_err(|error| RemoteFailure {
+                    service: GitLabApi::SERVICE.into(),
+                    error,
+                })?;
+        // An event already collected is not read twice (a new event can shift GitLab's offsets
+        // by one); a page that brings nothing new would repeat without end.
+        let (mut events, mut new) = (0, 0);
+        for row in rows {
+            let Ok(event) = serde_json::from_value::<GitLabEvent>(row) else {
+                skipped += 1;
+                continue;
+            };
+            events += 1;
+            if !collected.insert(event.id) {
+                continue;
+            }
+            new += 1;
+            let entry = map_gitlab_event(event);
+            if options.contains(entry.timestamp.utc()) {
+                entries.push(entry);
+            }
         }
-        page += 1;
+        if events > 0 && new == 0 {
+            bail!(PagesRepeated);
+        }
+        next = following;
     }
 
+    if skipped > 0 {
+        diagnostics::warn(
+            "gitlab",
+            format!("Skipped {skipped} GitLab events that could not be read"),
+        );
+    }
     Ok(entries)
 }
 
-pub fn map_gitlab_event(event: &Value) -> Option<GitLabEntry> {
-    let object = event.as_object()?;
-    let push_data = object.get("push_data").and_then(Value::as_object);
-    let note = object.get("note").and_then(Value::as_object);
-    let note_position = note
-        .and_then(|note| note.get("position"))
-        .and_then(Value::as_object);
-    let target_type = object
-        .get("target_type")
-        .and_then(Value::as_str)
-        .unwrap_or("unknown")
-        .to_string();
+/// One event of `GET /users/:user/events`, with the fields an entry takes from it. GitLab sends
+/// `null` for what an event does not have (a push has no target); every event has an id and a
+/// creation time.
+#[derive(Debug, Deserialize)]
+pub(crate) struct GitLabEvent {
+    id: u64,
+    action_name: String,
+    created_at: Timestamp,
+    target_title: Option<String>,
+    target_type: Option<String>,
+    target_iid: Option<u64>,
+    push_data: Option<PushData>,
+    note: Option<Note>,
+}
 
-    let entry_type = GitLabType::from_gitlab_action_name(
-        object
-            .get("action_name")
-            .and_then(Value::as_str)
-            .unwrap_or("unknown"),
-    );
+#[derive(Debug, Deserialize)]
+struct PushData {
+    #[serde(rename = "ref")]
+    branch: Option<String>,
+    commit_count: Option<u64>,
+    commit_to: Option<String>,
+}
 
-    let timestamp = object
-        .get("created_at")
-        .and_then(Value::as_str)
-        .unwrap_or_default()
-        .to_string();
-    let title = object
-        .get("target_title")
-        .and_then(Value::as_str)
-        .unwrap_or_default()
-        .to_string();
-    let id = match object.get("id") {
-        Some(Value::Number(id)) => id.to_string(),
-        Some(Value::String(id)) => id.clone(),
-        _ => crate::utils::stable_id(&[entry_type.as_ref(), &timestamp, &title]),
+#[derive(Debug, Deserialize)]
+struct Note {
+    body: Option<String>,
+    resolved: Option<bool>,
+    position: Option<NotePosition>,
+    /// What the comment is on: `MergeRequest`, `Issue`, `Commit`, …
+    noteable_type: Option<String>,
+    noteable_iid: Option<u64>,
+}
+
+#[derive(Debug, Deserialize)]
+struct NotePosition {
+    new_path: Option<String>,
+}
+
+pub(crate) fn map_gitlab_event(event: GitLabEvent) -> GitLabEntry {
+    let entry_type = GitLabType::from_gitlab_action_name(&event.action_name);
+    let (branch, commit_count, commit_to) = match event.push_data {
+        Some(push) => (push.branch, push.commit_count, push.commit_to),
+        None => (None, None, None),
     };
-
-    Some(GitLabEntry {
-        source: "gitlab".to_string(),
-        connection: String::new(),
-        id,
-        pushed_commit: push_data
-            .filter(|_| entry_type == GitLabType::PushedTo)
-            .and_then(|value| value.get("commit_to"))
-            .and_then(Value::as_str)
-            .map(str::to_string),
+    // The merge request or issue the event is about: its own target, or what a comment is on.
+    let (about, iid) = match &event.note {
+        Some(note) => (note.noteable_type.as_deref(), note.noteable_iid),
+        None => (event.target_type.as_deref(), event.target_iid),
+    };
+    let iid_of = |kind: &str| iid.filter(|_| about == Some(kind));
+    let (mr_iid, issue_iid) = (iid_of("MergeRequest"), iid_of("Issue"));
+    let (note_body, note_resolved, note_file) = match event.note {
+        Some(note) => (
+            note.body,
+            note.resolved,
+            note.position.and_then(|position| position.new_path),
+        ),
+        None => (None, None, None),
+    };
+    GitLabEntry {
+        source: GitLabTag,
+        connection: crate::model::ConnectionName::unstamped(),
+        id: event.id.to_string(),
+        pushed_commit: commit_to.filter(|_| entry_type.is_push()),
         entry_type,
-        timestamp,
-        title,
-        target_type,
-        mr_iid: object
-            .get("target_iid")
-            .and_then(Value::as_i64)
-            .map(|value| value as i32),
-        branch: push_data
-            .and_then(|value| value.get("ref"))
-            .and_then(Value::as_str)
-            .map(str::to_string),
-        commit_count: push_data
-            .and_then(|value| value.get("commit_count"))
-            .and_then(Value::as_i64)
-            .map(|value| value as i32),
-        note_body: note
-            .and_then(|value| value.get("body"))
-            .and_then(Value::as_str)
-            .map(str::to_string),
-        note_file: note_position
-            .and_then(|value| value.get("new_path"))
-            .and_then(Value::as_str)
-            .map(str::to_string),
-        note_resolved: note
-            .and_then(|value| value.get("resolved"))
-            .and_then(Value::as_bool),
-    })
+        timestamp: event.created_at,
+        title: event.target_title,
+        target_type: event.target_type,
+        mr_iid,
+        issue_iid,
+        branch,
+        commit_count,
+        note_body,
+        note_file,
+        note_resolved,
+    }
 }
 
 #[cfg(test)]

@@ -8,13 +8,15 @@ use std::{collections::HashSet, ops::ControlFlow, sync::Arc};
 
 use crate::{
     collect::git::{
-        GitCollection, collect_git, keep_own, open_repo_strict, report_identities, visit_git_repos,
+        GitCollection, collect_git, denied_root, keep_own, open_repo_strict, report_identities,
+        visit_git_repos,
     },
     model::{ActivityEntry, IntoActivityEntries, Source, SupportedOs},
     provider::{
         connection::{ConnectionLocation, Instances},
         provider_adapter::{CollectionState, ConnectionEntries},
         provider_check_result::ProviderCheckResult,
+        source_failure::{SourceFailure, SourceProblem},
     },
 };
 
@@ -141,12 +143,13 @@ crate::provider! {
 fn local_check_result(config: &GitConfig) -> ProviderCheckResult {
     match check_local_repos(config) {
         Ok(()) => ProviderCheckResult::available(),
-        Err(reason) => ProviderCheckResult::unavailable(reason),
+        Err(err) => ProviderCheckResult::unavailable_from(&err),
     }
 }
 
-/// Stops at the first repository that opens, so the check does not walk the whole disk.
-pub(crate) fn check_local_repos(config: &GitConfig) -> Result<(), String> {
+/// Stops at the first repository that opens, so the check does not walk the whole disk. None
+/// found is `SourceProblem::NoData`.
+pub(crate) fn check_local_repos(config: &GitConfig) -> anyhow::Result<()> {
     let mut found = false;
     let mut last_error = None;
     visit_git_repos(config, &mut |repo| {
@@ -161,12 +164,18 @@ pub(crate) fn check_local_repos(config: &GitConfig) -> Result<(), String> {
                 ControlFlow::Continue(())
             }
         }
-    })
-    .map_err(|err| err.to_string())?;
+    })?;
 
     match (found, last_error) {
-        (false, _) => Err("No repositories found".to_string()),
+        (false, _) => Err(match denied_root(config) {
+            Some(root) => SourceFailure::new(
+                SourceProblem::PermissionDenied,
+                format!("Not allowed to read {}", root.display()),
+            ),
+            None => SourceFailure::new(SourceProblem::NoData, "No repositories found"),
+        }
+        .into()),
         (true, None) => Ok(()),
-        (true, Some(reason)) => Err(format!("No readable repositories found: {reason}")),
+        (true, Some(reason)) => Err(anyhow::anyhow!("No readable repositories found: {reason}")),
     }
 }

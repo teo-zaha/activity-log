@@ -30,6 +30,7 @@ const outlook: ProviderViewModel = {
     label: 'Outlook',
     status: 'unavailable',
     usable: false,
+    recheckable: true,
     reason: 'Startup check timed out after 15s',
     supportedOs: ['macos', 'windows'],
     checkedAt: '2026-05-18T08:00:00Z',
@@ -80,6 +81,34 @@ describe('SidebarComponent', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Check Outlook again' }))
     expect(recheckConnection).toHaveBeenCalledWith(outlook.info.connection)
     expect(open).toHaveBeenCalledTimes(1)
+  })
+
+  it('offers to check a source again only when the backend says a check can fix it', async () => {
+    await render(SidebarComponent, {
+      providers: [
+        {
+          provide: ActivityService,
+          useValue: {
+            selectedDay: signal('2026-11-17'),
+            providers: signal([git]),
+            unusableProviders: signal([
+              {
+                ...outlook,
+                info: { ...outlook.info, problem: 'notConfigured', recheckable: false },
+              },
+            ]),
+            activeConnections: signal(new Set<ConnectionKey>(['git/default'])),
+            toggleConnection: vi.fn(),
+            isolateConnection: vi.fn(),
+            recheckConnection: vi.fn(),
+          },
+        },
+        { provide: SettingsDialogLauncher, useValue: { open: vi.fn(), pageOpen: signal(false) } },
+        provideRouter([]),
+      ],
+    })
+
+    expect(screen.queryByRole('button', { name: 'Check Outlook again' })).toBeNull()
   })
 
   it('shows a spinner instead of the count while a source is still collected', async () => {

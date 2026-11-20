@@ -27,17 +27,22 @@ use super::{
     default_collect_options,
     keys::{KeyChange, KeyTable},
     lock, panic_message,
-    report::{Checked, Collector, Outcome, Plan, Progress, RunReport, Slot, Superseded},
+    report::{
+        Checked, CollectFailure, Collector, Outcome, Plan, Progress, RunReport, Slot, Superseded,
+    },
     result_store::{Candidate, ResultStore, Scope, Seed, evict},
 };
 use crate::{
     collect_planned, diagnostics,
     model::{
         ActivityState, CollectOptions, CollectionFailedResponse, ConnectionId, InstallReceipt,
-        LogLevel, PartStamp, ProviderInfo, ProviderProblem, ProviderStatus, ProvidersResponse,
-        RunEnd, RunId, RunOutcome, RuntimeState, Source,
+        LogLevel, PartStamp, ProviderInfo, ProvidersResponse, RunEnd, RunId, RunOutcome,
+        RuntimeState, Source,
     },
-    provider::{ProviderRuntime, connection::Connection, current_os, start_check},
+    provider::{
+        ProviderRuntime, connection::Connection, current_os, provider_check_result::CheckOutcome,
+        start_check,
+    },
     settings::{
         ConfigEditError, ConfigFile, ContentId, EditError, Precondition, edit_config,
         read_config_bytes, warn_no_location,
@@ -220,7 +225,7 @@ struct HostState {
     shown: Shown,
     activity: Arc<ActivityState>,
     /// The connections whose last collection failed, with the error; shown as their status.
-    failures: BTreeMap<ConnectionId, String>,
+    failures: BTreeMap<ConnectionId, CollectFailure>,
     keys: KeyTable,
     next_run: u64,
     next_check: u64,
@@ -357,10 +362,12 @@ impl HostState {
             .map(ConnectionCheck::info)
             .collect::<Vec<_>>();
         for info in providers.iter_mut().filter(|info| info.usable) {
-            if let Some(message) = self.failures.get(&info.connection) {
-                info.status = ProviderStatus::Degraded;
-                info.problem = Some(ProviderProblem::Failed);
-                info.reason = Some(format!("Collection failed: {message}"));
+            if let Some(failure) = self.failures.get(&info.connection) {
+                CheckOutcome::Degraded {
+                    problem: failure.problem(),
+                    reason: format!("Collection failed: {}", failure.message()),
+                }
+                .apply_to(info);
             }
         }
         ProvidersResponse {
@@ -1021,16 +1028,16 @@ impl Host {
         &self,
         run: RunId,
         options: CollectOptions,
-        result: std::thread::Result<anyhow::Result<RunReport>>,
+        result: std::thread::Result<RunReport>,
     ) -> RunOutcome {
-        let message = match result {
-            Ok(Ok(report)) => return self.finish_ready(run, options, report),
-            Ok(Err(err)) => format!("{err:#}"),
-            Err(panic) => format!(
-                "Collection stopped unexpectedly: {}",
-                panic_message(&*panic)
-            ),
+        let panic = match result {
+            Ok(report) => return self.finish_ready(run, options, report),
+            Err(panic) => panic,
         };
+        let message = format!(
+            "Collection stopped unexpectedly: {}",
+            panic_message(&*panic)
+        );
         self.transition(|_, state| {
             if !state.is_running(run) {
                 return RunOutcome::Stopped;
@@ -1067,8 +1074,8 @@ impl Host {
             };
             for (id, slot) in &report.slots {
                 match slot {
-                    Slot::Settled(Outcome::Failed { message, .. }) => {
-                        state.failures.insert(id.clone(), message.clone());
+                    Slot::Settled(Outcome::Failed { failure, .. }) => {
+                        state.failures.insert(id.clone(), failure.clone());
                     }
                     Slot::Kept(_) => {}
                     _ => {
@@ -1128,7 +1135,7 @@ fn load(path: &Path) -> Result<(Vec<Connection>, ContentId), (anyhow::Error, Opt
 
 fn planned_collector() -> Collector {
     Arc::new(|options, plans, progress: Progress| {
-        async move { Ok(collect_planned(options, plans, |report| progress(report)).await) }.boxed()
+        async move { collect_planned(options, plans, |report| progress(report)).await }.boxed()
     })
 }
 

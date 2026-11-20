@@ -46,6 +46,7 @@ fn fixture_providers() -> Vec<ProviderInfo> {
             supported_os: vec![SupportedOs::Windows, SupportedOs::Macos, SupportedOs::Linux],
             reason: None,
             problem: None,
+            recheckable: false,
             checked_at: "2026-03-25T10:00:00Z".to_string(),
         },
         ProviderInfo {
@@ -57,13 +58,14 @@ fn fixture_providers() -> Vec<ProviderInfo> {
             supported_os: vec![SupportedOs::Windows],
             reason: Some("OS not supported".to_string()),
             problem: None,
+            recheckable: false,
             checked_at: "2026-03-25T10:00:00Z".to_string(),
         },
     ]
 }
 
 fn collector_ok() -> Collector {
-    Arc::new(|_options, plans, _progress| Box::pin(async move { Ok(settle(plans).await) }))
+    Arc::new(|_options, plans, _progress| Box::pin(async move { settle(plans).await }))
 }
 
 /// Finishes once `release` is notified.
@@ -73,7 +75,7 @@ fn collector_held(release: &Arc<Notify>) -> Collector {
         let release = release.clone();
         Box::pin(async move {
             release.notified().await;
-            Ok(settle(plans).await)
+            settle(plans).await
         })
     })
 }
@@ -200,11 +202,12 @@ async fn a_collect_of_another_range_replaces_the_running_one() {
     assert_eq!(running["meta"]["start"], "2026-02-01T00:00:00+00:00");
 }
 
+/// A run fails as a whole only when it stops unexpectedly (a panic); each connection's own
+/// failure is listed with that connection.
 #[rocket::async_test]
 async fn reports_a_failed_collection_with_its_range() {
-    let collector: Collector = Arc::new(|_options, _plans, _progress| {
-        Box::pin(async { Err(anyhow::anyhow!("Jira credentials invalid")) })
-    });
+    let collector: Collector =
+        Arc::new(|_options, _plans, _progress| Box::pin(async { panic!("the collector broke") }));
     let client = client(collector).await;
 
     let collect = post_collect(&client, MARCH_FIRST_WEEK).await;
@@ -215,7 +218,7 @@ async fn reports_a_failed_collection_with_its_range() {
     let body: CollectionFailedResponse = serde_json::from_value(body.take()).unwrap();
     assert_eq!(body.start, "2026-03-01T00:00:00+00:00");
     assert_eq!(body.end, "2026-03-06T00:00:00+00:00");
-    assert_eq!(body.error, "Jira credentials invalid");
+    assert!(body.error.contains("the collector broke"), "{}", body.error);
 }
 
 #[rocket::async_test]
@@ -254,7 +257,7 @@ async fn post_collect_passes_the_exact_range_to_the_collector() {
         let collector_capture = Arc::clone(&collector_capture);
         Box::pin(async move {
             *collector_capture.lock().unwrap() = Some(options);
-            Ok(settle(plans).await)
+            settle(plans).await
         })
     });
     let client = client(collector).await;
@@ -358,8 +361,39 @@ async fn rejects_an_export_in_an_unknown_zone() {
     assert_eq!(error.kind, BackendErrorKind::InvalidRequest);
 }
 
+/// B38: an entry is exported as the kind its `source` names, or the export is refused; a Git
+/// commit sent as `jira` is no Jira entry.
+#[rocket::async_test]
+async fn rejects_an_export_whose_entry_contradicts_its_source() {
+    let client = client(collector_ok()).await;
+
+    let response = post_export(
+        &client,
+        r#"{"format":"json","start":"2026-03-01T23:00:00Z","end":"2026-03-02T23:00:00Z","timeZone":"UTC","entries":[{"source":"jira","connection":"work","id":"1f3a","timestamp":"2026-03-02T09:30:00Z","repo":"api","hash":"1f3a","message":"Fix","author":"dev@example.org"}]}"#,
+    )
+    .await;
+
+    let error = error_with_status(response, Status::BadRequest).await;
+    assert_eq!(error.kind, BackendErrorKind::InvalidRequest);
+}
+
+/// An entry that names an empty connection is refused like one that names none.
+#[rocket::async_test]
+async fn rejects_an_export_whose_entry_names_an_empty_connection() {
+    let client = client(collector_ok()).await;
+
+    let response = post_export(
+        &client,
+        r#"{"format":"json","start":"2026-03-01T23:00:00Z","end":"2026-03-02T23:00:00Z","timeZone":"UTC","entries":[{"source":"system","connection":"","id":"boot-1","type":"boot","timestamp":"2026-03-02T07:58:00Z","label":"Boot"}]}"#,
+    )
+    .await;
+
+    let error = error_with_status(response, Status::BadRequest).await;
+    assert_eq!(error.kind, BackendErrorKind::InvalidRequest);
+}
+
 /// A week of meetings with long descriptions, as the dashboard sends it: past Rocket's 1 MiB JSON
-/// default, with Outlook and Calendar entries the untagged `ActivityEntry` must tell apart.
+/// default, with Outlook and Calendar entries, each read as the kind its `source` names.
 fn many_meetings() -> String {
     let description = "Agenda and notes. ".repeat(220);
     let meeting = |source: &str, index: usize| {

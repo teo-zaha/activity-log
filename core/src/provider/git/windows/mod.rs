@@ -21,6 +21,7 @@ pub(super) fn check_wsl_ready(
 ) -> crate::provider::provider_check_result::ProviderCheckResult {
     use crate::{
         collect::git::{WslTarget, windows::has_wsl_repos},
+        model::ProviderProblem,
         provider::provider_check_result::ProviderCheckResult,
     };
 
@@ -32,11 +33,12 @@ pub(super) fn check_wsl_ready(
         Err(err) => return ProviderCheckResult::unavailable(err.to_string()),
     };
     match has_wsl_repos(&target, cancelled) {
-        Ok(false) => {
-            ProviderCheckResult::unavailable(format!("No repositories found in WSL {distro}"))
-        }
+        Ok(false) => ProviderCheckResult::unavailable_as(
+            ProviderProblem::NoData,
+            format!("No repositories found in WSL {distro}"),
+        ),
         Ok(true) => ProviderCheckResult::available(),
-        Err(reason) => ProviderCheckResult::unavailable(format!("WSL {distro}: {reason}")),
+        Err(err) => ProviderCheckResult::unavailable_from(&err.context(format!("WSL {distro}"))),
     }
 }
 

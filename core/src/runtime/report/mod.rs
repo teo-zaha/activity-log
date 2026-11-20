@@ -1,14 +1,14 @@
 //! What a collection run reports: each connection's own entries, before the Git ⇄ GitLab
 //! fold, so a host can keep, carry and evict them per connection and fold the log from them.
 
-use std::sync::Arc;
+use std::{sync::Arc, time::Duration};
 
 use futures::future::BoxFuture;
 
 use crate::{
     aggregator::{carried_for, collect_activity_from_results},
-    model::{ActivityEntry, CollectOptions, CollectedActivity, ConnectionId},
-    provider::ProviderRuntime,
+    model::{ActivityEntry, CollectOptions, CollectedActivity, ConnectionId, ProviderProblem},
+    provider::{ProviderRuntime, source_failure::problem_of},
 };
 
 pub use super::keys::CollectionKey;
@@ -28,8 +28,46 @@ pub enum Outcome {
     /// Listed with no entries and marked degraded.
     Failed {
         key: CollectionKey,
-        message: String,
+        failure: CollectFailure,
     },
+}
+
+/// How a connection's collection failed: a refusal, a timeout or an unreachable server told
+/// apart from any other failure by its problem, never by its message, which is for people.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CollectFailure {
+    problem: ProviderProblem,
+    message: String,
+}
+
+impl CollectFailure {
+    /// `err` as its connection shows it: with the problem a typed cause in its chain names
+    /// (`source_failure::problem_of`), else `collectionFailed`.
+    pub fn of(err: &anyhow::Error) -> Self {
+        let problem = problem_of(err).unwrap_or(ProviderProblem::CollectionFailed);
+        Self {
+            problem,
+            message: format!("{err:#}"),
+        }
+    }
+
+    /// A collection that did not end in `limit`.
+    pub fn timed_out(limit: Duration) -> Self {
+        Self {
+            problem: ProviderProblem::TimedOut,
+            message: format!("Collection timed out after {}s", limit.as_secs()),
+        }
+    }
+
+    /// The problem a typed cause named (`timedOut`, `refused`, `notRunning`, …), else
+    /// `collectionFailed`.
+    pub fn problem(&self) -> ProviderProblem {
+        self.problem
+    }
+
+    pub fn message(&self) -> &str {
+        &self.message
+    }
 }
 
 impl Outcome {
@@ -118,14 +156,11 @@ pub struct Superseded;
 
 pub type Progress = Arc<dyn Fn(RunReport) + Send + Sync>;
 
-/// Collects a run; the final report is the result. Production: [`crate::collect_planned`];
-/// tests: fakes.
+/// Collects a run; the final report is the result. A run does not fail as a whole: each
+/// connection's failure is its own `Outcome::Failed`, and only a panic ends a run failed.
+/// Production: [`crate::collect_planned`]; tests: fakes.
 pub type Collector = Arc<
-    dyn Fn(
-            CollectOptions,
-            Vec<(ConnectionId, Plan)>,
-            Progress,
-        ) -> BoxFuture<'static, anyhow::Result<RunReport>>
+    dyn Fn(CollectOptions, Vec<(ConnectionId, Plan)>, Progress) -> BoxFuture<'static, RunReport>
         + Send
         + Sync,
 >;

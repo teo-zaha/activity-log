@@ -988,6 +988,7 @@ describe('ActivityDataService', () => {
           label: 'Outlook',
           status: 'unavailable',
           usable: false,
+          recheckable: true,
           reason: 'Startup check timed out after 15s',
           supportedOs: ['macos', 'windows'],
           checkedAt: '2026-05-18T08:00:00Z',

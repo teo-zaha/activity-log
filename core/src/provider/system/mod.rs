@@ -9,24 +9,17 @@ pub mod macos;
 #[cfg(target_os = "windows")]
 pub mod windows;
 
-pub enum SystemSupport {
-    Available,
-    Degraded(String),
-    Unavailable(String),
-}
-
-fn unsupported_system_support() -> SystemSupport {
-    SystemSupport::Unavailable("OS not supported".to_string())
+/// Answers on a system this provider does not run on; the runtime checks the OS first.
+async fn unsupported() -> anyhow::Result<()> {
+    crate::platform::unsupported_result("OS not supported")
 }
 
 #[cfg(target_os = "windows")]
 use self::windows as windows_impl;
 #[cfg(not(target_os = "windows"))]
 mod windows_impl {
-    use super::{SystemSupport, unsupported_system_support};
-
-    pub(super) async fn check_system_support() -> SystemSupport {
-        unsupported_system_support()
+    pub(super) async fn check_system_support() -> anyhow::Result<()> {
+        super::unsupported().await
     }
 }
 
@@ -34,18 +27,14 @@ mod windows_impl {
 use self::macos as macos_impl;
 #[cfg(not(target_os = "macos"))]
 mod macos_impl {
-    use super::{SystemSupport, unsupported_system_support};
-
-    pub(super) async fn check_system_support() -> SystemSupport {
-        unsupported_system_support()
+    pub(super) async fn check_system_support() -> anyhow::Result<()> {
+        super::unsupported().await
     }
 }
 
 mod linux_impl {
-    use super::{SystemSupport, unsupported_system_support};
-
-    pub(super) async fn check_system_support() -> SystemSupport {
-        unsupported_system_support()
+    pub(super) async fn check_system_support() -> anyhow::Result<()> {
+        super::unsupported().await
     }
 }
 
@@ -58,13 +47,8 @@ crate::provider! {
                 SupportedOs::Linux => linux_impl::check_system_support().await,
             };
             match result {
-                SystemSupport::Available => ProviderCheckResult::available(),
-                SystemSupport::Degraded(reason) => {
-                    ProviderCheckResult::degraded(reason)
-                }
-                SystemSupport::Unavailable(reason) => {
-                    ProviderCheckResult::unavailable(reason)
-                }
+                Ok(()) => ProviderCheckResult::available(),
+                Err(err) => ProviderCheckResult::unavailable_from(&err),
             }
         }
 

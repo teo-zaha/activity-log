@@ -11,6 +11,7 @@ pub mod provider_context;
 pub mod provider_runtime;
 pub(crate) mod remote_api;
 pub mod remote_error;
+pub mod source_failure;
 pub mod system;
 
 #[cfg(test)]

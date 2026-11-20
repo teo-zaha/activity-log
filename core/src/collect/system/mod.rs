@@ -2,7 +2,9 @@ use anyhow::Result;
 
 use crate::model::{CollectOptions, SupportedOs, SystemEntry};
 #[cfg(any(target_os = "windows", test))]
-use crate::model::{SystemEntryType, system::raw_system_event::RawSystemEvent};
+use crate::model::{
+    SystemEntryType, SystemTag, Timestamp, system::raw_system_event::RawSystemEvent,
+};
 
 #[cfg(any(target_os = "macos", test))]
 mod macos;
@@ -88,11 +90,11 @@ pub(crate) fn map_windows_events(
             // The query asks only for mapped ids; any other is no boot or shutdown to show.
             let (_, entry_type, label) = mapping.iter().find(|(id, _, _)| *id == event.id)?;
             Some(SystemEntry {
-                source: "system".to_string(),
-                connection: String::new(),
+                source: SystemTag,
+                connection: crate::model::ConnectionName::unstamped(),
                 id: format!("{entry_type}/{}", event.ts),
                 entry_type: entry_type.clone(),
-                timestamp: event.ts.clone(),
+                timestamp: Timestamp::parse(event.ts.as_str()).ok()?,
                 label: label.to_string(),
             })
         })

@@ -1,4 +1,7 @@
-use crate::platform::{ComGuard, outlook_is_installed};
+use crate::{
+    platform::{ComGuard, outlook_is_installed},
+    provider::source_failure::{SourceFailure, SourceProblem},
+};
 
 /// Only checks that Outlook is installed: talking to it would launch Outlook at app start.
 /// Whether it is running is decided per collection.
@@ -13,6 +16,6 @@ fn check_outlook_ready_blocking() -> anyhow::Result<()> {
     if outlook_is_installed() {
         Ok(())
     } else {
-        Err(anyhow::anyhow!("Outlook not installed"))
+        Err(SourceFailure::new(SourceProblem::NotInstalled, "Outlook not installed").into())
     }
 }

@@ -1,6 +1,13 @@
 import type { CalendarEntry } from '../../generated/activity'
 import { EntryUiAdapter, ProviderUiAdapterDefinition } from '../types'
-import { busyStatusLabel, createBadge, formatDuration, joinParts, toDefinedStrings } from '../utils'
+import {
+  NO_TITLE,
+  busyStatusLabel,
+  createBadge,
+  formatDuration,
+  joinParts,
+  toDefinedStrings,
+} from '../utils'
 
 class CalendarEntryUiAdapter extends EntryUiAdapter<CalendarEntry> {
   constructor(provider: CalendarProviderAdapter, entry: CalendarEntry) {
@@ -8,7 +15,7 @@ class CalendarEntryUiAdapter extends EntryUiAdapter<CalendarEntry> {
     const badge = createBadge(provider.source, provider.label, entryIcon)
 
     super(provider, entry, {
-      title: entry.title,
+      title: entry.title ?? NO_TITLE,
       meta: joinParts([
         formatDuration(entry.durationMinutes),
         entry.location,
@@ -28,7 +35,7 @@ class CalendarEntryUiAdapter extends EntryUiAdapter<CalendarEntry> {
       descriptionBlocks: entry.descriptionBlocks ?? [],
       joinUrl: entry.joinUrl ?? null,
       detailFields: [
-        { label: 'Title', value: entry.title },
+        { label: 'Title', value: entry.title ?? NO_TITLE },
         { label: 'Duration', value: formatDuration(entry.durationMinutes) },
         { label: 'Status', value: entry.busyStatus ? busyStatusLabel(entry.busyStatus) : '' },
         { label: 'Location', value: entry.location ?? '' },

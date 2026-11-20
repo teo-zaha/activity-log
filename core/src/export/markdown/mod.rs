@@ -29,25 +29,21 @@ pub fn to_markdown<Tz: TimeZone>(log: &ActivityLog, tz: &Tz) -> String {
         log.entries.len()
     );
 
-    let mut by_day = std::collections::BTreeMap::<Option<chrono::NaiveDate>, Vec<_>>::new();
+    let mut by_day = std::collections::BTreeMap::<chrono::NaiveDate, Vec<_>>::new();
     for entry in &log.entries {
-        let instant = local(entry.timestamp());
+        let instant = entry.timestamp().instant().with_timezone(tz).naive_local();
         by_day
-            .entry(instant.map(|instant| instant.date()))
+            .entry(instant.date())
             .or_default()
             .push((instant, entry));
     }
 
     for (day, entries) in by_day.into_iter().rev() {
-        let label = day
-            .map(|date| date.format("%A, %-d %B %Y").to_string())
-            .unwrap_or_else(|| "Unknown date".to_string());
+        let label = day.format("%A, %-d %B %Y");
         markdown.push_str(&format!("## {label}\n\n"));
 
         for (instant, entry) in entries {
-            let time = instant
-                .map(|instant| instant.format("%H:%M").to_string())
-                .unwrap_or_default();
+            let time = instant.format("%H:%M");
             match entry {
                 ActivityEntry::Git(GitEntry { repo, message, .. }) => {
                     markdown.push_str(&format!(
@@ -59,10 +55,11 @@ pub fn to_markdown<Tz: TimeZone>(log: &ActivityLog, tz: &Tz) -> String {
                 ActivityEntry::GitLab(GitLabEntry {
                     entry_type, title, ..
                 }) => {
-                    markdown.push_str(&format!(
-                        "- **[gitlab]** {entry_type}: {} ({time})\n",
-                        text(title)
-                    ));
+                    let title = title
+                        .as_deref()
+                        .map(|title| format!(": {}", text(title)))
+                        .unwrap_or_default();
+                    markdown.push_str(&format!("- **[gitlab]** {entry_type}{title} ({time})\n"));
                 }
                 ActivityEntry::Jira(JiraEntry {
                     key, title, status, ..
@@ -77,17 +74,17 @@ pub fn to_markdown<Tz: TimeZone>(log: &ActivityLog, tz: &Tz) -> String {
                 ActivityEntry::Outlook(OutlookEntry {
                     title,
                     location,
-                    duration_minutes,
+                    meeting,
                     ..
                 }) => {
                     markdown.push_str(&format!(
                         "- **[outlook]** {}{} ({time}, {})\n",
-                        text(title),
+                        text(title.as_deref().unwrap_or(NO_TITLE)),
                         location
                             .as_ref()
                             .map(|location| format!(" @ {}", text(location)))
                             .unwrap_or_default(),
-                        format_duration(*duration_minutes),
+                        format_duration(meeting.duration_minutes),
                     ));
                 }
                 ActivityEntry::System(SystemEntry { label, .. }) => {
@@ -96,17 +93,17 @@ pub fn to_markdown<Tz: TimeZone>(log: &ActivityLog, tz: &Tz) -> String {
                 ActivityEntry::Calendar(CalendarEntry {
                     title,
                     location,
-                    duration_minutes,
+                    meeting,
                     ..
                 }) => {
                     markdown.push_str(&format!(
                         "- **[calendar]** {}{} ({time}, {})\n",
-                        text(title),
+                        text(title.as_deref().unwrap_or(NO_TITLE)),
                         location
                             .as_ref()
                             .map(|location| format!(" @ {}", text(location)))
                             .unwrap_or_default(),
-                        format_duration(*duration_minutes),
+                        format_duration(meeting.duration_minutes),
                     ));
                 }
             }
@@ -164,6 +161,9 @@ fn one_line(raw: &str) -> String {
         .collect::<Vec<_>>()
         .join(" ")
 }
+
+/// What a meeting without a subject is called.
+const NO_TITLE: &str = "(No title)";
 
 pub fn format_duration(duration_minutes: i32) -> String {
     if duration_minutes >= 60 {

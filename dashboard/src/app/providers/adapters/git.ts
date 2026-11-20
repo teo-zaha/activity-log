@@ -12,7 +12,7 @@ class GitEntryUiAdapter extends EntryUiAdapter<GitEntry> {
   constructor(provider: GitProviderAdapter, entry: GitEntry) {
     const detailFields: ProviderDetailField[] = [
       { label: 'Repository', value: entry.repo },
-      { label: 'Branch', value: entry.branch },
+      { label: 'Branch', value: entry.branch ?? '' },
       { label: 'Commit', value: entry.hash },
       { label: 'Author', value: entry.author },
       { label: 'Message', value: entry.message },

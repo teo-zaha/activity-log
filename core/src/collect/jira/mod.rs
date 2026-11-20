@@ -6,7 +6,7 @@ use chrono::{DateTime, Days, FixedOffset};
 use crate::{
     diagnostics,
     model::{
-        CollectOptions, JiraEntry, JiraEntryType,
+        CollectOptions, JiraEntry, JiraEntryType, JiraTag,
         jira::{
             jira_changelog::JiraChangelog, jira_issue::JiraIssue,
             jira_search_response::JiraSearchResponse,
@@ -15,11 +15,27 @@ use crate::{
     provider::{
         jira::{JiraConfig, api::JiraApi},
         provider_context::ProviderContext,
-        remote_error::ApiError,
+        remote_error::RemoteFailure,
     },
 };
 
 const PAGE_SIZE: usize = 50;
+
+/// Jira answered a page of another offset than asked for, or only issues it had sent before:
+/// read on, the search would repeat issues or never end. Its answers were readable, so this is
+/// no `ApiError::Decode`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct PagesOutOfStep;
+
+impl std::fmt::Display for PagesOutOfStep {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(
+            "Jira sent search pages out of step (results it had sent before); stopped reading",
+        )
+    }
+}
+
+impl std::error::Error for PagesOutOfStep {}
 
 pub async fn collect_jira(
     options: &CollectOptions,
@@ -51,7 +67,10 @@ pub async fn collect_jira(
         let page = api
             .get_json::<JiraSearchResponse>(url)
             .await
-            .map_err(|err| anyhow!(err.message(JiraApi::SERVICE)))?;
+            .map_err(|error| RemoteFailure {
+                service: JiraApi::SERVICE.into(),
+                error,
+            })?;
 
         // A page of another offset, or one with nothing new, would repeat issues or never end;
         // an issue that moved into a later page is kept once.
@@ -64,7 +83,7 @@ pub async fn collect_jira(
         if page.start_at.is_some_and(|start| start != start_at)
             || (received > 0 && fresh.is_empty())
         {
-            bail!(ApiError::Decode.message(JiraApi::SERVICE));
+            bail!(PagesOutOfStep);
         }
 
         partial.extend(partial_changelogs(&fresh));
@@ -164,11 +183,11 @@ fn map_jira_issues(issues: &[JiraIssue], options: &CollectOptions) -> Vec<JiraEn
     for issue in issues {
         if let Some(created) = in_range(&issue.fields.created) {
             entries.push(JiraEntry {
-                source: "jira".to_string(),
-                connection: String::new(),
+                source: JiraTag,
+                connection: crate::model::ConnectionName::unstamped(),
                 id: format!("{}:created", issue.key),
                 entry_type: JiraEntryType::IssueCreated,
-                timestamp: created.to_rfc3339(),
+                timestamp: created.into(),
                 key: issue.key.clone(),
                 title: issue.fields.summary.clone(),
                 status: issue.fields.status.name.clone(),
@@ -190,8 +209,8 @@ fn map_jira_issues(issues: &[JiraIssue], options: &CollectOptions) -> Vec<JiraEn
                     }
 
                     entries.push(JiraEntry {
-                        source: "jira".to_string(),
-                        connection: String::new(),
+                        source: JiraTag,
+                        connection: crate::model::ConnectionName::unstamped(),
                         id: match &history.id {
                             Some(history_id) => format!("{}:status:{history_id}", issue.key),
                             None => format!(
@@ -202,7 +221,7 @@ fn map_jira_issues(issues: &[JiraIssue], options: &CollectOptions) -> Vec<JiraEn
                             ),
                         },
                         entry_type: JiraEntryType::StatusChanged,
-                        timestamp: changed.to_rfc3339(),
+                        timestamp: changed.into(),
                         key: issue.key.clone(),
                         title: issue.fields.summary.clone(),
                         status: item
@@ -222,13 +241,13 @@ fn map_jira_issues(issues: &[JiraIssue], options: &CollectOptions) -> Vec<JiraEn
             && !is_status_change(issue, updated)
         {
             entries.push(JiraEntry {
-                source: "jira".to_string(),
-                connection: String::new(),
+                source: JiraTag,
+                connection: crate::model::ConnectionName::unstamped(),
                 // Jira names only the latest change; each one seen is its own entry (cached days
                 // keep earlier ones), so the instant tells them apart in any range.
                 id: format!("{}:updated:{}", issue.key, updated.to_utc().to_rfc3339()),
                 entry_type: JiraEntryType::IssueUpdated,
-                timestamp: updated.to_rfc3339(),
+                timestamp: updated.into(),
                 key: issue.key.clone(),
                 title: issue.fields.summary.clone(),
                 status: issue.fields.status.name.clone(),

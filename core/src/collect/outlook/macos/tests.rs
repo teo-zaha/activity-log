@@ -185,3 +185,24 @@ end run"#,
         assert_eq!(answer, "true false", "{ids}");
     }
 }
+
+/// The script's own error for a closed Outlook carries AppleScript's "not running" number, so it
+/// reads as `notRunning`, whatever language the message is shown in.
+#[tokio::test]
+async fn the_script_says_a_closed_outlook_is_not_running() {
+    let script = collect_script(Fields::All);
+    let guard = script
+        .lines()
+        .find(|line| line.contains("is not running then"))
+        .expect("the script checks that Outlook runs");
+    let (_, raise) = guard.split_once(" then ").unwrap();
+
+    let err = crate::platform::macos::run_apple_script(raise, &[])
+        .await
+        .unwrap_err();
+
+    assert_eq!(
+        err.problem(),
+        Some(crate::provider::source_failure::SourceProblem::NotRunning)
+    );
+}

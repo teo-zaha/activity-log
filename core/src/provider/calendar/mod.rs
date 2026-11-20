@@ -17,11 +17,11 @@ crate::provider! {
         async fn startup_check(&self, _current_os, context) {
             let config = match context.config::<CalendarConfig>() {
                 Ok(config) => config,
-                Err(err) => return ProviderCheckResult::unavailable(format!("{err:#}")),
+                Err(err) => return ProviderCheckResult::unavailable_from(&err),
             };
             match check_feed(&config.ics_url).await {
                 Ok(_) => ProviderCheckResult::available(),
-                Err(err) => ProviderCheckResult::unavailable(format!("{err:#}")),
+                Err(err) => ProviderCheckResult::unavailable_from(&err),
             }
         }
 

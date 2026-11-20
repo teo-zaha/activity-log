@@ -1,13 +1,17 @@
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Deserializer, Serialize, de::Error as _};
+use serde_json::Value;
 use ts_rs::TS;
 
 use crate::model::{
-    calendar::calendar_entry::CalendarEntry, common::source::Source, git::git_entry::GitEntry,
-    gitlab::gitlab_entry::GitLabEntry, jira::jira_entry::JiraEntry,
-    outlook::outlook_entry::OutlookEntry, system::system_entry::SystemEntry,
+    ConnectionStamp, MeetingBody, Timestamp, calendar::calendar_entry::CalendarEntry,
+    common::source::Source, git::git_entry::GitEntry, gitlab::gitlab_entry::GitLabEntry,
+    jira::jira_entry::JiraEntry, outlook::outlook_entry::OutlookEntry,
+    system::system_entry::SystemEntry,
 };
 
-#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+/// An entry of any kind, sent as its kind's object; its `source` says which. Read by that
+/// `source`: an object is read as the kind it names, with that kind's fields, or refused.
+#[derive(Debug, Clone, Serialize, TS)]
 #[serde(untagged)]
 #[ts(export, untagged)]
 pub enum ActivityEntry {
@@ -19,21 +23,22 @@ pub enum ActivityEntry {
     Calendar(CalendarEntry),
 }
 
-/// An entry's `source`, accepted only if it is `expected`. Entries are untagged, so for kinds
-/// whose other fields can all be absent (an Outlook entry without `isOrganizer`), the source is
-/// what keeps one kind from being read as another.
-pub(crate) fn source_named<'de, D: serde::Deserializer<'de>>(
-    deserializer: D,
-    expected: &str,
-) -> Result<String, D::Error> {
-    let source = String::deserialize(deserializer)?;
-    if source == expected {
-        Ok(source)
-    } else {
-        Err(serde::de::Error::invalid_value(
-            serde::de::Unexpected::Str(&source),
-            &expected,
-        ))
+impl<'de> Deserialize<'de> for ActivityEntry {
+    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        let value = Value::deserialize(deserializer)?;
+        let source = value
+            .get("source")
+            .ok_or_else(|| D::Error::missing_field("source"))?;
+        let source = Source::deserialize(source).map_err(D::Error::custom)?;
+        let entry = match source {
+            Source::Git => serde_json::from_value(value).map(Self::Git),
+            Source::Gitlab => serde_json::from_value(value).map(Self::GitLab),
+            Source::Jira => serde_json::from_value(value).map(Self::Jira),
+            Source::Outlook => serde_json::from_value(value).map(Self::Outlook),
+            Source::System => serde_json::from_value(value).map(Self::System),
+            Source::Calendar => serde_json::from_value(value).map(Self::Calendar),
+        };
+        entry.map_err(|err| D::Error::custom(format!("{source} entry: {err}")))
     }
 }
 
@@ -110,18 +115,19 @@ impl ActivityEntry {
         }
     }
 
-    pub fn connection(&self) -> &str {
+    /// The entry's connection, once the runtime stamped it.
+    pub fn connection(&self) -> Option<&str> {
         match self {
-            ActivityEntry::Git(entry) => &entry.connection,
-            ActivityEntry::GitLab(entry) => &entry.connection,
-            ActivityEntry::Jira(entry) => &entry.connection,
-            ActivityEntry::Outlook(entry) => &entry.connection,
-            ActivityEntry::System(entry) => &entry.connection,
-            ActivityEntry::Calendar(entry) => &entry.connection,
+            ActivityEntry::Git(entry) => entry.connection.as_str(),
+            ActivityEntry::GitLab(entry) => entry.connection.as_str(),
+            ActivityEntry::Jira(entry) => entry.connection.as_str(),
+            ActivityEntry::Outlook(entry) => entry.connection.as_str(),
+            ActivityEntry::System(entry) => entry.connection.as_str(),
+            ActivityEntry::Calendar(entry) => entry.connection.as_str(),
         }
     }
 
-    pub fn set_connection(&mut self, name: &str) {
+    pub fn set_connection(&mut self, name: &ConnectionStamp) {
         let connection = match self {
             ActivityEntry::Git(entry) => &mut entry.connection,
             ActivityEntry::GitLab(entry) => &mut entry.connection,
@@ -130,7 +136,7 @@ impl ActivityEntry {
             ActivityEntry::System(entry) => &mut entry.connection,
             ActivityEntry::Calendar(entry) => &mut entry.connection,
         };
-        name.clone_into(connection);
+        connection.stamp(name);
     }
 
     pub fn id(&self) -> &str {
@@ -155,7 +161,16 @@ impl ActivityEntry {
         }
     }
 
-    pub fn timestamp(&self) -> &str {
+    /// The meeting part of a meeting entry.
+    pub fn meeting(&self) -> Option<&MeetingBody> {
+        match self {
+            ActivityEntry::Outlook(entry) => Some(&entry.meeting),
+            ActivityEntry::Calendar(entry) => Some(&entry.meeting),
+            _ => None,
+        }
+    }
+
+    pub fn timestamp(&self) -> &Timestamp {
         match self {
             ActivityEntry::Git(entry) => &entry.timestamp,
             ActivityEntry::GitLab(entry) => &entry.timestamp,
@@ -166,3 +181,6 @@ impl ActivityEntry {
         }
     }
 }
+
+#[cfg(test)]
+mod tests;

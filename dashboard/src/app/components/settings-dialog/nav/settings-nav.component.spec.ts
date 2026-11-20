@@ -10,6 +10,7 @@ const gitlab: SettingsProviderRow = {
     label: 'GitLab',
     status: 'degraded',
     usable: true,
+    recheckable: true,
     supportedOs: ['macos'],
     reason: 'Token expires soon',
     checkedAt: '2026-11-17T09:00:00Z',

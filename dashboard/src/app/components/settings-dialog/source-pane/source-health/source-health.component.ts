@@ -34,7 +34,7 @@ export class SourceHealthComponent {
     const { status, reason, problem } = this.info()
     const checking = status === 'checking'
     return {
-      icon: problem === 'timedOut' ? 'timer_off' : statusIcon(status),
+      icon: (problem && PROBLEM_ICONS[problem]) ?? statusIcon(status),
       title: statusTitle(status, problem),
       reason:
         reason ??
@@ -45,11 +45,8 @@ export class SourceHealthComponent {
     }
   })
 
-  /** A source whose check or collection failed can be checked again; one on another OS cannot. */
-  protected readonly canRecheck = computed(() => {
-    const { status, problem } = this.info()
-    return (status === 'unavailable' || status === 'degraded') && problem !== 'unsupported'
-  })
+  /** Whether a new check can fix what the source reports, as the backend decides it. */
+  protected readonly canRecheck = computed(() => this.info().recheckable)
 
   protected readonly checkedAtLabel = computed(() => {
     const checkedAt = new Date(this.info().checkedAt)
@@ -76,6 +73,32 @@ function statusIcon(status: ProviderStatus): string {
   }
 }
 
+/** Problems with an icon of their own; the others show their status's icon. */
+const PROBLEM_ICONS: Partial<Record<ProviderProblem, string>> = {
+  timedOut: 'timer_off',
+  refused: 'lock',
+  unreachable: 'cloud_off',
+  notInstalled: 'download',
+  notRunning: 'power_settings_new',
+  permissionDenied: 'shield',
+  noData: 'folder_off',
+}
+
+/** What a problem is called, whether the source still collects (degraded) or not. */
+const PROBLEM_TITLES: Record<ProviderProblem, string | null> = {
+  timedOut: null,
+  unsupported: 'Not supported on this system',
+  notConfigured: 'Not configured',
+  refused: 'Access refused',
+  unreachable: 'Server unreachable',
+  notInstalled: 'Not installed',
+  notRunning: 'Not running',
+  permissionDenied: 'Permission needed',
+  noData: 'Nothing to read',
+  failed: null,
+  collectionFailed: null,
+}
+
 function statusTitle(status: ProviderStatus, problem: ProviderProblem | undefined): string {
   switch (status) {
     case 'checking':
@@ -83,18 +106,11 @@ function statusTitle(status: ProviderStatus, problem: ProviderProblem | undefine
     case 'available':
       return 'Ready to collect'
     case 'degraded':
-      return 'Running with issues'
+      if (problem === 'timedOut') return 'Collection timed out'
+      if (problem === 'collectionFailed') return 'Collection failed'
+      return (problem && PROBLEM_TITLES[problem]) ?? 'Running with issues'
     case 'unavailable':
-      switch (problem) {
-        case 'timedOut':
-          return 'Startup check timed out'
-        case 'unsupported':
-          return 'Not supported on this system'
-        case 'notConfigured':
-          return 'Not configured'
-        case 'failed':
-        case undefined:
-          return 'Not available'
-      }
+      if (problem === 'timedOut') return 'Startup check timed out'
+      return (problem && PROBLEM_TITLES[problem]) ?? 'Not available'
   }
 }

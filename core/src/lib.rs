@@ -25,7 +25,8 @@ use provider::{
     provider_adapter::{CollectionState, ConnectionEntries, ProviderAdapter},
 };
 use runtime::report::{
-    Checked, CollectionKey, Outcome, Plan, RunReport, Slot as ReportSlot, Stored, Superseded,
+    Checked, CollectFailure, CollectionKey, Outcome, Plan, RunReport, Slot as ReportSlot, Stored,
+    Superseded,
 };
 
 // Keeps one stuck provider from leaving the whole app in the collecting state.
@@ -84,7 +85,7 @@ where
 
 enum Step {
     Checked(usize, Result<Box<Checked>, Superseded>),
-    Collected(usize, anyhow::Result<Vec<ActivityEntry>>),
+    Collected(usize, Result<Vec<ActivityEntry>, CollectFailure>),
 }
 
 /// Where one connection stands in a collection.
@@ -95,7 +96,7 @@ enum Slot {
     Skipped,
     /// Collected under this key, as the source gave them; what shows is its kind's `finished`.
     Done(CollectionKey, Vec<ActivityEntry>),
-    Failed(CollectionKey, String),
+    Failed(CollectionKey, CollectFailure),
     /// Not collected: what an earlier collection found stays.
     Kept(Outcome),
 }
@@ -165,15 +166,12 @@ pub async fn collect_planned(
                 slots[index] = Slot::Skipped;
                 index
             }
-            Step::Collected(index, Ok(mut entries)) => {
-                for entry in &mut entries {
-                    entry.set_connection(&ids[index].name);
-                }
+            Step::Collected(index, Ok(entries)) => {
                 slots[index] = Slot::Done(keys[index], entries);
                 index
             }
             Step::Collected(index, Err(err)) => {
-                slots[index] = Slot::Failed(keys[index], format!("{err:#}"));
+                slots[index] = Slot::Failed(keys[index], err);
                 index
             }
         };
@@ -192,23 +190,24 @@ async fn collect_connection(
     state: Option<CollectionState>,
 ) -> Step {
     let started = std::time::Instant::now();
-    let result = tokio::time::timeout(COLLECT_TIMEOUT, runtime.collect(options, state))
-        .await
-        .unwrap_or_else(|_| {
-            Err(anyhow::anyhow!(
-                "Collection timed out after {}s",
-                COLLECT_TIMEOUT.as_secs()
-            ))
-        });
+    let result = match tokio::time::timeout(COLLECT_TIMEOUT, runtime.collect(options, state)).await
+    {
+        Ok(Ok(entries)) => Ok(entries),
+        Ok(Err(err)) => Err(CollectFailure::of(&err)),
+        Err(_) => Err(CollectFailure::timed_out(COLLECT_TIMEOUT)),
+    };
     let elapsed = started.elapsed().as_millis();
     match &result {
         Ok(entries) => diagnostics::info(
             runtime.id().to_string(),
             format!("Collected {} entries in {elapsed} ms", entries.len()),
         ),
-        Err(err) => diagnostics::error(
+        Err(failure) => diagnostics::error(
             runtime.id().to_string(),
-            format!("Collection failed after {elapsed} ms: {err:#}"),
+            format!(
+                "Collection failed after {elapsed} ms: {}",
+                failure.message()
+            ),
         ),
     }
     Step::Collected(index, result)
@@ -262,9 +261,9 @@ fn report(ids: &[ConnectionId], slots: &[Slot], kinds: &BTreeMap<Source, Kind>) 
                     carried: carried.clone(),
                 },
                 Slot::Skipped => ReportSlot::Skipped,
-                Slot::Failed(key, message) => ReportSlot::Settled(Outcome::Failed {
+                Slot::Failed(key, failure) => ReportSlot::Settled(Outcome::Failed {
                     key: *key,
-                    message: message.clone(),
+                    failure: failure.clone(),
                 }),
                 Slot::Kept(outcome) => ReportSlot::Kept(outcome.clone()),
                 Slot::Done(key, _) => {

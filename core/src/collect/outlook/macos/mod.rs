@@ -19,7 +19,7 @@ mod tests;
 pub(super) async fn collect_outlook(options: &CollectOptions) -> Result<Vec<OutlookEntry>> {
     let (start, end) = script_bounds(options);
     let output = match run_apple_script(&collect_script(Fields::All), &[&start, &end]).await {
-        Err(err) if err.syntax => {
+        Err(err) if err.is_syntax() => {
             diagnostics::warn(
                 "outlook",
                 format!(
@@ -112,7 +112,7 @@ on run argv
   set endDate to my parsedDate(item 2 of argv)
 
   -- Never launch Outlook just to read the calendar; collect only from a running instance.
-  if application id "com.microsoft.Outlook" is not running then error "Outlook is not running. Open Outlook to include its calendar."
+  if application id "com.microsoft.Outlook" is not running then error "Outlook is not running. Open Outlook to include its calendar." number -600
 
   tell application "Microsoft Outlook"
     if (count of exchange accounts) is 0 then error "Outlook not signed in"

@@ -33,8 +33,18 @@ use windows as imp;
 /// How often waiting work looks at its flag.
 const POLL: Duration = Duration::from_millis(25);
 
-/// The message of work that ended because nobody waited for it any more.
-pub(crate) const STOPPED: &str = "Stopped: the collection was replaced or timed out";
+/// Work that ended because nobody waited for it any more: the collection was replaced or timed
+/// out. Told apart from a failure by its type (`err.is::<Stopped>()`), never by its text.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct Stopped;
+
+impl std::fmt::Display for Stopped {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("Stopped: the collection was replaced or timed out")
+    }
+}
+
+impl std::error::Error for Stopped {}
 
 /// Sets its flag when dropped: the future waiting for the work is gone.
 struct CancelOnDrop(Arc<AtomicBool>);
@@ -73,12 +83,12 @@ impl Exclusive {
         Self(Mutex::new(()))
     }
 
-    /// Runs `work` once no other job holds the resource; gives up with [`STOPPED`] when
+    /// Runs `work` once no other job holds the resource; gives up with [`Stopped`] when
     /// `cancelled` is set while it waits.
     pub(crate) fn run<T>(&self, cancelled: &AtomicBool, work: impl FnOnce() -> T) -> Result<T> {
         loop {
             if cancelled.load(Ordering::Relaxed) {
-                return Err(anyhow!(STOPPED));
+                return Err(anyhow::Error::new(Stopped));
             }
             match self.0.try_lock() {
                 // A job that panicked left nothing to repair.
@@ -200,7 +210,7 @@ pub(crate) fn run_cancellable(
         std::thread::sleep(POLL);
     }
     let Some(status) = status else {
-        return Err(anyhow!(STOPPED));
+        return Err(anyhow::Error::new(Stopped));
     };
     if !drained() {
         return Err(anyhow!(

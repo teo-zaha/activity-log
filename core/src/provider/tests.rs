@@ -525,9 +525,30 @@ async fn git_provider_is_unavailable_when_no_repositories_are_found() {
     let runtime = ProviderRuntime::inspect(Arc::new(GitProvider), &test_connection(config)).await;
 
     assert!(!runtime.info().usable);
+    assert_eq!(runtime.info().problem, Some(ProviderProblem::NoData));
+    assert!(runtime.info().recheckable);
+}
+
+/// A folder the OS refuses to list is a permission to grant, not a folder without repositories.
+#[cfg(unix)]
+#[tokio::test]
+async fn git_provider_names_a_folder_it_may_not_read() {
+    use std::os::unix::fs::PermissionsExt;
+    let root = tempdir().expect("tempdir");
+    let closed = root.path().join("closed");
+    std::fs::create_dir(&closed).unwrap();
+    std::fs::set_permissions(&closed, std::fs::Permissions::from_mode(0o000)).unwrap();
+    let mut config = TestConfigSource::default();
+    config
+        .values
+        .insert("GIT_DIRS".to_string(), closed.display().to_string());
+
+    let runtime = ProviderRuntime::inspect(Arc::new(GitProvider), &test_connection(config)).await;
+    std::fs::set_permissions(&closed, std::fs::Permissions::from_mode(0o700)).unwrap();
+
     assert_eq!(
-        runtime.info().reason.as_deref(),
-        Some("No repositories found")
+        runtime.info().problem,
+        Some(ProviderProblem::PermissionDenied)
     );
 }
 
@@ -604,8 +625,11 @@ async fn startup_checks_that_hang_report_a_timeout() {
     )
     .await;
 
-    assert_eq!(result.status, crate::model::ProviderStatus::Unavailable);
-    assert_eq!(result.problem, Some(ProviderProblem::TimedOut));
+    assert_eq!(
+        result.outcome.status(),
+        crate::model::ProviderStatus::Unavailable
+    );
+    assert_eq!(result.outcome.problem(), Some(ProviderProblem::TimedOut));
     assert_eq!(
         result.identity,
         crate::model::IdentityEvidence::None,
@@ -613,8 +637,8 @@ async fn startup_checks_that_hang_report_a_timeout() {
     );
     assert!(
         result
-            .reason
-            .as_deref()
+            .outcome
+            .reason()
             .is_some_and(|reason| reason.starts_with("Startup check timed out"))
     );
 }
@@ -749,11 +773,20 @@ impl ProviderAdapter for CachedTestProvider {
     fn collect(
         &self,
         _current_os: SupportedOs,
-        _options: CollectOptions,
+        options: CollectOptions,
         _context: ProviderContext,
     ) -> BoxFuture<'_, anyhow::Result<Vec<ActivityEntry>>> {
         self.fetches.fetch_add(1, Ordering::SeqCst);
-        Box::pin(async { Ok(Vec::new()) })
+        // One entry three days into the span, as a collector makes it: not yet stamped.
+        let entry = ActivityEntry::System(crate::model::SystemEntry {
+            source: crate::model::SystemTag,
+            connection: crate::model::ConnectionName::unstamped(),
+            id: "unlock".to_string(),
+            entry_type: crate::model::SystemEntryType::Unlock,
+            timestamp: (options.start + chrono::Duration::days(3)).into(),
+            label: "Unlocked".to_string(),
+        });
+        Box::pin(async move { Ok(vec![entry]) })
     }
 }
 
@@ -864,6 +897,30 @@ async fn two_tokens_of_one_principal_share_a_cache_file_and_two_principals_do_no
         .await
         .unwrap();
     assert_eq!(fetches.load(Ordering::SeqCst), 0);
+}
+
+/// Entries are stamped with their connection before they are cached or returned: no entry with
+/// an empty connection is stored or sent.
+#[tokio::test]
+async fn entries_are_stamped_before_the_cache_stores_them() {
+    let dir = tempdir().unwrap();
+    let (runtime, _) =
+        cached_runtime("work", "https://jira.example", "token-1", verified("alice")).await;
+
+    let entries = runtime
+        .collect_in(dir.path(), last_week(), None)
+        .await
+        .unwrap();
+
+    assert!(!entries.is_empty());
+    assert!(
+        entries
+            .iter()
+            .all(|entry| entry.connection() == Some("work"))
+    );
+    let stored = fs::read_to_string(dir.path().join(&file_names(dir.path())[0])).unwrap();
+    assert!(stored.contains(r#""connection":"work""#), "{stored}");
+    assert!(!stored.contains(r#""connection":"""#), "{stored}");
 }
 
 /// Without a verified principal, or with credentials in the URL, a connection is collected
@@ -1001,8 +1058,8 @@ fn commit(hash: &str, author: &str) -> ActivityEntry {
         hash.to_string(),
         "message".to_string(),
         author.to_string(),
-        "main".to_string(),
-        "2026-03-05T09:00:00Z".to_string(),
+        Some("main".to_string()),
+        "2026-03-05T09:00:00Z".into(),
     ))
 }
 
@@ -1085,14 +1142,14 @@ async fn a_provisional_git_pass_keeps_a_subset_and_logs_nothing() {
 #[test]
 fn a_check_that_reports_a_problem_is_a_failure() {
     assert_eq!(
-        ProviderCheckResult::degraded("slow").problem,
+        ProviderCheckResult::degraded("slow").outcome.problem(),
         Some(ProviderProblem::Failed)
     );
     assert_eq!(
-        ProviderCheckResult::unavailable("down").problem,
+        ProviderCheckResult::unavailable("down").outcome.problem(),
         Some(ProviderProblem::Failed)
     );
-    assert_eq!(ProviderCheckResult::available().problem, None);
+    assert_eq!(ProviderCheckResult::available().outcome.problem(), None);
 }
 
 #[test]
@@ -1175,4 +1232,33 @@ fn debug_output_shows_no_secret_in_urls_or_values_being_saved() {
     }
     assert!(format!("{config:?}").contains("https://gitlab.example.com/sub"));
     assert!(format!("{feed:?}").contains("calendar.example.com"));
+}
+
+/// Every problem but another OS can be checked again; a connection without a problem has
+/// nothing to check again.
+#[test]
+fn recheckable_follows_the_problem() {
+    use crate::provider::provider_check_result::CheckOutcome;
+    let degraded = |problem| CheckOutcome::Degraded {
+        problem,
+        reason: "slow".to_string(),
+    };
+    let unavailable = |problem| CheckOutcome::Unavailable {
+        problem,
+        reason: "down".to_string(),
+    };
+    assert!(!CheckOutcome::Available.recheckable());
+    for problem in [
+        ProviderProblem::TimedOut,
+        ProviderProblem::NotConfigured,
+        ProviderProblem::Refused,
+        ProviderProblem::Unreachable,
+        ProviderProblem::Failed,
+        ProviderProblem::CollectionFailed,
+    ] {
+        assert!(degraded(problem).recheckable(), "{problem:?}");
+        assert!(unavailable(problem).recheckable(), "{problem:?}");
+    }
+    assert!(!unavailable(ProviderProblem::Unsupported).recheckable());
+    assert!(!degraded(ProviderProblem::Unsupported).recheckable());
 }

@@ -17,12 +17,31 @@ pub fn outlook_is_installed() -> bool {
         .is_some()
 }
 
-/// Why a script did not run, in the script's own words.
+/// Why a script did not run: its own words, and AppleScript's error number when it gave one
+/// (osascript could not start: none).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AppleScriptError {
     pub message: String,
+    pub code: Option<i32>,
+}
+
+impl AppleScriptError {
     /// The script did not compile, for example because the app's dictionary lacks a term.
-    pub syntax: bool,
+    pub fn is_syntax(&self) -> bool {
+        matches!(self.code, Some(-2740 | -2741))
+    }
+
+    /// What the number says about the app the script talks to: macOS refused Automation
+    /// (`errAEEventNotPermitted`, -1743), or the app is not running (`procNotFound`, -600;
+    /// `connectionInvalid`, -609).
+    pub fn problem(&self) -> Option<crate::provider::source_failure::SourceProblem> {
+        use crate::provider::source_failure::SourceProblem;
+        match self.code? {
+            -1743 => Some(SourceProblem::PermissionDenied),
+            -600 | -609 => Some(SourceProblem::NotRunning),
+            _ => None,
+        }
+    }
 }
 
 impl fmt::Display for AppleScriptError {
@@ -40,7 +59,7 @@ impl std::error::Error for AppleScriptError {}
 pub async fn run_apple_script(source: &str, args: &[&str]) -> Result<String, AppleScriptError> {
     let failed = |what: &str, err: std::io::Error| AppleScriptError {
         message: format!("{what}: {err}"),
-        syntax: false,
+        code: None,
     };
     // Its error lines are parsed (`script_error`).
     let mut child = Command::from(super::parsed_output_command("/usr/bin/osascript"))
@@ -76,8 +95,8 @@ pub async fn run_apple_script(source: &str, args: &[&str]) -> Result<String, App
 }
 
 /// osascript's error line, `12:40: execution error: Outlook not signed in (-2700)`, as the
-/// message alone. Syntax errors are told apart by their codes (-2740, -2741), since their text
-/// is in the user's language.
+/// message and its number. Errors are told apart by their numbers, since their text is in the
+/// user's language.
 pub(crate) fn script_error(stderr: &str) -> AppleScriptError {
     let line = stderr.trim();
     let line = line
@@ -103,6 +122,6 @@ pub(crate) fn script_error(stderr: &str) -> AppleScriptError {
         } else {
             message.to_string()
         },
-        syntax: matches!(code, Some("-2740" | "-2741")),
+        code: code.and_then(|code| code.parse().ok()),
     }
 }

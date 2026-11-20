@@ -222,6 +222,6 @@ async fn a_denial_whose_headers_come_near_the_deadline_is_still_denied() {
     .await;
 
     assert_eq!(result.identity, IdentityEvidence::Denied, "{result:?}");
-    assert_eq!(result.problem, Some(ProviderProblem::Failed));
-    assert_eq!(result.reason.as_deref(), Some("Jira credentials invalid"));
+    assert_eq!(result.outcome.problem(), Some(ProviderProblem::Refused));
+    assert_eq!(result.outcome.reason(), Some("Jira credentials invalid"));
 }

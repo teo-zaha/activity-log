@@ -8,8 +8,8 @@ use futures::{
 use crate::{
     diagnostics,
     model::{
-        ActivityEntry, CollectOptions, ConnectionId, IdentityEvidence, LogLevel, ProviderInfo,
-        ProviderProblem, ProviderStatus, ProvidersResponse, Source, SupportedOs,
+        ActivityEntry, CollectOptions, ConnectionId, ConnectionStamp, IdentityEvidence, LogLevel,
+        ProviderInfo, ProviderProblem, ProviderStatus, ProvidersResponse, Source, SupportedOs,
     },
     utils::now_iso,
 };
@@ -133,9 +133,23 @@ impl ProviderRuntime {
     ) -> anyhow::Result<Vec<ActivityEntry>> {
         let current_os = current_os();
         let context = self.context.clone().with_collection_state(state);
+        // Collectors know no connection: their entries are stamped here, before the day cache
+        // stores them, so none is stored or sent without one. A connection's name is a slug of
+        // its label, never empty.
+        let name = &ConnectionStamp::new(&self.id().name).ok_or_else(|| {
+            anyhow::anyhow!("{} has no name to stamp its entries with", self.id())
+        })?;
         let fetch = |span| {
-            self.adapter
-                .collect(current_os.clone(), span, context.clone())
+            let fetched = self
+                .adapter
+                .collect(current_os.clone(), span, context.clone());
+            async move {
+                let mut entries = fetched.await?;
+                for entry in &mut entries {
+                    entry.set_connection(name);
+                }
+                Ok(entries)
+            }
         };
         let collect = async {
             let Some(policy) = self.adapter.cache_policy() else {
@@ -230,13 +244,7 @@ pub(crate) fn start_check_with(
     adapter: Arc<dyn ProviderAdapter>,
     connection: &Connection,
 ) -> (ProviderInfo, BoxFuture<'static, ProviderRuntime>) {
-    let checking = provider_info(
-        adapter.as_ref(),
-        connection,
-        ProviderStatus::Checking,
-        None,
-        None,
-    );
+    let checking = provider_info(adapter.as_ref(), connection);
     let connection = connection.clone();
     let check = async move { ProviderRuntime::inspect(adapter, &connection).await };
     (checking, check.boxed())
@@ -290,9 +298,9 @@ async fn build_provider_info(
         .await
     };
 
-    let status = result.status;
+    let status = result.outcome.status();
     let elapsed = started.elapsed().as_millis();
-    let summary = match &result.reason {
+    let summary = match result.outcome.reason() {
         Some(reason) => format!("Startup check {status} after {elapsed} ms: {reason}"),
         None => format!("Startup check {status} after {elapsed} ms"),
     };
@@ -302,23 +310,17 @@ async fn build_provider_info(
     };
     diagnostics::record(level, connection.id.to_string(), summary);
 
-    (
-        provider_info(adapter, connection, status, result.problem, result.reason),
-        result.identity,
-    )
+    let mut info = provider_info(adapter, connection);
+    result.outcome.apply_to(&mut info);
+    (info, result.identity)
 }
 
 fn unavailable(problem: ProviderProblem, reason: impl Into<String>) -> ProviderCheckResult {
-    ProviderCheckResult::problem(ProviderStatus::Unavailable, problem, reason)
+    ProviderCheckResult::unavailable_as(problem, reason)
 }
 
-fn provider_info(
-    adapter: &dyn ProviderAdapter,
-    connection: &Connection,
-    status: ProviderStatus,
-    problem: Option<ProviderProblem>,
-    reason: Option<String>,
-) -> ProviderInfo {
+/// `connection` as it shows while its check runs: not usable, no problem yet.
+fn provider_info(adapter: &dyn ProviderAdapter, connection: &Connection) -> ProviderInfo {
     ProviderInfo {
         connection: connection.id.clone(),
         label: connection.label.clone(),
@@ -326,11 +328,12 @@ fn provider_info(
             ConnectionLocation::Wsl(distro) => Some(distro.clone()),
             ConnectionLocation::Local => None,
         },
-        usable: matches!(status, ProviderStatus::Available | ProviderStatus::Degraded),
-        status,
+        status: ProviderStatus::Checking,
+        usable: false,
         supported_os: adapter.supported_os().to_vec(),
-        reason,
-        problem,
+        reason: None,
+        problem: None,
+        recheckable: false,
         checked_at: now_iso(),
     }
 }

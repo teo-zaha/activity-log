@@ -183,9 +183,15 @@ fn parses_macos_last_output() {
 
     assert_eq!(entries.len(), 2);
     assert_eq!(entries[0].entry_type, SystemEntryType::Boot);
-    assert_eq!(entries[0].timestamp, local_rfc3339(2026, 5, 15, 14, 23));
+    assert_eq!(
+        entries[0].timestamp.to_string(),
+        local_rfc3339(2026, 5, 15, 14, 23)
+    );
     assert_eq!(entries[1].entry_type, SystemEntryType::Shutdown);
-    assert_eq!(entries[1].timestamp, local_rfc3339(2026, 5, 13, 17, 23));
+    assert_eq!(
+        entries[1].timestamp.to_string(),
+        local_rfc3339(2026, 5, 13, 17, 23)
+    );
 }
 
 #[test]

@@ -36,11 +36,11 @@ fn range(since: u32, until: u32) -> CollectOptions {
 
 fn entry(d: u32) -> ActivityEntry {
     ActivityEntry::System(SystemEntry {
-        source: "system".to_string(),
-        connection: String::new(),
+        source: crate::model::SystemTag,
+        connection: "default".into(),
         id: format!("day {d}"),
         entry_type: SystemEntryType::Boot,
-        timestamp: at(d, 12).to_rfc3339(),
+        timestamp: at(d, 12).into(),
         label: format!("day {d}"),
     })
 }
@@ -199,8 +199,35 @@ async fn propagates_fetch_errors() {
     assert_eq!(result.unwrap_err().to_string(), "offline");
 }
 
-/// Files written before entries had ids and GitLab pushes named their commit (version 3) are
-/// read again from the API, without a warning that the file is unreadable.
+/// Files written before entries were stored as they are sent (version 4 wrapped each in a
+/// `{ kind, entry }` tag) are read again from the API, without a warning that the file is
+/// unreadable.
+/// The unreleased version-5 writer stored entries before their connection was stamped: its
+/// days are fetched again, not served with an empty connection.
+#[tokio::test]
+async fn refetches_days_a_version_5_writer_stored_unstamped() {
+    let (_dir, path) = cache_path();
+    let calls = RefCell::new(Vec::new());
+    collect(&path, range(10, 10), at(20, 9), &calls).await;
+    let mut older: serde_json::Value =
+        serde_json::from_str(&fs::read_to_string(&path).unwrap()).unwrap();
+    older["version"] = serde_json::json!(5);
+    for day in older["days"].as_object_mut().unwrap().values_mut() {
+        for entry in day["entries"].as_array_mut().unwrap() {
+            entry["connection"] = serde_json::json!("");
+        }
+    }
+    fs::write(&path, older.to_string()).unwrap();
+
+    collect(&path, range(10, 10), at(20, 9), &calls).await;
+
+    assert_eq!(
+        calls.borrow().len(),
+        2,
+        "the version-5 file must not be served"
+    );
+}
+
 #[tokio::test]
 async fn refetches_days_from_a_file_of_an_older_version() {
     let (_dir, path) = cache_path();
@@ -209,11 +236,11 @@ async fn refetches_days_from_a_file_of_an_older_version() {
     let current: serde_json::Value =
         serde_json::from_str(&fs::read_to_string(&path).unwrap()).unwrap();
     let mut older = current.clone();
-    older["version"] = serde_json::json!(3);
-    // Version 3 entries had no `id`.
+    older["version"] = serde_json::json!(4);
     for day in older["days"].as_object_mut().unwrap().values_mut() {
         for entry in day["entries"].as_array_mut().unwrap() {
-            entry["entry"].as_object_mut().unwrap().remove("id");
+            let kind = entry["source"].clone();
+            *entry = serde_json::json!({ "kind": kind, "entry": entry.clone() });
         }
     }
     assert_ne!(older, current);

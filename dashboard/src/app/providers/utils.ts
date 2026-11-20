@@ -1,6 +1,9 @@
 import type { BusyStatus, Source } from '../generated/activity'
 import type { EntryBadgeVm } from './types'
 
+/** What a meeting without a subject shows as its title. */
+export const NO_TITLE = '(No title)'
+
 export function formatDuration(durationMinutes: number): string {
   if (durationMinutes >= 60) {
     const hours = Math.floor(durationMinutes / 60)

@@ -102,10 +102,12 @@ fn file_name<Z: TimeZone>(meta: &ActivityLogMeta, format: OutputFormat, tz: &Z) 
 /// What each connection contributed among `entries`, and how many commits absorbed a push.
 fn summary_of(entries: &[ActivityEntry]) -> CollectedActivitySummary {
     let mut counts = BTreeMap::<ConnectionId, usize>::new();
-    for entry in entries {
-        *counts
-            .entry(ConnectionId::new(entry.source(), entry.connection()))
-            .or_default() += 1;
+    // Entries read from a request always name their connection.
+    for (source, name) in entries
+        .iter()
+        .filter_map(|entry| Some((entry.source(), entry.connection()?)))
+    {
+        *counts.entry(ConnectionId::new(source, name)).or_default() += 1;
     }
     CollectedActivitySummary {
         connections: counts

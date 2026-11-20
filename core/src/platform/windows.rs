@@ -8,8 +8,8 @@ use chrono::NaiveDate;
 use windows::{
     Win32::{
         Foundation::{
-            CloseHandle, DISP_E_EXCEPTION, ERROR_INSUFFICIENT_BUFFER, ERROR_NO_MORE_ITEMS,
-            MK_E_UNAVAILABLE, SYSTEMTIME, VARIANT_FALSE, VARIANT_TRUE,
+            CloseHandle, DISP_E_EXCEPTION, E_ACCESSDENIED, ERROR_INSUFFICIENT_BUFFER,
+            ERROR_NO_MORE_ITEMS, MK_E_UNAVAILABLE, SYSTEMTIME, VARIANT_FALSE, VARIANT_TRUE,
         },
         System::{
             Com::{
@@ -31,6 +31,8 @@ use windows::{
     },
     core::{BSTR, GUID, HRESULT, HSTRING, IUnknown, Interface, PCWSTR},
 };
+
+use crate::provider::source_failure::{SourceFailure, SourceProblem};
 
 const OUTLOOK_APPLICATION: &str = "Outlook.Application";
 const DISPATCH_BUFFER_BYTES: usize = 64 * 1024;
@@ -307,7 +309,7 @@ fn read_event_log(log_name: &str, query: &str, cancelled: &AtomicBool) -> Result
 
     loop {
         if cancelled.load(std::sync::atomic::Ordering::Relaxed) {
-            return Err(anyhow!(super::blocking::STOPPED));
+            return Err(anyhow::Error::new(super::blocking::Stopped));
         }
         let mut returned = 0;
         let next = unsafe { EvtNext(result_set.raw, &mut event_handles, 0, 0, &mut returned) };
@@ -417,7 +419,14 @@ impl EventHandle {
                 PCWSTR(query.as_ptr()),
                 flags,
             )
-            .map_err(|err| anyhow!("Windows Event Log access failed: {err}"))?
+            .map_err(|err| {
+                let message = format!("Windows Event Log access failed: {err}");
+                if err.code() == E_ACCESSDENIED {
+                    anyhow::Error::new(SourceFailure::new(SourceProblem::PermissionDenied, message))
+                } else {
+                    anyhow!(message)
+                }
+            })?
         };
 
         Ok(Self { raw })

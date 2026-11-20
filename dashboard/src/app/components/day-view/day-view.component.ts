@@ -149,9 +149,12 @@ export class DayViewComponent {
     return 22
   }
 
-  /** A meeting that runs past midnight; one that ends at midnight stays a block. */
+  /**
+   * A meeting that runs past midnight; one that ends at midnight stays a block. Meetings are the
+   * entries the backend weighs for meeting time, `none` included.
+   */
   private isMultiDayEvent(e: EntryUiAdapter): boolean {
-    return (e.source === 'outlook' || e.source === 'calendar') && e.lastDayKey > e.dayKey
+    return e.meetingWeight !== null && e.lastDayKey > e.dayKey
   }
 
   readonly multiDayEntries = computed<EntryUiAdapter[]>(() => {

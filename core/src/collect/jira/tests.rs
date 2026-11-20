@@ -21,6 +21,7 @@ use crate::{
         provider_config::ProviderConfigResolve,
         provider_context::ProviderContext,
         remote_api::test_server::{Reply, TestServer},
+        remote_error::RemoteFailure,
     },
 };
 
@@ -156,7 +157,11 @@ async fn cached(
         || Utc.with_ymd_and_hms(2026, 3, 4, 12, 0, 0).unwrap(),
         |span| async move {
             let issue = issue("2026-02-01T08:00:00Z", updated, "2026-02-01T08:00:00Z");
-            Ok(map_jira_issues(&[issue], &span).into_activity_entries())
+            let mut entries = map_jira_issues(&[issue], &span).into_activity_entries();
+            for entry in &mut entries {
+                entry.set_connection(&"default".into());
+            }
+            Ok(entries)
         },
     )
     .await
@@ -327,11 +332,11 @@ async fn a_page_from_another_offset_fails_the_collection() {
             .await
             .unwrap_err();
 
-        assert_eq!(
-            error.to_string(),
-            "Jira sent an answer Activity Log could not read",
-            "startAt reported: {report_start}"
+        assert!(
+            error.is::<super::PagesOutOfStep>(),
+            "startAt reported: {report_start}: {error:#}"
         );
+        assert!(error.downcast_ref::<RemoteFailure>().is_none());
         assert_eq!(server.requests().len(), 2);
     }
 }
@@ -437,7 +442,7 @@ fn a_later_edit_shows_beside_an_earlier_status_change_in_any_partition() {
     let kinds = |options: &CollectOptions| {
         map_jira_issues(std::slice::from_ref(&monday_status_tuesday_edit), options)
             .into_iter()
-            .map(|entry| (entry.entry_type, entry.timestamp))
+            .map(|entry| (entry.entry_type, entry.timestamp.to_string()))
             .collect::<Vec<_>>()
     };
 
