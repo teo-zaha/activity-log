@@ -12,29 +12,31 @@ fn git(timestamp: &str) -> ActivityEntry {
         "abc123".to_string(),
         "Fix the build".to_string(),
         "me@example.com".to_string(),
-        "main".to_string(),
-        timestamp.to_string(),
+        Some("main".to_string()),
+        timestamp.into(),
     );
-    entry.connection = "this-computer".to_string();
+    entry.connection = "this-computer".into();
     ActivityEntry::Git(entry)
 }
 
 fn meeting(timestamp: &str) -> ActivityEntry {
     ActivityEntry::Outlook(OutlookEntry {
-        source: "outlook".to_string(),
-        connection: "default".to_string(),
+        source: crate::model::OutlookTag,
+        connection: "default".into(),
         id: format!("planning/{timestamp}"),
-        timestamp: timestamp.to_string(),
-        title: "Planning".to_string(),
+        timestamp: timestamp.into(),
+        title: Some("Planning".to_string()),
         location: Some("Room 1".to_string()),
         organizer: None,
         is_organizer: Some(true),
-        duration_minutes: 30,
-        busy_status: None,
-        meeting_weight: MeetingWeight::Busy,
-        description: None,
-        description_blocks: Vec::new(),
-        join_url: None,
+        meeting: crate::model::MeetingBody {
+            duration_minutes: 30,
+            busy_status: None,
+            meeting_weight: MeetingWeight::Busy,
+            description: None,
+            description_blocks: Vec::new(),
+            join_url: None,
+        },
     })
 }
 

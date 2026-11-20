@@ -40,6 +40,7 @@ export const providerInfo: ProviderInfo[] = [
     label: 'This computer',
     status: 'available',
     usable: true,
+    recheckable: false,
     supportedOs: ['linux', 'macos', 'windows'],
     checkedAt: '2026-05-18T08:00:00Z',
   },
@@ -48,6 +49,7 @@ export const providerInfo: ProviderInfo[] = [
     label: 'Jira',
     status: 'available',
     usable: true,
+    recheckable: false,
     supportedOs: ['linux', 'macos', 'windows'],
     checkedAt: '2026-05-18T08:00:00Z',
   },
@@ -59,6 +61,7 @@ export const gitlabProvider: ProviderInfo = {
   label: 'GitLab',
   status: 'available',
   usable: true,
+  recheckable: false,
   supportedOs: ['linux', 'macos', 'windows'],
   checkedAt: '2026-05-18T08:00:00Z',
 }

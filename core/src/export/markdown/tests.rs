@@ -20,8 +20,8 @@ fn markdown_contains_expected_sections() {
             "abc123".to_string(),
             "message".to_string(),
             "me@example.com".to_string(),
-            "main".to_string(),
-            "2026-03-10T23:30:00Z".to_string(),
+            Some("main".to_string()),
+            "2026-03-10T23:30:00Z".into(),
         ))],
     };
 
@@ -60,8 +60,8 @@ fn literal_text_cannot_change_the_document_structure() {
         "Fix *all* the [links](https://example.com)\n## Not a heading\n- not an item <b>x</b>"
             .to_string(),
         "me@example.com".to_string(),
-        "main".to_string(),
-        "2026-03-10T09:00:00Z".to_string(),
+        Some("main".to_string()),
+        "2026-03-10T09:00:00Z".into(),
     ))]);
 
     let markdown = to_markdown(&log, &FixedOffset::east_opt(0).unwrap());
@@ -92,4 +92,20 @@ fn code_spans_hold_any_backticks() {
     assert_eq!(super::code(" \u{a0} "), "`  \u{a0}  `");
     // An empty span would show its backticks.
     assert_eq!(super::code(""), "");
+}
+
+/// A meeting without a subject has no title in its entry; the export names it a placeholder.
+#[test]
+fn a_meeting_without_a_title_shows_the_placeholder() {
+    let meeting = serde_json::from_str::<ActivityEntry>(
+        r#"{"source":"calendar","connection":"team","id":"x","timestamp":"2026-03-10T09:00:00Z","durationMinutes":30,"meetingWeight":"busy"}"#,
+    )
+    .unwrap();
+
+    let markdown = to_markdown(&log_of(vec![meeting]), &chrono::Utc);
+
+    assert!(
+        markdown.contains("- **[calendar]** (No title) (09:00, 30m)"),
+        "{markdown}"
+    );
 }

@@ -93,7 +93,9 @@ async fn git_connections_share_emails_and_entries_name_their_connection() {
         .entries
         .iter()
         .map(|entry| match entry {
-            ActivityEntry::Git(commit) => (commit.connection.as_str(), commit.message.as_str()),
+            ActivityEntry::Git(commit) => {
+                (commit.connection.as_str().unwrap(), commit.message.as_str())
+            }
             other => panic!("unexpected entry {other:?}"),
         })
         .collect::<Vec<_>>();
@@ -206,15 +208,16 @@ impl ProviderAdapter for FakeSource {
                     6
                 }
                 "broken" => anyhow::bail!("unreachable host"),
+                "stuck" => std::future::pending().await,
                 _ => 5,
             };
             let copies = if name == "twice" { 2 } else { 1 };
             let entry = ActivityEntry::System(SystemEntry {
-                source: "system".to_string(),
-                connection: String::new(),
+                source: crate::model::SystemTag,
+                connection: crate::model::ConnectionName::unstamped(),
                 id: name.clone(),
                 entry_type: SystemEntryType::Unlock,
-                timestamp: format!("2026-03-0{day}T09:00:00+00:00"),
+                timestamp: format!("2026-03-0{day}T09:00:00+00:00").into(),
                 label: name,
             });
             Ok(vec![entry; copies])
@@ -388,11 +391,11 @@ async fn git_commits_appear_once_their_email_is_found() {
 
 fn carried_entry(name: &str) -> ActivityEntry {
     ActivityEntry::System(SystemEntry {
-        source: "system".to_string(),
-        connection: name.to_string(),
+        source: crate::model::SystemTag,
+        connection: name.into(),
         id: format!("old {name}"),
         entry_type: SystemEntryType::Lock,
-        timestamp: "2026-03-02T09:00:00+00:00".to_string(),
+        timestamp: "2026-03-02T09:00:00+00:00".into(),
         label: format!("old {name}"),
     })
 }
@@ -470,7 +473,12 @@ async fn entries_a_source_repeats_get_ids_of_their_own_and_one_warning() {
         .log
         .entries
         .iter()
-        .map(|entry| (entry.connection().to_string(), entry.id().to_string()))
+        .map(|entry| {
+            (
+                entry.connection().unwrap().to_string(),
+                entry.id().to_string(),
+            )
+        })
         .collect::<Vec<_>>();
     ids.sort();
     assert_eq!(
@@ -524,6 +532,26 @@ async fn a_commit_two_clones_of_one_connection_hold_is_not_numbered() {
     );
 }
 
+/// A collection that does not end in time is a timeout, not any failure.
+#[tokio::test(start_paused = true)]
+async fn a_collection_that_never_ends_times_out() {
+    let release = Arc::new(Notify::new());
+    let runtimes = fake_runtimes(&release, &["stuck"]).await;
+    let plans = runtimes
+        .iter()
+        .map(|runtime| collect_plan(runtime, None))
+        .collect();
+
+    let report = collect_planned(march(), plans, |_| {}).await;
+
+    match &report.slots[0].1 {
+        Slot::Settled(Outcome::Failed { failure, .. }) => {
+            assert_eq!(failure.problem(), crate::model::ProviderProblem::TimedOut);
+        }
+        other => panic!("expected a timeout, got {other:?}"),
+    }
+}
+
 #[tokio::test]
 async fn a_planned_collection_keeps_what_it_does_not_collect_and_reports_what_failed() {
     let release = Arc::new(Notify::new());
@@ -549,7 +577,9 @@ async fn a_planned_collection_keeps_what_it_does_not_collect_and_reports_what_fa
         .slots
         .iter()
         .filter_map(|(id, slot)| match slot {
-            Slot::Settled(Outcome::Failed { message, .. }) => Some((id.clone(), message.clone())),
+            Slot::Settled(Outcome::Failed { failure, .. }) => {
+                Some((id.clone(), failure.message().to_string()))
+            }
             _ => None,
         })
         .collect::<Vec<_>>();

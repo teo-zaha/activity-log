@@ -1,42 +1,104 @@
-use crate::model::{IdentityEvidence, ProviderProblem, ProviderStatus};
+use crate::model::{IdentityEvidence, ProviderInfo, ProviderProblem, ProviderStatus};
+
+/// How a connection's startup check ended. A problem always comes with its reason, and only an
+/// unusable or degraded connection has one.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum CheckOutcome {
+    Available,
+    /// Usable, but not everything may be collected.
+    Degraded {
+        problem: ProviderProblem,
+        reason: String,
+    },
+    Unavailable {
+        problem: ProviderProblem,
+        reason: String,
+    },
+}
+
+impl CheckOutcome {
+    pub fn status(&self) -> ProviderStatus {
+        match self {
+            Self::Available => ProviderStatus::Available,
+            Self::Degraded { .. } => ProviderStatus::Degraded,
+            Self::Unavailable { .. } => ProviderStatus::Unavailable,
+        }
+    }
+
+    pub fn problem(&self) -> Option<ProviderProblem> {
+        match self {
+            Self::Available => None,
+            Self::Degraded { problem, .. } | Self::Unavailable { problem, .. } => Some(*problem),
+        }
+    }
+
+    pub fn reason(&self) -> Option<&str> {
+        match self {
+            Self::Available => None,
+            Self::Degraded { reason, .. } | Self::Unavailable { reason, .. } => Some(reason),
+        }
+    }
+
+    /// Whether the UI offers to check the connection again: any problem but another OS, which
+    /// no check can fix.
+    pub fn recheckable(&self) -> bool {
+        self.problem()
+            .is_some_and(|problem| problem != ProviderProblem::Unsupported)
+    }
+
+    /// Writes this outcome into `info`: its status, problem, reason, whether it is usable and
+    /// whether it can be checked again, which must agree.
+    pub fn apply_to(&self, info: &mut ProviderInfo) {
+        info.status = self.status();
+        info.usable = !matches!(self, Self::Unavailable { .. });
+        info.problem = self.problem();
+        info.reason = self.reason().map(str::to_string);
+        info.recheckable = self.recheckable();
+    }
+}
 
 #[derive(Debug, Clone)]
 pub struct ProviderCheckResult {
-    pub status: ProviderStatus,
-    /// Set together with `reason`.
-    pub problem: Option<ProviderProblem>,
-    pub reason: Option<String>,
+    pub outcome: CheckOutcome,
     /// Whose token the check saw; only remote kinds with an identity request set it.
     pub identity: IdentityEvidence,
 }
 
 impl ProviderCheckResult {
     pub fn available() -> Self {
-        Self {
-            status: ProviderStatus::Available,
-            problem: None,
-            reason: None,
-            identity: IdentityEvidence::None,
-        }
+        Self::of(CheckOutcome::Available)
     }
 
     pub fn degraded(reason: impl Into<String>) -> Self {
-        Self::problem(ProviderStatus::Degraded, ProviderProblem::Failed, reason)
+        Self::of(CheckOutcome::Degraded {
+            problem: ProviderProblem::Failed,
+            reason: reason.into(),
+        })
     }
 
     pub fn unavailable(reason: impl Into<String>) -> Self {
-        Self::problem(ProviderStatus::Unavailable, ProviderProblem::Failed, reason)
+        Self::unavailable_as(ProviderProblem::Failed, reason)
     }
 
-    pub fn problem(
-        status: ProviderStatus,
-        problem: ProviderProblem,
-        reason: impl Into<String>,
-    ) -> Self {
+    /// A check that failed with `err`: unavailable, with the problem a typed cause in its chain
+    /// names (`source_failure::problem_of`), else `failed`.
+    pub fn unavailable_from(err: &anyhow::Error) -> Self {
+        Self::unavailable_as(
+            crate::provider::source_failure::problem_of(err).unwrap_or(ProviderProblem::Failed),
+            format!("{err:#}"),
+        )
+    }
+
+    pub fn unavailable_as(problem: ProviderProblem, reason: impl Into<String>) -> Self {
+        Self::of(CheckOutcome::Unavailable {
+            problem,
+            reason: reason.into(),
+        })
+    }
+
+    fn of(outcome: CheckOutcome) -> Self {
         Self {
-            status,
-            problem: Some(problem),
-            reason: Some(reason.into()),
+            outcome,
             identity: IdentityEvidence::None,
         }
     }

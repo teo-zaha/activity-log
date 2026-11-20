@@ -24,14 +24,14 @@ fn parses_repos_commits_and_ignores_other_output() {
                             author_time: "2026-03-05T09:00:00+01:00".to_string(),
                             author_email: "me@example.com".to_string(),
                             subject: "Fix | pipes".to_string(),
-                            branch: "main".to_string(),
+                            branch: Some("main".to_string()),
                         },
                         WslCommit {
                             hash: "def".to_string(),
                             author_time: "2026-03-04T09:00:00+01:00".to_string(),
                             author_email: "other@example.com".to_string(),
                             subject: "Older".to_string(),
-                            branch: String::new(),
+                            branch: None,
                         },
                     ],
                 },
@@ -152,7 +152,7 @@ fn the_script_lists_repos_and_their_history() {
     };
     assert_eq!(configured.email.as_deref(), Some("me@example.com"));
     assert_eq!(configured.commits[0].subject, "First");
-    assert_eq!(configured.commits[0].branch, "main");
+    assert_eq!(configured.commits[0].branch.as_deref(), Some("main"));
     assert_eq!(
         configured.commits[0].author_time,
         "2026-03-05T09:00:00+01:00"
@@ -183,7 +183,7 @@ fn repo_history_keeps_every_author_in_the_range_and_labels_the_distro() {
         author_time: author_time.to_string(),
         author_email: author_email.to_string(),
         subject: hash.to_string(),
-        branch: String::new(),
+        branch: None,
     };
     let report = WslRepoReport {
         path: "/home/me/api".to_string(),

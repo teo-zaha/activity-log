@@ -1,5 +1,5 @@
 use anyhow::Result;
-use chrono::{DateTime, Utc};
+use chrono::DateTime;
 #[cfg(any(target_os = "macos", test))]
 use serde_json::Value;
 
@@ -7,7 +7,7 @@ use super::meeting_text::meeting_text;
 #[cfg(any(target_os = "windows", target_os = "macos", test))]
 use crate::model::BusyStatus;
 use crate::model::{
-    CollectOptions, MeetingWeight, OutlookEntry, SupportedOs,
+    CollectOptions, MeetingBody, MeetingWeight, OutlookEntry, OutlookTag, SupportedOs, Timestamp,
     outlook::raw_outlook_event::RawOutlookEvent,
 };
 
@@ -110,6 +110,17 @@ impl OutlookFallback {
         }
     }
 
+    /// Why Outlook cannot be read; `None` for `Connect`, which is still worth a try.
+    pub(crate) fn problem(self) -> Option<crate::provider::source_failure::SourceProblem> {
+        use crate::provider::source_failure::SourceProblem;
+        match self {
+            Self::Connect => None,
+            Self::Elevated => Some(SourceProblem::PermissionDenied),
+            Self::NewOutlookOnly => Some(SourceProblem::NotInstalled),
+            Self::NotRunning => Some(SourceProblem::NotRunning),
+        }
+    }
+
     pub(crate) fn message(self) -> &'static str {
         match self {
             Self::Connect => "Outlook is running but could not be reached",
@@ -150,7 +161,7 @@ pub(crate) fn parse_outlook_columns(stdout: &str) -> Result<(Vec<RawOutlookEvent
         bail!("Outlook answered lists of different lengths");
     }
     let time = |seconds: f64| {
-        DateTime::<Utc>::from_timestamp(seconds.round() as i64, 0)
+        DateTime::<chrono::Utc>::from_timestamp(seconds.round() as i64, 0)
             .map(|at| at.to_rfc3339_opts(SecondsFormat::Secs, true))
             .ok_or_else(|| anyhow!("Outlook answered a time out of range"))
     };
@@ -243,18 +254,22 @@ pub(crate) fn normalize_outlook_events(
     events
         .into_iter()
         .filter(default_calendar_event)
-        .filter(|event| event_overlaps_range(event, options))
-        .map(normalize_outlook_event)
+        .filter_map(|event| normalize_outlook_event(event, options))
         .collect()
 }
 
-fn normalize_outlook_event(event: RawOutlookEvent) -> OutlookEntry {
-    let duration_minutes = chrono::DateTime::parse_from_rfc3339(&event.end)
-        .and_then(|end| {
-            chrono::DateTime::parse_from_rfc3339(&event.start)
-                .map(|start| (end - start).num_minutes())
-        })
-        .unwrap_or_default();
+/// The entry for `event` if it overlaps `options`; `None` also when its start or end names no
+/// instant.
+fn normalize_outlook_event(
+    event: RawOutlookEvent,
+    options: &CollectOptions,
+) -> Option<OutlookEntry> {
+    let start = Timestamp::parse(event.start.as_str()).ok()?;
+    let end = DateTime::parse_from_rfc3339(&event.end).ok()?;
+    if !options.overlaps(start.utc(), end.to_utc()) {
+        return None;
+    }
+    let duration_minutes = (end - start.instant()).num_minutes();
     let meeting = meeting_text(event.body.as_deref(), None, []);
     // A series' occurrences share Outlook's id, so the start tells them apart.
     let id = match &event.id {
@@ -267,22 +282,24 @@ fn normalize_outlook_event(event: RawOutlookEvent) -> OutlookEntry {
         ]),
     };
 
-    OutlookEntry {
-        source: "outlook".to_string(),
-        connection: String::new(),
+    Some(OutlookEntry {
+        source: OutlookTag,
+        connection: crate::model::ConnectionName::unstamped(),
         id,
-        timestamp: event.start,
-        title: event.subject.unwrap_or_else(|| "(No title)".to_string()),
+        timestamp: start,
+        title: event.subject.filter(|subject| !subject.trim().is_empty()),
         location: event.location,
         organizer: event.organizer,
         is_organizer: event.is_organizer,
-        duration_minutes: duration_minutes as i32,
-        busy_status: event.busy_status,
-        meeting_weight: MeetingWeight::of(event.busy_status),
-        description: meeting.description,
-        description_blocks: meeting.blocks,
-        join_url: meeting.join_url,
-    }
+        meeting: MeetingBody {
+            duration_minutes: i32::try_from(duration_minutes).unwrap_or(i32::MAX),
+            busy_status: event.busy_status,
+            meeting_weight: MeetingWeight::of(event.busy_status),
+            description: meeting.description,
+            description_blocks: meeting.blocks,
+            join_url: meeting.join_url,
+        },
+    })
 }
 
 /// Whether the user organizes an event, from `AppointmentItem.MeetingStatus`: a plain
@@ -308,12 +325,4 @@ pub(crate) fn busy_status_from_com(value: i32) -> Option<BusyStatus> {
 
 fn default_calendar_event(event: &RawOutlookEvent) -> bool {
     event.is_default_calendar.unwrap_or(true)
-}
-
-fn event_overlaps_range(event: &RawOutlookEvent, options: &CollectOptions) -> bool {
-    let instant = |raw: &str| DateTime::parse_from_rfc3339(raw).map(|at| at.with_timezone(&Utc));
-    match (instant(&event.start), instant(&event.end)) {
-        (Ok(start), Ok(end)) => options.overlaps(start, end),
-        _ => false,
-    }
 }

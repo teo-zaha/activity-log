@@ -34,7 +34,7 @@ async fn a_script_error_is_its_own_message() {
         err,
         AppleScriptError {
             message: "Outlook not signed in".to_string(),
-            syntax: false,
+            code: Some(-2700),
         }
     );
 }
@@ -43,7 +43,7 @@ async fn a_script_error_is_its_own_message() {
 async fn a_script_that_does_not_compile_is_a_syntax_error() {
     let err = run_apple_script("set x to", &[]).await.unwrap_err();
 
-    assert!(err.syntax, "{err:?}");
+    assert!(err.is_syntax(), "{err:?}");
 }
 
 /// A slow app must not hold the collection: the wait gives up its thread, and a timeout ends
@@ -64,20 +64,38 @@ async fn a_timeout_stops_a_running_script() {
     assert_eq!(other_work.await.unwrap(), "other connections keep going");
 }
 
+/// macOS refusing Automation and an app that is not running are told apart by their numbers,
+/// whatever language the message is in.
+#[test]
+fn an_error_number_names_the_problem() {
+    use crate::provider::source_failure::SourceProblem;
+    let denied = script_error("0:9: execution error: Nicht berechtigt. (-1743)");
+    assert_eq!(denied.problem(), Some(SourceProblem::PermissionDenied));
+    let closed = script_error(
+        "0:9: execution error: Microsoft Outlook got an error: Application isn’t running. (-600)",
+    );
+    assert_eq!(closed.problem(), Some(SourceProblem::NotRunning));
+    assert_eq!(
+        script_error("0:9: execution error: Busy (-1712)").problem(),
+        None
+    );
+    assert!(!denied.is_syntax());
+}
+
 #[test]
 fn reads_osascript_error_lines() {
     assert_eq!(
         script_error("0:57: execution error: Outlook not signed in (-2700)\n"),
         AppleScriptError {
             message: "Outlook not signed in".to_string(),
-            syntax: false,
+            code: Some(-2700),
         }
     );
     assert_eq!(
         script_error("9:10: syntax error: Ausdruck erwartet, aber Zeilenende gefunden. (-2741)"),
         AppleScriptError {
             message: "Ausdruck erwartet, aber Zeilenende gefunden.".to_string(),
-            syntax: true,
+            code: Some(-2741),
         }
     );
     // A message with a colon of its own keeps it.

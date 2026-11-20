@@ -1,6 +1,13 @@
 import type { OutlookEntry } from '../../generated/activity'
 import { EntryUiAdapter, ProviderUiAdapterDefinition } from '../types'
-import { busyStatusLabel, createBadge, formatDuration, joinParts, toDefinedStrings } from '../utils'
+import {
+  NO_TITLE,
+  busyStatusLabel,
+  createBadge,
+  formatDuration,
+  joinParts,
+  toDefinedStrings,
+} from '../utils'
 
 /** The user's role in the event; none when Outlook did not say. */
 function roleOf(entry: OutlookEntry): 'Organizer' | 'Attendee' | null {
@@ -15,7 +22,7 @@ class OutlookEntryUiAdapter extends EntryUiAdapter<OutlookEntry> {
     const badge = createBadge(provider.source, provider.label, entryIcon)
 
     super(provider, entry, {
-      title: entry.title ?? '',
+      title: entry.title ?? NO_TITLE,
       meta: joinParts([
         formatDuration(entry.durationMinutes),
         entry.location,
@@ -36,7 +43,7 @@ class OutlookEntryUiAdapter extends EntryUiAdapter<OutlookEntry> {
       descriptionBlocks: entry.descriptionBlocks ?? [],
       joinUrl: entry.joinUrl ?? null,
       detailFields: [
-        { label: 'Title', value: entry.title },
+        { label: 'Title', value: entry.title ?? NO_TITLE },
         { label: 'Duration', value: formatDuration(entry.durationMinutes) },
         { label: 'Status', value: entry.busyStatus ? busyStatusLabel(entry.busyStatus) : '' },
         { label: 'Location', value: entry.location ?? '' },

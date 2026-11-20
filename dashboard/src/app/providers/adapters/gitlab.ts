@@ -6,10 +6,11 @@ class GitLabEntryUiAdapter extends EntryUiAdapter<GitLabEntry> {
   constructor(provider: GitLabProviderAdapter, entry: GitLabEntry) {
     const fields: ProviderDetailField[] = [
       { label: 'Action', value: entry.type },
-      { label: 'Title', value: entry.title },
-      { label: 'Target type', value: entry.targetType },
+      { label: 'Title', value: entry.title ?? '' },
+      { label: 'Target type', value: entry.targetType ?? '' },
     ]
     if (entry.mrIid != null) fields.push({ label: 'MR', value: `!${entry.mrIid}` })
+    if (entry.issueIid != null) fields.push({ label: 'Issue', value: `#${entry.issueIid}` })
     if (entry.branch) fields.push({ label: 'Branch', value: entry.branch })
     if (entry.commitCount != null) {
       fields.push({ label: 'Commits', value: String(entry.commitCount) })

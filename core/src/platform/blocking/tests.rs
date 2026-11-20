@@ -7,7 +7,7 @@ use std::{
     time::Duration,
 };
 
-use super::{Exclusive, STOPPED, blocking_until_dropped};
+use super::{Exclusive, Stopped, blocking_until_dropped};
 
 // Several threads: the test waits on the blocking work while a worker runs and drops it.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -54,7 +54,7 @@ fn a_second_job_waits_for_the_first_and_gives_up_when_stopped() {
 
     let stopped = AtomicBool::new(true);
     let err = resource.run(&stopped, || ()).unwrap_err();
-    assert_eq!(err.to_string(), STOPPED);
+    assert!(err.is::<Stopped>(), "{err:#}");
 
     release.send(()).unwrap();
     first.join().unwrap();
@@ -67,7 +67,7 @@ fn a_stopped_job_does_not_start_on_a_free_resource() {
     let err = Exclusive::new()
         .run(&AtomicBool::new(true), || ran = true)
         .unwrap_err();
-    assert_eq!(err.to_string(), STOPPED);
+    assert!(err.is::<Stopped>(), "{err:#}");
     assert!(!ran);
 }
 
@@ -92,7 +92,7 @@ mod processes {
         time::{Duration, Instant},
     };
 
-    use super::{super::run_cancellable, STOPPED, cancel_after};
+    use super::{super::run_cancellable, Stopped, cancel_after};
 
     fn alive(pid: i32) -> bool {
         unsafe { libc::kill(pid, 0) == 0 }
@@ -136,7 +136,7 @@ mod processes {
         let err = run_cancellable(Command::new("sh").args(["-c", &script]), None, &cancelled)
             .unwrap_err();
 
-        assert_eq!(err.to_string(), STOPPED);
+        assert!(err.is::<Stopped>(), "{err:#}");
         assert!(
             started.elapsed() < Duration::from_secs(2),
             "{:?}",
@@ -196,7 +196,7 @@ mod processes {
         )
         .unwrap_err();
 
-        assert_eq!(err.to_string(), STOPPED);
+        assert!(err.is::<Stopped>(), "{err:#}");
         assert!(
             started.elapsed() < Duration::from_secs(2),
             "{:?}",
@@ -230,7 +230,7 @@ mod windows_processes {
         time::{Duration, Instant},
     };
 
-    use super::{super::run_cancellable, STOPPED};
+    use super::{super::run_cancellable, Stopped};
 
     #[test]
     fn a_finished_child_gives_its_output() {
@@ -261,7 +261,7 @@ mod windows_processes {
         )
         .unwrap_err();
 
-        assert_eq!(err.to_string(), STOPPED);
+        assert!(err.is::<Stopped>(), "{err:#}");
         assert!(
             started.elapsed() < Duration::from_secs(3),
             "{:?}",

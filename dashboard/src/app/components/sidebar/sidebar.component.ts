@@ -83,9 +83,9 @@ export class SidebarComponent {
     return `${provider.label}, ${provider.count} events${reason}`
   }
 
-  /** Another OS cannot be fixed by checking again; any other problem can be. */
+  /** The backend says which problems a new check can fix (`ProviderInfo.recheckable`). */
   protected canRecheck(provider: ProviderViewModel): boolean {
-    return provider.info.problem !== 'unsupported'
+    return provider.info.recheckable
   }
 
   protected async recheck(provider: ProviderViewModel): Promise<void> {

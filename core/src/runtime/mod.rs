@@ -30,7 +30,8 @@ pub use host::{
     Answered, BadConfig, Edit, Feed, Host, HostWork, Part, Published, RecheckRefused, RunSpawner,
 };
 pub use report::{
-    Checked, CollectionKey, Collector, Outcome, Plan, Progress, RunReport, Slot, Stored, Superseded,
+    Checked, CollectFailure, CollectionKey, Collector, Outcome, Plan, Progress, RunReport, Slot,
+    Stored, Superseded,
 };
 
 fn lock<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {

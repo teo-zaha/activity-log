@@ -88,8 +88,8 @@ fn expands_an_outlook_feed_into_occurrences_in_the_range() {
         .map(|entry| {
             (
                 entry.timestamp.as_str(),
-                entry.title.as_str(),
-                entry.duration_minutes,
+                entry.title.as_deref().unwrap(),
+                entry.meeting.duration_minutes,
             )
         })
         .collect::<Vec<_>>();
@@ -106,7 +106,6 @@ fn expands_an_outlook_feed_into_occurrences_in_the_range() {
     assert_eq!(entries[0].organizer.as_deref(), Some("Team Lead"));
     assert_eq!(entries[0].location.as_deref(), Some("Room 1"));
     assert_eq!(entries[1].organizer.as_deref(), Some("me@example.com"));
-    assert!(entries.iter().all(|entry| entry.source == "calendar"));
 }
 
 #[test]
@@ -225,8 +224,8 @@ END:VEVENT
     assert_eq!(entries[0].timestamp, "2026-03-02T08:00:00+00:00");
     assert_eq!(entries[1].timestamp, "2026-03-04T08:00:00+00:00");
     assert_eq!(entries[2].timestamp, "2026-03-05T10:00:00+00:00");
-    assert_eq!(entries[2].title, "Moved");
-    assert_eq!(entries[2].duration_minutes, 60);
+    assert_eq!(entries[2].title.as_deref(), Some("Moved"));
+    assert_eq!(entries[2].meeting.duration_minutes, 60);
     // Occurrences by their start; the moved one by the occurrence it replaces.
     assert_eq!(
         entries.iter().map(|e| e.id.as_str()).collect::<Vec<_>>(),
@@ -272,9 +271,9 @@ END:VEVENT
         }
         let entries = parse_events(&feed(&events), &week(), Tz::UTC).unwrap();
         assert_eq!(entries.len(), 4);
-        assert_eq!(entries[2].title, "alpha moved");
+        assert_eq!(entries[2].title.as_deref(), Some("alpha moved"));
         assert_eq!(entries[2].timestamp, "2026-03-03T10:00:00+00:00");
-        assert_eq!(entries[3].title, "beta moved");
+        assert_eq!(entries[3].title.as_deref(), Some("beta moved"));
         assert_eq!(entries[3].timestamp, "2026-03-03T11:00:00+00:00");
     }
 }
@@ -339,7 +338,7 @@ END:VCALENDAR
             "2026-04-06T07:30:00+00:00",
         ]
     );
-    assert!(entries.iter().all(|e| e.duration_minutes == 30));
+    assert!(entries.iter().all(|e| e.meeting.duration_minutes == 30));
     // The occurrence it replaces, 09:30 summer time.
     assert_eq!(entries[1].id, "dst-series/2026-03-30T07:30:00+00:00");
 }
@@ -500,7 +499,10 @@ END:VEVENT
             parse_events(text, &week(), Tz::UTC)
                 .unwrap()
                 .into_iter()
-                .find(|entry| entry.title == "Moved" || entry.timestamp.starts_with("2026-03-03"))
+                .find(|entry| {
+                    entry.title.as_deref() == Some("Moved")
+                        || entry.timestamp.as_str().starts_with("2026-03-03")
+                })
                 .map(|entry| entry.id)
                 .unwrap()
         };
@@ -535,10 +537,10 @@ DTEND:20260303T100000Z\r
     let entries = parse_events(&text, &week(), Tz::UTC).unwrap();
     assert_eq!(entries.len(), 1);
     assert_eq!(
-        entries[0].meeting_weight,
-        MeetingWeight::of(entries[0].busy_status)
+        entries[0].meeting.meeting_weight,
+        MeetingWeight::of(entries[0].meeting.busy_status)
     );
-    entries[0].busy_status
+    entries[0].meeting.busy_status
 }
 
 #[test]
@@ -640,7 +642,7 @@ END:VEVENT
     let entries = parse_events(&text, &week(), Tz::UTC).unwrap();
     let statuses = entries
         .iter()
-        .map(|entry| (entry.title.as_str(), entry.busy_status))
+        .map(|entry| (entry.title.as_deref().unwrap(), entry.meeting.busy_status))
         .collect::<Vec<_>>();
     assert_eq!(
         statuses,
@@ -676,10 +678,10 @@ fn unescapes_and_unfolds_the_description() {
 ",
     );
     assert_eq!(
-        entry.description.as_deref(),
+        entry.meeting.description.as_deref(),
         Some("Agenda:\n\n1. Budget, staffing; risks\n\nPath C:\\temp\ncontinued on a folded line")
     );
-    assert_eq!(entry.join_url, None);
+    assert_eq!(entry.meeting.join_url, None);
 }
 
 #[test]
@@ -692,9 +694,12 @@ X-ALT-DESC;FMTTYPE=text/html:<html><body><p style=\"margin:0\\;color:red\">Hello
   <b>team</b>\\,</p><ul><li>One</li></ul></body></html>\\n\r
 ",
     );
-    assert_eq!(entry.description.as_deref(), Some("Hello team,\n\n• One"));
     assert_eq!(
-        entry.description_blocks.first(),
+        entry.meeting.description.as_deref(),
+        Some("Hello team,\n\n• One")
+    );
+    assert_eq!(
+        entry.meeting.description_blocks.first(),
         Some(&DescriptionBlock::Paragraph {
             segments: vec![
                 TextSegment::text("Hello "),
@@ -716,9 +721,9 @@ fn reads_the_join_link_and_drops_the_invitation_from_the_description() {
         "DESCRIPTION:Weekly sync\\n\\n{rule}\\nMicrosoft Teams-Besprechung\\nJetzt an der Besprechung teilnehmen<https://eur03.safelinks.protection.outlook.com/?url=https%3A%2F%2Fteams.microsoft.com%2Fl%2Fmeetup-join%2F19%253ameeting_x%2540thread.v2%2F0&data=05%7C02&reserved=0>\\n{rule}\\n\r
 "
     ));
-    assert_eq!(entry.description.as_deref(), Some("Weekly sync"));
+    assert_eq!(entry.meeting.description.as_deref(), Some("Weekly sync"));
     assert_eq!(
-        entry.join_url.as_deref(),
+        entry.meeting.join_url.as_deref(),
         Some("https://teams.microsoft.com/l/meetup-join/19%3ameeting_x%40thread.v2/0")
     );
 }
@@ -732,11 +737,12 @@ X-MICROSOFT-SKYPETEAMSMEETINGURL:https://teams.microsoft.com/l/meetup-join/expli
 ",
     );
     assert_eq!(
-        entry.join_url.as_deref(),
+        entry.meeting.join_url.as_deref(),
         Some("https://teams.microsoft.com/l/meetup-join/explicit;part")
     );
     assert_eq!(
         single_event("X-GOOGLE-CONFERENCE:https://meet.google.com/abc-defg-hij\r\n")
+            .meeting
             .join_url
             .as_deref(),
         Some("https://meet.google.com/abc-defg-hij")
@@ -747,12 +753,15 @@ X-MICROSOFT-SKYPETEAMSMEETINGURL:https://teams.microsoft.com/l/meetup-join/expli
 fn the_url_property_counts_only_when_it_is_a_meeting_link() {
     assert_eq!(
         single_event("URL:https://zoom.us/j/123\r\n")
+            .meeting
             .join_url
             .as_deref(),
         Some("https://zoom.us/j/123")
     );
     assert_eq!(
-        single_event("URL:https://example.org/event/1\r\n").join_url,
+        single_event("URL:https://example.org/event/1\r\n")
+            .meeting
+            .join_url,
         None
     );
 }
@@ -781,7 +790,12 @@ END:VEVENT
     let entries = parse_events(&text, &week(), Tz::UTC).unwrap();
     let meetings = entries
         .iter()
-        .map(|entry| (entry.description.as_deref(), entry.join_url.as_deref()))
+        .map(|entry| {
+            (
+                entry.meeting.description.as_deref(),
+                entry.meeting.join_url.as_deref(),
+            )
+        })
         .collect::<Vec<_>>();
     assert_eq!(
         meetings,
@@ -821,7 +835,7 @@ END:VEVENT
 
     let standups = entries
         .iter()
-        .filter(|entry| entry.title == "Standup")
+        .filter(|entry| entry.title.as_deref() == Some("Standup"))
         .count();
     assert_eq!(standups, 5);
     assert!(crate::diagnostics::entries().iter().any(|log| {
@@ -857,6 +871,32 @@ async fn the_check_opens_the_feed_without_reading_it() {
     let message = format!("{unreachable:#}");
     assert!(!message.contains("secret-token"), "{message}");
     assert!(message.contains("127.0.0.1"), "{message}");
+    assert_eq!(
+        crate::provider::source_failure::problem_of(&unreachable),
+        Some(crate::model::ProviderProblem::Unreachable)
+    );
+}
+
+/// A feed link the host refuses or no longer serves keeps its status as a typed cause.
+#[tokio::test]
+async fn a_feed_the_host_refuses_names_its_problem() {
+    use crate::provider::remote_api::test_server::{Reply, TestServer};
+    for (status, problem) in [
+        (401, Some(crate::model::ProviderProblem::Refused)),
+        (404, None),
+    ] {
+        let server = TestServer::start(move |_| Reply::json(status, "{}"));
+        // The test server speaks plain HTTP, which `feed_location` refuses: ask it directly.
+        let error = super::request_feed(server.url.parse().unwrap())
+            .await
+            .err()
+            .unwrap();
+        let failure = error
+            .downcast_ref::<crate::provider::remote_error::RemoteFailure>()
+            .unwrap();
+        assert_eq!(failure.error.problem(), problem, "{status}");
+        assert_eq!(failure.service, "127.0.0.1");
+    }
 }
 
 /// `X-ALT-DESC` says what it is: HTML when it is declared `text/html`, whatever tags it holds,
@@ -871,7 +911,7 @@ X-ALT-DESC;FMTTYPE=text/html:<h2>Agenda</h2>\r
 ",
     );
     assert_eq!(
-        heading.description_blocks,
+        heading.meeting.description_blocks,
         [DescriptionBlock::Heading {
             segments: vec![TextSegment::text("Agenda")]
         }]
@@ -882,7 +922,7 @@ X-ALT-DESC;FMTTYPE=text/html:<h2>Agenda</h2>\r
 X-ALT-DESC;FMTTYPE=text/plain:<p>Not used</p>\r
 ",
     );
-    assert_eq!(declared_text.description.as_deref(), Some("Plain"));
+    assert_eq!(declared_text.meeting.description.as_deref(), Some("Plain"));
 }
 
 /// A UTC series read on a computer in Berlin keeps its UTC times, and a moved occurrence
@@ -932,13 +972,13 @@ END:VEVENT
     assert!(
         moved
             .iter()
-            .any(|(at, id)| at == "2026-03-03T10:00:00+00:00"
+            .any(|(at, id)| at.as_str() == "2026-03-03T10:00:00+00:00"
                 && id == "utc-series/2026-03-03T08:00:00+00:00")
     );
     assert!(
         !moved
             .iter()
-            .any(|(at, _)| at == "2026-03-03T08:00:00+00:00")
+            .any(|(at, _)| at.as_str() == "2026-03-03T08:00:00+00:00")
     );
 }
 
@@ -1038,7 +1078,7 @@ END:VEVENT
     assert_eq!(
         entries
             .iter()
-            .filter(|entry| entry.title == "Standup")
+            .filter(|entry| entry.title.as_deref() == Some("Standup"))
             .count(),
         5
     );
@@ -1110,7 +1150,7 @@ END:VEVENT
         parse_events(&text, options, berlin)
             .unwrap()
             .into_iter()
-            .map(|entry| (entry.title, entry.timestamp, entry.id))
+            .map(|entry| (entry.title.unwrap(), entry.timestamp.to_string(), entry.id))
             .collect::<Vec<_>>()
     };
 
@@ -1225,7 +1265,7 @@ END:VEVENT
 
     let err =
         super::parse_events_until(&text, &week(), Tz::UTC, &AtomicBool::new(true)).unwrap_err();
-    assert_eq!(err.to_string(), crate::platform::blocking::STOPPED);
+    assert!(err.is::<crate::platform::blocking::Stopped>(), "{err:#}");
 }
 
 /// A daily series of five with a "this and future" move from March 3 and the given extra
@@ -1253,7 +1293,13 @@ RECURRENCE-ID;RANGE=THISANDFUTURE:20260303T080000Z
     parse_events(&text, &options, Tz::from_str("Europe/Berlin").unwrap())
         .unwrap()
         .into_iter()
-        .map(|entry| (entry.title, entry.timestamp[..16].to_string(), entry.id))
+        .map(|entry| {
+            (
+                entry.title.unwrap(),
+                entry.timestamp.as_str()[..16].to_string(),
+                entry.id,
+            )
+        })
         .collect()
 }
 
@@ -1376,7 +1422,7 @@ fn a_stopped_expansion_of_many_single_events_ends_early() {
 
     let err = super::parse_events_until(&feed(&events), &week(), Tz::UTC, &AtomicBool::new(true))
         .unwrap_err();
-    assert_eq!(err.to_string(), crate::platform::blocking::STOPPED);
+    assert!(err.is::<crate::platform::blocking::Stopped>(), "{err:#}");
 }
 
 /// Moving an 08:00 the series never planned, beside the override's own 10:00: nothing planned
@@ -1404,10 +1450,10 @@ fn in_any_range(events: &str) -> Vec<(String, String, String)> {
             .unwrap()
             .into_iter()
             .map(|(entry, end)| {
-                let start = chrono::DateTime::parse_from_rfc3339(&entry.timestamp)
+                let start = chrono::DateTime::parse_from_rfc3339(entry.timestamp.as_str())
                     .unwrap()
                     .to_utc();
-                (start, end, entry.title, entry.id)
+                (start, end, entry.title.unwrap_or_default(), entry.id)
             })
             .collect::<Vec<_>>();
         rows.sort();
@@ -1841,7 +1887,12 @@ DURATION:PT30M
         )
         .unwrap()
         .into_iter()
-        .map(|entry| (entry.timestamp[5..16].to_string(), entry.duration_minutes))
+        .map(|entry| {
+            (
+                entry.timestamp.as_str()[5..16].to_string(),
+                entry.meeting.duration_minutes,
+            )
+        })
         .collect::<Vec<_>>()
     };
     let later = |minutes: u32| {
@@ -1942,7 +1993,7 @@ END:VEVENT
     assert_eq!(
         entries
             .iter()
-            .map(|entry| entry.title.as_str())
+            .map(|entry| entry.title.as_deref().unwrap())
             .collect::<Vec<_>>(),
         ["Review meeting"]
     );
@@ -1966,7 +2017,12 @@ fn lengths_and_changes_with_dates_of_their_own() {
         )
         .unwrap()
         .into_iter()
-        .map(|entry| (entry.timestamp[5..16].to_string(), entry.duration_minutes))
+        .map(|entry| {
+            (
+                entry.timestamp.as_str()[5..16].to_string(),
+                entry.meeting.duration_minutes,
+            )
+        })
         .collect::<Vec<_>>()
     };
     let at = |start: &str, length: i32| (start.to_string(), length);
@@ -2121,7 +2177,7 @@ END:VEVENT
     assert_eq!(
         ninth
             .iter()
-            .map(|entry| (entry.id.as_str(), entry.duration_minutes))
+            .map(|entry| (entry.id.as_str(), entry.meeting.duration_minutes))
             .collect::<Vec<_>>(),
         [("s/2026-03-04T08:00:00+00:00", 900)]
     );
@@ -2166,7 +2222,10 @@ END:VEVENT
         assert_eq!(
             fifth
                 .iter()
-                .map(|entry| (entry.timestamp[5..16].to_string(), entry.duration_minutes))
+                .map(|entry| (
+                    entry.timestamp.as_str()[5..16].to_string(),
+                    entry.meeting.duration_minutes
+                ))
                 .collect::<Vec<_>>(),
             [(start.to_string(), 30)],
             "{period}"
@@ -2190,7 +2249,12 @@ fn range_lengths_chain_and_an_own_start_period_stays_with_its_anchor() {
         )
         .unwrap()
         .into_iter()
-        .map(|entry| (entry.timestamp[5..16].to_string(), entry.duration_minutes))
+        .map(|entry| {
+            (
+                entry.timestamp.as_str()[5..16].to_string(),
+                entry.meeting.duration_minutes,
+            )
+        })
         .collect::<Vec<_>>()
     };
     let at = |start: &str, minutes: i32| (start.to_string(), minutes);

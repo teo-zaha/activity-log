@@ -20,8 +20,11 @@ use gix::{
 
 use crate::{
     diagnostics,
-    model::{CollectOptions, GitEntry},
-    platform::{blocking::blocking_until_dropped, parsed_output_command},
+    model::{CollectOptions, GitEntry, Timestamp},
+    platform::{
+        blocking::{Stopped, blocking_until_dropped},
+        parsed_output_command,
+    },
     provider::{
         connection::ConnectionLocation,
         git::{GitConfig, default_git_root},
@@ -213,7 +216,7 @@ pub(crate) fn collect_local_repos(
     config: &GitConfig,
     cancelled: &AtomicBool,
 ) -> Result<RepoCommits> {
-    let stopped = || anyhow!("Stopped: the collection was replaced or timed out");
+    let stopped = || anyhow::Error::new(Stopped);
     let dirs = resolve_git_repos(config, cancelled)?;
     if cancelled.load(Ordering::Relaxed) {
         return Err(stopped());
@@ -382,6 +385,17 @@ fn git_roots(config: &GitConfig, home_root: Option<PathBuf>) -> Result<Vec<PathB
     }
 }
 
+/// The first folder the connection searches that the OS refuses to list: where nothing found
+/// means no permission, not no repositories.
+pub(crate) fn denied_root(config: &GitConfig) -> Option<PathBuf> {
+    git_roots(config, default_git_root())
+        .ok()?
+        .into_iter()
+        .find(|root| {
+            fs::read_dir(root).is_err_and(|err| err.kind() == std::io::ErrorKind::PermissionDenied)
+        })
+}
+
 /// Calls `visit` with each repository the connection would read, until it breaks.
 pub(crate) fn visit_git_repos(
     config: &GitConfig,
@@ -422,16 +436,14 @@ fn collect_repo_entries(
         let decoded = commit.decode()?;
         let author_signature = commit.author()?;
         let author = bstr_to_string(author_signature.email);
-        let timestamp = gix_time_to_rfc3339(author_signature.time()?)?;
-        let timestamp_utc = DateTime::parse_from_rfc3339(&timestamp)?.with_timezone(&Utc);
-        if !options.contains(timestamp_utc) {
+        let timestamp = Timestamp::parse(gix_time_to_rfc3339(author_signature.time()?)?)?;
+        if !options.contains(timestamp.utc()) {
             return Ok(());
         }
         let branch = head
             .as_ref()
             .filter(|(head_id, _)| *head_id == commit.id)
-            .map(|(_, branch)| branch.clone())
-            .unwrap_or_default();
+            .map(|(_, branch)| branch.clone());
         entries.push(GitEntry::new(
             repo_name.to_string(),
             commit.id.to_string(),
@@ -465,7 +477,7 @@ fn collect_repo_entries(
         .all()?;
     for item in walk {
         if cancelled.load(Ordering::Relaxed) {
-            bail!("Stopped while reading {repo_name}");
+            bail!(Stopped);
         }
         keep(item?.id().object()?.into_commit())?;
     }

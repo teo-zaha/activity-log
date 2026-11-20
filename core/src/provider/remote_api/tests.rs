@@ -105,10 +105,13 @@ fn urls_holding_credentials_are_refused() {
         Some(SetupError::NotAnAddress)
     );
     let refused = SetupError::Credentials.check_result("Jira");
-    assert_eq!(refused.status, ProviderStatus::Unavailable);
-    assert_eq!(refused.problem, Some(ProviderProblem::NotConfigured));
+    assert_eq!(refused.outcome.status(), ProviderStatus::Unavailable);
     assert_eq!(
-        refused.reason.as_deref(),
+        refused.outcome.problem(),
+        Some(ProviderProblem::NotConfigured)
+    );
+    assert_eq!(
+        refused.outcome.reason(),
         Some(
             "Remove the user name and password from the address; the token goes in the token field."
         )
@@ -539,11 +542,11 @@ fn checks_map_identity_answers() {
         username: "jdoe".to_string(),
     };
     let verified = identity_check("GitLab", Ok(Some(identity.clone())));
-    assert_eq!(verified.status, ProviderStatus::Available);
+    assert_eq!(verified.outcome.status(), ProviderStatus::Available);
     assert_eq!(verified.identity, IdentityEvidence::Verified(identity));
 
     let unnamed = identity_check("GitLab", Ok(None));
-    assert_eq!(unnamed.status, ProviderStatus::Available);
+    assert_eq!(unnamed.outcome.status(), ProviderStatus::Available);
     assert_eq!(unnamed.identity, IdentityEvidence::Unnamed);
 
     let status = |status, message: &str| {
@@ -559,18 +562,18 @@ fn checks_map_identity_answers() {
     );
     assert_eq!(denied.identity, IdentityEvidence::Denied);
     assert_eq!(
-        denied.reason.as_deref(),
+        denied.outcome.reason(),
         Some("GitLab credentials invalid"),
         "a message that only repeats the status is left out"
     );
     let expired = identity_check("Jira", status(StatusCode::UNAUTHORIZED, "Token expired"));
     assert_eq!(expired.identity, IdentityEvidence::Denied);
     assert_eq!(
-        expired.reason.as_deref(),
+        expired.outcome.reason(),
         Some("Jira credentials invalid: Token expired")
     );
     let bare = identity_check("Jira", status(StatusCode::FORBIDDEN, "Forbidden"));
-    assert_eq!(bare.reason.as_deref(), Some("Jira token lacks access"));
+    assert_eq!(bare.outcome.reason(), Some("Jira token lacks access"));
 
     let forbidden = identity_check(
         "GitLab",
@@ -578,23 +581,23 @@ fn checks_map_identity_answers() {
     );
     assert_eq!(forbidden.identity, IdentityEvidence::Denied);
     assert_eq!(
-        forbidden.reason.as_deref(),
+        forbidden.outcome.reason(),
         Some("GitLab token lacks access: insufficient_scope")
     );
 
     let failing = identity_check("GitLab", status(StatusCode::BAD_GATEWAY, ""));
     assert_eq!(failing.identity, IdentityEvidence::None);
-    assert_eq!(failing.status, ProviderStatus::Unavailable);
+    assert_eq!(failing.outcome.status(), ProviderStatus::Unavailable);
     assert_eq!(
-        failing.reason.as_deref(),
+        failing.outcome.reason(),
         Some("GitLab answered 502 Bad Gateway")
     );
 
     let unreadable = identity_check("GitLab", Err(ApiError::Decode));
-    assert_eq!(unreadable.status, ProviderStatus::Unavailable);
-    assert_eq!(unreadable.problem, Some(ProviderProblem::Failed));
+    assert_eq!(unreadable.outcome.status(), ProviderStatus::Unavailable);
+    assert_eq!(unreadable.outcome.problem(), Some(ProviderProblem::Failed));
     assert_eq!(
-        unreadable.reason.as_deref(),
+        unreadable.outcome.reason(),
         Some(
             "GitLab answered with a page that is not its API (a sign-in page?); check the URL and token"
         )
@@ -602,13 +605,43 @@ fn checks_map_identity_answers() {
     assert_eq!(unreadable.identity, IdentityEvidence::None);
 
     let cut_off = identity_check("GitLab", Err(ApiError::Unreachable));
-    assert_eq!(cut_off.status, ProviderStatus::Unavailable);
+    assert_eq!(cut_off.outcome.status(), ProviderStatus::Unavailable);
     assert_eq!(cut_off.identity, IdentityEvidence::None);
 
     let timeout = identity_check("GitLab", Err(ApiError::Timeout));
     assert_eq!(timeout.identity, IdentityEvidence::None);
     assert_eq!(
-        timeout.reason.as_deref(),
+        timeout.outcome.reason(),
         Some("GitLab did not answer within 30 s")
     );
+}
+
+/// A refusal, a timeout and an unreachable server are told apart by their problem, so the UI
+/// can say which; any other failure stays `failed`.
+#[test]
+fn a_check_names_its_problem_by_how_the_server_failed() {
+    let status = |status| ApiError::Status {
+        status,
+        message: String::new(),
+        retry_after: None,
+    };
+    let problem = |answer: ApiError| identity_check("Jira", Err(answer)).outcome.problem();
+    assert_eq!(
+        problem(status(StatusCode::UNAUTHORIZED)),
+        Some(ProviderProblem::Refused)
+    );
+    assert_eq!(
+        problem(status(StatusCode::FORBIDDEN)),
+        Some(ProviderProblem::Refused)
+    );
+    assert_eq!(problem(ApiError::Timeout), Some(ProviderProblem::TimedOut));
+    assert_eq!(
+        problem(ApiError::Unreachable),
+        Some(ProviderProblem::Unreachable)
+    );
+    assert_eq!(
+        problem(status(StatusCode::BAD_GATEWAY)),
+        Some(ProviderProblem::Failed)
+    );
+    assert_eq!(problem(ApiError::Decode), Some(ProviderProblem::Failed));
 }

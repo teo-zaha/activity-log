@@ -9,7 +9,7 @@ use crate::platform::parsed_output_command;
 
 #[cfg(target_os = "macos")]
 use crate::model::CollectOptions;
-use crate::model::{SystemEntry, SystemEntryType};
+use crate::model::{SystemEntry, SystemEntryType, SystemTag};
 
 const BOOT_LABEL: &str = "System started";
 const SHUTDOWN_LABEL: &str = "System shutdown";
@@ -214,11 +214,11 @@ impl<Z: TimeZone> LastReader<Z> {
             return LastLine::Skip;
         }
         LastLine::Entry(SystemEntry {
-            source: "system".to_string(),
-            connection: String::new(),
+            source: SystemTag,
+            connection: crate::model::ConnectionName::unstamped(),
             id: format!("{entry_type}/{}", timestamp.to_rfc3339()),
             entry_type,
-            timestamp: timestamp.to_rfc3339(),
+            timestamp: timestamp.into(),
             label: label.to_string(),
         })
     }
@@ -315,11 +315,11 @@ pub(crate) fn classify_power_line(
         return PowerLine::Skip;
     }
     PowerLine::Entry(SystemEntry {
-        source: "system".to_string(),
-        connection: String::new(),
+        source: SystemTag,
+        connection: crate::model::ConnectionName::unstamped(),
         id: format!("{entry_type}/{}", at.to_rfc3339()),
         entry_type,
-        timestamp: at.to_rfc3339(),
+        timestamp: at.into(),
         label,
     })
 }

@@ -7,10 +7,12 @@ use crate::{
     model::{CollectOptions, OutlookEntry, outlook::raw_outlook_event::RawOutlookEvent},
     platform::{
         ComGuard, DispatchObject, active_outlook_application,
-        blocking::{Exclusive, STOPPED, blocking_until_dropped},
+        blocking::{Exclusive, Stopped, blocking_until_dropped},
         connect_outlook_application, process_is_elevated, running_process_names,
     },
 };
+
+use crate::provider::source_failure::SourceFailure;
 
 use super::{
     OutlookFallback, busy_status_from_com, is_organizer_from_com, normalize_outlook_events,
@@ -66,7 +68,7 @@ fn collect_outlook_blocking(
 
     while let Some(event) = next {
         if cancelled.load(Ordering::Relaxed) {
-            return Err(anyhow::anyhow!(STOPPED));
+            return Err(anyhow::Error::new(Stopped));
         }
         if events.len() >= MAX_EVENTS {
             return Err(anyhow::anyhow!(
@@ -108,14 +110,15 @@ fn attach_to_outlook() -> Result<DispatchObject> {
         return Ok(outlook);
     }
     let names = running_process_names();
-    match OutlookFallback::decide(names.iter().map(String::as_str), process_is_elevated()) {
-        OutlookFallback::Connect => connect_outlook_application().map_err(|err| {
+    let fallback = OutlookFallback::decide(names.iter().map(String::as_str), process_is_elevated());
+    match fallback.problem() {
+        None => connect_outlook_application().map_err(|err| {
             anyhow::anyhow!(
                 "{}: {err:#}. If Outlook runs as administrator, start it normally.",
-                OutlookFallback::Connect.message()
+                fallback.message()
             )
         }),
-        other => Err(anyhow::anyhow!(other.message())),
+        Some(problem) => Err(SourceFailure::new(problem, fallback.message()).into()),
     }
 }
 

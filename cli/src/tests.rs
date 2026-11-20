@@ -145,6 +145,7 @@ fn provider_summary_includes_skipped_and_usable_providers() {
             supported_os: vec![SupportedOs::Windows, SupportedOs::Macos, SupportedOs::Linux],
             reason: None,
             problem: None,
+            recheckable: false,
             checked_at: "2026-01-01T00:00:00Z".to_string(),
         },
         ProviderInfo {
@@ -156,6 +157,7 @@ fn provider_summary_includes_skipped_and_usable_providers() {
             supported_os: vec![SupportedOs::Windows],
             reason: Some("OS not supported".to_string()),
             problem: None,
+            recheckable: false,
             checked_at: "2026-01-01T00:00:00Z".to_string(),
         },
     ];

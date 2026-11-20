@@ -63,23 +63,24 @@ fn commit(hash: &str) -> ActivityEntry {
         hash.to_string(),
         format!("commit {hash}"),
         "me@example.com".to_string(),
-        "main".to_string(),
-        "2026-03-10T10:00:00Z".to_string(),
+        Some("main".to_string()),
+        "2026-03-10T10:00:00Z".into(),
     );
-    commit.connection = "laptop".to_string();
+    commit.connection = "laptop".into();
     ActivityEntry::Git(commit)
 }
 
 fn push(id: &str, sha: &str, timestamp: &str) -> ActivityEntry {
     ActivityEntry::GitLab(GitLabEntry {
-        source: "gitlab".to_string(),
-        connection: "work".to_string(),
+        source: crate::model::GitLabTag,
+        connection: "work".into(),
         id: id.to_string(),
         entry_type: GitLabType::PushedTo,
-        timestamp: timestamp.to_string(),
-        title: "repo".to_string(),
-        target_type: "Project".to_string(),
+        timestamp: timestamp.into(),
+        title: Some("repo".to_string()),
+        target_type: Some("Project".to_string()),
         mr_iid: None,
+        issue_iid: None,
         branch: Some("main".to_string()),
         commit_count: Some(1),
         note_body: None,
@@ -91,19 +92,21 @@ fn push(id: &str, sha: &str, timestamp: &str) -> ActivityEntry {
 
 fn meeting(timestamp: &str) -> ActivityEntry {
     ActivityEntry::Calendar(CalendarEntry {
-        source: "calendar".to_string(),
-        connection: "team".to_string(),
+        source: crate::model::CalendarTag,
+        connection: "team".into(),
         id: timestamp.to_string(),
-        timestamp: timestamp.to_string(),
-        title: "Offsite".to_string(),
+        timestamp: timestamp.into(),
+        title: Some("Offsite".to_string()),
         location: None,
         organizer: None,
-        duration_minutes: 60,
-        busy_status: None,
-        meeting_weight: MeetingWeight::Busy,
-        description: None,
-        description_blocks: Vec::new(),
-        join_url: None,
+        meeting: crate::model::MeetingBody {
+            duration_minutes: 60,
+            busy_status: None,
+            meeting_weight: MeetingWeight::Busy,
+            description: None,
+            description_blocks: Vec::new(),
+            join_url: None,
+        },
     })
 }
 
@@ -288,7 +291,7 @@ fn failed_skipped_and_empty_connections_show_and_carry_differently() {
             jira(),
             Slot::Settled(Outcome::Failed {
                 key: keys.key(&jira()).unwrap(),
-                message: "unreachable host".to_string(),
+                failure: crate::runtime::CollectFailure::of(&anyhow::anyhow!("unreachable host")),
             }),
         ),
         (calendar(), Slot::Skipped),
@@ -405,7 +408,10 @@ fn another_range_carries_only_what_falls_inside_it() {
         panic!("expected a carry, got {plan:?}");
     };
     assert_eq!(carried.entries.len(), 1);
-    assert_eq!(carried.entries[0].timestamp(), "2026-03-20T08:00:00Z");
+    assert_eq!(
+        carried.entries[0].timestamp().as_str(),
+        "2026-03-20T08:00:00Z"
+    );
 }
 
 #[test]

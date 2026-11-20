@@ -12,7 +12,7 @@ use reqwest::{
 use serde::de::DeserializeOwned;
 
 use crate::{
-    model::{IdentityEvidence, ProviderProblem, ProviderStatus, RemoteIdentity},
+    model::{IdentityEvidence, ProviderProblem, RemoteIdentity},
     provider::{
         provider_check_result::ProviderCheckResult, provider_runtime::check_time_left,
         remote_error::ApiError,
@@ -58,8 +58,7 @@ impl SetupError {
 
     pub(crate) fn check_result(self, service: &str) -> ProviderCheckResult {
         match self {
-            Self::Credentials => ProviderCheckResult::problem(
-                ProviderStatus::Unavailable,
+            Self::Credentials => ProviderCheckResult::unavailable_as(
                 ProviderProblem::NotConfigured,
                 self.reason(service),
             ),
@@ -131,12 +130,24 @@ impl RemoteClient {
     /// GETs `url` (from `endpoint`) and reads its JSON answer. `Decode` means the whole answer
     /// arrived and is not the expected JSON; a body that breaks off is a transfer failure.
     pub(crate) async fn get_json<T: DeserializeOwned>(&self, url: Url) -> Result<T, ApiError> {
+        self.get_json_with_headers(url)
+            .await
+            .map(|(value, _)| value)
+    }
+
+    /// [`Self::get_json`], with the answer's headers (a paged API names its next page there).
+    pub(crate) async fn get_json_with_headers<T: DeserializeOwned>(
+        &self,
+        url: Url,
+    ) -> Result<(T, reqwest::header::HeaderMap), ApiError> {
         let response = self.get(url).await?;
+        let headers = response.headers().clone();
         let body = response
             .bytes()
             .await
             .map_err(|err| ApiError::from_transport(&err))?;
-        serde_json::from_slice(&body).map_err(|_| ApiError::Decode)
+        let value = serde_json::from_slice(&body).map_err(|_| ApiError::Decode)?;
+        Ok((value, headers))
     }
 
     async fn get(&self, url: Url) -> Result<Response, ApiError> {
@@ -283,14 +294,20 @@ pub(crate) fn identity_check(
             } else {
                 format!("{service} token lacks access")
             };
-            ProviderCheckResult::unavailable(if explains(status, &message) {
-                format!("{short}: {message}")
-            } else {
-                short
-            })
+            ProviderCheckResult::unavailable_as(
+                ProviderProblem::Refused,
+                if explains(status, &message) {
+                    format!("{short}: {message}")
+                } else {
+                    short
+                },
+            )
             .with_identity(IdentityEvidence::Denied)
         }
-        Err(err) => ProviderCheckResult::unavailable(err.message(service)),
+        Err(err) => ProviderCheckResult::unavailable_as(
+            err.problem().unwrap_or(ProviderProblem::Failed),
+            err.message(service),
+        ),
     }
 }
 

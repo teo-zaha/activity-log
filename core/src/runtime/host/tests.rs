@@ -19,8 +19,8 @@ use super::{
 use crate::{
     model::{
         ActivityEntry, ActivityState, CollectOptions, ConnectionId, IdentityEvidence, ProviderInfo,
-        ProviderStatus, RemoteIdentity, RunEnd, RunId, RunOutcome, Source, SupportedOs,
-        SystemEntry, SystemEntryType,
+        ProviderProblem, ProviderStatus, RemoteIdentity, RunEnd, RunId, RunOutcome, Source,
+        SupportedOs, SystemEntry, SystemEntryType,
     },
     provider::{
         connection::{Connection, ConnectionLocation, ConnectionValues},
@@ -57,11 +57,13 @@ fn gitlab() -> ConnectionId {
 
 /// Sources the tests control. A connection's check names the account `identities` gives it,
 /// its collection gives one entry labelled `<name> as <account>` (or fails, for one in
-/// `failing`), and either waits while a gate is set for it.
+/// `failing`, or is refused by its server, for one in `refusing`), and either waits while a
+/// gate is set for it.
 #[derive(Default)]
 struct World {
     identities: Mutex<BTreeMap<ConnectionId, IdentityEvidence>>,
     failing: Mutex<BTreeSet<ConnectionId>>,
+    refusing: Mutex<BTreeSet<ConnectionId>>,
     check_gates: Mutex<BTreeMap<ConnectionId, Arc<Semaphore>>>,
     collect_gates: Mutex<BTreeMap<ConnectionId, Arc<Semaphore>>>,
     /// Each collection of a connection, with its range.
@@ -184,6 +186,16 @@ impl ProviderAdapter for Fake {
             if self.world.failing.lock().unwrap().contains(&id) {
                 anyhow::bail!("unreachable host");
             }
+            if self.world.refusing.lock().unwrap().contains(&id) {
+                anyhow::bail!(crate::provider::remote_error::RemoteFailure {
+                    service: "Jira".into(),
+                    error: crate::provider::remote_error::ApiError::Status {
+                        status: reqwest::StatusCode::UNAUTHORIZED,
+                        message: String::new(),
+                        retry_after: None,
+                    },
+                });
+            }
             if let Some(entries) = self.world.entries.lock().unwrap().get(&id) {
                 return Ok(entries.clone());
             }
@@ -198,11 +210,11 @@ impl ProviderAdapter for Fake {
 
 fn entry(label: &str) -> ActivityEntry {
     ActivityEntry::System(SystemEntry {
-        source: "system".to_string(),
-        connection: String::new(),
+        source: crate::model::SystemTag,
+        connection: crate::model::ConnectionName::unstamped(),
         id: label.to_string(),
         entry_type: SystemEntryType::Unlock,
-        timestamp: "2026-03-05T09:00:00+00:00".to_string(),
+        timestamp: "2026-03-05T09:00:00+00:00".into(),
         label: label.to_string(),
     })
 }
@@ -393,6 +405,7 @@ fn fixed_git() -> Vec<ProviderInfo> {
         supported_os: vec![SupportedOs::Macos],
         reason: None,
         problem: None,
+        recheckable: false,
         checked_at: "2026-03-25T10:00:00Z".to_string(),
     }]
 }
@@ -590,12 +603,12 @@ async fn a_superseded_run_marks_nothing_degraded_and_shows_nothing() {
             jira(),
             Slot::Settled(Outcome::Failed {
                 key,
-                message: "unreachable host".to_string(),
+                failure: crate::runtime::CollectFailure::of(&anyhow::anyhow!("unreachable host")),
             }),
         )],
     };
     host.progress(superseded, march(), failed.clone());
-    let outcome = host.finish(superseded, march(), Ok(Ok(failed)));
+    let outcome = host.finish(superseded, march(), Ok(failed));
 
     assert_eq!(outcome, RunOutcome::Stopped);
     assert_eq!(status(&host, &jira()), ProviderStatus::Available);
@@ -935,8 +948,7 @@ async fn a_label_edit_while_a_run_waits_for_a_check_runs_whole_on_the_new_config
 
 #[tokio::test]
 async fn a_label_edit_after_a_failed_run_runs_whole() {
-    let collector: super::Collector =
-        Arc::new(|_, _, _| async { Err(anyhow::anyhow!("no way")) }.boxed());
+    let collector: super::Collector = Arc::new(|_, _, _| async { panic!("no way") }.boxed());
     let world = World::shared();
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("config.toml");
@@ -1029,7 +1041,7 @@ async fn a_shared_commit_follows_the_first_git_table() {
             panic!("not ready: {:?}", host.activity());
         };
         assert_eq!(log.entries.len(), 1, "{:?}", log.entries);
-        log.entries[0].connection().to_owned()
+        log.entries[0].connection().unwrap().to_owned()
     };
     assert_eq!(owner(), "a");
 
@@ -1442,20 +1454,21 @@ async fn both_pushes_of_one_commit_survive_a_recheck_of_either_kind() {
         "abc123".into(),
         "work".into(),
         "me@example.com".into(),
-        "main".into(),
+        Some("main".into()),
         "2026-03-05T09:00:00Z".into(),
     );
     commit.connection = "laptop".into();
     let push = |id: &str, at: &str| {
         ActivityEntry::GitLab(GitLabEntry {
-            source: "gitlab".into(),
+            source: crate::model::GitLabTag,
             connection: "work".into(),
             id: id.into(),
             entry_type: GitLabType::PushedTo,
             timestamp: at.into(),
-            title: "repo".into(),
-            target_type: "Project".into(),
+            title: Some("repo".into()),
+            target_type: Some("Project".into()),
             mr_iid: None,
+            issue_iid: None,
             branch: Some("main".into()),
             commit_count: Some(1),
             note_body: None,
@@ -1512,6 +1525,31 @@ async fn both_pushes_of_one_commit_survive_a_recheck_of_either_kind() {
 }
 
 // Accounts and failures
+
+/// A collection the server refuses shows as a refusal, not as any failure, and can be checked
+/// again; another failure shows as a failed collection.
+#[tokio::test]
+async fn a_failed_collection_shows_how_it_failed() {
+    let world = World::shared();
+    world.refusing.lock().unwrap().insert(jira());
+    world.failing.lock().unwrap().insert(gitlab());
+    let (_dir, _path, host, _spawned) = ready_at(TWO_SOURCES, &world).await;
+
+    let info = |id: &ConnectionId| {
+        host.providers_response()
+            .providers
+            .into_iter()
+            .find(|info| info.connection == *id)
+            .unwrap()
+    };
+    let refused = info(&jira());
+    assert_eq!(refused.status, ProviderStatus::Degraded);
+    assert_eq!(refused.problem, Some(ProviderProblem::Refused));
+    assert!(refused.usable && refused.recheckable);
+    let failed = info(&gitlab());
+    assert_eq!(failed.problem, Some(ProviderProblem::CollectionFailed));
+    assert!(failed.recheckable);
+}
 
 /// A's failure is not B's: once the check finds another account, the old failure goes with
 /// A's entries. A label edit that finds A again keeps it.
@@ -1585,7 +1623,7 @@ async fn a_run_in_its_last_poll_at_shutdown_ends_stopped_and_shows_nothing() {
         Box::pin(async move {
             entered.send(()).unwrap();
             released.lock().unwrap().recv().unwrap();
-            Ok(RunReport::default())
+            RunReport::default()
         })
     });
     let host = Host::with_collector(collector, Vec::new(), spawner);

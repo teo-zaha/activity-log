@@ -17,11 +17,15 @@ pub use activity::{
     collected_activity::CollectedActivity,
     collected_activity_summary::CollectedActivitySummary,
     connection_count::ConnectionCount,
+    connection_name::ConnectionName,
+    connection_stamp::ConnectionStamp,
     merge_result::MergeResult,
+    source_tag::{CalendarTag, GitLabTag, GitTag, JiraTag, OutlookTag, SystemTag},
 };
 pub use calendar::{
     busy_status::BusyStatus, calendar_entry::CalendarEntry, description_block::DescriptionBlock,
-    list_item::ListItem, meeting_weight::MeetingWeight, text_segment::TextSegment,
+    list_item::ListItem, meeting_body::MeetingBody, meeting_weight::MeetingWeight,
+    text_segment::TextSegment,
 };
 pub use common::{
     add_connection_request_dto::AddConnectionRequestDto,
@@ -43,7 +47,7 @@ pub use common::{
     provider_kind_dto::ProviderKindDto, provider_problem::ProviderProblem,
     provider_status::ProviderStatus, providers_response::ProvidersResponse,
     range_error::RangeError, remote_identity::RemoteIdentity, source::Source,
-    supported_os::SupportedOs,
+    supported_os::SupportedOs, timestamp::Timestamp,
 };
 pub use diagnostics::{log_entry::LogEntry, log_level::LogLevel, logs_response::LogsResponse};
 pub use git::git_entry::GitEntry;

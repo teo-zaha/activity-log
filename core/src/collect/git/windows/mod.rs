@@ -10,7 +10,7 @@ use chrono::{DateTime, Utc};
 #[cfg(target_os = "windows")]
 use super::RepoCommits;
 use super::{RepoHistory, WslTarget};
-use crate::model::{CollectOptions, GitEntry};
+use crate::model::{CollectOptions, GitEntry, Timestamp};
 #[cfg(target_os = "windows")]
 use crate::{diagnostics, platform::run_wsl_script};
 
@@ -35,7 +35,7 @@ pub(crate) struct WslCommit {
     pub author_email: String,
     pub subject: String,
     /// Set for the commit `HEAD` points at, like the local collector.
-    pub branch: String,
+    pub branch: Option<String>,
 }
 
 /// What the script found in one distribution.
@@ -60,8 +60,7 @@ pub(crate) fn collect_wsl(
     options: &CollectOptions,
     cancelled: &std::sync::atomic::AtomicBool,
 ) -> anyhow::Result<RepoCommits> {
-    let scan = run(target, Some(super::history_cutoff(options)), cancelled)
-        .map_err(|reason| anyhow::anyhow!(reason))?;
+    let scan = run(target, Some(super::history_cutoff(options)), cancelled)?;
     diagnostics::info(
         "git",
         format!(
@@ -93,20 +92,18 @@ pub(crate) fn repo_history(
     let commits = repo
         .commits
         .into_iter()
-        .filter(|commit| {
-            DateTime::parse_from_rfc3339(&commit.author_time)
-                .is_ok_and(|at| options.contains(at.to_utc()))
-                && seen.insert(commit.hash.clone())
-        })
-        .map(|commit| {
-            GitEntry::new(
-                name.clone(),
-                commit.hash,
-                commit.subject,
-                commit.author_email,
-                commit.branch,
-                commit.author_time,
-            )
+        .filter_map(|commit| {
+            let at = Timestamp::parse(commit.author_time).ok()?;
+            (options.contains(at.utc()) && seen.insert(commit.hash.clone())).then(|| {
+                GitEntry::new(
+                    name.clone(),
+                    commit.hash,
+                    commit.subject,
+                    commit.author_email,
+                    commit.branch,
+                    at,
+                )
+            })
         })
         .collect();
     RepoHistory {
@@ -121,7 +118,7 @@ pub(crate) fn repo_history(
 pub(crate) fn has_wsl_repos(
     target: &WslTarget,
     cancelled: &std::sync::atomic::AtomicBool,
-) -> Result<bool, String> {
+) -> anyhow::Result<bool> {
     run(target, None, cancelled).map(|scan| !scan.repos.is_empty())
 }
 
@@ -130,12 +127,11 @@ fn run(
     target: &WslTarget,
     since: Option<DateTime<Utc>>,
     cancelled: &std::sync::atomic::AtomicBool,
-) -> Result<WslScan, String> {
-    let stdout = run_wsl_script(&target.distro, &build_script(target, since), cancelled)
-        .map_err(|err| format!("{err:#}"))?;
+) -> anyhow::Result<WslScan> {
+    let stdout = run_wsl_script(&target.distro, &build_script(target, since), cancelled)?;
     match parse_output(&stdout) {
         WslOutput::Scanned(scan) => Ok(scan),
-        WslOutput::Failed(reason) => Err(reason),
+        WslOutput::Failed(reason) => Err(anyhow::anyhow!(reason)),
     }
 }
 
@@ -241,7 +237,7 @@ pub(crate) fn parse_output(stdout: &str) -> WslOutput {
                     author_time: time.to_string(),
                     author_email: email.to_string(),
                     subject: subject.to_string(),
-                    branch: head_branch(refs).unwrap_or_default().to_string(),
+                    branch: head_branch(refs).map(str::to_string),
                 });
             }
             _ => {}

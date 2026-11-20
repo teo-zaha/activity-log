@@ -198,6 +198,7 @@ describe('SettingsSourcePaneComponent', () => {
           usable: false,
           reason: 'Startup check timed out after 15s',
           problem: 'timedOut',
+          recheckable: true,
         },
       },
     })
@@ -209,7 +210,13 @@ describe('SettingsSourcePaneComponent', () => {
   describe('operations and the snapshot', () => {
     const degraded = (): SettingsProviderRow => ({
       ...row(1),
-      info: { ...providerInfo[1], status: 'degraded', reason: 'Collection failed' },
+      info: {
+        ...providerInfo[1],
+        status: 'degraded',
+        reason: 'Collection failed',
+        problem: 'collectionFailed',
+        recheckable: true,
+      },
     })
 
     it('keeps a snapshot read after the save was sent over the save’s own', async () => {
@@ -417,6 +424,7 @@ describe('SettingsSourcePaneComponent', () => {
       usable: false,
       reason: 'Startup check timed out after 15s',
       problem: 'timedOut',
+      recheckable: true,
     } as const
     const { recheckConnection, switchProvider } = await setup({
       provider: { ...row(1), info: failed },
@@ -430,7 +438,7 @@ describe('SettingsSourcePaneComponent', () => {
     expect(screen.queryByRole('button', { name: 'Check again' })).toBeNull()
     await switchProvider({
       ...row(1),
-      info: { ...failed, problem: 'unsupported', reason: 'OS not supported' },
+      info: { ...failed, problem: 'unsupported', reason: 'OS not supported', recheckable: false },
     })
     expect(screen.queryByRole('button', { name: 'Check again' })).toBeNull()
   })
@@ -445,11 +453,53 @@ describe('SettingsSourcePaneComponent', () => {
           usable: false,
           reason: 'The server timed out the token',
           problem: 'failed',
+          recheckable: true,
         },
       },
     })
 
     expect(await screen.findByRole('heading', { name: 'Not available' })).toBeTruthy()
+  })
+
+  it('names a refused or unreachable collection by its problem, not as any failure', async () => {
+    const collected = (problem: 'refused' | 'unreachable'): SettingsProviderRow => ({
+      ...row(1),
+      info: {
+        ...providerInfo[1],
+        status: 'degraded',
+        reason: 'Collection failed: Jira answered 401 Unauthorized',
+        problem,
+        recheckable: true,
+      },
+    })
+    const { switchProvider } = await setup({ provider: collected('refused') })
+
+    expect(await screen.findByRole('heading', { name: 'Access refused' })).toBeTruthy()
+    await switchProvider(collected('unreachable'))
+    expect(await screen.findByRole('heading', { name: 'Server unreachable' })).toBeTruthy()
+  })
+
+  it.each([
+    ['notInstalled', 'Not installed'],
+    ['notRunning', 'Not running'],
+    ['permissionDenied', 'Permission needed'],
+    ['noData', 'Nothing to read'],
+  ] as const)('titles a source whose check found %s', async (problem, title) => {
+    await setup({
+      provider: {
+        ...row(1),
+        info: {
+          ...providerInfo[1],
+          status: 'unavailable',
+          usable: false,
+          reason: 'From the check',
+          problem,
+          recheckable: true,
+        },
+      },
+    })
+
+    expect(await screen.findByRole('heading', { name: title })).toBeTruthy()
   })
 
   it('offers the label and removal for a source without settings of its own', async () => {

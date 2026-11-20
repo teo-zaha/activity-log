@@ -26,8 +26,9 @@ use reqwest::Url;
 use super::meeting_text::{MeetingText, looks_like_html, meeting_link, meeting_text};
 use crate::{
     diagnostics,
-    model::{BusyStatus, CalendarEntry, CollectOptions, MeetingWeight},
-    platform::blocking::{STOPPED, blocking_until_dropped},
+    model::{BusyStatus, CalendarEntry, CalendarTag, CollectOptions, MeetingBody, MeetingWeight},
+    platform::blocking::{Stopped, blocking_until_dropped},
+    provider::remote_error::{ApiError, RemoteFailure},
 };
 
 #[cfg(test)]
@@ -102,10 +103,10 @@ pub async fn read_feed(raw: &str) -> Result<String> {
         FeedLocation::Url(url) => {
             let (host, response) = request_feed(url).await?;
             response.text().await.map_err(|err| {
-                anyhow!(
-                    "Reading the calendar from {host} failed: {}",
-                    err.without_url()
-                )
+                anyhow::Error::new(RemoteFailure {
+                    service: host.into(),
+                    error: ApiError::from_transport(&err),
+                })
             })
         }
     }
@@ -128,9 +129,15 @@ pub async fn check_feed(raw: &str) -> Result<()> {
     }
 }
 
-/// The answer to a feed's link once its status is known, before its body is read.
+/// The answer to a feed's link once its status is known, before its body is read. A failure
+/// keeps how it failed (`RemoteFailure`: unreachable, timed out, refused or another status),
+/// named by the host, never by the link.
 async fn request_feed(url: Url) -> Result<(String, reqwest::Response)> {
     let host = url.host_str().unwrap_or("the calendar host").to_string();
+    let failed = |error| RemoteFailure {
+        service: host.clone().into(),
+        error,
+    };
     let client = crate::provider::http_client_builder()
         .build()
         .map_err(|err| anyhow!("HTTP client setup failed: {}", err.without_url()))?;
@@ -138,10 +145,15 @@ async fn request_feed(url: Url) -> Result<(String, reqwest::Response)> {
         .get(url)
         .send()
         .await
-        .map_err(|err| anyhow!("{host} unreachable: {}", err.without_url()))?;
+        .map_err(|err| failed(ApiError::from_transport(&err)))?;
     let status = response.status();
     if !status.is_success() {
-        bail!("{host} answered {status}; the link may have been unpublished");
+        return Err(failed(ApiError::Status {
+            status,
+            message: String::new(),
+            retry_after: None,
+        })
+        .into());
     }
     Ok((host, response))
 }
@@ -180,7 +192,7 @@ pub(crate) fn parse_events(
 /// How many events are read between two looks at the cancel flag.
 const BATCH: usize = 1_000;
 
-/// [`parse_events`], ending with [`STOPPED`] once `cancelled` is set: it is looked at between
+/// [`parse_events`], ending with [`Stopped`] once `cancelled` is set: it is looked at between
 /// series and every [`BATCH`] events.
 pub(crate) fn parse_events_until(
     text: &str,
@@ -218,7 +230,7 @@ pub(crate) fn entries_with_ends(
     let mut entries = Vec::new();
     for (index, occurrence) in occurrences.into_iter().enumerate() {
         if index % BATCH == 0 && cancelled.load(Ordering::Relaxed) {
-            bail!(STOPPED);
+            bail!(Stopped);
         }
         if !options.overlaps(occurrence.start, occurrence.end) {
             continue;
@@ -302,7 +314,7 @@ fn expand(
     let mut occurrences = Vec::new();
     for batch in singles.concat().chunks(BATCH) {
         if cancelled.load(Ordering::Relaxed) {
-            bail!(STOPPED);
+            bail!(Stopped);
         }
         for event in expand_group(calendar, &zones, batch, floating_zone, 0) {
             let component = event.comp_id as usize;
@@ -327,7 +339,7 @@ fn expand(
     let mut remaining = MAX_OCCURRENCES;
     for members in &recurring {
         if cancelled.load(Ordering::Relaxed) {
-            bail!(STOPPED);
+            bail!(Stopped);
         }
         if remaining == 0 {
             diagnostics::warn(
@@ -1003,22 +1015,21 @@ impl Prepared {
             ]),
         };
         CalendarEntry {
-            source: "calendar".to_string(),
-            connection: String::new(),
+            source: CalendarTag,
+            connection: crate::model::ConnectionName::unstamped(),
             id,
-            timestamp: start.to_rfc3339(),
-            title: self
-                .title
-                .clone()
-                .unwrap_or_else(|| "(No title)".to_string()),
+            timestamp: start.into(),
+            title: self.title.clone(),
             location: self.location.clone(),
             organizer: self.organizer.clone(),
-            duration_minutes: i32::try_from((end - start).num_minutes()).unwrap_or(i32::MAX),
-            busy_status: self.busy_status,
-            meeting_weight: MeetingWeight::of(self.busy_status),
-            description: self.meeting.description.clone(),
-            description_blocks: self.meeting.blocks.clone(),
-            join_url: self.meeting.join_url.clone(),
+            meeting: MeetingBody {
+                duration_minutes: i32::try_from((end - start).num_minutes()).unwrap_or(i32::MAX),
+                busy_status: self.busy_status,
+                meeting_weight: MeetingWeight::of(self.busy_status),
+                description: self.meeting.description.clone(),
+                description_blocks: self.meeting.blocks.clone(),
+                join_url: self.meeting.join_url.clone(),
+            },
         }
     }
 }

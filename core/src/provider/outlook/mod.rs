@@ -44,7 +44,7 @@ crate::provider! {
             };
             match result {
                 Ok(()) => ProviderCheckResult::available(),
-                Err(err) => ProviderCheckResult::unavailable(err.to_string()),
+                Err(err) => ProviderCheckResult::unavailable_from(&err),
             }
         }
 

@@ -8,7 +8,7 @@ export type SupportedOs = "windows" | "macos" | "linux";
 
 export type ProviderStatus = "checking" | "available" | "unavailable" | "degraded";
 
-export type ProviderProblem = "timedOut" | "unsupported" | "notConfigured" | "failed";
+export type ProviderProblem = "timedOut" | "unsupported" | "notConfigured" | "refused" | "unreachable" | "notInstalled" | "notRunning" | "permissionDenied" | "noData" | "failed" | "collectionFailed";
 
 export type ProviderInfo = { connection: ConnectionId, label: string, 
 /**
@@ -18,7 +18,11 @@ wslDistro?: string, status: ProviderStatus, usable: boolean, supportedOs: Array<
 /**
  * Set with `reason`: what kind of problem it describes.
  */
-problem?: ProviderProblem, checkedAt: string, };
+problem?: ProviderProblem, 
+/**
+ * Whether the UI offers to check it again: it has a problem other than `unsupported`.
+ */
+recheckable: boolean, checkedAt: string, };
 
 export type ProvidersResponse = { currentOs: SupportedOs, providers: Array<ProviderInfo>, };
 
@@ -104,7 +108,7 @@ export type AddConnectionResponseDto = { created: ConnectionId, snapshot: Provid
  */
 installed: InstallReceipt | null, };
 
-export type GitLabType = "pushedTo" | "created" | "opened" | "closed" | "reopened" | "updated" | "merged" | "accepted" | "commentedOn" | "approved" | "joined" | "destroyed" | "expired" | "unknown";
+export type GitLabType = "pushedTo" | "pushedNew" | "created" | "opened" | "closed" | "reopened" | "updated" | "merged" | "accepted" | "commentedOn" | "approved" | "joined" | "destroyed" | "expired" | "unknown";
 
 export type JiraEntryType = "issueCreated" | "issueUpdated" | "statusChanged";
 
@@ -126,33 +130,58 @@ export type DescriptionBlock = { "kind": "paragraph", segments: Array<TextSegmen
 
 export type GitLabEntry = { source: "gitlab", 
 /**
- * The name of the connection within its kind, such as `oss`; set by the runtime.
+ * The connection within its kind, such as `oss`; stamped by the runtime before the entry is
+ * cached or sent.
  */
 connection: string, 
 /**
  * The source's own id for the entry (a commit hash, an event id), unique within its
  * connection: `source`, `connection` and `id` identify an entry.
  */
-id: string, type: GitLabType, timestamp: string, title: string, targetType: string, mrIid?: number, branch?: string, commitCount?: number, noteBody?: string, noteFile?: string, noteResolved?: boolean, 
+id: string, type: GitLabType, timestamp: string, 
 /**
- * The commit a `pushedTo` event pushed (`push_data.commit_to`); it folds into that commit.
+ * The title of what the event is about; absent for a push, which has none.
+ */
+title?: string, 
+/**
+ * What the event is about as GitLab names it (`MergeRequest`, `DiffNote`); absent for a
+ * push.
+ */
+targetType?: string, 
+/**
+ * The merge request the event is about, or the one a comment is on.
+ */
+mrIid?: number, 
+/**
+ * The issue the event is about, or the one a comment is on.
+ */
+issueIid?: number, branch?: string, commitCount?: number, noteBody?: string, noteFile?: string, noteResolved?: boolean, 
+/**
+ * The commit a push (`pushedTo`, `pushedNew`) pushed (`push_data.commit_to`); it folds into
+ * that commit.
  */
 pushedCommit?: string, };
 
 export type GitEntry = { source: "git", 
 /**
- * The name of the connection within its kind, such as `oss`; set by the runtime.
+ * The connection within its kind, such as `oss`; stamped by the runtime before the entry is
+ * cached or sent.
  */
 connection: string, 
 /**
  * The source's own id for the entry (a commit hash, an event id), unique within its
  * connection: `source`, `connection` and `id` identify an entry.
  */
-id: string, timestamp: string, repo: string, hash: string, message: string, author: string, branch: string, gitlabEvent?: GitLabEntry, };
+id: string, timestamp: string, repo: string, hash: string, message: string, author: string, 
+/**
+ * The branch HEAD names, on the commit HEAD points at; absent on every other commit.
+ */
+branch?: string, gitlabEvent?: GitLabEntry, };
 
 export type JiraEntry = { source: "jira", 
 /**
- * The name of the connection within its kind, such as `oss`; set by the runtime.
+ * The connection within its kind, such as `oss`; stamped by the runtime before the entry is
+ * cached or sent.
  */
 connection: string, 
 /**
@@ -163,14 +192,19 @@ id: string, type: JiraEntryType, timestamp: string, key: string, title: string, 
 
 export type OutlookEntry = { source: "outlook", 
 /**
- * The name of the connection within its kind, such as `oss`; set by the runtime.
+ * The connection within its kind, such as `oss`; stamped by the runtime before the entry is
+ * cached or sent.
  */
 connection: string, 
 /**
  * The source's own id for the entry (a commit hash, an event id), unique within its
  * connection: `source`, `connection` and `id` identify an entry.
  */
-id: string, timestamp: string, title: string, location?: string, organizer?: string, 
+id: string, timestamp: string, 
+/**
+ * Absent for a meeting without a subject; the UI and the export show a placeholder.
+ */
+title?: string, location?: string, organizer?: string, 
 /**
  * Whether the user organizes it; absent when Outlook did not say (a read it refused).
  */
@@ -195,7 +229,8 @@ joinUrl?: string, };
 
 export type SystemEntry = { source: "system", 
 /**
- * The name of the connection within its kind, such as `oss`; set by the runtime.
+ * The connection within its kind, such as `oss`; stamped by the runtime before the entry is
+ * cached or sent.
  */
 connection: string, 
 /**
@@ -206,14 +241,19 @@ id: string, type: SystemEntryType, timestamp: string, label: string, };
 
 export type CalendarEntry = { source: "calendar", 
 /**
- * The name of the connection within its kind, such as `oss`; set by the runtime.
+ * The connection within its kind, such as `oss`; stamped by the runtime before the entry is
+ * cached or sent.
  */
 connection: string, 
 /**
  * The source's own id for the entry (a commit hash, an event id), unique within its
  * connection: `source`, `connection` and `id` identify an entry.
  */
-id: string, timestamp: string, title: string, location?: string, organizer?: string, durationMinutes: number, busyStatus?: BusyStatus, 
+id: string, timestamp: string, 
+/**
+ * Absent for a meeting without a subject; the UI and the export show a placeholder.
+ */
+title?: string, location?: string, organizer?: string, durationMinutes: number, busyStatus?: BusyStatus, 
 /**
  * How the entry counts towards meeting time, from `busy_status`.
  */

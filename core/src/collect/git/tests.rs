@@ -14,9 +14,8 @@ async fn collect(options: &CollectOptions, config: &GitConfig) -> anyhow::Result
     let commits = collect_git(options, config, ConnectionLocation::Local).await?;
     let (_, mut own, _) = own_commits(commits);
     own.sort_by(|a, b| {
-        DateTime::parse_from_rfc3339(&b.timestamp)
-            .ok()
-            .cmp(&DateTime::parse_from_rfc3339(&a.timestamp).ok())
+        b.timestamp
+            .cmp(&a.timestamp)
             .then_with(|| a.repo.cmp(&b.repo))
             .then_with(|| a.hash.cmp(&b.hash))
     });
@@ -145,9 +144,9 @@ async fn collects_matching_commits_and_only_sets_branch_on_head_commit() {
 
     assert_eq!(entries.len(), 2);
     assert_eq!(entries[0].message, "Second subject");
-    assert_eq!(entries[0].branch, "main");
+    assert_eq!(entries[0].branch.as_deref(), Some("main"));
     assert_eq!(entries[1].message, "First subject");
-    assert_eq!(entries[1].branch, "");
+    assert_eq!(entries[1].branch, None);
 }
 
 #[tokio::test]
@@ -223,8 +222,8 @@ fn entry(repo: &str, hash: &str, author: &str) -> GitEntry {
         hash.to_string(),
         hash.to_string(),
         author.to_string(),
-        String::new(),
-        "2026-03-05T09:00:00+01:00".to_string(),
+        None,
+        "2026-03-05T09:00:00+01:00".into(),
     )
 }
 
@@ -311,7 +310,7 @@ async fn detached_head_yields_empty_branch() {
     .unwrap();
 
     assert_eq!(entries.len(), 1);
-    assert_eq!(entries[0].branch, "");
+    assert_eq!(entries[0].branch, None);
 }
 
 #[tokio::test]
@@ -539,7 +538,10 @@ async fn a_cancelled_local_collection_reads_no_repository() {
     )
     .unwrap_err();
 
-    assert!(error.to_string().starts_with("Stopped"));
+    assert!(
+        error.is::<crate::platform::blocking::Stopped>(),
+        "{error:#}"
+    );
 }
 
 /// A commit recorded before it was authored (a clock off, a rebase that keeps the dates), and

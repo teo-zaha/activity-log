@@ -1,11 +1,11 @@
 use std::collections::HashSet;
 
-use chrono::{DateTime, Duration, FixedOffset};
+use chrono::Duration;
 
 use crate::{
     model::{
         ActivityEntry, ActivityLog, ActivityLogMeta, CollectOptions, CollectedActivity,
-        CollectedActivitySummary, ConnectionCount, ConnectionId, GitEntry, GitLabEntry, GitLabType,
+        CollectedActivitySummary, ConnectionCount, ConnectionId, GitEntry, GitLabEntry,
         IntoActivityEntries, MergeResult, Source,
     },
     provider::provider_adapter::ConnectionEntries,
@@ -57,11 +57,17 @@ pub fn collect_activity_from_results(
     let merged_count = merged
         .merged_git
         .iter()
-        .filter(|entry| entry.gitlab_event.is_some() && counted(Source::Git, &entry.connection))
+        .filter(|entry| {
+            entry.gitlab_event.is_some()
+                && entry
+                    .connection
+                    .as_str()
+                    .is_some_and(|name| counted(Source::Git, name))
+        })
         .count();
     entries.extend(merged.merged_git.into_iter().into_activity_entries());
     entries.extend(merged.remaining_gitlab.into_iter().into_activity_entries());
-    entries.sort_by(|a, b| compare_timestamps_desc(a.timestamp(), b.timestamp()));
+    entries.sort_by(|a, b| b.timestamp().cmp(a.timestamp()));
 
     let summary = CollectedActivitySummary {
         connections: connections
@@ -70,7 +76,8 @@ pub fn collect_activity_from_results(
                 count: entries
                     .iter()
                     .filter(|entry| {
-                        entry.source() == connection.source && entry.connection() == connection.name
+                        entry.source() == connection.source
+                            && entry.connection() == Some(connection.name.as_str())
                     })
                     .count(),
                 connection,
@@ -127,7 +134,7 @@ pub(crate) fn merge_git_with_gitlab(
         push_indices.sort_by_key(|&index| {
             let push = &gitlab_entries[index];
             (
-                parse_timestamp(&push.timestamp),
+                push.timestamp.instant(),
                 push.connection.as_str(),
                 push.id.as_str(),
             )
@@ -168,7 +175,9 @@ pub(crate) fn merge_git_with_gitlab(
 
 /// Only GitLab push events have a commit SHA we can safely correlate with local git history.
 fn push_sha(entry: &GitLabEntry) -> Option<&str> {
-    (entry.entry_type == GitLabType::PushedTo)
+    entry
+        .entry_type
+        .is_push()
         .then_some(entry.pushed_commit.as_deref())
         .flatten()
 }
@@ -202,14 +211,10 @@ pub fn make_ids_unique(entries: &mut [ActivityEntry]) -> usize {
 /// Whether a carried entry belongs to a collection of `options`: an entry if it falls inside,
 /// a meeting if it overlaps.
 pub(crate) fn within(entry: &ActivityEntry, options: CollectOptions) -> bool {
-    let Some(start) = parse_timestamp(entry.timestamp()).map(|at| at.to_utc()) else {
-        return false;
-    };
-    let minutes = match entry {
-        ActivityEntry::Outlook(meeting) => meeting.duration_minutes,
-        ActivityEntry::Calendar(meeting) => meeting.duration_minutes,
-        _ => 0,
-    };
+    let start = entry.timestamp().utc();
+    let minutes = entry
+        .meeting()
+        .map_or(0, |meeting| meeting.duration_minutes);
     options.overlaps(start, start + Duration::minutes(i64::from(minutes.max(0))))
 }
 
@@ -244,19 +249,6 @@ pub fn carried_for(
             (id.clone(), entries)
         })
         .collect()
-}
-
-fn compare_timestamps_desc(a: &str, b: &str) -> std::cmp::Ordering {
-    match (parse_timestamp(a), parse_timestamp(b)) {
-        (Some(a_parsed), Some(b_parsed)) => b_parsed.cmp(&a_parsed).then_with(|| b.cmp(a)),
-        (Some(_), None) => std::cmp::Ordering::Less,
-        (None, Some(_)) => std::cmp::Ordering::Greater,
-        (None, None) => b.cmp(a),
-    }
-}
-
-fn parse_timestamp(timestamp: &str) -> Option<DateTime<FixedOffset>> {
-    DateTime::parse_from_rfc3339(timestamp).ok()
 }
 
 #[cfg(test)]

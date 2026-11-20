@@ -42,6 +42,25 @@ fn excludes_outlook_events_with_unparseable_dates() {
     assert!(normalized.is_empty());
 }
 
+/// An empty subject is no title: the UI and the export show their placeholder for it.
+#[test]
+fn an_empty_subject_is_no_title() {
+    let event = RawOutlookEvent {
+        id: None,
+        subject: Some("  ".to_string()),
+        start: "2026-03-25T09:00:00Z".to_string(),
+        end: "2026-03-25T09:45:00Z".to_string(),
+        location: None,
+        organizer: None,
+        is_organizer: None,
+        is_default_calendar: Some(true),
+        busy_status: None,
+        body: None,
+    };
+    let normalized = normalize_outlook_events(vec![event], &options("2026-03-25", "2026-03-25"));
+    assert_eq!(normalized[0].title, None);
+}
+
 #[test]
 fn normalizes_outlook_duration_and_missing_subject() {
     let normalized = normalize_outlook_events(
@@ -60,8 +79,8 @@ fn normalizes_outlook_duration_and_missing_subject() {
         &options("2026-03-25", "2026-03-25"),
     );
 
-    assert_eq!(normalized[0].title, "(No title)");
-    assert_eq!(normalized[0].duration_minutes, 45);
+    assert_eq!(normalized[0].title, None);
+    assert_eq!(normalized[0].meeting.duration_minutes, 45);
     assert_eq!(normalized[0].location.as_deref(), Some("Desk"));
 }
 
@@ -99,7 +118,7 @@ fn includes_events_that_overlap_requested_range() {
 
     let titles = normalized
         .iter()
-        .map(|entry| entry.title.as_str())
+        .map(|entry| entry.title.as_deref().unwrap())
         .collect::<Vec<_>>();
     assert_eq!(titles, vec!["Starts before", "Ends after"]);
 }
@@ -137,7 +156,7 @@ fn excludes_non_default_calendar_events() {
     );
 
     assert_eq!(normalized.len(), 1);
-    assert_eq!(normalized[0].title, "Default");
+    assert_eq!(normalized[0].title.as_deref(), Some("Default"));
 }
 
 #[test]
@@ -179,6 +198,26 @@ fn reports_new_outlook_and_a_closed_outlook() {
     );
 }
 
+/// Each state Outlook can be found in names its own problem; only a classic Outlook that runs
+/// is tried.
+#[test]
+fn an_outlook_that_cannot_be_read_says_why() {
+    use crate::provider::source_failure::SourceProblem;
+    assert_eq!(OutlookFallback::Connect.problem(), None);
+    assert_eq!(
+        OutlookFallback::Elevated.problem(),
+        Some(SourceProblem::PermissionDenied)
+    );
+    assert_eq!(
+        OutlookFallback::NewOutlookOnly.problem(),
+        Some(SourceProblem::NotInstalled)
+    );
+    assert_eq!(
+        OutlookFallback::NotRunning.problem(),
+        Some(SourceProblem::NotRunning)
+    );
+}
+
 #[test]
 fn maps_every_com_busy_status() {
     assert_eq!(busy_status_from_com(0), Some(BusyStatus::Free));
@@ -211,7 +250,7 @@ fn keeps_the_busy_status_and_leaves_it_out_of_json_when_unknown() {
 
     let json = normalized
         .iter()
-        .map(|entry| serde_json::to_value(entry).unwrap())
+        .map(|entry| serde_json::to_value(stamped(entry)).unwrap())
         .collect::<Vec<_>>();
     assert_eq!(json[0]["busyStatus"], "out_of_office");
     assert!(json[1].get("busyStatus").is_none());
@@ -258,19 +297,19 @@ fn cleans_the_body_into_a_description_and_a_join_link() {
     );
 
     assert_eq!(
-        normalized[0].description.as_deref(),
+        normalized[0].meeting.description.as_deref(),
         Some("Quarterly planning.\n\nSlides: https://example.org/slides")
     );
     assert_eq!(
-        normalized[0].join_url.as_deref(),
+        normalized[0].meeting.join_url.as_deref(),
         Some("https://teams.microsoft.com/meet/123456789?p=abc")
     );
-    let json = serde_json::to_value(&normalized[0]).unwrap();
+    let json = serde_json::to_value(stamped(&normalized[0])).unwrap();
     assert_eq!(
         json["joinUrl"],
         "https://teams.microsoft.com/meet/123456789?p=abc"
     );
-    let json = serde_json::to_value(&normalized[1]).unwrap();
+    let json = serde_json::to_value(stamped(&normalized[1])).unwrap();
     assert!(json.get("description").is_none() && json.get("joinUrl").is_none());
 }
 
@@ -403,11 +442,11 @@ fn reads_outlook_for_macs_busy_names_and_weighs_them_as_on_windows() {
     .unwrap();
     let normalized = normalize_outlook_events(events, &options("2026-03-25", "2026-03-25"));
     assert_eq!(
-        normalized[0].meeting_weight,
+        normalized[0].meeting.meeting_weight,
         MeetingWeight::of(Some(BusyStatus::Free))
     );
     assert_eq!(
-        normalized[0].join_url.as_deref(),
+        normalized[0].meeting.join_url.as_deref(),
         Some("https://teams.microsoft.com/meet/123456789?p=abc")
     );
 }
@@ -513,7 +552,7 @@ fn an_unknown_organizer_is_left_out_of_the_entry() {
     let entries = normalize_outlook_events(vec![unknown], &options("2026-03-25", "2026-03-25"));
 
     assert_eq!(entries[0].is_organizer, None);
-    let wire = serde_json::to_value(&entries[0]).unwrap();
+    let wire = serde_json::to_value(stamped(&entries[0])).unwrap();
     assert!(wire.get("isOrganizer").is_none(), "{wire}");
 }
 
@@ -538,4 +577,11 @@ fn an_outlook_entry_without_a_role_and_a_calendar_entry_read_as_their_own_kinds(
 
     assert!(matches!(entry("outlook"), ActivityEntry::Outlook(_)));
     assert!(matches!(entry("calendar"), ActivityEntry::Calendar(_)));
+}
+
+/// `entry` as the runtime sends it, stamped with its connection.
+fn stamped(entry: &crate::model::OutlookEntry) -> crate::model::OutlookEntry {
+    let mut entry = entry.clone();
+    entry.connection.stamp(&"outlook".into());
+    entry
 }

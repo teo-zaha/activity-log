@@ -1,28 +1,12 @@
 use chrono::{TimeZone, Utc};
 
 use super::{
-    carried_for, collect_activity_from_results, compare_timestamps_desc, make_ids_unique,
-    merge_git_with_gitlab, within,
+    carried_for, collect_activity_from_results, make_ids_unique, merge_git_with_gitlab, within,
 };
 use crate::model::{
     ActivityEntry, CalendarEntry, CollectOptions, ConnectionId, GitEntry, GitLabEntry, GitLabType,
     MeetingWeight, Source,
 };
-
-#[test]
-fn sorts_mixed_offsets_by_instant_desc() {
-    let earlier = "2026-03-10T09:30:00+01:00";
-    let later = "2026-03-10T08:45:00Z";
-
-    assert_eq!(
-        compare_timestamps_desc(later, earlier),
-        std::cmp::Ordering::Less
-    );
-    assert_eq!(
-        compare_timestamps_desc(earlier, later),
-        std::cmp::Ordering::Greater
-    );
-}
 
 fn push(commit_to: &str) -> ActivityEntry {
     push_at(commit_to, "2026-03-10T10:05:00Z")
@@ -30,14 +14,15 @@ fn push(commit_to: &str) -> ActivityEntry {
 
 fn push_at(commit_to: &str, timestamp: &str) -> ActivityEntry {
     ActivityEntry::GitLab(GitLabEntry {
-        source: "gitlab".to_string(),
-        connection: "work".to_string(),
+        source: crate::model::GitLabTag,
+        connection: "work".into(),
         id: commit_to.to_string(),
         entry_type: GitLabType::PushedTo,
-        timestamp: timestamp.to_string(),
-        title: "repo".to_string(),
-        target_type: "Project".to_string(),
+        timestamp: timestamp.into(),
+        title: Some("repo".to_string()),
+        target_type: Some("Project".to_string()),
         mr_iid: None,
+        issue_iid: None,
         branch: Some("main".to_string()),
         commit_count: Some(1),
         note_body: None,
@@ -74,10 +59,10 @@ fn a_push_shows_until_its_git_commit_is_collected() {
         "abc123".to_string(),
         "message".to_string(),
         "me@example.com".to_string(),
-        "main".to_string(),
-        "2026-03-10T10:00:00Z".to_string(),
+        Some("main".to_string()),
+        "2026-03-10T10:00:00Z".into(),
     );
-    commit.connection = "laptop".to_string();
+    commit.connection = "laptop".into();
     let complete = collect_activity_from_results(
         options,
         vec![
@@ -100,6 +85,39 @@ fn a_push_shows_until_its_git_commit_is_collected() {
     assert_eq!(complete.summary.merged_count, 1);
 }
 
+#[test]
+fn sorts_entries_newest_first_across_offsets() {
+    let calendar = ConnectionId::new(Source::Calendar, "team");
+    let log = collect_activity_from_results(
+        march(),
+        vec![(
+            calendar,
+            vec![
+                meeting("2026-03-10T09:30:00+01:00", 30),
+                meeting("2026-03-10T08:45:00Z", 30),
+                meeting("2026-03-10T08:00:00Z", 30),
+            ],
+        )],
+        Vec::new(),
+        Vec::new(),
+    )
+    .log;
+
+    let order = log
+        .entries
+        .iter()
+        .map(|entry| entry.timestamp().as_str())
+        .collect::<Vec<_>>();
+    assert_eq!(
+        order,
+        [
+            "2026-03-10T08:45:00Z",
+            "2026-03-10T09:30:00+01:00",
+            "2026-03-10T08:00:00Z"
+        ]
+    );
+}
+
 fn march() -> CollectOptions {
     CollectOptions {
         start: Utc.with_ymd_and_hms(2026, 3, 1, 0, 0, 0).unwrap(),
@@ -113,28 +131,30 @@ fn commit_in(connection: &str, hash: &str, timestamp: &str) -> ActivityEntry {
         hash.to_string(),
         format!("commit {hash}"),
         "me@example.com".to_string(),
-        "main".to_string(),
-        timestamp.to_string(),
+        Some("main".to_string()),
+        timestamp.into(),
     );
-    commit.connection = connection.to_string();
+    commit.connection = connection.into();
     ActivityEntry::Git(commit)
 }
 
 fn meeting(timestamp: &str, duration_minutes: i32) -> ActivityEntry {
     ActivityEntry::Calendar(CalendarEntry {
-        source: "calendar".to_string(),
-        connection: "team".to_string(),
+        source: crate::model::CalendarTag,
+        connection: "team".into(),
         id: timestamp.to_string(),
-        timestamp: timestamp.to_string(),
-        title: "Offsite".to_string(),
+        timestamp: timestamp.into(),
+        title: Some("Offsite".to_string()),
         location: None,
         organizer: None,
-        duration_minutes,
-        busy_status: None,
-        meeting_weight: MeetingWeight::Busy,
-        description: None,
-        description_blocks: Vec::new(),
-        join_url: None,
+        meeting: crate::model::MeetingBody {
+            duration_minutes,
+            busy_status: None,
+            meeting_weight: MeetingWeight::Busy,
+            description: None,
+            description_blocks: Vec::new(),
+            join_url: None,
+        },
     })
 }
 
@@ -282,21 +302,22 @@ fn git_commit(hash: &str) -> GitEntry {
         hash.to_string(),
         "message".to_string(),
         "me@example.com".to_string(),
-        "main".to_string(),
-        "2026-03-10T10:00:00Z".to_string(),
+        Some("main".to_string()),
+        "2026-03-10T10:00:00Z".into(),
     )
 }
 
 fn gitlab_push(commit_to: &str) -> GitLabEntry {
     GitLabEntry {
-        source: "gitlab".to_string(),
-        connection: String::new(),
+        source: crate::model::GitLabTag,
+        connection: crate::model::ConnectionName::unstamped(),
         id: commit_to.to_string(),
         entry_type: crate::model::GitLabType::PushedTo,
-        timestamp: "2026-03-10T10:05:00Z".to_string(),
-        title: "repo".to_string(),
-        target_type: "Project".to_string(),
+        timestamp: "2026-03-10T10:05:00Z".into(),
+        title: Some("repo".to_string()),
+        target_type: Some("Project".to_string()),
         mr_iid: None,
+        issue_iid: None,
         branch: Some("main".to_string()),
         commit_count: Some(1),
         note_body: None,
@@ -359,10 +380,40 @@ fn two_pushes_of_one_commit_fold_one_and_keep_the_other() {
     assert_eq!(kept.branch.as_deref(), Some("release"));
 }
 
+/// A push that created its branch folds into its commit like any other push.
+#[test]
+fn a_push_of_a_new_branch_folds_into_its_commit() {
+    let mut push = gitlab_push("abc123");
+    push.entry_type = crate::model::GitLabType::PushedNew;
+
+    let merged = merge_git_with_gitlab(&[git_commit("abc123")], &[push]);
+
+    assert!(merged.merged_git[0].gitlab_event.is_some());
+    assert!(merged.remaining_gitlab.is_empty());
+}
+
+/// Pushes of one commit at the same instant are told apart by connection, then id, whatever
+/// offset each instant is written in.
+#[test]
+fn pushes_at_one_instant_fold_by_connection_not_by_how_the_instant_is_written() {
+    let mut a = gitlab_push("abc123");
+    a.connection = "a".into();
+    a.timestamp = "2026-03-10T11:05:00+01:00".into();
+    let mut z = gitlab_push("abc123");
+    z.connection = "z".into();
+    z.timestamp = "2026-03-10T10:05:00Z".into();
+
+    let merged = merge_git_with_gitlab(&[git_commit("abc123")], &[z, a]);
+
+    let folded = merged.merged_git[0].gitlab_event.as_ref().unwrap();
+    assert_eq!(folded.connection, "a");
+    assert_eq!(merged.remaining_gitlab[0].connection, "z");
+}
+
 #[test]
 fn a_push_folds_into_one_commit_even_when_two_clones_have_it() {
     let mut wsl_clone = git_commit("abc123");
-    wsl_clone.connection = "wsl".to_string();
+    wsl_clone.connection = "wsl".into();
 
     let merged =
         merge_git_with_gitlab(&[git_commit("abc123"), wsl_clone], &[gitlab_push("abc123")]);
