@@ -18,7 +18,7 @@ pub(crate) mod result_store;
 #[cfg(test)]
 mod tests;
 
-pub use host::{BadConfig, Edit, Host, HostWork, Part, Published, RunSpawner};
+pub use host::{Answered, BadConfig, Edit, Host, HostWork, Part, Published, RunSpawner};
 pub use report::{
     Checked, CollectionKey, Collector, Outcome, Plan, Progress, RunReport, Slot, Stored, Superseded,
 };

@@ -9,6 +9,7 @@ dependencies = [
  "anyhow",
  "core",
  "rfd",
+ "serde",
  "serde_json",
  "tauri",
  "tauri-build",

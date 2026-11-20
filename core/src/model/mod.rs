@@ -47,6 +47,9 @@ pub use gitlab::{gitlab_entry::GitLabEntry, gitlab_entry_type::GitLabType};
 pub use jira::{jira_entry::JiraEntry, jira_entry_type::JiraEntryType};
 pub use outlook::outlook_entry::OutlookEntry;
 pub use runtime::{
-    activity_state::ActivityState, run_end::RunEnd, run_id::RunId, run_outcome::RunOutcome,
+    activity_state::ActivityState, activity_update::ActivityUpdate, collect_answer::CollectAnswer,
+    install_receipt::InstallReceipt, part_stamp::PartStamp, providers_update::ProvidersUpdate,
+    recheck_answer::RecheckAnswer, run_end::RunEnd, run_id::RunId, run_outcome::RunOutcome,
+    runtime_state::RuntimeState, shown_activity::ShownActivity,
 };
 pub use system::{system_entry::SystemEntry, system_entry_type::SystemEntryType};

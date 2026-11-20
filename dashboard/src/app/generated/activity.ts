@@ -80,7 +80,11 @@ value: ProviderConfigValueDto | null, };
 
 export type ProviderConfigSaveRequestDto = { connection: ConnectionId, label?: string, values: Array<ProviderConfigSaveValueDto>, };
 
-export type ProviderConfigSaveResponseDto = { snapshot: ProviderConfigSnapshotDto, providersResponse: ProvidersResponse, };
+export type ProviderConfigSaveResponseDto = { snapshot: ProviderConfigSnapshotDto, providersResponse: ProvidersResponse, 
+/**
+ * Where the change became visible, see [`InstallReceipt`].
+ */
+installed: InstallReceipt, };
 
 export type AddConnectionRequestDto = { source: Source, 
 /**
@@ -92,7 +96,11 @@ label?: string,
  */
 wslDistro?: string, };
 
-export type AddConnectionResponseDto = { created: ConnectionId, snapshot: ProviderConfigSnapshotDto, providersResponse: ProvidersResponse, };
+export type AddConnectionResponseDto = { created: ConnectionId, snapshot: ProviderConfigSnapshotDto, providersResponse: ProvidersResponse, 
+/**
+ * Where the change became visible, see [`InstallReceipt`].
+ */
+installed: InstallReceipt, };
 
 export type GitLabType = "pushedTo" | "created" | "opened" | "closed" | "reopened" | "updated" | "merged" | "accepted" | "commentedOn" | "approved" | "joined" | "destroyed" | "expired" | "unknown";
 
@@ -265,3 +273,24 @@ export type LogsResponse = {
  * Oldest first.
  */
 entries: Array<LogEntry>, };
+
+export type ActivityState = { "kind": "empty" } | { "kind": "running", log: ActivityLog, } | { "kind": "ready", log: ActivityLog, } | { "kind": "failed", failure: CollectionFailedResponse, };
+
+export type PartStamp = { epoch: string, authority: string, revision: number, };
+
+export type ActivityUpdate = { epoch: string, authority: string, revision: number, state: ActivityState, };
+
+export type ProvidersUpdate = { epoch: string, authority: string, revision: number, providers: ProvidersResponse, };
+
+export type RuntimeState = { activity: ActivityUpdate, providers: ProvidersUpdate, };
+
+export type InstallReceipt = { epoch: string, revision: number, };
+
+export type ShownActivity = { "kind": "running" } & ActivityLog | { "kind": "ready" } & ActivityLog | { "kind": "failed" } & CollectionFailedResponse;
+
+export type CollectAnswer = { stamp: PartStamp, } & ({ "kind": "running" } & ActivityLog | { "kind": "ready" } & ActivityLog | { "kind": "failed" } & CollectionFailedResponse);
+
+export type RecheckAnswer = { stamp: PartStamp, currentOs: SupportedOs, providers: Array<ProviderInfo>, };
+
+/** The longest range the backend collects or exports, in days (`CollectOptions::MAX_DAYS`). */
+export const COLLECT_MAX_DAYS = 3653

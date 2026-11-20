@@ -33,9 +33,9 @@ use super::{
 use crate::{
     collect_planned, diagnostics,
     model::{
-        ActivityState, CollectOptions, CollectionFailedResponse, ConnectionId, LogLevel,
-        ProviderInfo, ProviderProblem, ProviderStatus, ProvidersResponse, RunEnd, RunId,
-        RunOutcome, Source,
+        ActivityState, CollectOptions, CollectionFailedResponse, ConnectionId, InstallReceipt,
+        LogLevel, PartStamp, ProviderInfo, ProviderProblem, ProviderStatus, ProvidersResponse,
+        RunEnd, RunId, RunOutcome, RuntimeState, Source,
     },
     provider::{ProviderRuntime, connection::Connection, current_os, start_check},
     settings::{
@@ -85,7 +85,13 @@ pub struct Edit<T> {
     pub providers: ProvidersResponse,
     /// The providers part's revision that first holds this edit, or the current one when the
     /// edit changed nothing.
-    pub revision: u64,
+    pub installed: InstallReceipt,
+}
+
+/// A command's answer with the stamp of the part it shows, both taken under the state lock.
+pub struct Answered<T> {
+    pub value: T,
+    pub stamp: PartStamp,
 }
 
 /// How often the config file's content is compared with the installed one.
@@ -171,6 +177,8 @@ struct HostState {
     logs: Vec<(LogLevel, String, String)>,
     /// Set by `shutdown`: no run, check, install or edit is current any more.
     shut_down: bool,
+    /// This transition installed a config: the published authority rises.
+    installed: bool,
 }
 
 type SharedCheck = Shared<BoxFuture<'static, Result<Checked, Superseded>>>;
@@ -476,6 +484,7 @@ impl Host {
             retired: Vec::new(),
             logs: Vec::new(),
             shut_down: false,
+            installed: false,
         };
         Host {
             inner: Arc::new(HostInner {
@@ -508,8 +517,8 @@ impl Host {
     /// and commits, a WSL script's `wsl.exe` is killed, Outlook and event log reads stop between
     /// items. A call into Outlook that does not return holds Outlook until it does; the next
     /// collection waits for it.
-    pub fn collect(&self, options: CollectOptions) -> ActivityState {
-        self.transition(|inner, state| {
+    pub fn collect(&self, options: CollectOptions) -> Answered<ActivityState> {
+        let applied = self.apply(|inner, state| {
             let joins = matches!(
                 &state.shown,
                 Shown::Running { options: running, .. } if *running == options
@@ -518,15 +527,20 @@ impl Host {
                 start_run(inner, state, options, Scope::All);
             }
             (*state.activity).clone()
-        })
+        });
+        let stamp = applied.published.activity_stamp();
+        Answered {
+            value: self.spawn(applied),
+            stamp,
+        }
     }
 
     /// Runs the check of `id` again and then collects its kind again for the range on screen;
     /// the other kinds keep what they show. A running collection starts over, so it waits for
     /// the new check; a failed one runs whole. Answers with the providers, `id` checking; `None`
     /// for a connection the host does not have.
-    pub fn recheck(&self, id: &ConnectionId) -> Option<ProvidersResponse> {
-        self.transition(|inner, state| {
+    pub fn recheck(&self, id: &ConnectionId) -> Option<Answered<ProvidersResponse>> {
+        let applied = self.apply(|inner, state| {
             let index = state
                 .checks
                 .iter()
@@ -539,7 +553,10 @@ impl Host {
             state.log(LogLevel::Info, id.to_string(), "Checking again");
             collect_again(inner, state, &id.source);
             Some(state.providers_response())
-        })
+        });
+        let stamp = applied.published.providers_stamp();
+        let value = self.spawn(applied)?;
+        Some(Answered { value, stamp })
     }
 
     /// Edits the config file (see [`edit_config`]) and installs the result. The write and the
@@ -597,13 +614,13 @@ impl Host {
             self.apply_install(connections.clone(), Some(edited.content))
         };
         drop(config);
-        let revision = applied.published.providers.revision;
+        let installed = applied.published.receipt();
         let providers = self.spawn(applied);
         Ok(Edit {
             value: edited.value,
             connections,
             providers,
-            revision,
+            installed,
         })
     }
 
@@ -706,6 +723,11 @@ impl Host {
         (*self.inner.publisher.borrow().providers.value).clone()
     }
 
+    /// Both parts as one coherent pair, with the host's stamps.
+    pub fn runtime_state(&self) -> RuntimeState {
+        self.inner.publisher.borrow().runtime_state()
+    }
+
     /// Whether `run` is still the collection on screen.
     pub fn is_current(&self, run: RunId) -> bool {
         let state = self.lock();
@@ -749,6 +771,7 @@ impl Host {
                 current.revision(),
                 &state.activity,
                 state.providers_response(),
+                std::mem::take(&mut state.installed),
             ) {
                 let old = self.inner.publisher.send_replace(Arc::new(next));
                 state.retired.push(Box::new(old));
@@ -808,6 +831,7 @@ impl Host {
             if content.is_some() {
                 state.content = content;
             }
+            state.installed = true;
             let old_ids = state
                 .checks
                 .iter()

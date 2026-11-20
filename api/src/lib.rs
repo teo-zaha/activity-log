@@ -4,9 +4,10 @@ use activity_log_core::{
     diagnostics,
     export::render_export_request,
     model::{
-        ActivityState, CollectRequest, ConnectionId, ErrorResponse, ExportRequest, LogsResponse,
+        ActivityState, CollectAnswer, CollectRequest, ConnectionId, ErrorResponse, ExportRequest,
+        LogsResponse, RecheckAnswer, RuntimeState, ShownActivity,
     },
-    runtime::{BadConfig, Host, RunSpawner, resolve_collect_options},
+    runtime::{Answered, BadConfig, Host, RunSpawner, resolve_collect_options},
     settings::ConfigFile,
 };
 use rocket::{
@@ -26,14 +27,38 @@ fn activity_response(state: ActivityState) -> JsonResponse {
         ActivityState::Running { log } => json(Status::Accepted, &*log),
         ActivityState::Ready { log } => json(Status::Ok, &*log),
         // The state of the last collection, not a failed request: its range stays readable.
-        ActivityState::Failed { failure } => json(Status::Ok, failure),
-        ActivityState::Empty => json(
-            Status::ServiceUnavailable,
-            ErrorResponse {
-                error: "No data yet".to_string(),
-            },
-        ),
+        ActivityState::Failed { failure } => json(Status::Ok, &failure),
+        ActivityState::Empty => no_data_yet(),
     }
+}
+
+/// As `activity_response`, with the activity's kind and the stamp of the state it shows.
+fn collect_answer(answered: Answered<ActivityState>) -> JsonResponse {
+    match ShownActivity::of(answered.value) {
+        Some(activity) => {
+            let status = match activity {
+                ShownActivity::Running(_) => Status::Accepted,
+                ShownActivity::Ready(_) | ShownActivity::Failed(_) => Status::Ok,
+            };
+            json(
+                status,
+                CollectAnswer {
+                    activity,
+                    stamp: answered.stamp,
+                },
+            )
+        }
+        None => no_data_yet(),
+    }
+}
+
+fn no_data_yet() -> JsonResponse {
+    json(
+        Status::ServiceUnavailable,
+        ErrorResponse {
+            error: "No data yet".to_string(),
+        },
+    )
 }
 
 // Each request first installs a config file changed since the last look, as the timer does
@@ -43,6 +68,13 @@ fn activity_response(state: ActivityState) -> JsonResponse {
 async fn get_activity(host: &State<Host>) -> JsonResponse {
     host.reload_if_changed().await;
     activity_response(host.activity())
+}
+
+/// Both parts of the host's state as one coherent pair, with their stamps.
+#[get("/api/runtime-state")]
+async fn get_runtime_state(host: &State<Host>) -> Json<RuntimeState> {
+    host.reload_if_changed().await;
+    Json(host.runtime_state())
 }
 
 #[get("/api/providers")]
@@ -57,7 +89,7 @@ async fn post_collect(host: &State<Host>, request: Json<CollectRequest>) -> Json
     match resolve_collect_options(&request) {
         Ok(options) => {
             host.reload_if_changed().await;
-            activity_response(host.collect(options))
+            collect_answer(host.collect(options))
         }
         Err(message) => json(
             Status::BadRequest,
@@ -75,7 +107,13 @@ async fn post_collect(host: &State<Host>, request: Json<CollectRequest>) -> Json
 async fn post_recheck(host: &State<Host>, request: Json<ConnectionId>) -> JsonResponse {
     host.reload_if_changed().await;
     match host.recheck(&request) {
-        Some(providers) => json(Status::Ok, providers),
+        Some(answered) => json(
+            Status::Ok,
+            RecheckAnswer {
+                providers: answered.value,
+                stamp: answered.stamp,
+            },
+        ),
         None => json(
             Status::NotFound,
             ErrorResponse {
@@ -158,6 +196,7 @@ pub fn build_rocket_with(host: Host, start_initial_collection: bool) -> Rocket<B
             "/",
             rocket::routes![
                 get_activity,
+                get_runtime_state,
                 get_providers,
                 post_collect,
                 post_recheck,
