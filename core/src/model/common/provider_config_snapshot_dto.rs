@@ -10,6 +10,9 @@ use crate::model::common::{
 #[serde(rename_all = "camelCase")]
 #[ts(export, rename_all = "camelCase")]
 pub struct ProviderConfigSnapshotDto {
+    /// Names the file as this snapshot read it; a save or removal sends it back as `basedOn`,
+    /// so a change another program made meanwhile is a conflict, not overwritten.
+    pub revision: String,
     pub kinds: Vec<ProviderKindDto>,
     pub connections: Vec<ProviderConfigConnectionStateDto>,
 }

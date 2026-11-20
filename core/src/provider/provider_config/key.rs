@@ -40,7 +40,10 @@ impl std::fmt::Display for ProviderConfigShape {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ProviderConfigKey {
+    /// The wire name, as `config.toml` and the settings save spell it: `GITLAB_URL`.
     pub name: &'static str,
+    /// The field's name for people, as the settings show it: `GitLab URL`.
+    pub label: &'static str,
     pub required: bool,
     pub shape: ProviderConfigShape,
     /// Says which account a connection uses (a server address, a token): a settings save based
@@ -58,18 +61,22 @@ impl ProviderConfigKey {
         self.shape.value_type()
     }
 
+    /// A required key labelled by its name; [`Self::labelled`] names it for people.
     pub const fn required(name: &'static str, value_type: ProviderConfigValueType) -> Self {
         Self {
             name,
+            label: name,
             required: true,
             shape: ProviderConfigShape::Single(value_type),
             account: false,
         }
     }
 
+    /// An optional key labelled by its name; [`Self::labelled`] names it for people.
     pub const fn optional(name: &'static str, value_type: ProviderConfigValueType) -> Self {
         Self {
             name,
+            label: name,
             required: false,
             shape: ProviderConfigShape::Single(value_type),
             account: false,
@@ -122,6 +129,11 @@ impl ProviderConfigKey {
 
     pub const fn optional_url(name: &'static str) -> Self {
         Self::optional(name, ProviderConfigValueType::Url)
+    }
+
+    /// This key with `label` for people: `optional_string("GIT_DIRS").labelled("Git Dirs")`.
+    pub const fn labelled(self, label: &'static str) -> Self {
+        Self { label, ..self }
     }
 
     /// This key as a list of its value type: `optional_string("GIT_DIRS").list_of()`.

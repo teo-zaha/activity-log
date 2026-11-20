@@ -1738,7 +1738,7 @@ async fn an_edit_written_before_shutdown_installs_nothing_after_it() {
     assert_eq!(shown.len(), 1, "{shown:?}");
     assert_eq!(shown[0].label, "Home");
     // B70: the save is durable, but no revision holds it, so it is no install receipt.
-    assert_eq!(edit.connections.len(), 2);
+    assert_eq!(edit.file.connections().connections.len(), 2);
     assert_eq!(edit.installed, None);
 }
 

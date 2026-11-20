@@ -4,22 +4,25 @@ use activity_log_core::{
     model::{
         AddConnectionRequestDto, AddConnectionResponseDto, BackendError, BackendErrorKind,
         CollectAnswer, CollectRequest, ConnectionId, ExportOutcome, ExportRequest, LogsResponse,
-        ProviderConfigSaveRequestDto, ProviderConfigSaveResponseDto, ProviderConfigSnapshotDto,
-        RecheckAnswer, RuntimeState,
+        ProviderConfigFieldIssueDto, ProviderConfigSaveRequestDto, ProviderConfigSaveResponseDto,
+        ProviderConfigSnapshotDto, RecheckAnswer, RemoveConnectionRequestDto, RuntimeState,
     },
     provider::current_os,
     runtime::{answer_collect, answer_recheck},
-    settings::{ConfigEditError, ConfigFile, Precondition},
+    settings::{
+        ConfigEditError, ConfigFile, Conflict, EditError, Precondition,
+        view::{apply_add, apply_save, build_snapshot, check_save, save_changes, touched_fields},
+    },
 };
+use std::path::Path;
+
 use rfd::FileDialog;
 use tauri::Url;
 use tauri_plugin_opener::OpenerExt;
 
 use crate::{
     app_state::AppState,
-    provider_config::{
-        apply_add, apply_save, build_snapshot, load_config, save_changes, shown_connections,
-    },
+    provider_config::{SnapshotRegistry, load_config, shown_connections},
 };
 
 #[cfg(test)]
@@ -55,26 +58,57 @@ pub(crate) async fn recheck_connection(
 /// Async, so reading the file and listing WSL distributions (the registry) never holds the
 /// window's thread, which runs the commands that are not.
 #[tauri::command]
-pub(crate) async fn get_provider_config() -> Result<ProviderConfigSnapshotDto, BackendError> {
-    tauri::async_runtime::spawn_blocking(|| {
-        let connections = match load_config()? {
-            Some(file) => shown_connections(&file),
-            None => Vec::new(),
-        };
-        Ok(build_snapshot(&connections, &current_os()))
-    })
-    .await
-    .map_err(|err| BackendError::internal(format!("Reading settings failed: {err}")))?
+pub(crate) async fn get_provider_config(
+    state: tauri::State<'_, AppState>,
+) -> Result<ProviderConfigSnapshotDto, BackendError> {
+    let path = state.host.config_path().map(Path::to_path_buf);
+    let file = tauri::async_runtime::spawn_blocking(move || load_config(path.as_deref()))
+        .await
+        .map_err(|err| BackendError::internal(format!("Reading settings failed: {err}")))??;
+    snapshot_of(&state.snapshots, file.unwrap_or_else(ConfigFile::empty)).await
 }
 
+/// The issues a save of `request` would be refused for, without saving it: values that do not
+/// fit, and fields another program changed since its `basedOn` snapshot (compared with the file
+/// as it is now, read without the lock). It cannot promise the save succeeds; the file may
+/// change again, and the save's own precondition decides.
+#[tauri::command]
+pub(crate) async fn check_provider_config(
+    state: tauri::State<'_, AppState>,
+    request: ProviderConfigSaveRequestDto,
+) -> Result<Vec<ProviderConfigFieldIssueDto>, BackendError> {
+    let base = state.snapshots.base(
+        request.based_on.as_deref(),
+        &request.connection,
+        &touched_fields(&request),
+    );
+    let path = state.host.config_path().map(Path::to_path_buf);
+    let current = tauri::async_runtime::spawn_blocking(move || load_config(path.as_deref()))
+        .await
+        .map_err(|err| BackendError::internal(format!("Reading settings failed: {err}")))??;
+    Ok(check_save(&request, base, current.as_ref()))
+}
+
+/// Saves one connection's edits if what they were based on is still so under the config lock;
+/// another program's change to a touched or account field is a `conflict`, and nothing is
+/// saved.
 #[tauri::command]
 pub(crate) async fn save_provider_config(
     state: tauri::State<'_, AppState>,
     request: ProviderConfigSaveRequestDto,
 ) -> Result<ProviderConfigSaveResponseDto, BackendError> {
     let changes = save_changes(&request)?;
+    let precondition = state
+        .snapshots
+        .base(
+            request.based_on.as_deref(),
+            &request.connection,
+            &touched_fields(&request),
+        )
+        .precondition()
+        .map_err(|conflict| unknown_base_refusal(&state, conflict))?;
     Ok(
-        update_config(&state, move |file| apply_save(file, &changes))
+        update_config(&state, precondition, move |file| apply_save(file, &changes))
             .await?
             .1,
     )
@@ -85,18 +119,33 @@ pub(crate) async fn add_connection(
     state: tauri::State<'_, AppState>,
     request: AddConnectionRequestDto,
 ) -> Result<AddConnectionResponseDto, BackendError> {
-    let (created, saved) = update_config(&state, move |file| apply_add(file, &request)).await?;
+    let (created, saved) = update_config(&state, Precondition::None, move |file| {
+        apply_add(file, &request)
+    })
+    .await?;
     diagnostics::info("settings", format!("Added {created}"));
     Ok(AddConnectionResponseDto { created, saved })
 }
 
+/// Removes a connection if it is still the one its `basedOn` snapshot showed: one another
+/// program replaced under the same name, or changed to another account, is a `conflict`.
 #[tauri::command]
 pub(crate) async fn remove_connection(
     state: tauri::State<'_, AppState>,
-    request: ConnectionId,
+    request: RemoveConnectionRequestDto,
 ) -> Result<ProviderConfigSaveResponseDto, BackendError> {
-    let removed = request.clone();
-    let (_, saved) = update_config(&state, move |file| file.remove(&request)).await?;
+    let RemoveConnectionRequestDto {
+        connection,
+        based_on,
+    } = request;
+    let precondition = state
+        .snapshots
+        .base(based_on.as_deref(), &connection, &[])
+        .precondition()
+        .map_err(|conflict| unknown_base_refusal(&state, conflict))?;
+    let removed = connection.clone();
+    let (_, saved) =
+        update_config(&state, precondition, move |file| file.remove(&connection)).await?;
     diagnostics::info("settings", format!("Removed {removed}"));
     Ok(saved)
 }
@@ -108,34 +157,26 @@ pub(crate) async fn remove_connection(
 /// is logged too; a refused or conflicting change is only answered.
 async fn update_config<T: Send + 'static>(
     state: &AppState,
+    precondition: Precondition,
     change: impl FnOnce(&mut ConfigFile) -> Result<T, ConfigEditError> + Send + 'static,
 ) -> Result<(T, ProviderConfigSaveResponseDto), BackendError> {
-    let edit = state
-        .host
-        .edit(Precondition::None, change)
-        .await
-        .map_err(|err| {
-            let err = BackendError::from(err);
-            if matches!(
-                err.kind,
-                BackendErrorKind::Internal | BackendErrorKind::Unprotectable
-            ) {
-                diagnostics::error("settings", &err.message);
-            }
-            err
-        })?;
+    let edit = state.host.edit(precondition, change).await.map_err(|err| {
+        let err = BackendError::from(err);
+        if matches!(
+            err.kind,
+            BackendErrorKind::Internal | BackendErrorKind::Unprotectable
+        ) {
+            diagnostics::error("settings", &err.message);
+        }
+        err
+    })?;
     match edit.installed {
         Some(_) => diagnostics::info("settings", "Settings saved, re-running provider checks"),
         // Written, but the app quit before it installed them: no check runs for them now.
         None => diagnostics::info("settings", "Settings saved; they apply at the next start"),
     }
 
-    let connections = edit.connections;
-    // Off the async workers: it lists WSL distributions from the registry.
-    let snapshot =
-        tauri::async_runtime::spawn_blocking(move || build_snapshot(&connections, &current_os()))
-            .await
-            .map_err(|err| BackendError::internal(format!("Reading settings failed: {err}")))?;
+    let snapshot = snapshot_of(&state.snapshots, edit.file).await?;
     Ok((
         edit.value,
         ProviderConfigSaveResponseDto {
@@ -144,6 +185,36 @@ async fn update_config<T: Send + 'static>(
             installed: edit.installed,
         },
     ))
+}
+
+/// A save or removal whose base this app no longer holds: refused at once, the connection named
+/// by the label it shows now (its base, which would say the label it had, is gone).
+fn unknown_base_refusal(state: &AppState, mut conflict: Conflict) -> BackendError {
+    if conflict.label.is_none() {
+        conflict.label = state
+            .host
+            .providers_response()
+            .providers
+            .into_iter()
+            .find(|info| info.connection == conflict.connection)
+            .map(|info| info.label);
+    }
+    BackendError::from(EditError::Conflict(conflict))
+}
+
+/// The snapshot of `file` with the revision a save based on it names; built off the async
+/// workers, since it lists WSL distributions from the registry.
+async fn snapshot_of(
+    snapshots: &SnapshotRegistry,
+    file: ConfigFile,
+) -> Result<ProviderConfigSnapshotDto, BackendError> {
+    let connections = shown_connections(&file);
+    let revision = snapshots.register(file);
+    tauri::async_runtime::spawn_blocking(move || {
+        build_snapshot(&connections, &current_os(), revision)
+    })
+    .await
+    .map_err(|err| BackendError::internal(format!("Reading settings failed: {err}")))
 }
 
 #[tauri::command]

@@ -1,0 +1,20 @@
+<app-feedback tone="warn" block>
+  Another program removed {{ label() }}. Your changes are kept: discard them, or add the source
+  again and save them into it.
+  <button appButton type="button" feedbackAction [busy]="adding()" (click)="addAgain()">
+    Add it again
+  </button>
+  <button
+    appButton
+    type="button"
+    feedbackAction
+    variant="ghost"
+    [disabled]="adding()"
+    (click)="discard()"
+  >
+    Discard my changes
+  </button>
+</app-feedback>
+@if (failure(); as failed) {
+  <app-feedback tone="error" block>{{ failed.message }}</app-feedback>
+}

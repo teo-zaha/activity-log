@@ -4,6 +4,10 @@ import { render, screen, within } from '@testing-library/angular'
 import userEvent from '@testing-library/user-event'
 import { describe, expect, it, vi } from 'vitest'
 import type {
+  AddConnectionRequestDto,
+  AddConnectionResponseDto,
+  ProviderConfigFieldIssueDto,
+  RemoveConnectionRequestDto,
   ConnectionId,
   InstallReceipt,
   ProviderConfigConnectionStateDto,
@@ -84,12 +88,19 @@ const jiraFields: ProviderConfigFieldStateDto[] = [
 const snapshot = (
   fields: ProviderConfigFieldStateDto[] = jiraFields
 ): ProviderConfigSnapshotDto => ({
+  revision: 'r1',
   kinds: [],
   connections: [state('git', []), state('jira', fields)],
 })
 
+type CheckProviderConfig = (
+  request: ProviderConfigSaveRequestDto
+) => Promise<ProviderConfigFieldIssueDto[]>
+
 interface Setup {
   switchProvider: (provider: SettingsProviderRow) => Promise<void>
+  /** The backend's check of a draft; no issues unless a test says otherwise. */
+  checkProviderConfig: ReturnType<typeof vi.fn<CheckProviderConfig>>
   /** Resolves once the pane has handled what is pending and rendered it. */
   whenStable: () => Promise<void>
   loadProviderConfig: ReturnType<typeof vi.fn<() => Promise<ProviderConfigSnapshotDto>>>
@@ -101,6 +112,16 @@ interface Setup {
   receiptStanding: ReturnType<typeof vi.fn<(receipt: InstallReceipt) => ReceiptStanding>>
   /** The host on screen, as the coordinator has it. */
   hostEpoch: WritableSignal<string | null>
+  removeConnection: ReturnType<
+    typeof vi.fn<(request: RemoveConnectionRequestDto) => Promise<ProviderConfigSaveResponseDto>>
+  >
+  addConnection: ReturnType<
+    typeof vi.fn<(request: AddConnectionRequestDto) => Promise<AddConnectionResponseDto>>
+  >
+  /** The pane's `removed` output. */
+  removed: ReturnType<typeof vi.fn>
+  /** The pane's `opened` output: a connection to show instead. */
+  opened: ReturnType<typeof vi.fn>
 }
 
 async function setup(
@@ -120,18 +141,29 @@ async function setup(
     Promise.resolve()
   )
   const receiptStanding = vi.fn<(receipt: InstallReceipt) => ReceiptStanding>(() => 'current')
+  const checkProviderConfig = vi.fn<CheckProviderConfig>(() => Promise.resolve([]))
   const hostEpoch = signal<string | null>('mock-host')
+  const removeConnection =
+    vi.fn<(request: RemoveConnectionRequestDto) => Promise<ProviderConfigSaveResponseDto>>()
+  const addConnection =
+    vi.fn<(request: AddConnectionRequestDto) => Promise<AddConnectionResponseDto>>()
+  const removed = vi.fn()
+  const opened = vi.fn()
   const { rerender, fixture } = await render(SettingsSourcePaneComponent, {
     inputs: { provider: options.provider ?? row(1) },
+    on: { removed, opened },
     providers: [
       {
         provide: ActivityService,
         useValue: {
           loadProviderConfig,
           saveProviderConfig,
+          checkProviderConfig,
           recheckConnection,
           receiptStanding,
           hostEpoch,
+          removeConnection,
+          addConnection,
         },
       },
       {
@@ -142,8 +174,13 @@ async function setup(
     ],
   })
   return {
+    removeConnection,
+    addConnection,
+    removed,
+    opened,
     loadProviderConfig,
     saveProviderConfig,
+    checkProviderConfig,
     recheckConnection,
     receiptStanding,
     hostEpoch,
@@ -525,19 +562,432 @@ describe('SettingsSourcePaneComponent', () => {
     expect(load).toHaveBeenCalledTimes(2)
   })
 
-  it('flags invalid values and blocks saving until they are fixed', async () => {
-    await setup()
+  it('shows what the backend refuses as a field is left, and blocks saving until it changes', async () => {
+    const { checkProviderConfig } = await setup()
+    checkProviderConfig.mockResolvedValue([
+      {
+        field: { kind: 'value', key: 'baseUrl' },
+        problem: 'invalid',
+        message: 'Enter an http or https address.',
+      },
+    ])
     const baseUrl = await screen.findByLabelText('Base URL')
 
     await userEvent.clear(baseUrl)
-    await userEvent.type(baseUrl, 'not a url')
-    expect(await screen.findByText('Enter a valid URL.')).toBeTruthy()
+    await userEvent.type(baseUrl, 'ftp://jira.internal')
+    expect(screen.queryByText('Enter an http or https address.')).toBeNull()
+    await userEvent.tab()
+    expect(await screen.findByText('Enter an http or https address.')).toBeTruthy()
+    expect(checkProviderConfig).toHaveBeenLastCalledWith({
+      connection: { source: 'jira', name: 'default' },
+      values: [{ key: 'baseUrl', value: 'ftp://jira.internal' }],
+      basedOn: 'r1',
+    })
     expect(screen.getByRole('button', { name: 'Save settings' })).toHaveProperty('disabled', true)
 
+    // The issue was about the value it checked: another value shows none until it is checked.
     await userEvent.clear(baseUrl)
     await userEvent.type(baseUrl, 'https://jira.internal')
-    expect(screen.queryByText('Enter a valid URL.')).toBeNull()
+    expect(screen.queryByText('Enter an http or https address.')).toBeNull()
     expect(screen.getByRole('button', { name: 'Save settings' })).toHaveProperty('disabled', false)
+  })
+
+  it('drops a check that comes back after the draft it checked was changed', async () => {
+    const { checkProviderConfig, whenStable } = await setup()
+    let resolve: (issues: ProviderConfigFieldIssueDto[]) => void = () => undefined
+    const answer = new Promise<ProviderConfigFieldIssueDto[]>(done => (resolve = done))
+    checkProviderConfig.mockReturnValueOnce(answer)
+    const baseUrl = await screen.findByLabelText('Base URL')
+
+    await userEvent.clear(baseUrl)
+    await userEvent.type(baseUrl, 'ftp://a')
+    await userEvent.tab()
+    await userEvent.type(baseUrl, '-b')
+    resolve([
+      {
+        field: { kind: 'value', key: 'baseUrl' },
+        problem: 'invalid',
+        message: 'Enter an http or https address.',
+      },
+    ])
+    await answer
+    await whenStable()
+
+    expect(screen.queryByText('Enter an http or https address.')).toBeNull()
+    expect(screen.getByRole('button', { name: 'Save settings' })).toHaveProperty('disabled', false)
+  })
+
+  it('keeps a failed check with the draft it was sent for', async () => {
+    const { checkProviderConfig, whenStable } = await setup()
+    let reject: (error: unknown) => void = () => undefined
+    const answer = new Promise<ProviderConfigFieldIssueDto[]>((_, fail) => (reject = fail))
+    checkProviderConfig.mockReturnValueOnce(answer)
+    const baseUrl = await screen.findByLabelText('Base URL')
+
+    await userEvent.clear(baseUrl)
+    await userEvent.type(baseUrl, 'https://a.example.org')
+    await userEvent.tab()
+    await userEvent.type(baseUrl, '/b')
+    reject(new BackendFailure('internal', 'the check broke'))
+    await answer.catch(() => undefined)
+    await whenStable()
+    expect(screen.queryByText(/Checking the settings failed|the check broke/)).toBeNull()
+
+    // The same failure for the draft on screen shows.
+    checkProviderConfig.mockRejectedValueOnce(new BackendFailure('internal', 'the check broke'))
+    await userEvent.click(baseUrl)
+    await userEvent.tab()
+    await whenStable()
+    expect(await screen.findByText(/the check broke/)).toBeTruthy()
+  })
+
+  describe('a save another program got in before', () => {
+    /** The settings as another program left them: the Base URL changed, as `r2`. */
+    const theirs = (): ProviderConfigSnapshotDto => ({
+      ...snapshot(
+        jiraFields.map(field =>
+          field.key === 'baseUrl' ? { ...field, value: 'https://theirs.example.org' } : field
+        )
+      ),
+      revision: 'r2',
+    })
+    const changedHere = (): ProviderConfigFieldIssueDto[] => [
+      {
+        field: { kind: 'value', key: 'baseUrl' },
+        problem: 'changed',
+        message: 'Another program changed this since you started editing.',
+      },
+    ]
+
+    /** A first read as the pane opened, and every later one as another program left it. */
+    const loads = (
+      later: ProviderConfigSnapshotDto
+    ): ReturnType<typeof vi.fn<() => Promise<ProviderConfigSnapshotDto>>> =>
+      vi
+        .fn<() => Promise<ProviderConfigSnapshotDto>>()
+        .mockResolvedValueOnce(snapshot())
+        .mockResolvedValue(later)
+
+    it('reads the settings again when a check finds a conflict, and saves over the ones on screen', async () => {
+      // Astra's probe: the Base URL changes on disk, the user edits it and leaves the field.
+      const load = loads(theirs())
+      const { saveProviderConfig, checkProviderConfig, loadProviderConfig, whenStable } =
+        await setup({ load })
+      checkProviderConfig.mockImplementation(request =>
+        Promise.resolve(request.basedOn === 'r1' ? changedHere() : [])
+      )
+      const baseUrl = await screen.findByLabelText('Base URL')
+      await userEvent.clear(baseUrl)
+      await userEvent.type(baseUrl, 'https://mine.example.org')
+      await userEvent.tab()
+      await whenStable()
+
+      expect(loadProviderConfig).toHaveBeenCalledTimes(2)
+      expect(await screen.findByText(/Now: https:\/\/theirs\.example\.org/)).toBeTruthy()
+      expect(baseUrl).toHaveProperty('value', 'https://mine.example.org')
+      expect(screen.getByRole('button', { name: 'Save settings' })).toHaveProperty('disabled', true)
+
+      await userEvent.click(screen.getByRole('button', { name: 'Keep my changes' }))
+      await whenStable()
+      expect(screen.getByRole('button', { name: 'Save settings' })).toHaveProperty(
+        'disabled',
+        false
+      )
+      saveProviderConfig.mockResolvedValue(saveResponse(jiraFields))
+      await userEvent.click(screen.getByRole('button', { name: 'Save settings' }))
+
+      expect(saveProviderConfig).toHaveBeenLastCalledWith(
+        expect.objectContaining({ basedOn: 'r2' })
+      )
+    })
+
+    it('says what the label is now when another program changed it', async () => {
+      const relabelled = { ...snapshot(), revision: 'r2' }
+      relabelled.connections = relabelled.connections.map(state =>
+        state.connection.source === 'jira' ? { ...state, label: 'Theirs' } : state
+      )
+      const { checkProviderConfig, whenStable } = await setup({ load: loads(relabelled) })
+      checkProviderConfig.mockImplementation(request =>
+        Promise.resolve(
+          request.basedOn === 'r1'
+            ? [
+                {
+                  field: { kind: 'label' },
+                  problem: 'changed',
+                  message: 'Another program changed this since you started editing.',
+                },
+              ]
+            : []
+        )
+      )
+      const label = await screen.findByLabelText('Label')
+      await userEvent.clear(label)
+      await userEvent.type(label, 'Mine')
+      await userEvent.tab()
+      await whenStable()
+
+      expect(await screen.findByText(/Now: Theirs\./)).toBeTruthy()
+    })
+
+    it('moves the draft of a removed source to the connection added again, by its new id', async () => {
+      // Astra's probe: another program removed `jira/default`, then restored that name; adding
+      // Jira again created `jira/jira`. The draft goes with the source the user added.
+      const gone: ProviderConfigSnapshotDto = { revision: 'r2', kinds: [], connections: [] }
+      const drafts = new SourceDrafts()
+      const { checkProviderConfig, addConnection, removed, opened, whenStable } = await setup({
+        load: loads(gone),
+        drafts,
+      })
+      checkProviderConfig.mockImplementation(request =>
+        Promise.resolve(
+          request.basedOn === 'r1'
+            ? [
+                {
+                  field: { kind: 'connection' },
+                  problem: 'removed',
+                  message: 'Another program removed this source.',
+                },
+              ]
+            : []
+        )
+      )
+      const baseUrl = await screen.findByLabelText('Base URL')
+      await userEvent.clear(baseUrl)
+      await userEvent.type(baseUrl, 'https://mine.example.org')
+      await userEvent.tab()
+      await whenStable()
+
+      expect(await screen.findByText(/Another program removed Jira/)).toBeTruthy()
+      addConnection.mockResolvedValue({
+        created: { source: 'jira', name: 'jira' },
+        snapshot: { ...snapshot(), revision: 'r3' },
+        providersResponse: { currentOs: 'linux', providers: providerInfo },
+        installed: { epoch: 'mock-host', revision: 2 },
+      })
+      await userEvent.click(screen.getByRole('button', { name: 'Add it again' }))
+      await whenStable()
+
+      expect(addConnection).toHaveBeenCalledWith({ source: 'jira', label: 'Jira' })
+      expect(opened).toHaveBeenCalledWith('jira/jira')
+      expect(drafts.get('jira/jira')).toMatchObject({
+        basedOn: 'r3',
+        values: { baseUrl: { kind: 'replace', value: 'https://mine.example.org' } },
+      })
+      expect(drafts.get('jira/default')).toBeUndefined()
+      expect(removed).not.toHaveBeenCalled()
+    })
+
+    it('keeps the draft where it was when the app on screen did not install the re-add', async () => {
+      const gone: ProviderConfigSnapshotDto = { revision: 'r2', kinds: [], connections: [] }
+      const drafts = new SourceDrafts()
+      const { checkProviderConfig, addConnection, receiptStanding, opened, whenStable } =
+        await setup({ load: loads(gone), drafts })
+      checkProviderConfig.mockImplementation(request =>
+        Promise.resolve(
+          request.basedOn === 'r1'
+            ? [
+                {
+                  field: { kind: 'connection' },
+                  problem: 'removed',
+                  message: 'Another program removed this source.',
+                },
+              ]
+            : []
+        )
+      )
+      const baseUrl = await screen.findByLabelText('Base URL')
+      await userEvent.type(baseUrl, '/x')
+      await userEvent.tab()
+      await whenStable()
+      addConnection.mockResolvedValue({
+        created: { source: 'jira', name: 'jira' },
+        snapshot: { ...snapshot(), revision: 'r3' },
+        providersResponse: { currentOs: 'linux', providers: providerInfo },
+        installed: null,
+      })
+      receiptStanding.mockReturnValue('notInstalled')
+
+      await userEvent.click(await screen.findByRole('button', { name: 'Add it again' }))
+      await whenStable()
+
+      expect(opened).not.toHaveBeenCalled()
+      expect(drafts.get('jira/default')).toBeDefined()
+      expect(drafts.get('jira/jira')).toBeUndefined()
+    })
+
+    it('follows a newer snapshot when the source is shown again, so its changes can be kept', async () => {
+      let reads = 0
+      const load = vi.fn<() => Promise<ProviderConfigSnapshotDto>>(() => {
+        reads++
+        return Promise.resolve(reads === 1 ? snapshot() : { ...theirs(), revision: `r${reads}` })
+      })
+      const { saveProviderConfig, checkProviderConfig, switchProvider, whenStable } = await setup({
+        load,
+      })
+      checkProviderConfig.mockImplementation(request =>
+        Promise.resolve(request.basedOn === 'r1' ? changedHere() : [])
+      )
+      const baseUrl = await screen.findByLabelText('Base URL')
+      await userEvent.clear(baseUrl)
+      await userEvent.type(baseUrl, 'https://mine.example.org')
+      await userEvent.tab()
+      await whenStable()
+      expect(await screen.findByText(/Now: https/)).toBeTruthy()
+
+      // Away to another source and back: the pane reads a newer snapshot.
+      await switchProvider(row(0))
+      await whenStable()
+      await switchProvider(row(1))
+      await whenStable()
+      await userEvent.click(await screen.findByRole('button', { name: 'Keep my changes' }))
+      await whenStable()
+
+      expect(screen.getByRole('button', { name: 'Save settings' })).toHaveProperty(
+        'disabled',
+        false
+      )
+      saveProviderConfig.mockResolvedValue(saveResponse(jiraFields))
+      await userEvent.click(screen.getByRole('button', { name: 'Save settings' }))
+      expect(saveProviderConfig).toHaveBeenLastCalledWith(
+        expect.objectContaining({ basedOn: `r${reads}` })
+      )
+    })
+
+    it('discards the draft of a removed source on request', async () => {
+      const gone: ProviderConfigSnapshotDto = { revision: 'r2', kinds: [], connections: [] }
+      const { checkProviderConfig, removed, whenStable } = await setup({ load: loads(gone) })
+      checkProviderConfig.mockImplementation(request =>
+        Promise.resolve(
+          request.basedOn === 'r1'
+            ? [
+                {
+                  field: { kind: 'connection' },
+                  problem: 'removed',
+                  message: 'Another program removed this source.',
+                },
+              ]
+            : []
+        )
+      )
+      const baseUrl = await screen.findByLabelText('Base URL')
+      await userEvent.type(baseUrl, '/x')
+      await userEvent.tab()
+      await whenStable()
+
+      await userEvent.click(await screen.findByRole('button', { name: 'Discard my changes' }))
+
+      expect(removed).toHaveBeenCalled()
+    })
+
+    it('reads the settings again after a removal another program got in before', async () => {
+      const { removeConnection, loadProviderConfig, whenStable } = await setup({
+        load: loads({ ...snapshot(), revision: 'r2' }),
+      })
+      removeConnection.mockRejectedValueOnce(
+        new BackendFailure('conflict', 'Jira was removed or replaced by another program.')
+      )
+      await screen.findByLabelText('Base URL')
+      const remove = async (): Promise<void> => {
+        await userEvent.click(screen.getByRole('button', { name: 'Remove source' }))
+        await userEvent.click(
+          within(screen.getByRole('alertdialog')).getByRole('button', { name: 'Remove' })
+        )
+        await whenStable()
+      }
+
+      await remove()
+      await vi.waitFor(() => expect(loadProviderConfig).toHaveBeenCalledTimes(2))
+      await whenStable()
+      removeConnection.mockResolvedValue(saveResponse(jiraFields))
+      await remove()
+
+      await vi.waitFor(() => expect(removeConnection).toHaveBeenCalledTimes(2))
+      expect(removeConnection).toHaveBeenLastCalledWith({
+        source: 'jira',
+        name: 'default',
+        basedOn: 'r2',
+      })
+    })
+
+    it('keeps the draft, shows what changed, and saves it over the new settings on request', async () => {
+      const load = vi
+        .fn<() => Promise<ProviderConfigSnapshotDto>>()
+        .mockResolvedValueOnce(snapshot())
+        .mockResolvedValue(theirs())
+      const { saveProviderConfig, checkProviderConfig, whenStable } = await setup({ load })
+      // Another program saved after the draft's settings were read: the check knows it once the
+      // save was refused, as the backend would.
+      let refused = false
+      saveProviderConfig.mockImplementationOnce(() => {
+        refused = true
+        return Promise.reject(
+          new BackendFailure('conflict', 'Jira was changed by another program. Nothing was saved.')
+        )
+      })
+      checkProviderConfig.mockImplementation(request =>
+        Promise.resolve(refused && request.basedOn === 'r1' ? changedHere() : [])
+      )
+      const baseUrl = await screen.findByLabelText('Base URL')
+      await userEvent.clear(baseUrl)
+      await userEvent.type(baseUrl, 'https://mine.example.org')
+
+      await userEvent.click(screen.getByRole('button', { name: 'Save settings' }))
+      await whenStable()
+
+      expect(saveProviderConfig).toHaveBeenLastCalledWith(
+        expect.objectContaining({ basedOn: 'r1' })
+      )
+      expect(await screen.findByText(/Now: https:\/\/theirs\.example\.org/)).toBeTruthy()
+      expect(baseUrl).toHaveProperty('value', 'https://mine.example.org')
+      expect(screen.getByRole('button', { name: 'Save settings' })).toHaveProperty('disabled', true)
+
+      await userEvent.click(screen.getByRole('button', { name: 'Keep my changes' }))
+      await whenStable()
+      expect(screen.queryByText(/Now: https/)).toBeNull()
+      saveProviderConfig.mockResolvedValue(saveResponse(jiraFields))
+      await userEvent.click(screen.getByRole('button', { name: 'Save settings' }))
+
+      expect(saveProviderConfig).toHaveBeenLastCalledWith({
+        connection: { source: 'jira', name: 'default' },
+        values: [{ key: 'baseUrl', value: 'https://mine.example.org' }],
+        basedOn: 'r2',
+      })
+    })
+
+    it('offers no saving over a source another program removed', async () => {
+      const { saveProviderConfig, checkProviderConfig, whenStable } = await setup()
+      let refused = false
+      saveProviderConfig.mockImplementationOnce(() => {
+        refused = true
+        return Promise.reject(
+          new BackendFailure('conflict', 'Jira was removed or replaced by another program.')
+        )
+      })
+      checkProviderConfig.mockImplementation(() =>
+        Promise.resolve(
+          refused
+            ? [
+                {
+                  field: { kind: 'connection' },
+                  problem: 'removed',
+                  message: 'Another program removed this source.',
+                },
+              ]
+            : []
+        )
+      )
+      const baseUrl = await screen.findByLabelText('Base URL')
+      await userEvent.clear(baseUrl)
+      await userEvent.type(baseUrl, 'https://mine.example.org')
+
+      await userEvent.click(screen.getByRole('button', { name: 'Save settings' }))
+      await whenStable()
+
+      expect(await screen.findByText('Another program removed this source.')).toBeTruthy()
+      expect(screen.queryByRole('button', { name: 'Keep my changes' })).toBeNull()
+      expect(screen.getByRole('button', { name: 'Save settings' })).toHaveProperty('disabled', true)
+      expect(baseUrl).toHaveProperty('value', 'https://mine.example.org')
+    })
   })
 
   it('enables Save and Discard only while there are changes, and Discard drops them', async () => {
@@ -571,6 +1021,7 @@ describe('SettingsSourcePaneComponent', () => {
     expect(saveProviderConfig).toHaveBeenCalledWith({
       connection: { source: 'jira', name: 'default' },
       values: [{ key: 'maxResults', value: '25' }],
+      basedOn: 'r1',
     })
     expect(await screen.findByText('Jira saved')).toBeTruthy()
     expect(screen.getByLabelText('Max results')).toHaveProperty('value', '25')
@@ -587,6 +1038,7 @@ describe('SettingsSourcePaneComponent', () => {
     expect(saveProviderConfig).toHaveBeenLastCalledWith({
       connection: { source: 'jira', name: 'default' },
       values: [{ key: 'apiToken', value: 's3cret' }],
+      basedOn: 'r1',
     })
     await screen.findByText('Jira saved')
 
@@ -599,6 +1051,7 @@ describe('SettingsSourcePaneComponent', () => {
     expect(saveProviderConfig).toHaveBeenLastCalledWith({
       connection: { source: 'jira', name: 'default' },
       values: [{ key: 'apiToken', value: null }],
+      basedOn: 'r1',
     })
   })
 
@@ -613,6 +1066,7 @@ describe('SettingsSourcePaneComponent', () => {
     expect(saveProviderConfig).toHaveBeenCalledWith({
       connection: { source: 'jira', name: 'default' },
       values: [{ key: 'verifyTls', value: 'false' }],
+      basedOn: 'r1',
     })
   })
 
@@ -690,6 +1144,7 @@ describe('SettingsSourcePaneComponent', () => {
     expect(saveProviderConfig).toHaveBeenCalledWith({
       connection: { source: 'jira', name: 'default' },
       values: [{ key: 'webhook', value: 'abc' }],
+      basedOn: 'r1',
     })
   })
 
@@ -708,6 +1163,7 @@ describe('SettingsSourcePaneComponent', () => {
     ]
     const both = (): Promise<ProviderConfigSnapshotDto> =>
       Promise.resolve({
+        revision: 'r1',
         kinds: [],
         connections: [state('git', gitFields), state('jira', jiraFields)],
       })
@@ -759,6 +1215,7 @@ describe('SettingsSourcePaneComponent', () => {
       value: '/code',
     }
     const both = (): ProviderConfigSnapshotDto => ({
+      revision: 'r1',
       kinds: [],
       connections: [state('git', [gitRoot]), state('jira', jiraFields)],
     })
@@ -861,10 +1318,10 @@ describe('SettingsSourcePaneComponent', () => {
       await userEvent.click(
         within(screen.getByRole('alertdialog')).getByRole('button', { name: 'Remove' })
       )
-      expect(await sent).toEqual({ source: 'jira', name: 'default' })
+      expect(await sent).toEqual({ source: 'jira', name: 'default', basedOn: 'r1' })
       const toasted = nextToast()
       answer({
-        snapshot: { kinds: [], connections: [state('git', [gitRoot])] },
+        snapshot: { revision: 'r2', kinds: [], connections: [state('git', [gitRoot])] },
         providersResponse: { currentOs: 'linux', providers: providerInfo },
         installed: { epoch: 'mock-host', revision: 1 },
       })
@@ -1018,14 +1475,14 @@ describe('SettingsSourcePaneComponent', () => {
       await userEvent.click(
         within(screen.getByRole('alertdialog')).getByRole('button', { name: 'Remove' })
       )
-      expect(await sent).toEqual({ source: 'jira', name: 'default' })
+      expect(await sent).toEqual({ source: 'jira', name: 'default', basedOn: 'r1' })
 
       await rerender({ partialUpdate: true, inputs: { provider: row(0) } })
       await fixture.whenStable()
       expect(screen.getByLabelText('Git root')).toHaveProperty('value', '/work')
       const toasted = nextToast()
       answer({
-        snapshot: { kinds: [], connections: [state('git', [gitRoot])] },
+        snapshot: { revision: 'r2', kinds: [], connections: [state('git', [gitRoot])] },
         providersResponse: { currentOs: 'linux', providers: providerInfo },
         installed: { epoch: 'mock-host', revision: 1 },
       })
@@ -1062,6 +1519,7 @@ describe('SettingsSourcePaneComponent', () => {
   it('shows the edits left in a draft when the pane opens', async () => {
     const drafts = new SourceDrafts()
     drafts.set('jira/default', {
+      basedOn: 'r1',
       label: null,
       values: { baseUrl: { kind: 'replace', value: 'https://jira.internal' } },
       lists: {},
@@ -1117,6 +1575,7 @@ describe('SettingsSourcePaneComponent', () => {
       expect(saveProviderConfig).toHaveBeenCalledWith({
         connection: { source: 'jira', name: 'default' },
         values: [{ key: 'GIT_DIRS', value: ['/home/me', '/srv/repos'] }],
+        basedOn: 'r1',
       })
     })
 
@@ -1130,17 +1589,63 @@ describe('SettingsSourcePaneComponent', () => {
       expect(saveProviderConfig).toHaveBeenCalledWith({
         connection: { source: 'jira', name: 'default' },
         values: [{ key: 'GIT_DIRS', value: [] }],
+        basedOn: 'r1',
       })
     })
 
-    it('checks every item against the value type', async () => {
-      await setupList(gitDirs({ itemType: 'url', items: ['https://a.example'] }))
+    it('shows an item’s issue on its row, blank rows not counted', async () => {
+      const { checkProviderConfig } = await setupList(
+        gitDirs({ itemType: 'url', items: ['https://a.example'] })
+      )
+      checkProviderConfig.mockResolvedValue([
+        {
+          field: { kind: 'item', key: 'GIT_DIRS', index: 1 },
+          problem: 'invalid',
+          message: 'Enter an http or https address.',
+        },
+      ])
 
       await userEvent.click(screen.getByRole('button', { name: 'Add' }))
-      await userEvent.type(screen.getByLabelText('Git Dirs 2'), 'not a url')
+      await userEvent.click(screen.getByRole('button', { name: 'Add' }))
+      await userEvent.type(screen.getByLabelText('Git Dirs 3'), 'not a url')
+      await userEvent.tab()
 
-      expect(await screen.findByText('Enter a valid URL.')).toBeTruthy()
+      const row = await screen.findByLabelText('Git Dirs 3')
+      expect(row.getAttribute('aria-invalid')).toBe('true')
+      expect(screen.getByLabelText('Git Dirs 2').getAttribute('aria-invalid')).not.toBe('true')
       expect(screen.getByRole('button', { name: 'Save settings' })).toHaveProperty('disabled', true)
+    })
+
+    it('shows a list another program changed as a whole, and holds Save until it is resolved', async () => {
+      const { checkProviderConfig, whenStable } = await setupList(
+        gitDirs({ isSet: true, items: ['/work'] })
+      )
+      checkProviderConfig.mockImplementation(request =>
+        Promise.resolve(
+          request.basedOn === 'r1'
+            ? [
+                {
+                  field: { kind: 'value', key: 'GIT_DIRS' },
+                  problem: 'changed',
+                  message: 'Another program changed this since you started editing.',
+                },
+              ]
+            : []
+        )
+      )
+
+      await userEvent.type(screen.getByLabelText('Git Dirs 1'), '/more')
+      await userEvent.tab()
+      await whenStable()
+
+      expect(await screen.findByText(/Another program changed this.*Now: \/work\./)).toBeTruthy()
+      expect(screen.getByRole('button', { name: 'Save settings' })).toHaveProperty('disabled', true)
+      await userEvent.click(screen.getByRole('button', { name: 'Keep my changes' }))
+      await whenStable()
+      expect(screen.getByRole('button', { name: 'Save settings' })).toHaveProperty(
+        'disabled',
+        false
+      )
     })
 
     it('resets a configured list to its default', async () => {
@@ -1153,6 +1658,7 @@ describe('SettingsSourcePaneComponent', () => {
       expect(saveProviderConfig).toHaveBeenCalledWith({
         connection: { source: 'jira', name: 'default' },
         values: [{ key: 'GIT_DIRS', value: null }],
+        basedOn: 'r1',
       })
     })
   })
@@ -1160,6 +1666,7 @@ describe('SettingsSourcePaneComponent', () => {
 
 describe('SettingsSourcePaneComponent connections', () => {
   const connectionsSnapshot = (): ProviderConfigSnapshotDto => ({
+    revision: 'r1',
     kinds: [],
     connections: [state('git', []), state('jira', jiraFields)],
   })
@@ -1217,7 +1724,7 @@ describe('SettingsSourcePaneComponent connections', () => {
     await vi.waitFor(() => expect(removeConnection).toHaveBeenCalled())
     // Host b replaces host a, and the user edits b's connection of the same name.
     receiptStanding.mockReturnValue('otherHost')
-    drafts.set('jira/default', { label: 'Host B edit', values: {}, lists: {} })
+    drafts.set('jira/default', { basedOn: 'r1', label: 'Host B edit', values: {}, lists: {} })
 
     const toasted = nextToast()
     answer({
@@ -1235,7 +1742,7 @@ describe('SettingsSourcePaneComponent connections', () => {
     const { removeConnection, removed, receiptStanding } = await setupConnections()
     receiptStanding.mockImplementation(receipt => (receipt === null ? 'notInstalled' : 'current'))
     const drafts = TestBed.inject(SourceDrafts)
-    drafts.set('jira/default', { label: 'Edited meanwhile', values: {}, lists: {} })
+    drafts.set('jira/default', { basedOn: 'r1', label: 'Edited meanwhile', values: {}, lists: {} })
     // The file holds the removal, but the app quit before it installed it.
     removeConnection.mockResolvedValueOnce({
       snapshot: connectionsSnapshot(),
@@ -1263,7 +1770,7 @@ describe('SettingsSourcePaneComponent connections', () => {
     const question = await screen.findByRole('alertdialog')
     await userEvent.click(within(question).getByRole('button', { name: 'Remove' }))
     await vi.waitFor(() => expect(removeConnection).toHaveBeenCalled())
-    drafts.set('jira/default', { label: 'Added again', values: {}, lists: {} })
+    drafts.set('jira/default', { basedOn: 'r1', label: 'Added again', values: {}, lists: {} })
 
     const toasted = nextToast()
     answer({
@@ -1289,6 +1796,7 @@ describe('SettingsSourcePaneComponent connections', () => {
       connection: { source: 'jira', name: 'default' },
       label: 'Company Jira',
       values: [],
+      basedOn: 'r1',
     })
   })
 
@@ -1304,7 +1812,11 @@ describe('SettingsSourcePaneComponent connections', () => {
     await userEvent.click(within(dialog).getByRole('button', { name: 'Remove' }))
 
     await vi.waitFor(() =>
-      expect(removeConnection).toHaveBeenCalledWith({ source: 'jira', name: 'default' })
+      expect(removeConnection).toHaveBeenCalledWith({
+        source: 'jira',
+        name: 'default',
+        basedOn: 'r1',
+      })
     )
     expect(removed).toHaveBeenCalled()
     expect(await screen.findByText('Jira removed')).toBeTruthy()

@@ -1100,7 +1100,7 @@ describe('ActivityDataService', () => {
       providers: providers(epoch, revision, list, authority),
     })
     const saved = (epoch: string, revision: number): ProviderConfigSaveResponseDto => ({
-      snapshot: { kinds: [], connections: [] },
+      snapshot: { revision: 'r1', kinds: [], connections: [] },
       providersResponse: { currentOs: 'linux', providers: providerInfo },
       installed: { epoch, revision },
     })

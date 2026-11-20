@@ -7,9 +7,11 @@ import type {
   ConnectionId,
   ExportOutcome,
   ExportRequest,
+  ProviderConfigFieldIssueDto,
   ProviderConfigSaveRequestDto,
   ProviderConfigSaveResponseDto,
   ProviderConfigSnapshotDto,
+  RemoveConnectionRequestDto,
   RecheckAnswer,
 } from '../../generated/activity'
 import { BackendOperations, type ReadOperation } from './backend-contract'
@@ -39,6 +41,12 @@ export class ActivityBackendClient {
     return this.transport.call(BackendOperations.saveProviderConfig, request)
   }
 
+  checkProviderConfig(
+    request: ProviderConfigSaveRequestDto
+  ): Promise<ProviderConfigFieldIssueDto[]> {
+    return this.transport.call(BackendOperations.checkProviderConfig, request)
+  }
+
   addConnection(request: AddConnectionRequestDto): Promise<AddConnectionResponseDto> {
     return this.transport.call(BackendOperations.addConnection, request)
   }
@@ -47,8 +55,8 @@ export class ActivityBackendClient {
     return this.transport.call(BackendOperations.recheckConnection, connection)
   }
 
-  removeConnection(connection: ConnectionId): Promise<ProviderConfigSaveResponseDto> {
-    return this.transport.call(BackendOperations.removeConnection, connection)
+  removeConnection(request: RemoveConnectionRequestDto): Promise<ProviderConfigSaveResponseDto> {
+    return this.transport.call(BackendOperations.removeConnection, request)
   }
 
   export(request: ExportRequest): Promise<ExportOutcome> {

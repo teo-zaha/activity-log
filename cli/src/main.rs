@@ -202,7 +202,7 @@ fn change_sources(action: SourcesCommand, config: Option<&Path>) -> Result<()> {
                 _ => Precondition::None,
             };
             let change: Change = Box::new(move |file| {
-                file.set(&id, key, Some(&raw))?;
+                file.set(&id, key, raw.as_deref())?;
                 Ok(None)
             });
             (precondition, change)

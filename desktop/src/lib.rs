@@ -33,6 +33,7 @@ pub fn run() {
             commands::get_runtime_state,
             commands::collect,
             commands::get_provider_config,
+            commands::check_provider_config,
             commands::save_provider_config,
             commands::add_connection,
             commands::remove_connection,

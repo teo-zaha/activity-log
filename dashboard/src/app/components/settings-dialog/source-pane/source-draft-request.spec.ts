@@ -3,7 +3,14 @@ import type {
   ProviderConfigConnectionStateDto,
   ProviderConfigFieldStateDto,
 } from '../../../generated/activity'
-import { type DraftForm, draftOf, formOf, sameDraft, saveRequestOf } from './source-draft-request'
+import {
+  type DraftForm,
+  type SourceDraft,
+  draftOf,
+  formOf,
+  sameDraft,
+  saveRequestOf,
+} from './source-draft-request'
 
 const fields: ProviderConfigFieldStateDto[] = [
   {
@@ -43,15 +50,19 @@ const work: ProviderConfigConnectionStateDto = {
 }
 
 const form = (changes: Partial<DraftForm> = {}): DraftForm => ({ ...formOf(work), ...changes })
+/** The snapshot the drafts below were made against. */
+const BASE = 'r1'
+const draftFrom = (state: ProviderConfigConnectionStateDto, drafted: DraftForm): SourceDraft =>
+  draftOf(state, drafted, BASE)
 
 describe('drafts and the requests they make', () => {
   it('asks for nothing while the fields show what is saved', () => {
-    expect(draftOf(work, form())).toEqual({ label: null, values: {}, lists: {} })
-    expect(saveRequestOf(work, draftOf(work, form()))).toBeNull()
+    expect(draftFrom(work, form())).toEqual({ basedOn: BASE, label: null, values: {}, lists: {} })
+    expect(saveRequestOf(work, draftFrom(work, form()))).toBeNull()
   })
 
   it('keeps only what the user changed, and sends that for the draft’s connection', () => {
-    const draft = draftOf(
+    const draft = draftFrom(
       work,
       form({
         label: ' Office ',
@@ -61,6 +72,7 @@ describe('drafts and the requests they make', () => {
     )
 
     expect(draft).toEqual({
+      basedOn: BASE,
       label: 'Office',
       values: { apiToken: { kind: 'clear' } },
       lists: { projects: { kind: 'replace', items: ['AL', 'OPS'] } },
@@ -72,11 +84,15 @@ describe('drafts and the requests they make', () => {
         { key: 'apiToken', value: null },
         { key: 'projects', value: ['AL', 'OPS'] },
       ],
+      basedOn: BASE,
     })
   })
 
   it('leaves a field changed elsewhere alone when the draft did not touch it', () => {
-    const draft = draftOf(work, form({ values: { ...formOf(work).values, apiToken: 'new-token' } }))
+    const draft = draftFrom(
+      work,
+      form({ values: { ...formOf(work).values, apiToken: 'new-token' } })
+    )
     // Another writer changed the URL; the draft only replaced the token.
     const changed: ProviderConfigConnectionStateDto = {
       ...work,
@@ -90,7 +106,7 @@ describe('drafts and the requests they make', () => {
   })
 
   it('resets a configured list to its default', () => {
-    const draft = draftOf(work, form({ resets: new Set(['projects']) }))
+    const draft = draftFrom(work, form({ resets: new Set(['projects']) }))
 
     expect(draft.lists).toEqual({ projects: { kind: 'reset' } })
     expect(formOf(work, draft).resets).toEqual(new Set(['projects']))
@@ -98,7 +114,7 @@ describe('drafts and the requests they make', () => {
   })
 
   it('shows a draft’s edits over the saved settings', () => {
-    const draft = draftOf(
+    const draft = draftFrom(
       work,
       form({ label: 'Office', values: { ...formOf(work).values, baseUrl: '' } })
     )
@@ -120,17 +136,19 @@ describe('drafts and the requests they make', () => {
       ),
     }
 
-    expect(saveRequestOf(padded, draftOf(padded, formOf(padded)))).toBeNull()
+    expect(saveRequestOf(padded, draftFrom(padded, formOf(padded)))).toBeNull()
   })
 
   it('tells drafts apart by what they ask, not by when they were made', () => {
-    const draft = draftOf(
+    const draft = draftFrom(
       work,
       form({ label: 'Office', values: { ...formOf(work).values, baseUrl: '' } })
     )
 
-    expect(sameDraft(draft, draftOf(work, formOf(work, draft)))).toBe(true)
+    expect(sameDraft(draft, draftFrom(work, formOf(work, draft)))).toBe(true)
     expect(sameDraft(draft, { ...draft, label: 'Home' })).toBe(false)
     expect(sameDraft(draft, { ...draft, lists: { projects: { kind: 'reset' } } })).toBe(false)
+    // The same edits against another snapshot are another draft: its check and its save differ.
+    expect(sameDraft(draft, { ...draft, basedOn: 'r2' })).toBe(false)
   })
 })

@@ -2,10 +2,11 @@ import { inject, Service } from '@angular/core'
 import type {
   AddConnectionRequestDto,
   AddConnectionResponseDto,
-  ConnectionId,
+  ProviderConfigFieldIssueDto,
   ProviderConfigSaveRequestDto,
   ProviderConfigSaveResponseDto,
   ProviderConfigSnapshotDto,
+  RemoveConnectionRequestDto,
 } from '../generated/activity'
 import { ActivityBackendClient } from './backend/backend-client'
 import { ActivityDataService } from './activity-data.service'
@@ -28,12 +29,19 @@ export class ProviderConfigFacade {
     return this.data.saveSettings(() => this.backend.saveProviderConfig(request))
   }
 
+  /** What a save of `request` would be refused for; changes nothing. */
+  checkProviderConfig(
+    request: ProviderConfigSaveRequestDto
+  ): Promise<ProviderConfigFieldIssueDto[]> {
+    return this.backend.checkProviderConfig(request)
+  }
+
   /** Adds a connection; the providers list then shows it with its startup check. */
   addConnection(request: AddConnectionRequestDto): Promise<AddConnectionResponseDto> {
     return this.data.saveSettings(() => this.backend.addConnection(request))
   }
 
-  removeConnection(connection: ConnectionId): Promise<ProviderConfigSaveResponseDto> {
-    return this.data.saveSettings(() => this.backend.removeConnection(connection))
+  removeConnection(request: RemoveConnectionRequestDto): Promise<ProviderConfigSaveResponseDto> {
+    return this.data.saveSettings(() => this.backend.removeConnection(request))
   }
 }

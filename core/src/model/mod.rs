@@ -36,8 +36,11 @@ pub use common::{
     export_request::ExportRequest, identity_evidence::IdentityEvidence,
     output_format::OutputFormat,
     provider_config_connection_state_dto::ProviderConfigConnectionStateDto,
+    provider_config_field_issue_dto::ProviderConfigFieldIssueDto,
+    provider_config_field_ref_dto::ProviderConfigFieldRefDto,
     provider_config_field_state_dto::ProviderConfigFieldStateDto,
     provider_config_field_value_dto::ProviderConfigFieldValueDto,
+    provider_config_issue_kind_dto::ProviderConfigIssueKindDto,
     provider_config_save_request_dto::ProviderConfigSaveRequestDto,
     provider_config_save_response_dto::ProviderConfigSaveResponseDto,
     provider_config_save_value_dto::ProviderConfigSaveValueDto,
@@ -46,7 +49,8 @@ pub use common::{
     provider_config_value_type_dto::ProviderConfigValueTypeDto, provider_info::ProviderInfo,
     provider_kind_dto::ProviderKindDto, provider_problem::ProviderProblem,
     provider_status::ProviderStatus, providers_response::ProvidersResponse,
-    range_error::RangeError, remote_identity::RemoteIdentity, source::Source,
+    range_error::RangeError, remote_identity::RemoteIdentity,
+    remove_connection_request_dto::RemoveConnectionRequestDto, source::Source,
     supported_os::SupportedOs, timestamp::Timestamp,
 };
 pub use diagnostics::{log_entry::LogEntry, log_level::LogLevel, logs_response::LogsResponse};

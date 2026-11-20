@@ -13,7 +13,7 @@ import {
   linkedSignal,
 } from '@angular/core'
 import { mediaQuery } from '@signality/core/browser/media-query'
-import { connectionKey } from '../../providers/connection'
+import { connectionKey, isSource } from '../../providers/connection'
 import { getProviderAdapter } from '../../providers/provider-adapter'
 import { ActivityService } from '../../services/activity.service'
 import { downQuery } from '../../utils/breakpoints'
@@ -26,6 +26,8 @@ import { SettingsGeneralPaneComponent } from './general-pane/settings-general-pa
 import { SettingsLogsPaneComponent } from './logs-pane/settings-logs-pane.component'
 import { SettingsAddSourcePaneComponent } from './add-source-pane/settings-add-source-pane.component'
 import { SettingsSourcePaneComponent } from './source-pane/settings-source-pane.component'
+import { RemovedSourceDraftComponent } from './removed-source-draft/removed-source-draft.component'
+import { SourceDrafts } from './source-pane/source-drafts.service'
 import { SettingsPageActions } from './settings-page-actions'
 import {
   isSettingsPage,
@@ -59,6 +61,7 @@ const DESCRIPTIONS: Partial<Record<SettingsPage, string>> = {
     SettingsLogsPaneComponent,
     SettingsAddSourcePaneComponent,
     SettingsSourcePaneComponent,
+    RemovedSourceDraftComponent,
   ],
   providers: [SettingsPageActions],
   templateUrl: './settings-dialog.component.html',
@@ -110,6 +113,24 @@ export class SettingsDialogComponent {
       this.activity.providersLoaded() || this.activity.connection().status.kind === 'failed'
     return known ? 'missing' : 'loading'
   })
+  private readonly drafts = inject(SourceDrafts)
+
+  /**
+   * A source the sources no longer list that still has unsaved changes (another program removed
+   * it while they were made): they stay reachable, to discard or to save into the source added
+   * again.
+   */
+  protected readonly removedDraft = computed(() => {
+    const section = this.section()
+    if (this.missingSource() !== 'missing' || isSettingsPage(section)) return null
+    const draft = this.drafts.get(section)
+    const slash = section.indexOf('/')
+    const source = section.slice(0, slash)
+    if (draft === undefined || !isSource(source)) return null
+    const connection = { source, name: section.slice(slash + 1) }
+    return { connection, label: draft.label ?? getProviderAdapter(source).label }
+  })
+
   protected readonly title = computed(() => {
     switch (this.section()) {
       case 'logs':

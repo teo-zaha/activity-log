@@ -196,6 +196,7 @@ fn an_edit_failure_keeps_its_typed_cause() {
     let id = ConnectionId::new(Source::Gitlab, "work");
     let conflict = EditError::Conflict(Conflict {
         connection: id.clone(),
+        label: None,
         kind: ConflictKind::Removed,
         fields: Vec::new(),
     });

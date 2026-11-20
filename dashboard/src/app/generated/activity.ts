@@ -72,7 +72,12 @@ supported: boolean,
  */
 wslDistros: Array<string>, };
 
-export type ProviderConfigSnapshotDto = { kinds: Array<ProviderKindDto>, connections: Array<ProviderConfigConnectionStateDto>, };
+export type ProviderConfigSnapshotDto = { 
+/**
+ * Names the file as this snapshot read it; a save or removal sends it back as `basedOn`,
+ * so a change another program made meanwhile is a conflict, not overwritten.
+ */
+revision: string, kinds: Array<ProviderKindDto>, connections: Array<ProviderConfigConnectionStateDto>, };
 
 export type ProviderConfigValueDto = string | Array<string>;
 
@@ -82,7 +87,12 @@ export type ProviderConfigSaveValueDto = { key: string,
  */
 value: ProviderConfigValueDto | null, };
 
-export type ProviderConfigSaveRequestDto = { connection: ConnectionId, label?: string, values: Array<ProviderConfigSaveValueDto>, };
+export type ProviderConfigSaveRequestDto = { connection: ConnectionId, label?: string, values: Array<ProviderConfigSaveValueDto>, 
+/**
+ * The snapshot `revision` the draft was built from; without it (an older dashboard), the
+ * save has no precondition.
+ */
+basedOn?: string, };
 
 export type ProviderConfigSaveResponseDto = { snapshot: ProviderConfigSnapshotDto, providersResponse: ProvidersResponse, 
 /**
@@ -90,6 +100,12 @@ export type ProviderConfigSaveResponseDto = { snapshot: ProviderConfigSnapshotDt
  * the host shut down before it installed it: the file holds it, no revision shows it.
  */
 installed: InstallReceipt | null, };
+
+export type ProviderConfigFieldRefDto = { "kind": "label" } | { "kind": "value", key: string, } | { "kind": "item", key: string, index: number, } | { "kind": "connection" };
+
+export type ProviderConfigIssueKindDto = "invalid" | "changed" | "removed" | "replaced" | "unknownBase";
+
+export type ProviderConfigFieldIssueDto = { field: ProviderConfigFieldRefDto, problem: ProviderConfigIssueKindDto, message: string, };
 
 export type AddConnectionRequestDto = { source: Source, 
 /**
@@ -100,6 +116,13 @@ label?: string,
  * For Git: read this WSL distribution instead of this computer.
  */
 wslDistro?: string, };
+
+export type RemoveConnectionRequestDto = { 
+/**
+ * The snapshot `revision` the pane showed: removing a connection another program replaced
+ * under the same name is a conflict. Without it, no precondition.
+ */
+basedOn?: string, source: Source, name: string, };
 
 export type AddConnectionResponseDto = { created: ConnectionId, snapshot: ProviderConfigSnapshotDto, providersResponse: ProvidersResponse, 
 /**

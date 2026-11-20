@@ -9,7 +9,9 @@ use crate::{model::SupportedOs, provider::current_os};
 
 /// Repositories, or folders to search for them. Unset means the home folder: this computer's,
 /// or the distribution's (`~`) for a WSL connection.
-pub const GIT_DIRS: ProviderConfigKey = ProviderConfigKey::optional_string("GIT_DIRS").list_of();
+pub const GIT_DIRS: ProviderConfigKey = ProviderConfigKey::optional_string("GIT_DIRS")
+    .labelled("Git Dirs")
+    .list_of();
 const CONFIG_KEYS: &[ProviderConfigKey] = &[GIT_DIRS];
 
 #[derive(Debug, Clone, PartialEq, Eq)]

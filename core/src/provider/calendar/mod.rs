@@ -8,7 +8,7 @@ use crate::{
 
 crate::provider_config! {
     pub struct CalendarConfig {
-        pub ics_url => CALENDAR_ICS_URL: Password,
+        pub ics_url => CALENDAR_ICS_URL "Calendar ICS URL": Password,
     }
 }
 

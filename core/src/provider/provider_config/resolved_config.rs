@@ -154,13 +154,39 @@ pub fn provider_config_value_matches_type(
     value: &str,
     value_type: ProviderConfigValueType,
 ) -> bool {
+    value_problem(value, value_type).is_none()
+}
+
+/// Why `value` is no value of `value_type`, as the settings say it; `None` when it is one. The
+/// one rule for every value read or written (B64: the settings and the file agree). A URL with
+/// a user name or password is a URL here: a file that holds one still loads, and its check says
+/// what to change; only a new value is refused for it ([`url_with_credentials`]).
+pub fn value_problem(value: &str, value_type: ProviderConfigValueType) -> Option<&'static str> {
+    let unless = |fits: bool, message| (!fits).then_some(message);
     match value_type {
-        ProviderConfigValueType::String | ProviderConfigValueType::Password => true,
-        ProviderConfigValueType::Bool => parse_bool(value).is_some(),
-        ProviderConfigValueType::Int => value.parse::<i64>().is_ok(),
-        ProviderConfigValueType::Email => looks_like_email(value),
-        ProviderConfigValueType::Url => Url::parse(value).is_ok(),
+        ProviderConfigValueType::String | ProviderConfigValueType::Password => None,
+        ProviderConfigValueType::Bool => {
+            unless(parse_bool(value).is_some(), "Enter true or false.")
+        }
+        ProviderConfigValueType::Int => {
+            unless(value.trim().parse::<i64>().is_ok(), "Enter a whole number.")
+        }
+        ProviderConfigValueType::Email => {
+            unless(looks_like_email(value), "Enter an email address.")
+        }
+        ProviderConfigValueType::Url => unless(
+            Url::parse(value.trim()).is_ok_and(|url| {
+                matches!(url.scheme(), "http" | "https")
+                    && url.host_str().is_some_and(|host| !host.is_empty())
+            }),
+            "Enter an http or https address.",
+        ),
     }
+}
+
+/// Whether a URL value names a user or a password, which belong in the token field.
+pub fn url_with_credentials(value: &str) -> bool {
+    Url::parse(value.trim()).is_ok_and(|url| !url.username().is_empty() || url.password().is_some())
 }
 
 /// Reads a list value: a JSON array of strings, or else a comma-separated list, cleaned by

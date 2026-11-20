@@ -34,7 +34,18 @@
 
       <div class="settings-scroll">
         @if (selectedProvider(); as provider) {
-          <app-settings-source-pane [provider]="provider" (removed)="afterRemove()" />
+          <app-settings-source-pane
+            [provider]="provider"
+            (removed)="afterRemove()"
+            (opened)="select($event)"
+          />
+        } @else if (removedDraft(); as removed) {
+          <app-removed-source-draft
+            [connection]="removed.connection"
+            [label]="removed.label"
+            (opened)="select($event)"
+            (discarded)="afterRemove()"
+          />
         } @else if (missingSource(); as state) {
           @if (state === 'loading') {
             <div class="source-loading" role="status">

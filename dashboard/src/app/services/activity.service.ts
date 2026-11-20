@@ -5,9 +5,11 @@ import type {
   ConnectionId,
   InstallReceipt,
   OutputFormat,
+  ProviderConfigFieldIssueDto,
   ProviderConfigSaveRequestDto,
   ProviderConfigSaveResponseDto,
   ProviderConfigSnapshotDto,
+  RemoveConnectionRequestDto,
 } from '../generated/activity'
 import type { SettingsSelection } from '../components/settings-dialog/settings-dialog.types'
 import type { ConnectionKey, EntryKey } from '../providers/connection'
@@ -284,12 +286,18 @@ export class ActivityService {
     return this.providerConfig.saveProviderConfig(request)
   }
 
+  checkProviderConfig(
+    request: ProviderConfigSaveRequestDto
+  ): Promise<ProviderConfigFieldIssueDto[]> {
+    return this.providerConfig.checkProviderConfig(request)
+  }
+
   addConnection(request: AddConnectionRequestDto): Promise<AddConnectionResponseDto> {
     return this.providerConfig.addConnection(request)
   }
 
-  removeConnection(connection: ConnectionId): Promise<ProviderConfigSaveResponseDto> {
-    return this.providerConfig.removeConnection(connection)
+  removeConnection(request: RemoveConnectionRequestDto): Promise<ProviderConfigSaveResponseDto> {
+    return this.providerConfig.removeConnection(request)
   }
 
   /** Where a save's receipt stands against the state on screen, see `ReceiptStanding`. */

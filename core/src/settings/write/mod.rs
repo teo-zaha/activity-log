@@ -67,9 +67,11 @@ impl EditError {
     /// The message for the user, naming a conflicting connection by `label` when given.
     pub fn message(&self, label: Option<&str>) -> String {
         match self {
-            Self::Conflict(conflict) => {
-                conflict.message(label.unwrap_or(&conflict.connection.to_string()))
-            }
+            Self::Conflict(conflict) => conflict.message(
+                label
+                    .or(conflict.label.as_deref())
+                    .unwrap_or(&conflict.connection.to_string()),
+            ),
             other => other.to_string(),
         }
     }
@@ -80,9 +82,7 @@ impl std::fmt::Display for EditError {
         match self {
             Self::NoLocation => write!(f, "{NO_LOCATION}"),
             Self::Busy => write!(f, "The settings file is busy; try again."),
-            Self::Conflict(conflict) => {
-                write!(f, "{}", conflict.message(&conflict.connection.to_string()))
-            }
+            Self::Conflict(_) => write!(f, "{}", self.message(None)),
             Self::FileChanged { name } => write!(f, "{name} changed while you were editing"),
             Self::Rejected(err) => write!(f, "{err}"),
             Self::Invalid(err) => write!(f, "{err}"),

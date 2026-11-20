@@ -115,8 +115,8 @@ pub enum BadConfig {
 /// What a settings edit installed.
 pub struct Edit<T> {
     pub value: T,
-    /// The connections of the file as written.
-    pub connections: Vec<Connection>,
+    /// The file as written, instances included: what a writer's next base is taken from.
+    pub file: ConfigFile,
     /// The providers as installed: a connection whose check runs again is checking.
     pub providers: ProvidersResponse,
     /// The providers part's revision that first holds this edit, or the current one when the
@@ -636,6 +636,11 @@ impl Host {
     /// Edits the config file (see [`edit_config`]) and installs the result. The write and the
     /// install run in a task of their own, so dropping this future never leaves a written file
     /// uninstalled.
+    /// The settings file this host installs, `None` without a settings location.
+    pub fn config_path(&self) -> Option<&Path> {
+        self.inner.path.as_deref()
+    }
+
     pub async fn edit<T: Send + 'static>(
         &self,
         precondition: Precondition,
@@ -681,7 +686,7 @@ impl Host {
             // Nothing changed anywhere: the providers as they are, which hold the file.
             self.apply(|_, state| InstallOutcome::Shown(state.providers_response()))
         } else {
-            self.apply_install(connections.clone(), Some(edited.content))
+            self.apply_install(connections, Some(edited.content))
         };
         drop(config);
         let receipt = applied.published.receipt();
@@ -691,7 +696,7 @@ impl Host {
         };
         Ok(Edit {
             value: edited.value,
-            connections,
+            file: edited.file,
             providers,
             installed,
         })
