@@ -9,7 +9,7 @@ use tempfile::tempdir;
 mod generate_ts_support;
 
 use crate::{Cli, build_collect_request, parse_format, provider_summary_lines};
-use generate_ts_support::generate_ts;
+use generate_ts_support::{generate_ts, stale_files};
 
 #[test]
 fn parses_cli_defaults() {
@@ -39,6 +39,61 @@ fn generates_ts_files() {
     assert!(generated.contains("export type ProviderConfigSnapshotDto"));
     assert!(generated.contains("export type ProviderConfigSaveRequestDto"));
     assert!(generated.contains("export type ProviderConfigSaveResponseDto"));
+}
+
+#[test]
+fn the_barrel_exports_the_file_written() {
+    let tmp = tempdir().unwrap();
+    generate_ts(&tmp.path().join("custom.ts")).unwrap();
+    assert_eq!(
+        std::fs::read_to_string(tmp.path().join("index.ts")).unwrap(),
+        "export * from './custom'\n"
+    );
+}
+
+#[test]
+fn an_index_out_file_is_refused_before_anything_is_written() {
+    let tmp = tempdir().unwrap();
+    assert!(generate_ts(&tmp.path().join("index.ts")).is_err());
+    assert!(!tmp.path().join("index.ts").exists());
+}
+
+/// The barrel would overwrite the contract, or name it with a specifier TypeScript cannot read.
+#[test]
+fn an_out_file_the_barrel_cannot_name_is_refused_before_anything_is_written() {
+    let tmp = tempdir().unwrap();
+    for name in ["Index.ts", "INDEX.TS", "team's.ts", "a b.ts", "activity.js"] {
+        assert!(generate_ts(&tmp.path().join(name)).is_err(), "{name}");
+    }
+    assert!(std::fs::read_dir(tmp.path()).unwrap().next().is_none());
+}
+
+/// A file that cannot be read is an error, not drift.
+#[cfg(unix)]
+#[test]
+fn a_file_the_check_cannot_read_is_an_error() {
+    let tmp = tempdir().unwrap();
+    let out = tmp.path().join("activity.ts");
+    std::fs::create_dir(&out).unwrap();
+    assert!(stale_files(&out).is_err());
+}
+
+#[test]
+fn the_drift_check_names_changed_files_and_writes_nothing() {
+    let tmp = tempdir().unwrap();
+    let out = tmp.path().join("activity.ts");
+    assert_eq!(stale_files(&out).unwrap().len(), 2);
+    assert!(!out.exists());
+
+    generate_ts(&out).unwrap();
+    assert!(stale_files(&out).unwrap().is_empty());
+
+    std::fs::write(&out, "export type Stale = 1\n").unwrap();
+    assert_eq!(stale_files(&out).unwrap(), vec![out.clone()]);
+    assert_eq!(
+        std::fs::read_to_string(&out).unwrap(),
+        "export type Stale = 1\n"
+    );
 }
 
 #[test]

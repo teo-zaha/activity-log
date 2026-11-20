@@ -465,7 +465,7 @@ Run this before treating changes as done:
 pnpm verify
 ```
 
-`verify` is the repo-wide gate. It runs TypeScript generation, formatter checks, Rust checks, clippy, Rust tests, dashboard lint, dashboard tests, Angular type-checking, and the dashboard build.
+`verify` is the repo-wide gate. It checks that the generated TypeScript matches the Rust contract (`pnpm types:check`), then runs formatter checks, Rust checks, clippy, Rust tests, dashboard lint, dashboard tests, Angular type-checking, and the dashboard build.
 
 For Windows-specific backend coverage that also runs on macOS/Linux, use:
 
@@ -638,7 +638,7 @@ A connection is named `kind/name`, or by its name alone when that is unique. Val
 pnpm types:generate
 ```
 
-This writes Rust-backed DTO types into `dashboard/src/app/generated/`. The Rust contract is the source of truth; don't edit the generated files by hand.
+This writes Rust-backed DTO types into `dashboard/src/app/generated/`. The Rust contract is the source of truth; don't edit the generated files by hand. `pnpm types:check` writes nothing and fails when the files differ from what the Rust contract generates; `pnpm verify` runs it first, so regenerate before verifying.
 
 </details>
 
