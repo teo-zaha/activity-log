@@ -4,8 +4,9 @@ use activity_log_core::{
     diagnostics,
     export::render_export_request,
     model::{
-        ActivityState, BackendError, BackendErrorKind, CollectRequest, ConnectionId, ExportRequest,
-        LogsResponse, RuntimeState, ShownActivity,
+        ActivityLog, ActivityState, BackendError, BackendErrorKind, CollectAnswer, CollectRequest,
+        CollectionFailedResponse, ConnectionId, ExportFile, ExportRequest, LogsResponse,
+        ProvidersResponse, RecheckAnswer, RuntimeState, ShownActivity,
     },
     runtime::{
         BadConfig, Forwarder, Host, PING_INTERVAL, RunSpawner, RuntimeMessage, answer_collect,
@@ -28,10 +29,12 @@ use rocket::{
     serde::json::Json,
 };
 
-type JsonResponse = status::Custom<Json<serde_json::Value>>;
+/// A route's answer: its body with its status, or a `BackendError` with the status of its kind.
+/// Rocket serializes either; a body that would not serialize answers 500, never a panic.
+type Answer<T> = Result<status::Custom<Json<T>>, status::Custom<Json<BackendError>>>;
 
-fn json(status: Status, body: impl serde::Serialize) -> JsonResponse {
-    status::Custom(status, Json(serde_json::to_value(body).unwrap()))
+fn json<T>(status: Status, body: T) -> Answer<T> {
+    Ok(status::Custom(status, Json(body)))
 }
 
 /// The status an error answers with; its body is the error itself.
@@ -49,25 +52,33 @@ fn status_of(kind: BackendErrorKind) -> Status {
     }
 }
 
-fn error(err: BackendError) -> JsonResponse {
-    json(status_of(err.kind), err)
+fn error<T>(err: BackendError) -> Answer<T> {
+    Err(status::Custom(status_of(err.kind), Json(err)))
 }
 
 /// A route's answer, or its error with the error's status.
-fn answer(status: Status, result: Result<impl serde::Serialize, BackendError>) -> JsonResponse {
+fn answer<T>(status: Status, result: Result<T, BackendError>) -> Answer<T> {
     match result {
         Ok(body) => json(status, body),
         Err(err) => error(err),
     }
 }
 
+/// `GET /api/activity`'s body: the log, or how the last collection failed, without a tag.
+#[derive(serde::Serialize)]
+#[serde(untagged)]
+enum ActivityBody {
+    Log(Arc<ActivityLog>),
+    Failed(CollectionFailedResponse),
+}
+
 /// A running collection answers 202 with the log of what is in so far.
-fn activity_response(state: ActivityState) -> JsonResponse {
+fn activity_response(state: ActivityState) -> Answer<ActivityBody> {
     match state {
-        ActivityState::Running { log } => json(Status::Accepted, &*log),
-        ActivityState::Ready { log } => json(Status::Ok, &*log),
+        ActivityState::Running { log } => json(Status::Accepted, ActivityBody::Log(log)),
+        ActivityState::Ready { log } => json(Status::Ok, ActivityBody::Log(log)),
         // The state of the last collection, not a failed request: its range stays readable.
-        ActivityState::Failed { failure } => json(Status::Ok, &failure),
+        ActivityState::Failed { failure } => json(Status::Ok, ActivityBody::Failed(failure)),
         ActivityState::Empty => error(BackendError::no_data()),
     }
 }
@@ -76,7 +87,7 @@ fn activity_response(state: ActivityState) -> JsonResponse {
 // between requests.
 
 #[get("/api/activity")]
-async fn get_activity(host: &State<Host>) -> JsonResponse {
+async fn get_activity(host: &State<Host>) -> Answer<ActivityBody> {
     host.reload_if_changed().await;
     activity_response(host.activity())
 }
@@ -138,14 +149,14 @@ enum Next {
 }
 
 #[get("/api/providers")]
-async fn get_providers(host: &State<Host>) -> Json<serde_json::Value> {
+async fn get_providers(host: &State<Host>) -> Json<ProvidersResponse> {
     host.reload_if_changed().await;
-    Json(serde_json::to_value(host.providers_response()).unwrap())
+    Json(host.providers_response())
 }
 
 /// Starts the collection and answers at once; `GET /api/activity` shows it filling up.
 #[post("/api/collect", format = "json", data = "<request>")]
-async fn post_collect(host: &State<Host>, request: Json<CollectRequest>) -> JsonResponse {
+async fn post_collect(host: &State<Host>, request: Json<CollectRequest>) -> Answer<CollectAnswer> {
     host.reload_if_changed().await;
     match answer_collect(host, &request) {
         Ok(answer) => {
@@ -163,7 +174,7 @@ async fn post_collect(host: &State<Host>, request: Json<CollectRequest>) -> Json
 /// Answers with the sources, this one checking, or 404 for a connection the server does not
 /// have.
 #[post("/api/connections/recheck", format = "json", data = "<request>")]
-async fn post_recheck(host: &State<Host>, request: Json<ConnectionId>) -> JsonResponse {
+async fn post_recheck(host: &State<Host>, request: Json<ConnectionId>) -> Answer<RecheckAnswer> {
     host.reload_if_changed().await;
     answer(Status::Ok, answer_recheck(host, &request))
 }
@@ -174,7 +185,7 @@ const EXPORT_LIMIT: ByteUnit = ByteUnit::Mebibyte(64);
 
 /// The entries the dashboard shows as a file for the browser to download.
 #[post("/api/export", format = "json", data = "<body>")]
-async fn post_export(body: Data<'_>) -> JsonResponse {
+async fn post_export(body: Data<'_>) -> Answer<ExportFile> {
     let body = match body.open(EXPORT_LIMIT).into_bytes().await {
         Ok(body) if body.is_complete() => body.into_inner(),
         Ok(_) => {

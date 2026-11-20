@@ -1,6 +1,7 @@
 import { Service, inject, signal } from '@angular/core'
 import { listener, setupSync } from '@signality/core/browser/listener'
 import type { Window as TauriWindow } from '@tauri-apps/api/window'
+import type { MaximizeButtonState } from '../generated/activity'
 import {
   APP_CONTEXT_MENU,
   type SelectionRects,
@@ -8,12 +9,6 @@ import {
   selectionRects,
 } from '../utils/context-menu'
 import { RuntimeEnvironmentService } from './backend/runtime-environment.service'
-
-/** The pointer over the maximize button, as `desktop/src/window_chrome/` reports it. */
-export interface MaximizeButtonState {
-  hovered: boolean
-  pressed: boolean
-}
 
 /**
  * The desktop window's frame: dragging and maximizing it from the app's own surfaces and, where

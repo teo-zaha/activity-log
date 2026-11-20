@@ -2,7 +2,8 @@ import { signal } from '@angular/core'
 import { type RenderResult, fireEvent, render, screen } from '@testing-library/angular'
 import userEvent from '@testing-library/user-event'
 import { describe, expect, it, vi } from 'vitest'
-import { type MaximizeButtonState, WindowChromeService } from '../../services/window-chrome.service'
+import type { MaximizeButtonState } from '../../generated/activity'
+import { WindowChromeService } from '../../services/window-chrome.service'
 import { WindowControlsComponent } from './window-controls.component'
 
 function fakeChrome(): {

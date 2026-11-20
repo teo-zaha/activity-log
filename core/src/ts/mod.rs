@@ -9,7 +9,7 @@ use crate::{
         CollectedActivitySummary, CollectionFailedResponse, ConnectionCount, ConnectionId,
         DescriptionBlock, ExportFile, ExportOutcome, ExportRequest, GitEntry, GitLabEntry,
         GitLabType, InstallReceipt, JiraEntry, JiraEntryType, ListItem, LogEntry, LogLevel,
-        LogsResponse, MeetingWeight, OutlookEntry, OutputFormat, PartStamp,
+        LogsResponse, MaximizeButtonState, MeetingWeight, OutlookEntry, OutputFormat, PartStamp,
         ProviderConfigConnectionStateDto, ProviderConfigFieldStateDto, ProviderConfigFieldValueDto,
         ProviderConfigSaveRequestDto, ProviderConfigSaveResponseDto, ProviderConfigSaveValueDto,
         ProviderConfigSnapshotDto, ProviderConfigValueDto, ProviderConfigValueTypeDto,
@@ -82,6 +82,7 @@ pub fn activity_typescript() -> String {
         export_decl::<ShownActivity>(&cfg),
         export_decl::<CollectAnswer>(&cfg),
         export_decl::<RecheckAnswer>(&cfg),
+        export_decl::<MaximizeButtonState>(&cfg),
     ];
 
     let mut output =
@@ -94,20 +95,28 @@ pub fn activity_typescript() -> String {
 
 /// Values the dashboard checks the way the backend does, so it never has its own copy.
 fn constants() -> String {
-    let kinds = BackendErrorKind::iter()
-        .map(|kind| serde_json::to_string(&kind).expect("a kind serializes"))
-        .collect::<Vec<_>>()
-        .join(", ");
+    let kinds = wire_names(BackendErrorKind::iter());
+    let sources = wire_names(Source::iter());
     format!(
         "/** The longest range the backend collects or exports, in days (`CollectOptions::MAX_DAYS`). */\n\
          export const COLLECT_MAX_DAYS = {}\n\n\
          /** Every `BackendErrorKind`, for telling a backend error body from any other. */\n\
          export const BACKEND_ERROR_KINDS = [{kinds}] as const satisfies readonly BackendErrorKind[]\n\n\
+         /** Every source kind, in the backend's order. */\n\
+         export const SOURCES = [{sources}] as const satisfies readonly Source[]\n\n\
          /** How often `GET /api/events` sends its `ping` event, in seconds (`runtime::PING_INTERVAL`). */\n\
          export const RUNTIME_PING_SECONDS = {}\n",
         CollectOptions::MAX_DAYS,
         PING_INTERVAL.as_secs()
     )
+}
+
+/// The values as they are sent, comma-separated.
+fn wire_names<T: serde::Serialize>(values: impl Iterator<Item = T>) -> String {
+    values
+        .map(|value| serde_json::to_string(&value).expect("an enum value serializes"))
+        .collect::<Vec<_>>()
+        .join(", ")
 }
 
 fn export_decl<T: TS>(cfg: &Config) -> String {

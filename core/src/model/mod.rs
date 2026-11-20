@@ -8,13 +8,15 @@ pub mod jira;
 pub mod outlook;
 pub mod runtime;
 pub mod system;
+pub mod window;
 
 pub use activity::{
     activity_entry::{ActivityEntry, IntoActivityEntries},
     activity_log::ActivityLog,
     activity_log_meta::ActivityLogMeta,
     collected_activity::CollectedActivity,
-    collected_activity_summary::{CollectedActivitySummary, ConnectionCount},
+    collected_activity_summary::CollectedActivitySummary,
+    connection_count::ConnectionCount,
     merge_result::MergeResult,
 };
 pub use calendar::{
@@ -55,3 +57,4 @@ pub use runtime::{
     runtime_ping::RuntimePing, runtime_state::RuntimeState, shown_activity::ShownActivity,
 };
 pub use system::{system_entry::SystemEntry, system_entry_type::SystemEntryType};
+pub use window::maximize_button_state::MaximizeButtonState;

@@ -308,11 +308,16 @@ export type CollectAnswer = { stamp: PartStamp, } & ({ "kind": "running" } & Act
 
 export type RecheckAnswer = { stamp: PartStamp, currentOs: SupportedOs, providers: Array<ProviderInfo>, };
 
+export type MaximizeButtonState = { hovered: boolean, pressed: boolean, };
+
 /** The longest range the backend collects or exports, in days (`CollectOptions::MAX_DAYS`). */
 export const COLLECT_MAX_DAYS = 3653
 
 /** Every `BackendErrorKind`, for telling a backend error body from any other. */
 export const BACKEND_ERROR_KINDS = ["noData", "invalidRequest", "notFound", "alreadyExists", "busy", "conflict", "noLocation", "unprotectable", "badConfig", "tooLarge", "internal"] as const satisfies readonly BackendErrorKind[]
+
+/** Every source kind, in the backend's order. */
+export const SOURCES = ["git", "gitlab", "jira", "outlook", "system", "calendar"] as const satisfies readonly Source[]
 
 /** How often `GET /api/events` sends its `ping` event, in seconds (`runtime::PING_INTERVAL`). */
 export const RUNTIME_PING_SECONDS = 15
