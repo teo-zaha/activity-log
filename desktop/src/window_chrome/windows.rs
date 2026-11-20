@@ -22,8 +22,7 @@ use ::windows::{
     },
     core::{PCWSTR, w},
 };
-use activity_log_core::diagnostics;
-use serde_json::json;
+use activity_log_core::{diagnostics, model::MaximizeButtonState};
 use tauri::{Emitter, Runtime, WebviewWindow};
 
 use super::{ButtonArea, placement};
@@ -67,7 +66,7 @@ pub fn attach<R: Runtime>(window: WebviewWindow<R>, area: ButtonArea) {
             .and_then(|parent| {
                 let parent = HWND(parent.0);
                 let notify = move |hovered: bool, pressed: bool| {
-                    let _ = target.emit(EVENT, json!({ "hovered": hovered, "pressed": pressed }));
+                    let _ = target.emit(EVENT, MaximizeButtonState { hovered, pressed });
                 };
                 unsafe { attach_to(parent, area, Box::new(notify)) }
             });

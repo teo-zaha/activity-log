@@ -1,4 +1,4 @@
-import type { ActivityEntry, ConnectionId, Source } from '../generated/activity'
+import { type ActivityEntry, type ConnectionId, SOURCES, type Source } from '../generated/activity'
 
 /**
  * A connection as one comparable value, for sets and selections: `gitlab/oss`. Built from a typed
@@ -10,18 +10,11 @@ export function connectionKey(id: ConnectionId): ConnectionKey {
   return `${id.source}/${id.name}`
 }
 
-const SOURCES: Readonly<Record<Source, true>> = {
-  git: true,
-  gitlab: true,
-  jira: true,
-  outlook: true,
-  system: true,
-  calendar: true,
-}
+const KNOWN_SOURCES: ReadonlySet<string> = new Set(SOURCES)
 
-/** Whether `value` names a source kind this dashboard has an adapter for. */
+/** Whether `value` names a source kind the backend has, each of which has an adapter here. */
 export function isSource(value: string): value is Source {
-  return Object.hasOwn(SOURCES, value)
+  return KNOWN_SOURCES.has(value)
 }
 
 /** The key `value` spells, such as a URL's `gitlab/oss`, if it names a known kind and a name. */

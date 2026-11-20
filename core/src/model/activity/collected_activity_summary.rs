@@ -1,7 +1,9 @@
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
-use crate::model::common::connection_id::ConnectionId;
+use crate::model::{
+    activity::connection_count::ConnectionCount, common::connection_id::ConnectionId,
+};
 
 /// How many entries each collected connection contributed.
 #[derive(Debug, Clone, Default, Serialize, Deserialize, TS)]
@@ -11,13 +13,6 @@ pub struct CollectedActivitySummary {
     pub connections: Vec<ConnectionCount>,
     /// Git commits that absorbed their GitLab push event.
     pub merged_count: usize,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, TS)]
-#[ts(export)]
-pub struct ConnectionCount {
-    pub connection: ConnectionId,
-    pub count: usize,
 }
 
 impl CollectedActivitySummary {
