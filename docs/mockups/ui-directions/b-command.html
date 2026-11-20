@@ -346,7 +346,7 @@ svg.i.sm{width:15px;height:15px}svg.i.xs{width:13px;height:13px}
 </div>
 <ul class="notes">
 <li><span class="pin">6</span><span><b>A verb with tokens.</b> Each token is a field you can Tab to and edit (item, duration, start, connection). This is fast for keyboard users, but fields that depend on each other are hard to show this way.</span></li>
-<li><span class="pin">7</span><span><b>The prefill is explained in words,</b> so a wrong guess is easy to spot. The logic is the same <code>time-suggestion.ts</code> as in A.</span></li>
+<li><span class="pin">7</span><span><b>The prefill is explained in words,</b> so a wrong guess is easy to spot. The prefill is derived in Rust core, as in A.</span></li>
 <li><span class="pin">8</span><span><b>The preview core rendered,</b> inside the bar: connection, target, every value as sent, and the double-booking warning. It is the same component as the shared confirm dialog.</span></li>
 <li><span class="pin">9</span><span><b>Selection bar.</b> Multi-select in Day, Week and Timeline brings it up, and it is where “log from entries” starts in every direction. In B its buttons hand off to the bar.</span></li>
 <li><span class="pin" style="background:var(--text-tertiary)">!</span><span><b>Create ticket does not fit a bar.</b> Jira create screens have project-specific required fields. B would open a regular dialog for it anyway, so B ends up building A's dialogs plus the bar.</span></li>

@@ -180,12 +180,12 @@ ol.plist{padding-left:20px}ol.plist li{margin:5px 0;font-size:13.5px}
 <table>
 <tr><th>Topic</th><th>A · Views grow</th><th>B · Command-centric</th><th>C · Workspace with agent</th></tr>
 <tr><td>Navigation (desktop)</td><td>Sidebar: View group, plus a Work group (Work items, Time, Review)</td><td>Unchanged sidebar. Header command field and <span class="kbd">⌘K</span>. A “drafts” chip</td><td>Views in the sidebar. A tray (Inbox, Items, Time) on the right. The sidebar folds to the rail while the tray is open</td></tr>
-<tr><td>Tablet rail · phone</td><td>Rail gains 3 icons. Phone bar regrouped: Timeline · Calendar · Work · Time · Review</td><td>A search icon on the rail. On phones the bar is a full-screen sheet. Verb tokens become stacked forms</td><td>The tray overlays below 1100 px. On phones the tray tabs become bottom tabs (Inbox, Items)</td></tr>
+<tr><td>Tablet rail · phone</td><td>Rail gains 3 icons. Phone bar: one tab per group, Timeline · Calendar · Work · Settings</td><td>A search icon on the rail. On phones the bar is a full-screen sheet. Verb tokens become stacked forms</td><td>The tray overlays below 1100 px. On phones the tray tabs become bottom tabs (Inbox, Items)</td></tr>
 <tr><td>Search results vs timeline</td><td>Own list in the Work items view. Never mixed into the timeline, filters or export</td><td>One bar, three labelled groups: actions, remote items, your activity</td><td>Items tab in the tray. The timeline stays your activity only</td></tr>
 <tr><td>Ticket detail</td><td>Docked beside the list at ≥ 1100 px, the flyout below that. Action bar</td><td>The existing flyout with A's action bar</td><td>Inside the Items tab, or the flyout from the calendar</td></tr>
 <tr><td>Create ticket</td><td>Two-step dialog: details, then the core preview. “Create in Work Jira”</td><td>Opens the same dialog (the bar can't hold createmeta forms)</td><td>The same dialog. Agent drafts open prefilled</td></tr>
 <tr><td>Time tracking</td><td>Time view (items × days, attendance, “not logged yet”, suggestions). Day totals and logged blocks in Day and Week</td><td>Totals in Day and Week headers. Log time as a verb from a selection. No weekly view</td><td>Logged lane and totals in every column. The Time tab has the per-item list, check in and out, and timers later</td></tr>
-<tr><td>Log time from entries</td><td colspan="3">The same everywhere: multi-select in Day, Week and Timeline brings up a selection bar, then “Log time”. The prefill comes from <code>time-suggestion.ts</code> and is explained in words. The preview shows existing time that day</td></tr>
+<tr><td>Log time from entries</td><td colspan="3">The same everywhere: multi-select in Day, Week and Timeline brings up a selection bar, then “Log time”. The prefill is derived in Rust core and explained in words. The preview shows existing time that day</td></tr>
 <tr><td>Odoo attendance</td><td>A “Present” row and a check-out card in Time</td><td>“Check in” and “Check out” verbs</td><td>“Logged out of present” in every day header. Check in and out in the Time tab</td></tr>
 <tr><td>Agent surface</td><td>Review view: cards with provenance, a fresh preview and a named confirm</td><td>Header “drafts” chip opens the bar scoped to drafts (weak)</td><td>Inbox in the tray, sources highlighted on the calendar, a live agent activity list</td></tr>
 <tr><td>Permissions</td><td colspan="3">The same everywhere (shared page): an Access tab per connection with toggles, what the token can do, and amber write toggles. Not allowed: the action is hidden or locked with a link to Access. Allowed but not granted: disabled, with the probe's reason</td></tr>
@@ -195,7 +195,7 @@ ol.plist{padding-left:20px}ol.plist li{margin:5px 0;font-size:13.5px}
 
 <h2>Recommended path, phase by phase</h2>
 <ol class="plist">
- <li><b>1a, read only:</b> the Work items view with the docked detail, Open in Jira through a URL core builds, and the Access tab (search and read only, with the probe). Nothing else changes.</li>
+ <li><b>1a, read only:</b> the Work items view with the docked detail, an open button named by the item's source (“Open in Jira”) through a URL core builds, and the Access tab (search and read only, with the probe). Nothing else changes.</li>
  <li><b>1b, first write:</b> the shared confirm component and the New ticket dialog. Add “Create ticket from this…” on entries. Add Actions history next to Logs.</li>
  <li><b>2, time:</b> totals in Day and Week headers, hatched logged blocks, multi-select with the selection bar, the Log time dialog, then the Time view.</li>
  <li><b>4 and 4b, Odoo:</b> day-only time entries in header rows, the Present row, check in and out behind the same confirm.</li>

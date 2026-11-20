@@ -333,7 +333,7 @@ This is the main reason to make time tracking first class.
 3. The preview shows what will be sent and the time already logged on that item that day.
 4. You confirm.
 
-The suggestion logic is pure, testable code in `dashboard/src/app/utils/time-suggestion.ts`.
+The suggestions (duration rounding, start and day, description, target key) are derived in Rust core, as the repo's rules require of derived results; the dashboard keeps the selected entries, the browser-local day and the editing (user decision, 2026-11-18). Their contract is designed when the Time step starts; nothing of it is built in the generic read step.
 
 Later (not planned): mark entries that a time entry already covers, and an "unlogged time" view comparing tracked activity with logged time per day.
 
@@ -676,13 +676,13 @@ Decision: target the **latest Odoo version** with the JSON-2 API, on **any hosti
 ## 7. UI (dashboard, desktop app)
 
 - **Work items view:** in the sidebar's Work group (direction A), shown in the desktop app when some connection allows `search`.
-  - Connection picker; decided (user, 2026-11-18; Q1 in `generic-read-step.md`): all connections, narrowed by the picker, as "Search Jira & GitLab…".
+  - Connection picker; decided (user, 2026-11-18; Q1 in `generic-read-step.md`): all connections, narrowed by the picker, as "Search work items…".
   - Filter chips: Assigned to me, Unassigned, Not mine, Created by me, Open/Done.
   - A text box, and a JQL toggle for Jira.
   - The results are a list of `WorkItem`s, separate from the timeline: they are current state, not events. They never mix with entries, filters, export or the timeline search.
-  - Selecting a result docks its detail beside the list above 1100 px, with the flyout below that and the bottom sheet on phones.
+  - Selecting a result docks its detail beside the list above 1100 px, with the flyout below that and a full page on phones, as event details are (the open item in the URL, Back closes it).
 - **Action bar** in the detail panel, for work items and for timeline entries that point to one (a Jira entry, a GitLab MR event, a commit mentioning a key):
-  - **Open** in the browser.
+  - **Open in `<source>`** in the browser, named by the item's own source ("Open in Jira").
   - **Comment…**, **Move to…**, **Assign to me**, **Log time…**.
   - Each action shows only when the connection allows it. When the token lacks the scope, it is disabled with the reason.
   - Opening a link needs a desktop command that opens only URLs core built (`WorkItem.url`): the app's only opener is `tauri-plugin-opener` called from Rust by `open_url`, and the webview gets no general one (decided, Q2 in `generic-read-step.md`).
@@ -701,7 +701,7 @@ Decision: target the **latest Odoo version** with the JSON-2 API, on **any hosti
   - Toggles: "Search and read items", and one per write capability the kind supports ("Create tickets", "Comment", "Change status and assignee", "Log time").
   - Next to each toggle, the probed token state ("token lacks `api` scope").
   - Turning on the first write capability asks for confirmation.
-- **Command palette (later):** `Ctrl+K` for "Search Jira…", "Log time…", "New ticket…". It is not needed for the first phases.
+- **Command palette (later):** `Ctrl+K` for "Search work items…", "Log time…", "New ticket…". It is not needed for the first phases.
 
 ## 8. Security and safety
 

@@ -200,7 +200,7 @@ svg.i.sm{width:15px;height:15px}svg.i.xs{width:13px;height:13px}
 <header class="doc"><h1>A · Views grow</h1><nav><a href="index.html">← Overview</a><a href="b-command.html">B</a><a href="c-workspace.html">C</a><a href="shared-write-flow.html">Shared: access &amp; confirm</a></nav></header>
 <p class="lede">The plan's section 7, drawn out. A <b>Work</b> group joins the sidebar under the views: <b>Work items</b> (search, phase 1a), <b>Time</b> (phase 2) and later <b>Review</b> (agent drafts). Every write goes through the detail panel's action bar, or a button in the view, into the shared preview-and-confirm dialog.</p>
 
-<div class="caption"><span class="tag">Screen 1</span>Work items: Jira search with the detail docked beside the list</div>
+<div class="caption"><span class="tag">Screen 1</span>Work items: a search narrowed to one connection, with the detail docked beside the list</div>
 <div class="screen">
 <div class="hdr">
   <div class="brand"><span class="brand-mark"><svg class="i"><use href="#brand"/></svg></span>Activity Log</div>
@@ -308,7 +308,7 @@ svg.i.sm{width:15px;height:15px}svg.i.xs{width:13px;height:13px}
 <li><span class="pin">3</span><span><b>Search results stay in their own list.</b> They are current state, not events, so they never mix with the timeline, its search or the export.</span></li>
 <li><span class="pin">4</span><span><b>Action bar.</b> It only shows what the connection allows. An action the user turned off is locked and links to Access. If the token lacks a permission, the action is disabled with the reason (see the shared page).</span></li>
 <li><span class="pin">5</span><span><b>Review (phase 6, or sooner if the agent is near-term).</b> Agent drafts wait here as a view with full-width previews (C's cards, placed in A's structure).</span></li>
-<li><span class="pin" style="background:var(--text-tertiary)">i</span><span><b>Docked detail at ≥ 1100 px.</b> The list stays visible while you work an item. Below that width it falls back to today's flyout, and on phones to the bottom sheet.</span></li>
+<li><span class="pin" style="background:var(--text-tertiary)">i</span><span><b>Docked detail at ≥ 1100 px.</b> The list stays visible while you work an item. Below that width it falls back to today's flyout, and on phones to a full page, as event details are: the open item is in the URL and Back closes it.</span></li>
 </ul>
 
 <div class="caption"><span class="tag">Screen 2</span>Time: week totals per item, Odoo attendance, and “not logged yet” turned into suggestions</div>
@@ -398,7 +398,7 @@ svg.i.sm{width:15px;height:15px}svg.i.xs{width:13px;height:13px}
 <li><span class="pin">6</span><span><b>Time is a view, not another color on the calendar.</b> One grid answers “what did I book this week, and on what?”, which is what timesheet reporting needs. Day and week views still get day totals in their headers and logged blocks (plan section 4).</span></li>
 <li><span class="pin">7</span><span><b>Odoo attendance</b> sits next to time logged on items, as a separate presence fact. Check in and check out are an optional write (phase 4b) behind the same confirm dialog.</span></li>
 <li><span class="pin">8</span><span><b>“Not logged yet”</b> is present minus logged per local day, computed in the dashboard (civil dates are data). Without attendance it falls back to the span of tracked activity.</span></li>
-<li><span class="pin">9</span><span><b>Log time from activity.</b> Click a gap and that day's unlogged entries appear. The prefill and the target key come from <code>time-suggestion.ts</code>. The same flow starts from a multi-select in the day and week views.</span></li>
+<li><span class="pin">9</span><span><b>Log time from activity.</b> Click a gap and that day's unlogged entries appear. The prefill and the target key are derived in Rust core. The same flow starts from a multi-select in the day and week views.</span></li>
 </ul>
 
 <div class="extras">
@@ -412,14 +412,14 @@ svg.i.sm{width:15px;height:15px}svg.i.xs{width:13px;height:13px}
    <div class="it" style="grid-template-columns:12px 1fr"><span class="ty bug"></span><span class="ti" style="white-space:normal;font-size:12.5px"><span class="key">PAY-88</span> Refund webhook arrives before capture</span></div>
    <div class="it" style="grid-template-columns:12px 1fr"><span class="ty task"></span><span class="ti" style="white-space:normal;font-size:12.5px"><span class="key">ACME-158</span> Rotate payment gateway sandbox credentials</span></div>
   </div>
-  <div class="tabs"><span><svg class="i"><use href="#timeline"/></svg>Timeline</span><span><svg class="i"><use href="#week"/></svg>Calendar</span><span class="on"><svg class="i"><use href="#ticket"/></svg>Work</span><span><svg class="i"><use href="#timer"/></svg>Time</span><span><svg class="i"><use href="#spark"/></svg>Review<span class="dot">2</span></span></div>
+  <div class="tabs"><span><svg class="i"><use href="#timeline"/></svg>Timeline</span><span><svg class="i"><use href="#week"/></svg>Calendar</span><span class="on"><svg class="i"><use href="#ticket"/></svg>Work</span><span><svg class="i"><use href="#cog"/></svg>Settings</span></div>
  </div>
  <div class="txt">
   <h3>Tablet and phone</h3>
   <ul>
    <li><b>Tablet rail (≤ 900 px):</b> the Work group adds three icons under the views, with a divider. Work items detail becomes the flyout again.</li>
-   <li><b>Phone (≤ 640 px):</b> today's bottom bar has four views plus Settings. With A it needs grouping: Timeline · Calendar (Day/Work week/Week behind a segmented control) · Work · Time · Review. Settings moves into a header menu. That is a real change to the phone shell.</li>
-   <li><b>Phone writes:</b> action buttons in the bottom sheet. The confirm dialog becomes a full-height sheet whose confirm button names the effect.</li>
+   <li><b>Phone (≤ 640 px):</b> today's bottom bar has four views plus Settings. With A it has one tab per group: Timeline · Calendar · Work · Settings. Calendar holds Day, Work week and Week behind a segmented switch, and Work holds its views the same way. Settings stays the last tab.</li>
+   <li><b>Phone writes:</b> action buttons on the detail page. The confirm dialog becomes a full-height sheet whose confirm button names the effect.</li>
    <li><b>Browser build:</b> actions are desktop-only (no actions over HTTP), so Work, Time actions and Review are hidden there. Time totals still work if worklogs are collected.</li>
   </ul>
   <h3 style="margin-top:14px">States</h3>
