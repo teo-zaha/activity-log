@@ -42,7 +42,8 @@ pub async fn run_apple_script(source: &str, args: &[&str]) -> Result<String, App
         message: format!("{what}: {err}"),
         syntax: false,
     };
-    let mut child = Command::new("/usr/bin/osascript")
+    // Its error lines are parsed (`script_error`).
+    let mut child = Command::from(super::parsed_output_command("/usr/bin/osascript"))
         .arg("-")
         .args(args)
         .stdin(Stdio::piped())

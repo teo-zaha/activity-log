@@ -21,7 +21,7 @@ use gix::{
 use crate::{
     diagnostics,
     model::{CollectOptions, GitEntry},
-    platform::{background_command, blocking::blocking_until_dropped},
+    platform::{blocking::blocking_until_dropped, parsed_output_command},
     provider::{
         connection::ConnectionLocation,
         git::{GitConfig, default_git_root},
@@ -319,7 +319,7 @@ pub(crate) fn repo_user_email(repo: &Repository) -> Option<String> {
 /// can find a global config gix does not, for example under `HOMEDRIVE`/`HOMEPATH` on a network
 /// home or in the installation's system config.
 fn git_cli_user_email(repo_path: &Path) -> Option<String> {
-    let output = background_command("git")
+    let output = parsed_output_command("git")
         .arg("-C")
         .arg(repo_path)
         .args(["config", "--get", "user.email"])

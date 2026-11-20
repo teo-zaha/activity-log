@@ -154,8 +154,11 @@ pub(crate) fn build_script(target: &WslTarget, since: Option<DateTime<Utc>>) -> 
         .unwrap_or_default();
     let since = since.map(|since| since.to_rfc3339()).unwrap_or_default();
 
+    // The C locale inside the distribution too: `wsl.exe` does not pass this process's
+    // environment in, and git's output is parsed.
     format!(
-        r#"command -v git >/dev/null 2>&1 || {{ printf '\036E\037git is not installed in this distribution\n'; exit 0; }}
+        r#"export LC_ALL=C
+command -v git >/dev/null 2>&1 || {{ printf '\036E\037git is not installed in this distribution\n'; exit 0; }}
 since={since}
 since_unix={since_unix}
 format='%x1eC%x1f%H%x1f%aI%x1f%ae%x1f%s%x1f%D'

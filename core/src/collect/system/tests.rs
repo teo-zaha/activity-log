@@ -9,6 +9,23 @@ use super::{
     windows::{build_event_query, parse_event_xml},
 };
 
+/// B72: the dates of `last` are parsed as English, so it must print them so.
+#[cfg(target_os = "macos")]
+#[test]
+fn last_and_pmset_print_in_the_c_locale() {
+    use super::macos::{last_command, power_log_command};
+    for command in [last_command(), power_log_command()] {
+        let locale = command
+            .as_std()
+            .get_envs()
+            .find(|(name, _)| *name == "LC_ALL")
+            .and_then(|(_, value)| value);
+        assert_eq!(locale, Some(std::ffi::OsStr::new("C")), "{command:?}");
+    }
+}
+
+/// S27: an event id without a mapping (sleep and wake are not asked for) is left out, never
+/// shown as a boot.
 #[test]
 fn windows_mapping_excludes_sleep_and_wake() {
     let mapped = map_windows_events(
@@ -29,10 +46,9 @@ fn windows_mapping_excludes_sleep_and_wake() {
         WINDOWS_SYSTEM_EVENTS,
     );
 
-    assert_eq!(mapped.len(), 3);
+    assert_eq!(mapped.len(), 1);
     assert_eq!(mapped[0].entry_type, SystemEntryType::Boot);
-    assert_eq!(mapped[1].label, "Event 42");
-    assert_eq!(mapped[2].label, "Event 4800");
+    assert_eq!(mapped[0].label, "System started");
 }
 
 #[test]

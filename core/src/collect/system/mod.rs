@@ -84,25 +84,17 @@ pub(crate) fn map_windows_events(
     mapping: &[(i32, SystemEntryType, &str)],
 ) -> Vec<SystemEntry> {
     raw.iter()
-        .map(|event| {
-            let (_, entry_type, label) = mapping
-                .iter()
-                .find(|(id, _, _)| *id == event.id)
-                .cloned()
-                .unwrap_or((event.id, SystemEntryType::Boot, "Unknown event"));
-
-            SystemEntry {
+        .filter_map(|event| {
+            // The query asks only for mapped ids; any other is no boot or shutdown to show.
+            let (_, entry_type, label) = mapping.iter().find(|(id, _, _)| *id == event.id)?;
+            Some(SystemEntry {
                 source: "system".to_string(),
                 connection: String::new(),
                 id: format!("{entry_type}/{}", event.ts),
-                entry_type,
+                entry_type: entry_type.clone(),
                 timestamp: event.ts.clone(),
-                label: if label == "Unknown event" {
-                    format!("Event {}", event.id)
-                } else {
-                    label.to_string()
-                },
-            }
+                label: label.to_string(),
+            })
         })
         .collect()
 }
