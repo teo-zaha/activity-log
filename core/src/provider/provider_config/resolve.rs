@@ -44,8 +44,8 @@ macro_rules! provider_config {
     (
         $vis:vis struct $name:ident {
             $(
-                $field_vis:vis $field:ident => $key:ident : $vtype:ident $( = $default:literal )?
-                    $( [$account:ident] )?
+                $field_vis:vis $field:ident => $key:ident $label:literal : $vtype:ident
+                    $( = $default:literal )? $( [$account:ident] )?
             ),* $(,)?
         }
     ) => {
@@ -53,6 +53,7 @@ macro_rules! provider_config {
             pub const $key: $crate::provider::provider_config::ProviderConfigKey =
                 $crate::provider::provider_config::ProviderConfigKey {
                     name: stringify!($key),
+                    label: $label,
                     required: $crate::provider_config!(@required $vtype $( , $default )? ),
                     shape: $crate::provider::provider_config::ProviderConfigShape::Single(
                         $crate::provider_config!(@value_type $vtype),

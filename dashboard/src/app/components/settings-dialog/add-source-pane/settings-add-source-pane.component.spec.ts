@@ -29,6 +29,7 @@ const snapshot = (
   connections: ConnectionId[],
   wslDistros: string[] = []
 ): ProviderConfigSnapshotDto => ({
+  revision: 'r1',
   kinds: [
     kind({ source: 'git', label: 'Git', wslDistros }),
     kind({ source: 'gitlab', label: 'GitLab' }),

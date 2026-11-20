@@ -17,6 +17,8 @@ pub enum FieldId {
 #[derive(Clone)]
 pub struct EditBase {
     connection: ConnectionId,
+    /// The connection's label as the writer saw it, which a conflict names it by.
+    label: String,
     /// `None` for a legacy table that had no instance when the writer read it.
     instance: Option<String>,
     /// The touched fields and the kind's account fields, as seen; `None` for unset.
@@ -26,11 +28,13 @@ pub struct EditBase {
 impl EditBase {
     pub(super) fn new(
         connection: ConnectionId,
+        label: String,
         instance: Option<String>,
         fields: BTreeMap<FieldId, Option<String>>,
     ) -> Self {
         Self {
             connection,
+            label,
             instance,
             fields,
         }
@@ -74,6 +78,8 @@ pub enum ConflictKind {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Conflict {
     pub connection: ConnectionId,
+    /// The connection's label as the writer saw it; `None` when its base is unknown.
+    pub label: Option<String>,
     pub kind: ConflictKind,
     pub fields: Vec<FieldId>,
 }
@@ -92,13 +98,15 @@ impl Conflict {
     }
 }
 
-/// Checks `precondition` against the file as read under the lock.
-pub(super) fn check(file: &ConfigFile, precondition: &Precondition) -> Result<(), Conflict> {
+/// Checks `precondition` against the file as read under the lock, or, for a check before a
+/// save (`view::check_save`), against the file as it is now.
+pub fn check(file: &ConfigFile, precondition: &Precondition) -> Result<(), Conflict> {
     let Precondition::Unchanged(base) = precondition else {
         return Ok(());
     };
     let conflict = |kind, fields| Conflict {
         connection: base.connection.clone(),
+        label: Some(base.label.clone()),
         kind,
         fields,
     };

@@ -380,13 +380,13 @@ async fn typed_config_is_available_in_startup_check() {
 
 crate::provider_config! {
     struct MacroBoolConfig {
-        flag => TEST_MACRO_BOOL_FLAG: Bool,
+        flag => TEST_MACRO_BOOL_FLAG "Flag": Bool,
     }
 }
 
 crate::provider_config! {
     struct MacroDefaultStringConfig {
-        value => TEST_MACRO_DEFAULT_VALUE: String = "fallback",
+        value => TEST_MACRO_DEFAULT_VALUE "Value": String = "fallback",
     }
 }
 

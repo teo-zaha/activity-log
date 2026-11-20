@@ -20,13 +20,25 @@
           <span class="u-skeleton config-loading-field"></span>
         }
       </div>
+    } @else if (removedDraft()) {
+      <app-removed-source-draft
+        [connection]="provider().info.connection"
+        [label]="provider().label"
+        (opened)="opened.emit($event)"
+        (discarded)="afterDiscard()"
+      />
     } @else if (!hasConnectionState() && configError()) {
       <app-feedback tone="error" block>
         {{ configError() }}
         <button appButton feedbackAction (click)="reload()">Retry</button>
       </app-feedback>
     } @else {
-      <form class="config-form" [formRoot]="draftForm" [attr.aria-busy]="savingConfig()">
+      <form
+        class="config-form"
+        [formRoot]="draftForm"
+        [attr.aria-busy]="savingConfig()"
+        (focusout)="checkDraft()"
+      >
         <fieldset class="config-fields" [disabled]="savingConfig()">
           <legend class="u-sr-only">Provider configuration fields</legend>
           <div class="config-field">
@@ -44,6 +56,12 @@
                 <input matInput [id]="labelFieldId()" [formField]="labelForm" autocomplete="off" />
               </mat-form-field>
             </div>
+            @if (labelError(); as error) {
+              <p class="field-error" [id]="labelFieldId() + '-error'">
+                <mat-icon>error</mat-icon>
+                {{ error }}
+              </p>
+            }
           </div>
           @if (configFields().length === 0) {
             <p class="u-note">
@@ -187,7 +205,19 @@
         </fieldset>
 
         <div class="config-feedback" appAutoAnimate>
-          @if (configError() && !savingConfig()) {
+          @if (conflicted()) {
+            <app-feedback tone="warn" block>
+              {{
+                connectionIssue()?.message ??
+                  'Another program changed this source while you were editing it. Your changes are kept; the fields it changed say what they hold now.'
+              }}
+              @if (connectionIssue()?.problem !== 'removed') {
+                <button appButton type="button" feedbackAction (click)="keepMyChanges()">
+                  Keep my changes
+                </button>
+              }
+            </app-feedback>
+          } @else if (configError() && !savingConfig()) {
             <app-feedback tone="error" block>{{ configError() }}</app-feedback>
           }
         </div>

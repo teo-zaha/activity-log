@@ -1,7 +1,7 @@
 crate::provider_config! {
     pub struct JiraConfig {
-        pub url => JIRA_URL: Url [account],
-        pub token => JIRA_TOKEN: Password [account],
-        pub insecure => JIRA_INSECURE: Bool,
+        pub url => JIRA_URL "Jira URL": Url [account],
+        pub token => JIRA_TOKEN "Jira Token": Password [account],
+        pub insecure => JIRA_INSECURE "Jira Insecure": Bool,
     }
 }

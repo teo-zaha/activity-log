@@ -12,6 +12,7 @@ import { MockBackendTransport, provideMockBackend } from '../../testing/activity
 import { SettingsDialogLauncher } from './settings-dialog-launcher.service'
 import { LOGS_POLL_INTERVAL_MS } from './logs-pane/settings-logs-pane.component'
 import { SettingsPageHostComponent } from './settings-page-host.component'
+import { SourceDrafts } from './source-pane/source-drafts.service'
 
 async function openSettings(
   url: string
@@ -80,6 +81,25 @@ describe('SettingsPageHostComponent', () => {
     expect(screen.getByText('This source is not set up')).toBeTruthy()
     fireEvent.click(screen.getByRole('button', { name: 'Show Appearance' }))
     await vi.waitFor(() => expect(router.url).toBe('/timeline?settings=general'))
+  })
+
+  it('keeps the unsaved changes of a source another program removed reachable', async () => {
+    const { router, injector } = await openSettings('/timeline?settings=jira%2Fgone')
+    const drafts = injector.get(SourceDrafts)
+    drafts.set('jira/gone', {
+      basedOn: 'r1',
+      label: 'Gone Jira',
+      values: { JIRA_URL: { kind: 'replace', value: 'https://jira.example.org' } },
+      lists: {},
+    })
+
+    await injector.get(ActivityDataService).initLoad()
+
+    expect(await screen.findByText(/Another program removed Gone Jira/)).toBeTruthy()
+    expect(screen.getByRole('button', { name: 'Add it again' })).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: 'Discard my changes' }))
+    await vi.waitFor(() => expect(router.url).toBe('/timeline?settings=general'))
+    expect(drafts.get('jira/gone')).toBeUndefined()
   })
 
   it('keeps waiting for the sources while a notice about something else shows', async () => {

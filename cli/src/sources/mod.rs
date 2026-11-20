@@ -8,12 +8,13 @@ use activity_log_core::{
     provider::{
         connection::{Connection, ConnectionLocation},
         provider_config::{
-            ProviderConfigKey, ProviderConfigShape, ProviderConfigValueType, encode_config_list,
-            parse_config_list, provider_config_key_accepts,
+            ProviderConfigKey, ProviderConfigShape, ProviderConfigValueType, parse_config_list,
         },
-        provider_registry,
     },
-    settings::{ConfigEditError, ConfigFile, field_name, key_for_field},
+    settings::{
+        ConfigEditError, ConfigFile, config_keys, field_name, key_for_field,
+        view::{Submitted, normalize},
+    },
 };
 use anyhow::{Result, bail};
 
@@ -36,8 +37,11 @@ pub(crate) enum SourcesError {
         source: Source,
         field: String,
     },
-    TakesOneValue(ProviderConfigKey),
-    InvalidValue(ProviderConfigKey),
+    /// A value `core::settings::view::normalize` refuses, with what to enter instead.
+    InvalidValue {
+        key: ProviderConfigKey,
+        message: String,
+    },
 }
 
 impl std::fmt::Display for SourcesError {
@@ -59,8 +63,7 @@ impl std::fmt::Display for SourcesError {
                 source.label(),
                 fields_of(source)
             ),
-            Self::TakesOneValue(key) => write!(f, "{} takes one value", key.name),
-            Self::InvalidValue(key) => write!(f, "Invalid value: expected {}", key.shape),
+            Self::InvalidValue { key, message } => write!(f, "{}: {message}", key.label),
         }
     }
 }
@@ -140,7 +143,7 @@ pub(crate) fn ask_values(
     prompt: &mut dyn Prompt,
 ) -> Result<Vec<(ProviderConfigKey, String)>> {
     let mut answers = Vec::new();
-    for key in keys_of(source) {
+    for &key in config_keys(source) {
         let field = field_name(source, key);
         let hint = match (key.required, key.shape) {
             (true, _) => format!("{field} ({}, required): ", key.shape),
@@ -159,10 +162,11 @@ pub(crate) fn ask_values(
                 break;
             }
             match raw_value(key, &[answer]) {
-                Ok(raw) => {
+                Ok(Some(raw)) => {
                     answers.push((key, raw));
                     break;
                 }
+                Ok(None) => break,
                 Err(err) => eprintln!("{err}"),
             }
         }
@@ -190,13 +194,13 @@ pub(crate) fn add(
 }
 
 /// The key `field` names for `id`, and the value to store: `values`, or the answer when there
-/// are none (hidden for secrets).
+/// are none (hidden for secrets); `None` for a blank single value, which unsets the key.
 pub(crate) fn value_for(
     id: &ConnectionId,
     field: &str,
     values: Vec<String>,
     prompt: &mut dyn Prompt,
-) -> Result<(ProviderConfigKey, String)> {
+) -> Result<(ProviderConfigKey, Option<String>)> {
     let key = key(&id.source, field)?;
     let values = if values.is_empty() {
         vec![prompt.ask(&format!("{field} for {id}: "), is_secret(key))?]
@@ -240,24 +244,16 @@ pub(crate) fn list_lines(providers: &[ProviderInfo]) -> Vec<String> {
 
 /// The fields a kind accepts, for messages: `url, token, user`.
 pub(crate) fn fields_of(source: &Source) -> String {
-    keys_of(source)
-        .into_iter()
-        .map(|key| field_name(source, key))
+    config_keys(source)
+        .iter()
+        .map(|key| field_name(source, *key))
         .collect::<Vec<_>>()
         .join(", ")
 }
 
-fn keys_of(source: &Source) -> Vec<ProviderConfigKey> {
-    provider_registry()
-        .into_iter()
-        .find(|adapter| adapter.id() == *source)
-        .map(|adapter| adapter.config_requirements().to_vec())
-        .unwrap_or_default()
-}
-
 pub(crate) fn key(source: &Source, field: &str) -> Result<ProviderConfigKey, SourcesError> {
     key_for_field(source, field).ok_or_else(|| {
-        if keys_of(source).is_empty() {
+        if config_keys(source).is_empty() {
             SourcesError::NoSettings(source.clone())
         } else {
             SourcesError::UnknownSetting {
@@ -272,22 +268,27 @@ fn is_secret(key: ProviderConfigKey) -> bool {
     key.value_type() == ProviderConfigValueType::Password
 }
 
-/// The stored form of `values` for `key`, checked against its type.
-fn raw_value(key: ProviderConfigKey, values: &[String]) -> Result<String, SourcesError> {
-    let raw = match key.shape {
-        ProviderConfigShape::List(_) => encode_config_list(
-            &values
+/// The stored form of `values` for `key`, checked as every writer checks it: one argument in
+/// its text form, several as the items of a list (each read in its text form, so `a,b c` is
+/// three).
+fn raw_value(key: ProviderConfigKey, values: &[String]) -> Result<Option<String>, SourcesError> {
+    let items;
+    let submitted = match values {
+        [value] => Submitted::Text(value),
+        _ => {
+            items = values
                 .iter()
                 .flat_map(|value| parse_config_list(value))
-                .collect::<Vec<_>>(),
-        ),
-        ProviderConfigShape::Single(_) => match values {
-            [value] => value.trim().to_string(),
-            _ => return Err(SourcesError::TakesOneValue(key)),
-        },
+                .collect::<Vec<_>>();
+            Submitted::List(&items)
+        }
     };
-    if !provider_config_key_accepts(key, &raw) {
-        return Err(SourcesError::InvalidValue(key));
-    }
-    Ok(raw)
+    normalize(key, submitted).map_err(|issues| SourcesError::InvalidValue {
+        key,
+        message: issues
+            .into_iter()
+            .next()
+            .expect("a refused value has an issue")
+            .message,
+    })
 }

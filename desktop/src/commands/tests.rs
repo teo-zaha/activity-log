@@ -3,7 +3,7 @@ use std::{sync::mpsc, time::Duration};
 use activity_log_core::{
     diagnostics,
     model::{BackendError, BackendErrorKind},
-    settings::ConfigFile,
+    settings::{ConfigFile, Precondition},
 };
 use tauri::{
     ipc::{CallbackFn, InvokeBody},
@@ -43,7 +43,7 @@ async fn settings_commands_that_arrive_together_both_apply() {
     let first = tokio::spawn({
         let state = state.clone();
         async move {
-            update_config(&state, move |file| {
+            update_config(&state, Precondition::None, move |file| {
                 first_loaded.send(()).unwrap();
                 // Gives the second command every chance to read the file before this one saves.
                 let _ = second_has_loaded.recv_timeout(Duration::from_millis(300));
@@ -53,7 +53,7 @@ async fn settings_commands_that_arrive_together_both_apply() {
         }
     });
     first_has_loaded.recv().unwrap();
-    update_config(&state, move |file| {
+    update_config(&state, Precondition::None, move |file| {
         let _ = second_loaded.send(());
         file.rename(&b, "B changed")
     })
@@ -87,7 +87,7 @@ async fn a_save_over_a_file_that_does_not_parse_is_a_bad_config() {
     // Broken after the app read it, as another program could.
     std::fs::write(&path, "[[git]\n").unwrap();
 
-    let refused = update_config(&state, |file| {
+    let refused = update_config(&state, Precondition::None, |file| {
         file.add(
             &activity_log_core::model::Source::Calendar,
             None,
@@ -139,7 +139,12 @@ fn invoke(
             super::get_runtime_state,
             super::collect,
             super::recheck_connection,
-            super::save_export
+            super::save_export,
+            super::get_provider_config,
+            super::check_provider_config,
+            super::save_provider_config,
+            super::remove_connection,
+            super::add_connection
         ])
         .build(mock_context(noop_assets()))
         .unwrap();
@@ -263,7 +268,7 @@ fn tauri_refuses_a_call_it_cannot_decode_with_a_string() {
 async fn a_save_without_a_settings_location_writes_nothing() {
     let state = AppState::start(None);
 
-    let refused = update_config(&state, |file| {
+    let refused = update_config(&state, Precondition::None, |file| {
         file.rename(&"gitlab/work".parse().unwrap(), "Work")
     })
     .await;
@@ -280,7 +285,7 @@ async fn a_busy_settings_file_is_reported_and_left_alone() {
     held.lock().unwrap();
     let state = AppState::start(Some(path.clone()));
 
-    let refused = update_config(&state, |file| {
+    let refused = update_config(&state, Precondition::None, |file| {
         file.rename(&"git/this-computer".parse().unwrap(), "Laptop")
     })
     .await;
@@ -297,7 +302,7 @@ async fn config_problems_after_an_edit_reach_the_logs() {
     std::fs::write(&path, "[[gitlab]]\nlabel = \"Edited\"\nurll = \"x\"\n").unwrap();
     let state = AppState::start(Some(path));
 
-    let (_, saved) = update_config(&state, |file| {
+    let (_, saved) = update_config(&state, Precondition::None, |file| {
         file.rename(&"gitlab/edited".parse().unwrap(), "Edited")
     })
     .await
@@ -346,7 +351,7 @@ async fn an_unprotectable_location_is_reported_with_the_agreed_text() {
     std::fs::set_permissions(&shared, std::fs::Permissions::from_mode(0o1777)).unwrap();
     let state = AppState::start(Some(shared.join("config.toml")));
 
-    let refused = update_config(&state, |file| {
+    let refused = update_config(&state, Precondition::None, |file| {
         file.add(
             &activity_log_core::model::Source::Git,
             None,
@@ -375,7 +380,7 @@ async fn a_save_answers_with_the_added_connection_checking() {
     let state = AppState::start(Some(path));
 
     for label in ["Team", "Home", "Club"] {
-        let (created, saved) = update_config(&state, move |file| {
+        let (created, saved) = update_config(&state, Precondition::None, move |file| {
             file.add(
                 &activity_log_core::model::Source::Calendar,
                 Some(label),
@@ -413,4 +418,191 @@ fn the_runtime_state_read_is_the_state_event_of_the_same_value() {
         read,
         serde_json::from_str::<serde_json::Value>(&event.to_json()).unwrap()
     );
+}
+
+/// The pane's check answers each issue at its field, without saving or reading the file.
+#[test]
+fn a_settings_check_answers_the_issues_at_their_fields() {
+    let request = serde_json::json!({
+        "connection": { "source": "jira", "name": "work" },
+        "values": [{ "key": "JIRA_URL", "value": "ftp://jira.example.org" }],
+    });
+
+    let issues = invoke(
+        AppState::start(None),
+        "check_provider_config",
+        serde_json::json!({ "request": request }),
+    )
+    .unwrap();
+
+    assert_eq!(
+        issues,
+        serde_json::json!([{
+            "field": { "kind": "value", "key": "JIRA_URL" },
+            "problem": "invalid",
+            "message": "Enter an http or https address.",
+        }])
+    );
+}
+
+/// A settings file another program can change while the pane shows it.
+fn settings_at(text: &str) -> (tempfile::TempDir, std::path::PathBuf, AppState) {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("config.toml");
+    std::fs::write(&path, text).unwrap();
+    let state = AppState::start(Some(path.clone()));
+    (dir, path, state)
+}
+
+/// The revision of the snapshot the pane reads.
+fn snapshot_revision(state: &AppState) -> String {
+    let snapshot = invoke(state.clone(), "get_provider_config", serde_json::json!({})).unwrap();
+    snapshot["revision"].as_str().unwrap().to_string()
+}
+
+/// Astra's first reproduction: the label changes on disk after the pane read the settings,
+/// then Save. The save is refused as a conflict, the other program's label stays, and the
+/// check names the field.
+#[test]
+fn a_save_over_a_field_another_program_changed_is_a_conflict() {
+    let (_dir, path, state) = settings_at("[[gitlab]]\nlabel = \"Work\"\n");
+    let revision = snapshot_revision(&state);
+    std::fs::write(&path, "[[gitlab]]\nname = \"work\"\nlabel = \"Theirs\"\n").unwrap();
+    let request = serde_json::json!({
+        "connection": { "source": "gitlab", "name": "work" },
+        "label": "Mine",
+        "values": [],
+        "basedOn": revision,
+    });
+
+    let issues = invoke(
+        state.clone(),
+        "check_provider_config",
+        serde_json::json!({ "request": request }),
+    )
+    .unwrap();
+    let refused = refusal(state.clone(), "save_provider_config", request);
+
+    assert_eq!(refused.kind, BackendErrorKind::Conflict);
+    // Named by the label the pane showed, as the agreed text says.
+    assert!(
+        refused
+            .message
+            .starts_with("Work was changed by another program"),
+        "{}",
+        refused.message
+    );
+    assert!(std::fs::read_to_string(&path).unwrap().contains("Theirs"));
+    assert_eq!(issues[0]["field"], serde_json::json!({ "kind": "label" }));
+    assert_eq!(issues[0]["problem"], "changed");
+}
+
+/// Astra's second reproduction: the table is replaced under the same id with another instance,
+/// then Remove. The removal is refused, and the replacement stays.
+#[test]
+fn removing_a_connection_another_program_replaced_is_a_conflict() {
+    let (_dir, path, state) = settings_at(
+        "[[gitlab]]\nname = \"work\"\nlabel = \"Work\"\ninstance = \"0123456789abcdef\"\n",
+    );
+    let revision = snapshot_revision(&state);
+    let replacement =
+        "[[gitlab]]\nname = \"work\"\nlabel = \"Work\"\ninstance = \"fedcba9876543210\"\n";
+    std::fs::write(&path, replacement).unwrap();
+
+    let refused = refusal(
+        state,
+        "remove_connection",
+        serde_json::json!({ "source": "gitlab", "name": "work", "basedOn": revision }),
+    );
+
+    assert_eq!(refused.kind, BackendErrorKind::Conflict);
+    assert_eq!(std::fs::read_to_string(&path).unwrap(), replacement);
+}
+
+/// A save based on the snapshot that is on disk goes through, and its answer names the next
+/// revision; one based on a snapshot this app never handed out is a conflict.
+#[test]
+fn a_save_on_its_own_snapshot_applies_and_an_unknown_one_is_refused() {
+    let (_dir, path, state) = settings_at("[[gitlab]]\nlabel = \"Work\"\n");
+    let revision = snapshot_revision(&state);
+    let save = |based_on: &str, label: &str| {
+        serde_json::json!({ "request": {
+            "connection": { "source": "gitlab", "name": "work" },
+            "label": label,
+            "values": [],
+            "basedOn": based_on,
+        }})
+    };
+
+    let saved = invoke(
+        state.clone(),
+        "save_provider_config",
+        save(&revision, "Mine"),
+    )
+    .unwrap();
+    assert!(std::fs::read_to_string(&path).unwrap().contains("Mine"));
+    let next = saved["snapshot"]["revision"].as_str().unwrap();
+    assert_ne!(next, revision);
+    assert!(invoke(state.clone(), "save_provider_config", save(next, "Again")).is_ok());
+
+    let refused = invoke(
+        state,
+        "save_provider_config",
+        save("0000000000000000", "Lost"),
+    )
+    .unwrap_err();
+    let refused: BackendError = serde_json::from_value(refused).unwrap();
+    assert_eq!(refused.kind, BackendErrorKind::Conflict);
+}
+
+/// A removal that names no snapshot, as an older dashboard sends it, still removes.
+#[test]
+fn a_removal_without_a_snapshot_still_removes() {
+    let (_dir, path, state) = settings_at("[[gitlab]]\nlabel = \"Work\"\n");
+
+    invoke(
+        state,
+        "remove_connection",
+        serde_json::json!({ "request": { "source": "gitlab", "name": "work" } }),
+    )
+    .unwrap();
+
+    assert!(!std::fs::read_to_string(&path).unwrap().contains("Work"));
+}
+
+/// Astra's re-add probe, as the pane now sends it: another program restored `jira/default`, so
+/// adding Jira again creates another connection, and the draft saved to the id the add answered
+/// changes that one, never the restored one.
+#[test]
+fn a_draft_saved_into_a_source_added_again_changes_the_one_created() {
+    let (_dir, path, state) = settings_at(
+        "[[jira]]\nname = \"default\"\nlabel = \"Jira\"\ninstance = \"0123456789abcdef\"\n",
+    );
+
+    let added = invoke(
+        state.clone(),
+        "add_connection",
+        serde_json::json!({ "request": { "source": "jira", "label": "Jira" } }),
+    )
+    .unwrap();
+    let created = added["created"].clone();
+    assert_ne!(
+        created,
+        serde_json::json!({ "source": "jira", "name": "default" })
+    );
+
+    invoke(
+        state,
+        "save_provider_config",
+        serde_json::json!({ "request": {
+            "connection": created,
+            "label": "Mine",
+            "values": [],
+            "basedOn": added["snapshot"]["revision"],
+        }}),
+    )
+    .unwrap();
+
+    let labels = labels(&path);
+    assert_eq!(labels, ["Jira", "Mine"]);
 }

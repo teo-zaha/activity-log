@@ -8,9 +8,11 @@ import type {
   ExportOutcome,
   ExportRequest,
   LogsResponse,
+  ProviderConfigFieldIssueDto,
   ProviderConfigSaveRequestDto,
   ProviderConfigSaveResponseDto,
   ProviderConfigSnapshotDto,
+  RemoveConnectionRequestDto,
   RecheckAnswer,
   RuntimeState,
 } from '../../generated/activity'
@@ -81,6 +83,11 @@ export const BackendOperations = {
     label: 'Provider configuration',
     tauri: 'save_provider_config',
   }),
+  /** The issues a save would be refused for, at their fields; nothing is saved. */
+  checkProviderConfig: command<ProviderConfigSaveRequestDto, ProviderConfigFieldIssueDto[]>({
+    label: 'Check settings',
+    tauri: 'check_provider_config',
+  }),
   addConnection: command<AddConnectionRequestDto, AddConnectionResponseDto>({
     label: 'Add source',
     tauri: 'add_connection',
@@ -91,7 +98,7 @@ export const BackendOperations = {
     tauri: 'recheck_connection',
     http: { method: 'POST', url: '/api/connections/recheck' },
   }),
-  removeConnection: command<ConnectionId, ProviderConfigSaveResponseDto>({
+  removeConnection: command<RemoveConnectionRequestDto, ProviderConfigSaveResponseDto>({
     label: 'Remove source',
     tauri: 'remove_connection',
   }),

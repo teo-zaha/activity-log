@@ -2,12 +2,16 @@ use std::{path::PathBuf, sync::Arc};
 
 use activity_log_core::runtime::{BadConfig, Host, RunSpawner};
 
+use crate::provider_config::SnapshotRegistry;
+
 #[cfg(test)]
 mod tests;
 
 #[derive(Clone)]
 pub(crate) struct AppState {
     pub(crate) host: Host,
+    /// The files of the settings snapshots handed out, for the bases of saves and removals.
+    pub(crate) snapshots: Arc<SnapshotRegistry>,
 }
 
 impl AppState {
@@ -17,7 +21,10 @@ impl AppState {
     pub(crate) fn start(path: Option<PathBuf>) -> Self {
         let host = Host::start(path, spawner(), BadConfig::StartEmpty)
             .expect("a host that starts empty on a bad file always starts");
-        Self { host }
+        Self {
+            host,
+            snapshots: Arc::default(),
+        }
     }
 }
 

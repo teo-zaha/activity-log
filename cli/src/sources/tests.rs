@@ -100,9 +100,9 @@ fn sets_lists_and_single_values_and_unsets_them() {
         &mut script,
     )
     .unwrap();
-    file.set(&git, dirs, Some(&raw)).unwrap();
+    file.set(&git, dirs, raw.as_deref()).unwrap();
     let (token, raw) = value_for(&jira, "token", Vec::new(), &mut script).unwrap();
-    file.set(&jira, token, Some(&raw)).unwrap();
+    file.set(&jira, token, raw.as_deref()).unwrap();
 
     assert_eq!(
         value(&file, "git/this-computer", "GIT_DIRS").as_deref(),
@@ -126,7 +126,10 @@ fn sets_lists_and_single_values_and_unsets_them() {
     };
     assert_eq!(
         refused("insecure", "maybe", &mut script),
-        SourcesError::InvalidValue(JIRA_INSECURE)
+        SourcesError::InvalidValue {
+            key: JIRA_INSECURE,
+            message: "Enter true or false.".to_string(),
+        }
     );
     let unknown = refused("nope", "x", &mut script);
     assert_eq!(

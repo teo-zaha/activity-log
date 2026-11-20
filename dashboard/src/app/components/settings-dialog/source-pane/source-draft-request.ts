@@ -30,8 +30,13 @@ export type ListEdit =
   /** Empty means none. */
   | { readonly kind: 'replace'; readonly items: readonly string[] }
 
-/** A connection's unsaved edits: only what the user changed. */
+/** A connection's unsaved edits: only what the user changed, and what they changed it from. */
 export interface SourceDraft {
+  /**
+   * The snapshot `revision` the edits were made against: the save sends it as `basedOn`, so a
+   * field another program changed meanwhile is a conflict, not overwritten.
+   */
+  readonly basedOn: string
   /** The label typed, or null for the saved one. */
   readonly label: string | null
   readonly values: Readonly<Record<string, Exclude<ValueEdit, { kind: 'untouched' }>>>
@@ -100,7 +105,11 @@ export function listEditOf(
 }
 
 /** What the user changed in `form` against `state`'s saved settings. */
-export function draftOf(state: ProviderConfigConnectionStateDto, form: DraftForm): SourceDraft {
+export function draftOf(
+  state: ProviderConfigConnectionStateDto,
+  form: DraftForm,
+  basedOn: string
+): SourceDraft {
   const values: Record<string, Exclude<ValueEdit, { kind: 'untouched' }>> = {}
   const lists: Record<string, Exclude<ListEdit, { kind: 'untouched' }>> = {}
   for (const field of state.fields) {
@@ -113,12 +122,13 @@ export function draftOf(state: ProviderConfigConnectionStateDto, form: DraftForm
     }
   }
   const label = form.label.trim()
-  return { label: label !== '' && label !== state.label ? label : null, values, lists }
+  return { basedOn, label: label !== '' && label !== state.label ? label : null, values, lists }
 }
 
 /** Whether two drafts ask for the same: the same label and the same edits. */
 export function sameDraft(a: SourceDraft, b: SourceDraft): boolean {
   return (
+    a.basedOn === b.basedOn &&
     a.label === b.label &&
     sameEdits(a.values, b.values, (x, y) =>
       x.kind === 'clear' ? y.kind === 'clear' : y.kind === 'replace' && x.value === y.value
@@ -178,6 +188,7 @@ export function saveRequestOf(
     connection: state.connection,
     ...(draft.label === null ? {} : { label: draft.label }),
     values,
+    basedOn: draft.basedOn,
   }
 }
 

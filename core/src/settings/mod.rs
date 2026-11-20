@@ -41,11 +41,14 @@ use crate::{
 mod config_edit_error;
 mod external;
 mod precondition;
+pub mod view;
 mod write;
 
 pub use config_edit_error::{ConfigEditError, LoadError};
 pub use external::{ExternalEdit, ExternalEditError, edit_externally, editor_command};
-pub use precondition::{Conflict, ConflictKind, EditBase, FieldId, Precondition};
+pub use precondition::{
+    Conflict, ConflictKind, EditBase, FieldId, Precondition, check as check_precondition,
+};
 pub(crate) use write::lock_wait;
 pub use write::{EditError, Edited, edit_config};
 
@@ -200,6 +203,11 @@ impl ConfigFile {
     }
 
     /// Parses `bytes`; invalid UTF-8 and invalid TOML both fail with a [`ConfigError`].
+    /// A file without connections, at no location: what the settings show without one.
+    pub fn empty() -> Self {
+        Self::parse(PathBuf::new(), b"").expect("an empty file parses")
+    }
+
     pub fn parse(path: impl Into<PathBuf>, bytes: &[u8]) -> Result<Self, ConfigError> {
         let path = path.into();
         let error = |offset: usize, message: String| {
@@ -433,7 +441,12 @@ impl ConfigFile {
             .map(|key| FieldId::Value(key.name));
         let fields = touched.iter().cloned().chain(account).collect::<Vec<_>>();
         let seen = self.seen(id, &fields)?;
-        Some(EditBase::new(id.clone(), seen.instance, seen.fields))
+        Some(EditBase::new(
+            id.clone(),
+            seen.label,
+            seen.instance,
+            seen.fields,
+        ))
     }
 
     /// The instance of `id` and the values of `fields`, as preconditions compare them.
@@ -455,6 +468,7 @@ impl ConfigFile {
             })
             .collect();
         Some(Seen {
+            label: entry.label,
             instance: entry.instance,
             fields,
         })
@@ -804,6 +818,7 @@ fn assign(table: &mut Table, key: &str, mut item: Item) {
 
 /// What a writer saw of one connection.
 struct Seen {
+    label: String,
     instance: Option<String>,
     fields: BTreeMap<FieldId, Option<String>>,
 }
@@ -933,15 +948,17 @@ pub fn field_name(source: &Source, key: ProviderConfigKey) -> String {
         .to_ascii_lowercase()
 }
 
+/// The config keys of `source`, as its provider declares them.
+pub fn config_keys(source: &Source) -> &'static [ProviderConfigKey] {
+    adapter_for(source).map_or(&[], |adapter| adapter.config_requirements())
+}
+
 /// The config key a file field names for `source`, as the CLI accepts it.
 pub fn key_for_field(source: &Source, field: &str) -> Option<ProviderConfigKey> {
-    adapter_for(source).ok().and_then(|adapter| {
-        adapter
-            .config_requirements()
-            .iter()
-            .copied()
-            .find(|key| field_name(source, *key) == field.to_ascii_lowercase())
-    })
+    config_keys(source)
+        .iter()
+        .copied()
+        .find(|key| field_name(source, *key) == field.to_ascii_lowercase())
 }
 
 fn adapter_for(source: &Source) -> Result<Arc<dyn ProviderAdapter>, ConfigEditError> {

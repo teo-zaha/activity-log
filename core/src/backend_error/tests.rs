@@ -87,6 +87,7 @@ fn each_refused_config_edit_has_its_kind() {
 fn each_failed_edit_has_its_kind() {
     let conflict = Conflict {
         connection: connection(),
+        label: None,
         kind: ConflictKind::Changed,
         fields: Vec::new(),
     };
