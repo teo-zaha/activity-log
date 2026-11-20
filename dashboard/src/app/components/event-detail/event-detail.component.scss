@@ -27,7 +27,13 @@
   // Clipped, never scrolled: a page sliding in would otherwise let focus scroll the panel sideways.
   overflow: clip;
   @include ui.panel-shell($radius: var(--radius-xl), $shadow: var(--panel-shadow-strong));
-  animation: slide-in 0.28s var(--ease-out);
+
+  // A drawer above the phone's width. On a phone the panel is a page, which the navigation slides
+  // in and out (`page-enter`, `page-leave` in `styles.scss`): an animation of its own here would
+  // win over that one, being as specific and later.
+  @include ui.up('phone') {
+    animation: slide-in 0.28s var(--ease-out);
+  }
 }
 
 // A group's list, an event, or what shows while it is not there.
@@ -367,7 +373,6 @@
     box-shadow: none;
     padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom)
       env(safe-area-inset-left);
-    animation: none;
   }
 
   .flyout-header {

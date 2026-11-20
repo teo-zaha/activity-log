@@ -61,9 +61,22 @@ function moves(target: MotionTarget, motion: NavigationMotion): boolean {
   return target === 'page' ? motion === 'page-in' || motion === 'page-out' : motion === 'switch'
 }
 
-/** Resolves once the element's own animations (not its subtree's) have ended or were cancelled. */
-function ownAnimationsDone(element: Element): Promise<unknown> {
-  return Promise.allSettled(element.getAnimations().map(animation => animation.finished))
+/**
+ * Runs the element's own animations (not its subtree's) from the first frame drawn after now, and
+ * resolves once they have ended or were cancelled. Their clock would start as they are read, and
+ * the render that puts a page in can take longer than its slide on a slow device (B80): the slide
+ * would be over before it was ever drawn. Held at their start until the next frame instead, and
+ * then resumed only if still held: one cancelled meanwhile (the page left as it came, `idle`) or
+ * ended (`finished`) would start again on `play()`.
+ */
+function runFromNextFrame(element: Element): Promise<unknown> {
+  const held = element.getAnimations()
+  held.forEach(animation => animation.pause())
+  // One frame, once: no Signality composable covers a frame callback.
+  requestAnimationFrame(() => {
+    for (const animation of held) if (animation.playState === 'paused') animation.play()
+  })
+  return Promise.allSettled(held.map(animation => animation.finished))
 }
 
 /**
@@ -130,7 +143,7 @@ export class NavigationMotionService {
     const element = event.target
     const classes = [`${target}-enter`, `motion-${motion}`]
     element.classList.add(...classes)
-    void ownAnimationsDone(element).then(() => element.classList.remove(...classes))
+    void runFromNextFrame(element).then(() => element.classList.remove(...classes))
   }
 
   /**
@@ -153,7 +166,7 @@ export class NavigationMotionService {
       return
     }
     element.classList.add(`${target}-leave`, `motion-${motion}`)
-    void ownAnimationsDone(element).then(() => event.animationComplete())
+    void runFromNextFrame(element).then(() => event.animationComplete())
   }
 
   private motionOf(target: MotionTarget): NavigationMotion | null {
