@@ -3,13 +3,14 @@ mod commands;
 mod deep_link;
 mod devtools;
 mod provider_config;
+mod runtime_events;
 mod window_chrome;
 mod window_state;
 
 use std::time::{Duration, Instant};
 
 use activity_log_core::settings::ConfigFile;
-use tauri::{Manager, RunEvent, Runtime, WebviewWindow};
+use tauri::{Emitter, Manager, RunEvent, Runtime, WebviewWindow};
 
 use app_state::AppState;
 
@@ -57,6 +58,15 @@ pub fn run() {
             state.host.start_initial_collection();
             // Edits from the CLI apply within a few seconds.
             tauri::async_runtime::spawn(state.host.watch_config());
+            // The host's state as events to the window, until the host shuts down.
+            let window = app.handle().clone();
+            let feed = futures::stream::unfold(state.host.feed(), |mut feed| async move {
+                feed.next().await.map(|value| (value, feed))
+            });
+            tauri::async_runtime::spawn(runtime_events::forward(
+                Box::pin(feed),
+                move |event, json| window.emit_str_to(deep_link::MAIN_WINDOW, event, json),
+            ));
             app.manage(state);
 
             Ok(())

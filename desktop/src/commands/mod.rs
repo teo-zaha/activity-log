@@ -124,7 +124,11 @@ async fn update_config<T: Send + 'static>(
             }
             err
         })?;
-    diagnostics::info("settings", "Settings saved, re-running provider checks");
+    match edit.installed {
+        Some(_) => diagnostics::info("settings", "Settings saved, re-running provider checks"),
+        // Written, but the app quit before it installed them: no check runs for them now.
+        None => diagnostics::info("settings", "Settings saved; they apply at the next start"),
+    }
 
     let connections = edit.connections;
     // Off the async workers: it lists WSL distributions from the registry.

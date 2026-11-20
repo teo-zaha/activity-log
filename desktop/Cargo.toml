@@ -13,6 +13,7 @@ tauri-build = { version = "2.7.4", features = [] }
 
 [dependencies]
 activity-log-core = { package = "core", path = "../core" }
+futures.workspace = true
 rfd.workspace = true
 serde.workspace = true
 serde_json.workspace = true
@@ -36,5 +37,6 @@ windows = { version = "0.62.2", features = [
 
 [dev-dependencies]
 tempfile = "3.27"
+tokio = { workspace = true, features = ["test-util"] }
 # The mock runtime, to call commands as the dashboard does and see what they answer.
 tauri = { version = "2.12.5", features = ["test"] }
