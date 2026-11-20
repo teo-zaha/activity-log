@@ -136,6 +136,7 @@ fn invoke(
     let app = mock_builder()
         .manage(state)
         .invoke_handler(tauri::generate_handler![
+            super::get_runtime_state,
             super::collect,
             super::recheck_connection,
             super::save_export
@@ -395,4 +396,21 @@ async fn a_save_answers_with_the_added_connection_checking() {
             activity_log_core::model::ProviderStatus::Checking
         );
     }
+}
+
+/// The handshake read is the pair a `state` event of the same value carries, byte for byte
+/// once parsed.
+#[test]
+fn the_runtime_state_read_is_the_state_event_of_the_same_value() {
+    let state = AppState::start(None);
+    let published = state.host.subscribe().borrow().clone();
+    let event = activity_log_core::runtime::RuntimeMessage::pair(&published);
+
+    let read = invoke(state, "get_runtime_state", serde_json::json!({})).unwrap();
+
+    assert_eq!(event.event(), "state");
+    assert_eq!(
+        read,
+        serde_json::from_str::<serde_json::Value>(&event.to_json()).unwrap()
+    );
 }
