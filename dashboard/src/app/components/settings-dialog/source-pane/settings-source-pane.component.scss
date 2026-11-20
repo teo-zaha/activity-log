@@ -17,55 +17,6 @@
 
 // ── Status: one line in its tone ─────────────────────────────────────────────
 
-.health {
-  display: flex;
-  align-items: flex-start;
-  gap: 10px;
-  padding: 10px 12px;
-  border-radius: var(--radius-md);
-  @include ui.status-tone($mix: 12%);
-}
-
-.health-icon {
-  --icon-size: 18px;
-
-  margin-top: 1px;
-}
-
-.health-copy {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: baseline;
-  column-gap: 6px;
-  min-width: 0;
-  font-size: 13px;
-  line-height: 1.45;
-}
-
-.health-title {
-  margin: 0;
-  font-size: inherit;
-  font-weight: 700;
-}
-
-.health-reason {
-  margin: 0;
-  color: var(--text-primary);
-  overflow-wrap: anywhere;
-}
-
-.health-action {
-  flex: none;
-  margin-left: auto;
-}
-
-.health-meta {
-  flex-basis: 100%;
-  margin: 2px 0 0;
-  color: var(--text-tertiary);
-  font-size: 12px;
-}
-
 .tag {
   display: inline-flex;
   align-items: center;

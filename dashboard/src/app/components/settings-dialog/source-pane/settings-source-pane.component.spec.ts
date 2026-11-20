@@ -1,9 +1,11 @@
+import { signal, type WritableSignal } from '@angular/core'
 import { TestBed } from '@angular/core/testing'
 import { render, screen, within } from '@testing-library/angular'
 import userEvent from '@testing-library/user-event'
 import { describe, expect, it, vi } from 'vitest'
 import type {
   ConnectionId,
+  InstallReceipt,
   ProviderConfigConnectionStateDto,
   ProviderConfigFieldStateDto,
   ProviderConfigSaveRequestDto,
@@ -11,11 +13,13 @@ import type {
   ProviderConfigSnapshotDto,
 } from '../../../generated/activity'
 import { ActivityService } from '../../../services/activity.service'
+import type { ReceiptStanding } from '../../../services/types'
 import { RuntimeEnvironmentService } from '../../../services/backend/runtime-environment.service'
 import { providerInfo } from '../../../testing/activity-fixtures'
 import type { SettingsProviderRow } from '../settings-dialog.types'
 import { SettingsSourcePaneComponent } from './settings-source-pane.component'
 import { SourceDrafts } from './source-drafts.service'
+import { ToastService } from '../../../services/toast.service'
 
 const row = (index: 0 | 1): SettingsProviderRow => ({
   info: providerInfo[index],
@@ -85,11 +89,17 @@ const snapshot = (
 
 interface Setup {
   switchProvider: (provider: SettingsProviderRow) => Promise<void>
+  /** Resolves once the pane has handled what is pending and rendered it. */
+  whenStable: () => Promise<void>
   loadProviderConfig: ReturnType<typeof vi.fn<() => Promise<ProviderConfigSnapshotDto>>>
   saveProviderConfig: ReturnType<
     typeof vi.fn<(request: ProviderConfigSaveRequestDto) => Promise<ProviderConfigSaveResponseDto>>
   >
   recheckConnection: ReturnType<typeof vi.fn<(connection: ConnectionId) => Promise<void>>>
+  /** Where the coordinator puts a save's receipt; `current` unless a test says otherwise. */
+  receiptStanding: ReturnType<typeof vi.fn<(receipt: InstallReceipt) => ReceiptStanding>>
+  /** The host on screen, as the coordinator has it. */
+  hostEpoch: WritableSignal<string | null>
 }
 
 async function setup(
@@ -108,12 +118,20 @@ async function setup(
   const recheckConnection = vi.fn<(connection: ConnectionId) => Promise<void>>(() =>
     Promise.resolve()
   )
-  const { rerender } = await render(SettingsSourcePaneComponent, {
+  const receiptStanding = vi.fn<(receipt: InstallReceipt) => ReceiptStanding>(() => 'current')
+  const hostEpoch = signal<string | null>('mock-host')
+  const { rerender, fixture } = await render(SettingsSourcePaneComponent, {
     inputs: { provider: options.provider ?? row(1) },
     providers: [
       {
         provide: ActivityService,
-        useValue: { loadProviderConfig, saveProviderConfig, recheckConnection },
+        useValue: {
+          loadProviderConfig,
+          saveProviderConfig,
+          recheckConnection,
+          receiptStanding,
+          hostEpoch,
+        },
       },
       {
         provide: RuntimeEnvironmentService,
@@ -126,8 +144,22 @@ async function setup(
     loadProviderConfig,
     saveProviderConfig,
     recheckConnection,
+    receiptStanding,
+    hostEpoch,
     switchProvider: provider => rerender({ partialUpdate: true, inputs: { provider } }),
+    whenStable: () => fixture.whenStable(),
   }
+}
+
+/** The next confirmation the pane shows. */
+function nextToast(): Promise<string> {
+  const toast = TestBed.inject(ToastService)
+  return new Promise(resolve => {
+    const success = vi.spyOn(toast, 'success').mockImplementationOnce(message => {
+      success.mockRestore()
+      resolve(message)
+    })
+  })
 }
 
 function saveResponse(fields: ProviderConfigFieldStateDto[]): ProviderConfigSaveResponseDto {
@@ -171,6 +203,208 @@ describe('SettingsSourcePaneComponent', () => {
 
     expect(await screen.findByRole('heading', { name: 'Startup check timed out' })).toBeTruthy()
     expect(screen.getByText('timer_off')).toBeTruthy()
+  })
+
+  describe('operations and the snapshot', () => {
+    const degraded = (): SettingsProviderRow => ({
+      ...row(1),
+      info: { ...providerInfo[1], status: 'degraded', reason: 'Collection failed' },
+    })
+
+    it('keeps a snapshot read after the save was sent over the save’s own', async () => {
+      let disk = snapshot()
+      const { saveProviderConfig, switchProvider, whenStable } = await setup({
+        load: () => Promise.resolve(disk),
+      })
+      let answer = (_: ProviderConfigSaveResponseDto): void => undefined
+      saveProviderConfig.mockImplementationOnce(() => new Promise(resolve => (answer = resolve)))
+      const max = await screen.findByLabelText('Max results')
+      await userEvent.clear(max)
+      await userEvent.type(max, '40')
+      await userEvent.click(screen.getByRole('button', { name: 'Save settings' }))
+      // Another writer clears the token; a read shows it before the sources on screen do.
+      disk = snapshot(jiraFields.map(f => (f.key === 'apiToken' ? { ...f, isSet: false } : f)))
+      await switchProvider(row(0))
+      await switchProvider(row(1))
+      await whenStable()
+      expect(screen.queryByRole('button', { name: 'Clear saved API token' })).toBeNull()
+
+      const toasted = nextToast()
+      answer(saveResponse(jiraFields))
+      await toasted
+      await whenStable()
+
+      expect(screen.queryByRole('button', { name: 'Clear saved API token' })).toBeNull()
+    })
+
+    it('reads the snapshot again when a read fails after the host changed', async () => {
+      const { saveProviderConfig, hostEpoch, receiptStanding, loadProviderConfig, whenStable } =
+        await setup()
+      let answer = (_: ProviderConfigSaveResponseDto): void => undefined
+      let fail = (_: Error): void => undefined
+      saveProviderConfig.mockImplementationOnce(() => new Promise(resolve => (answer = resolve)))
+      const max = await screen.findByLabelText('Max results')
+      await userEvent.clear(max)
+      await userEvent.type(max, '40')
+      await userEvent.click(screen.getByRole('button', { name: 'Save settings' }))
+      hostEpoch.set('b')
+      receiptStanding.mockReturnValue('otherHost')
+      loadProviderConfig.mockImplementationOnce(() => new Promise((_, reject) => (fail = reject)))
+      const toasted = nextToast()
+      answer(saveResponse(jiraFields))
+      await toasted
+      await vi.waitFor(() => expect(loadProviderConfig).toHaveBeenCalledTimes(2))
+
+      // Host b goes away with its read; host c is read instead, and its snapshot shows.
+      hostEpoch.set('c')
+      fail(new Error('Host B exited'))
+      await whenStable()
+
+      expect(loadProviderConfig).toHaveBeenCalledTimes(3)
+      expect(screen.queryByRole('alert')).toBeNull()
+    })
+
+    it('keeps the form busy while its save is out, also after a check ends', async () => {
+      const { saveProviderConfig, whenStable } = await setup({ provider: degraded() })
+      let answer = (_: ProviderConfigSaveResponseDto): void => undefined
+      saveProviderConfig.mockImplementationOnce(() => new Promise(resolve => (answer = resolve)))
+      await userEvent.type(await screen.findByLabelText('Base URL'), '/other')
+      await userEvent.click(screen.getByRole('button', { name: 'Save settings' }))
+
+      await userEvent.click(screen.getByRole('button', { name: 'Check again' }))
+      await whenStable()
+
+      // No second save can start before the first is answered, so none can overtake it.
+      expect(screen.getByLabelText('Base URL')).toHaveProperty('disabled', true)
+      expect(screen.getByRole('button', { name: 'Saving…' })).toHaveProperty('disabled', true)
+      const toasted = nextToast()
+      answer(saveResponse(jiraFields))
+      await toasted
+      await whenStable()
+      expect(screen.getByLabelText('Base URL')).toHaveProperty('disabled', false)
+    })
+
+    it('reads the snapshot again when a later install than the save’s is on screen', async () => {
+      let current = snapshot()
+      const { saveProviderConfig, whenStable, loadProviderConfig, receiptStanding } = await setup({
+        load: () => Promise.resolve(current),
+      })
+      let answer = (_: ProviderConfigSaveResponseDto): void => undefined
+      saveProviderConfig.mockImplementationOnce(() => new Promise(resolve => (answer = resolve)))
+      const max = await screen.findByLabelText('Max results')
+      await userEvent.clear(max)
+      await userEvent.type(max, '40')
+      await userEvent.click(screen.getByRole('button', { name: 'Save settings' }))
+      // The token is cleared elsewhere, and that install is on screen before the save's answer.
+      current = snapshot(jiraFields.map(f => (f.key === 'apiToken' ? { ...f, isSet: false } : f)))
+      receiptStanding.mockReturnValue('superseded')
+      const reads = loadProviderConfig.mock.calls.length
+
+      const toasted = nextToast()
+      answer(
+        saveResponse(jiraFields.map(f => (f.key === 'maxResults' ? { ...f, value: '40' } : f)))
+      )
+      await toasted
+      await whenStable()
+
+      expect(receiptStanding).toHaveBeenCalledWith({ epoch: 'mock-host', revision: 1 })
+      expect(loadProviderConfig.mock.calls.length).toBe(reads + 1)
+      expect(screen.queryByRole('button', { name: 'Clear saved API token' })).toBeNull()
+    })
+
+    it('reads the snapshot again when the host changed while it was read', async () => {
+      const { saveProviderConfig, loadProviderConfig, whenStable, receiptStanding, hostEpoch } =
+        await setup()
+      let answer = (_: ProviderConfigSaveResponseDto): void => undefined
+      saveProviderConfig.mockImplementationOnce(() => new Promise(resolve => (answer = resolve)))
+      const max = await screen.findByLabelText('Max results')
+      await userEvent.clear(max)
+      await userEvent.type(max, '40')
+      await userEvent.click(screen.getByRole('button', { name: 'Save settings' }))
+      // Host a answers the save after host b replaced it: the snapshot is read under b...
+      hostEpoch.set('b')
+      receiptStanding.mockReturnValue('otherHost')
+      let read = (_: ProviderConfigSnapshotDto): void => undefined
+      loadProviderConfig.mockImplementationOnce(() => new Promise(resolve => (read = resolve)))
+      const toasted = nextToast()
+      answer(saveResponse(jiraFields))
+      await toasted
+      await vi.waitFor(() => expect(loadProviderConfig).toHaveBeenCalledTimes(2))
+
+      // ...and comes back under c, which shows the token cleared.
+      hostEpoch.set('c')
+      loadProviderConfig.mockResolvedValue(
+        snapshot(jiraFields.map(f => (f.key === 'apiToken' ? { ...f, isSet: false } : f)))
+      )
+      read(snapshot())
+      await whenStable()
+
+      expect(loadProviderConfig).toHaveBeenCalledTimes(3)
+      expect(screen.queryByRole('button', { name: 'Clear saved API token' })).toBeNull()
+    })
+
+    it('sends only the field the user changed after the settings were read again', async () => {
+      let current = snapshot()
+      const { saveProviderConfig, whenStable, switchProvider } = await setup({
+        load: () => Promise.resolve(current),
+      })
+      const max = await screen.findByLabelText('Max results')
+      await userEvent.clear(max)
+      await userEvent.type(max, '40')
+      await switchProvider(row(0))
+      await whenStable()
+      // Another writer changed the URL.
+      current = snapshot(
+        jiraFields.map(f =>
+          f.key === 'baseUrl' ? { ...f, value: 'https://newer.example.org' } : f
+        )
+      )
+      await switchProvider(row(1))
+      await whenStable()
+      expect(screen.getByLabelText('Base URL')).toHaveProperty('value', 'https://newer.example.org')
+
+      saveProviderConfig.mockResolvedValueOnce(saveResponse(jiraFields))
+      await userEvent.click(screen.getByRole('button', { name: 'Save settings' }))
+
+      expect(saveProviderConfig.mock.calls[0]?.[0].values).toEqual([
+        { key: 'maxResults', value: '40' },
+      ])
+    })
+
+    it('keeps a check’s failure with its source while another is shown', async () => {
+      const { recheckConnection, switchProvider, whenStable } = await setup({
+        provider: degraded(),
+      })
+      recheckConnection.mockRejectedValueOnce(new Error('No source jira/default'))
+      await userEvent.click(await screen.findByRole('button', { name: 'Check again' }))
+      await whenStable()
+      expect(screen.getByRole('alert').textContent).toContain('No source jira/default')
+
+      await switchProvider(row(0))
+      await whenStable()
+      expect(screen.queryByRole('alert')).toBeNull()
+      await switchProvider(degraded())
+      await whenStable()
+      expect(screen.getByRole('alert').textContent).toContain('No source jira/default')
+    })
+
+    it('keeps a check’s failure that arrives while another source is shown', async () => {
+      const { recheckConnection, switchProvider, whenStable } = await setup({
+        provider: degraded(),
+      })
+      let refuse = (_: Error): void => undefined
+      recheckConnection.mockImplementationOnce(() => new Promise((_, reject) => (refuse = reject)))
+      await userEvent.click(await screen.findByRole('button', { name: 'Check again' }))
+      await switchProvider(row(0))
+      await whenStable()
+
+      refuse(new Error('No source jira/default'))
+      await whenStable()
+      expect(screen.queryByRole('alert')).toBeNull()
+      await switchProvider(degraded())
+      await whenStable()
+      expect(screen.getByRole('alert').textContent).toContain('No source jira/default')
+    })
   })
 
   it('checks a failed source again from its health card', async () => {
@@ -442,13 +676,13 @@ describe('SettingsSourcePaneComponent', () => {
 
     await switchProvider(row(1))
 
-    // The edit the save failed for is still there, and still unsaved; the error is not.
+    // The edit the save failed for is still there, still unsaved, and so is why it failed.
     expect(await screen.findByLabelText('Base URL')).toHaveProperty(
       'value',
       'https://jira.internal'
     )
     expect(screen.getByRole('button', { name: 'Discard' })).toHaveProperty('disabled', false)
-    expect(screen.queryByRole('alert')).toBeNull()
+    expect(screen.getByRole('alert').textContent).toContain('write refused')
 
     await userEvent.click(screen.getByRole('button', { name: 'Discard' }))
     await switchProvider(row(0))
@@ -460,13 +694,307 @@ describe('SettingsSourcePaneComponent', () => {
     expect(screen.getByRole('button', { name: 'Discard' })).toHaveProperty('disabled', true)
   })
 
+  describe('a save or removal that ends after switching to another source', () => {
+    const gitRoot: ProviderConfigFieldStateDto = {
+      key: 'gitRoot',
+      label: 'Git root',
+      required: false,
+      shape: 'single',
+      valueType: 'string',
+      secret: false,
+      isSet: true,
+      value: '/code',
+    }
+    const both = (): ProviderConfigSnapshotDto => ({
+      kinds: [],
+      connections: [state('git', [gitRoot]), state('jira', jiraFields)],
+    })
+
+    /** Leaves an unsaved Git root on Git, then opens Jira. */
+    async function editGitThenOpenJira(): Promise<Setup & { drafts: SourceDrafts }> {
+      const drafts = new SourceDrafts()
+      const parts = await setup({ load: () => Promise.resolve(both()), provider: row(0), drafts })
+      await parts.whenStable()
+      const root = screen.getByLabelText('Git root')
+      await userEvent.clear(root)
+      await userEvent.type(root, '/work')
+      await parts.switchProvider(row(1))
+      await parts.whenStable()
+      expect(screen.getByLabelText('Base URL')).toBeTruthy()
+      return { ...parts, drafts }
+    }
+
+    it('keeps the other source’s edits and names the saved one', async () => {
+      const { saveProviderConfig, switchProvider, whenStable, drafts } = await editGitThenOpenJira()
+      let answer = (_: ProviderConfigSaveResponseDto): void => undefined
+      saveProviderConfig.mockReturnValue(new Promise(resolve => (answer = resolve)))
+      const baseUrl = screen.getByLabelText('Base URL')
+      await userEvent.clear(baseUrl)
+      await userEvent.type(baseUrl, 'https://jira.internal')
+      await userEvent.click(screen.getByRole('button', { name: 'Save settings' }))
+
+      await switchProvider(row(0))
+      await whenStable()
+      expect(screen.getByLabelText('Git root')).toHaveProperty('value', '/work')
+      const toasted = nextToast()
+      answer({
+        snapshot: both(),
+        providersResponse: { currentOs: 'linux', providers: providerInfo },
+        installed: { epoch: 'mock-host', revision: 1 },
+      })
+      expect(await toasted).toBe('Jira saved')
+      await whenStable()
+      expect(screen.getByLabelText('Git root')).toHaveProperty('value', '/work')
+      expect(screen.getByRole('button', { name: 'Discard' })).toHaveProperty('disabled', false)
+      expect(drafts.get('git/default')?.values).toEqual({
+        gitRoot: { kind: 'replace', value: '/work' },
+      })
+      expect(drafts.get('jira/default')).toBeUndefined()
+    })
+
+    it('shows a failed save on its own source only', async () => {
+      const { saveProviderConfig, switchProvider, whenStable } = await editGitThenOpenJira()
+      let refuse = (_: Error): void => undefined
+      saveProviderConfig.mockReturnValue(new Promise((_, reject) => (refuse = reject)))
+      const baseUrl = screen.getByLabelText('Base URL')
+      await userEvent.clear(baseUrl)
+      await userEvent.type(baseUrl, 'https://jira.internal')
+      await userEvent.click(screen.getByRole('button', { name: 'Save settings' }))
+
+      await switchProvider(row(0))
+      refuse(new Error('write refused'))
+      await whenStable()
+      expect(screen.queryByRole('alert')).toBeNull()
+      expect(screen.getByLabelText('Git root')).toHaveProperty('value', '/work')
+    })
+
+    it('removes the source it asked about, even when another is shown by the answer', async () => {
+      let answer = (_: ProviderConfigSaveResponseDto): void => undefined
+      let asked = (_: ConnectionId): void => undefined
+      const sent = new Promise<ConnectionId>(resolve => (asked = resolve))
+      const removeConnection = vi.fn((connection: ConnectionId) => {
+        asked(connection)
+        return new Promise<ProviderConfigSaveResponseDto>(resolve => (answer = resolve))
+      })
+      const removed = vi.fn()
+      const drafts = new SourceDrafts()
+      const { rerender, fixture } = await render(SettingsSourcePaneComponent, {
+        inputs: { provider: row(0) },
+        on: { removed },
+        providers: [
+          {
+            provide: ActivityService,
+            useValue: {
+              receiptStanding: (): ReceiptStanding => 'current',
+              hostEpoch: signal('mock-host'),
+              loadProviderConfig: (): Promise<ProviderConfigSnapshotDto> => Promise.resolve(both()),
+              removeConnection,
+            },
+          },
+          { provide: RuntimeEnvironmentService, useValue: { isTauri: (): boolean => true } },
+          { provide: SourceDrafts, useValue: drafts },
+        ],
+      })
+      await fixture.whenStable()
+      await userEvent.clear(screen.getByLabelText('Git root'))
+      await userEvent.type(screen.getByLabelText('Git root'), '/work')
+      await rerender({ partialUpdate: true, inputs: { provider: row(1) } })
+      await fixture.whenStable()
+      await userEvent.click(screen.getByRole('button', { name: 'Remove source' }))
+      await fixture.whenStable()
+      // Git is shown while the question about Jira is open.
+      await rerender({ partialUpdate: true, inputs: { provider: row(0) } })
+      await fixture.whenStable()
+      await userEvent.click(
+        within(screen.getByRole('alertdialog')).getByRole('button', { name: 'Remove' })
+      )
+      expect(await sent).toEqual({ source: 'jira', name: 'default' })
+      const toasted = nextToast()
+      answer({
+        snapshot: { kinds: [], connections: [state('git', [gitRoot])] },
+        providersResponse: { currentOs: 'linux', providers: providerInfo },
+        installed: { epoch: 'mock-host', revision: 1 },
+      })
+
+      expect(await toasted).toBe('Jira removed')
+      await fixture.whenStable()
+      expect(removed).not.toHaveBeenCalled()
+      expect(drafts.get('git/default')?.values).toEqual({
+        gitRoot: { kind: 'replace', value: '/work' },
+      })
+    })
+
+    it('keeps an edit made after a save was sent, in a pane opened again', async () => {
+      const drafts = new SourceDrafts()
+      let answer = (_: ProviderConfigSaveResponseDto): void => undefined
+      let saving = (): void => undefined
+      const sent = new Promise<void>(resolve => (saving = resolve))
+      const saveProviderConfig = vi.fn(() => {
+        saving()
+        return new Promise<ProviderConfigSaveResponseDto>(resolve => (answer = resolve))
+      })
+      const providers = [
+        {
+          provide: ActivityService,
+          useValue: {
+            receiptStanding: (): ReceiptStanding => 'current',
+            hostEpoch: signal('mock-host'),
+            loadProviderConfig: (): Promise<ProviderConfigSnapshotDto> => Promise.resolve(both()),
+            saveProviderConfig,
+          },
+        },
+        { provide: RuntimeEnvironmentService, useValue: { isTauri: (): boolean => true } },
+        { provide: SourceDrafts, useValue: drafts },
+      ]
+      const first = await render(SettingsSourcePaneComponent, {
+        inputs: { provider: row(1) },
+        providers,
+      })
+      await first.fixture.whenStable()
+      await userEvent.clear(screen.getByLabelText('Base URL'))
+      await userEvent.type(screen.getByLabelText('Base URL'), 'https://submitted.example.org')
+      await userEvent.click(screen.getByRole('button', { name: 'Save settings' }))
+      await sent
+      first.fixture.destroy()
+
+      const second = TestBed.createComponent(SettingsSourcePaneComponent)
+      second.componentRef.setInput('provider', row(1))
+      await second.whenStable()
+      const field = second.nativeElement.querySelector('input[id$="-baseUrl"]')
+      if (!(field instanceof HTMLInputElement)) throw new Error('the pane shows the Base URL')
+      await userEvent.clear(field)
+      await userEvent.type(field, 'https://later.example.org')
+      await second.whenStable()
+      const toasted = nextToast()
+      answer({
+        snapshot: both(),
+        providersResponse: { currentOs: 'linux', providers: providerInfo },
+        installed: { epoch: 'mock-host', revision: 1 },
+      })
+      await toasted
+
+      expect(drafts.get('jira/default')?.values['baseUrl']).toEqual({
+        kind: 'replace',
+        value: 'https://later.example.org',
+      })
+    })
+
+    it('clears a saved draft that a pane opened again only showed', async () => {
+      const drafts = new SourceDrafts()
+      let answer = (_: ProviderConfigSaveResponseDto): void => undefined
+      let saving = (): void => undefined
+      const sent = new Promise<void>(resolve => (saving = resolve))
+      const saveProviderConfig = vi.fn(() => {
+        saving()
+        return new Promise<ProviderConfigSaveResponseDto>(resolve => (answer = resolve))
+      })
+      const providers = [
+        {
+          provide: ActivityService,
+          useValue: {
+            receiptStanding: (): ReceiptStanding => 'current',
+            hostEpoch: signal('mock-host'),
+            loadProviderConfig: (): Promise<ProviderConfigSnapshotDto> => Promise.resolve(both()),
+            saveProviderConfig,
+          },
+        },
+        { provide: RuntimeEnvironmentService, useValue: { isTauri: (): boolean => true } },
+        { provide: SourceDrafts, useValue: drafts },
+      ]
+      const first = await render(SettingsSourcePaneComponent, {
+        inputs: { provider: row(1) },
+        providers,
+      })
+      await first.fixture.whenStable()
+      await userEvent.clear(screen.getByLabelText('Base URL'))
+      await userEvent.type(screen.getByLabelText('Base URL'), 'https://submitted.example.org')
+      await userEvent.click(screen.getByRole('button', { name: 'Save settings' }))
+      await sent
+      first.fixture.destroy()
+
+      // Opened again while the save is out: the draft shows, and nothing is edited.
+      const second = TestBed.createComponent(SettingsSourcePaneComponent)
+      second.componentRef.setInput('provider', row(1))
+      await second.whenStable()
+      const toasted = nextToast()
+      answer({
+        snapshot: both(),
+        providersResponse: { currentOs: 'linux', providers: providerInfo },
+        installed: { epoch: 'mock-host', revision: 1 },
+      })
+      await toasted
+
+      expect(drafts.get('jira/default')).toBeUndefined()
+    })
+
+    it('keeps the other source’s edits after a removal and stays on it', async () => {
+      let answer = (_: ProviderConfigSaveResponseDto): void => undefined
+      let asked = (_: ConnectionId): void => undefined
+      const sent = new Promise<ConnectionId>(resolve => (asked = resolve))
+      const removeConnection = vi.fn((connection: ConnectionId) => {
+        asked(connection)
+        return new Promise<ProviderConfigSaveResponseDto>(resolve => (answer = resolve))
+      })
+      const removed = vi.fn()
+      const drafts = new SourceDrafts()
+      const { rerender, fixture } = await render(SettingsSourcePaneComponent, {
+        inputs: { provider: row(0) },
+        on: { removed },
+        providers: [
+          {
+            provide: ActivityService,
+            useValue: {
+              receiptStanding: (): ReceiptStanding => 'current',
+              hostEpoch: signal('mock-host'),
+              loadProviderConfig: (): Promise<ProviderConfigSnapshotDto> => Promise.resolve(both()),
+              removeConnection,
+            },
+          },
+          { provide: RuntimeEnvironmentService, useValue: { isTauri: (): boolean => true } },
+          { provide: SourceDrafts, useValue: drafts },
+        ],
+      })
+      await fixture.whenStable()
+      const root = screen.getByLabelText('Git root')
+      await userEvent.clear(root)
+      await userEvent.type(root, '/work')
+      await rerender({ partialUpdate: true, inputs: { provider: row(1) } })
+      await fixture.whenStable()
+      await userEvent.click(screen.getByRole('button', { name: 'Remove source' }))
+      await fixture.whenStable()
+      await userEvent.click(
+        within(screen.getByRole('alertdialog')).getByRole('button', { name: 'Remove' })
+      )
+      expect(await sent).toEqual({ source: 'jira', name: 'default' })
+
+      await rerender({ partialUpdate: true, inputs: { provider: row(0) } })
+      await fixture.whenStable()
+      expect(screen.getByLabelText('Git root')).toHaveProperty('value', '/work')
+      const toasted = nextToast()
+      answer({
+        snapshot: { kinds: [], connections: [state('git', [gitRoot])] },
+        providersResponse: { currentOs: 'linux', providers: providerInfo },
+        installed: { epoch: 'mock-host', revision: 1 },
+      })
+      expect(await toasted).toBe('Jira removed')
+      await fixture.whenStable()
+      expect(removed).not.toHaveBeenCalled()
+      expect(screen.getByLabelText('Git root')).toHaveProperty('value', '/work')
+      expect(drafts.get('git/default')?.values).toEqual({
+        gitRoot: { kind: 'replace', value: '/work' },
+      })
+    })
+  })
+
   it('keeps unsaved edits once the pane is gone, until they are saved', async () => {
     const { saveProviderConfig } = await setup()
     const drafts = TestBed.inject(SourceDrafts)
     const maxResults = await screen.findByLabelText('Max results')
     await userEvent.clear(maxResults)
     await userEvent.type(maxResults, '25')
-    expect(drafts.get('jira/default')?.values).toMatchObject({ maxResults: '25' })
+    expect(drafts.get('jira/default')?.values).toEqual({
+      maxResults: { kind: 'replace', value: '25' },
+    })
 
     saveProviderConfig.mockResolvedValue(
       saveResponse(
@@ -481,10 +1009,9 @@ describe('SettingsSourcePaneComponent', () => {
   it('shows the edits left in a draft when the pane opens', async () => {
     const drafts = new SourceDrafts()
     drafts.set('jira/default', {
-      label: 'Jira',
-      values: { baseUrl: 'https://jira.internal' },
+      label: null,
+      values: { baseUrl: { kind: 'replace', value: 'https://jira.internal' } },
       lists: {},
-      resets: [],
     })
     await setup({ drafts })
 
@@ -588,14 +1115,18 @@ describe('SettingsSourcePaneComponent connections', () => {
     saveProviderConfig: ReturnType<typeof vi.fn>
     removeConnection: ReturnType<typeof vi.fn>
     removed: ReturnType<typeof vi.fn>
+    receiptStanding: ReturnType<typeof vi.fn<(receipt: InstallReceipt) => ReceiptStanding>>
   }> {
+    const receiptStanding = vi.fn<(receipt: InstallReceipt) => ReceiptStanding>(() => 'current')
     const saveProviderConfig = vi.fn().mockResolvedValue({
       snapshot: connectionsSnapshot(),
       providersResponse: { currentOs: 'linux', providers: providerInfo },
+      installed: { epoch: 'mock-host', revision: 1 },
     })
     const removeConnection = vi.fn().mockResolvedValue({
       snapshot: connectionsSnapshot(),
       providersResponse: { currentOs: 'linux', providers: providerInfo },
+      installed: { epoch: 'mock-host', revision: 1 },
     })
     const removed = vi.fn()
     await render(SettingsSourcePaneComponent, {
@@ -605,6 +1136,8 @@ describe('SettingsSourcePaneComponent connections', () => {
         {
           provide: ActivityService,
           useValue: {
+            receiptStanding,
+            hostEpoch: signal('mock-host'),
             loadProviderConfig: (): Promise<ProviderConfigSnapshotDto> =>
               Promise.resolve(connectionsSnapshot()),
             saveProviderConfig,
@@ -615,8 +1148,56 @@ describe('SettingsSourcePaneComponent connections', () => {
       ],
     })
     await screen.findByLabelText('Label')
-    return { saveProviderConfig, removeConnection, removed }
+    return { saveProviderConfig, removeConnection, removed, receiptStanding }
   }
+
+  it('leaves the draft and the section of a host that replaced the one a removal reached', async () => {
+    const { removeConnection, removed, receiptStanding } = await setupConnections()
+    const drafts = TestBed.inject(SourceDrafts)
+    let answer = (_: ProviderConfigSaveResponseDto): void => undefined
+    removeConnection.mockImplementationOnce(() => new Promise(resolve => (answer = resolve)))
+    await userEvent.click(screen.getByRole('button', { name: 'Remove source' }))
+    const question = await screen.findByRole('alertdialog')
+    await userEvent.click(within(question).getByRole('button', { name: 'Remove' }))
+    await vi.waitFor(() => expect(removeConnection).toHaveBeenCalled())
+    // Host b replaces host a, and the user edits b's connection of the same name.
+    receiptStanding.mockReturnValue('otherHost')
+    drafts.set('jira/default', { label: 'Host B edit', values: {}, lists: {} })
+
+    const toasted = nextToast()
+    answer({
+      snapshot: connectionsSnapshot(),
+      providersResponse: { currentOs: 'linux', providers: providerInfo },
+      installed: { epoch: 'a', revision: 1 },
+    })
+    await toasted
+
+    expect(drafts.get('jira/default')?.label).toBe('Host B edit')
+    expect(removed).not.toHaveBeenCalled()
+  })
+
+  it('keeps an edit made while the removal was out', async () => {
+    const { removeConnection, removed } = await setupConnections()
+    const drafts = TestBed.inject(SourceDrafts)
+    let answer = (_: ProviderConfigSaveResponseDto): void => undefined
+    removeConnection.mockImplementationOnce(() => new Promise(resolve => (answer = resolve)))
+    await userEvent.click(screen.getByRole('button', { name: 'Remove source' }))
+    const question = await screen.findByRole('alertdialog')
+    await userEvent.click(within(question).getByRole('button', { name: 'Remove' }))
+    await vi.waitFor(() => expect(removeConnection).toHaveBeenCalled())
+    drafts.set('jira/default', { label: 'Added again', values: {}, lists: {} })
+
+    const toasted = nextToast()
+    answer({
+      snapshot: connectionsSnapshot(),
+      providersResponse: { currentOs: 'linux', providers: providerInfo },
+      installed: { epoch: 'mock-host', revision: 2 },
+    })
+    await toasted
+
+    expect(drafts.get('jira/default')?.label).toBe('Added again')
+    expect(removed).toHaveBeenCalled()
+  })
 
   it('renames a connection with its label', async () => {
     const { saveProviderConfig } = await setupConnections()
