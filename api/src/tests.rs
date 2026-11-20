@@ -625,3 +625,282 @@ async fn a_collect_sent_as_plain_text_matches_no_route() {
     let error = error_with_status(response, Status::NotFound).await;
     assert_eq!(error.kind, BackendErrorKind::NotFound);
 }
+
+// GET /api/events (§5): read incrementally, never to the end of an open stream.
+
+/// An open event stream, read one event at a time.
+struct Events<'a> {
+    response: rocket::local::asynchronous::LocalResponse<'a>,
+    buffer: String,
+}
+
+/// One server-sent event: its name and its data, parsed.
+#[derive(Debug)]
+struct Sent {
+    event: String,
+    data: serde_json::Value,
+}
+
+impl<'a> Events<'a> {
+    async fn open(client: &'a Client) -> Events<'a> {
+        let response = client.get("/api/events").dispatch().await;
+        assert_eq!(response.status(), Status::Ok);
+        assert_eq!(
+            response.content_type(),
+            Some(rocket::http::ContentType::EventStream)
+        );
+        Events {
+            response,
+            buffer: String::new(),
+        }
+    }
+
+    /// The next event, skipping heartbeats; `None` once the stream ended.
+    async fn next(&mut self) -> Option<Sent> {
+        use rocket::tokio::io::AsyncReadExt;
+        loop {
+            if let Some(end) = self.buffer.find("\n\n") {
+                let block = self.buffer[..end].to_string();
+                self.buffer.drain(..end + 2);
+                let mut event = None;
+                let mut data = None;
+                for line in block.lines() {
+                    if let Some(name) = line.strip_prefix("event:") {
+                        event = Some(name.trim().to_string());
+                    } else if let Some(json) = line.strip_prefix("data:") {
+                        assert!(data.is_none(), "one data line per event");
+                        data = Some(serde_json::from_str(json.trim()).unwrap());
+                    }
+                }
+                match (event, data) {
+                    (Some(event), Some(data)) => return Some(Sent { event, data }),
+                    // A heartbeat (a comment) or a field without an event.
+                    _ => continue,
+                }
+            }
+            let mut chunk = [0u8; 8192];
+            // Longer than a ping's interval: a stream is never quiet for that long.
+            let wait = activity_log_core::runtime::PING_INTERVAL + Duration::from_secs(5);
+            let read = tokio::time::timeout(wait, self.response.read(&mut chunk))
+                .await
+                .expect("an event within the ping interval")
+                .unwrap();
+            if read == 0 {
+                return None;
+            }
+            self.buffer
+                .push_str(std::str::from_utf8(&chunk[..read]).unwrap());
+        }
+    }
+
+    async fn until(&mut self, done: impl Fn(&Sent) -> bool) -> Vec<Sent> {
+        let mut seen = Vec::new();
+        loop {
+            let sent = self.next().await.expect("the stream is open");
+            let finished = done(&sent);
+            seen.push(sent);
+            if finished {
+                return seen;
+            }
+        }
+    }
+}
+
+fn host_of(client: &Client) -> &Host {
+    client.rocket().state::<Host>().expect("the host")
+}
+
+#[rocket::async_test]
+async fn the_event_stream_starts_with_both_parts_of_one_host_also_before_any_collection() {
+    let client = client(collector_ok()).await;
+    let mut events = Events::open(&client).await;
+
+    let first = events.next().await.unwrap();
+
+    assert_eq!(first.event, "state");
+    let state = &first.data;
+    assert_eq!(
+        state["activity"]["state"],
+        serde_json::json!({ "kind": "empty" })
+    );
+    assert_eq!(state["activity"]["epoch"], state["providers"]["epoch"]);
+    assert_eq!(
+        state["activity"]["authority"],
+        state["providers"]["authority"]
+    );
+    let read: serde_json::Value = client
+        .get("/api/runtime-state")
+        .dispatch()
+        .await
+        .into_json()
+        .await
+        .unwrap();
+    assert_eq!(*state, read, "the pair a plain read answers");
+}
+
+#[rocket::async_test]
+async fn a_collection_reaches_the_stream_as_activity_parts_of_rising_revisions() {
+    let release = Arc::new(Notify::new());
+    let client = client(collector_held(&release)).await;
+    let mut events = Events::open(&client).await;
+    let first = events.next().await.unwrap();
+
+    post_collect(&client, MARCH_FIRST_WEEK).await;
+    let running = events.next().await.unwrap();
+    release.notify_one();
+    let seen = events
+        .until(|sent| sent.event == "activity" && sent.data["state"]["kind"] == "ready")
+        .await;
+
+    // The collect was installed before it ran on: the run is held, so it is seen running.
+    assert_eq!(running.event, "activity");
+    assert_eq!(running.data["state"]["kind"], "running");
+    let mut revisions = vec![first.data["activity"]["revision"].as_u64().unwrap()];
+    for sent in std::iter::once(&running).chain(&seen) {
+        assert_eq!(sent.data["authority"], first.data["activity"]["authority"]);
+        assert_eq!(sent.data["epoch"], first.data["activity"]["epoch"]);
+        if sent.event == "activity" {
+            revisions.push(sent.data["revision"].as_u64().unwrap());
+        }
+    }
+    assert!(
+        revisions.windows(2).all(|pair| pair[0] < pair[1]),
+        "{revisions:?}"
+    );
+}
+
+/// A host of the config file at `path` and a client of it.
+async fn client_at(path: &std::path::Path) -> Client {
+    let host = Host::start(
+        Some(path.to_path_buf()),
+        spawner(),
+        activity_log_core::runtime::BadConfig::Fail,
+    )
+    .unwrap();
+    Client::tracked(build_rocket_with(host, false))
+        .await
+        .unwrap()
+}
+
+/// A config reload changes the authority: an open stream gets one `state` with it, keeps
+/// going, and its next messages are parts under it.
+#[rocket::async_test]
+async fn a_reload_reaches_an_open_stream_as_one_state_and_the_stream_stays() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("config.toml");
+    std::fs::write(&path, "").unwrap();
+    let client = client_at(&path).await;
+    let mut events = Events::open(&client).await;
+    let first = events.next().await.unwrap();
+    let authority = first.data["activity"]["authority"].as_str().unwrap();
+
+    std::fs::write(&path, "[[calendar]]\nlabel = \"Team\"\n").unwrap();
+    host_of(&client).reload_if_changed().await;
+    let installed = events.next().await.unwrap();
+
+    assert_eq!(installed.event, "state");
+    assert_ne!(installed.data["activity"]["authority"], authority);
+    assert_eq!(
+        installed.data["providers"]["providers"]["providers"][0]["connection"]["source"],
+        "calendar"
+    );
+    // The calendar's check (no URL) ends at once: a providers part under the new authority.
+    let checked = events.until(|sent| sent.event == "providers").await;
+    assert!(checked.iter().all(|sent| sent.event != "state"));
+    assert_eq!(
+        checked.last().unwrap().data["authority"],
+        installed.data["activity"]["authority"]
+    );
+}
+
+/// A reader that read nothing while the host installed a config and went on gets the latest
+/// pair, never the parts of the authority it missed.
+#[rocket::async_test]
+async fn a_reader_that_lagged_over_an_install_gets_one_pair_of_the_latest_value() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("config.toml");
+    std::fs::write(&path, "").unwrap();
+    let client = client_at(&path).await;
+    let mut events = Events::open(&client).await;
+    events.next().await.unwrap();
+
+    std::fs::write(&path, "[[calendar]]\nlabel = \"Team\"\n").unwrap();
+    host_of(&client).reload_if_changed().await;
+    let mut published = host_of(&client).subscribe();
+    published
+        .wait_for(|value| {
+            value
+                .providers
+                .value
+                .providers
+                .iter()
+                .all(|info| info.status != activity_log_core::model::ProviderStatus::Checking)
+        })
+        .await
+        .unwrap();
+    let latest = host_of(&client).runtime_state();
+
+    let next = events.next().await.unwrap();
+
+    assert_eq!(next.event, "state");
+    assert_eq!(next.data, serde_json::to_value(&latest).unwrap());
+}
+
+#[rocket::async_test]
+async fn two_readers_each_get_a_first_pair_and_the_same_parts() {
+    let release = Arc::new(Notify::new());
+    let client = client(collector_held(&release)).await;
+    let mut first = Events::open(&client).await;
+    let mut second = Events::open(&client).await;
+    let a = first.next().await.unwrap();
+    let b = second.next().await.unwrap();
+    assert_eq!((a.event.as_str(), b.event.as_str()), ("state", "state"));
+    assert_eq!(a.data, b.data);
+
+    post_collect(&client, MARCH_FIRST_WEEK).await;
+
+    let a = first.next().await.unwrap();
+    let b = second.next().await.unwrap();
+    assert_eq!(a.event, "activity");
+    assert_eq!(a.data, b.data);
+}
+
+#[rocket::async_test]
+async fn the_host_shutting_down_ends_the_stream() {
+    let client = client(collector_ok()).await;
+    let mut events = Events::open(&client).await;
+    events.next().await.unwrap();
+
+    host_of(&client).shutdown();
+
+    assert!(events.next().await.is_none());
+}
+
+#[rocket::async_test]
+async fn the_server_shutting_down_ends_the_stream() {
+    let client = client(collector_ok()).await;
+    let mut events = Events::open(&client).await;
+    events.next().await.unwrap();
+
+    client.rocket().shutdown().notify();
+
+    assert!(events.next().await.is_none());
+}
+
+/// A quiet stream still says it is alive, as an event a browser sees, every `PING_INTERVAL`.
+#[tokio::test(start_paused = true)]
+async fn a_quiet_stream_sends_a_ping_of_its_host() {
+    let client = client(collector_ok()).await;
+    let mut events = Events::open(&client).await;
+    let first = events.next().await.unwrap();
+    let started = tokio::time::Instant::now();
+
+    let ping = events.next().await.unwrap();
+
+    assert_eq!(ping.event, "ping");
+    assert_eq!(
+        ping.data,
+        serde_json::json!({ "epoch": first.data["activity"]["epoch"] })
+    );
+    assert!(started.elapsed() >= activity_log_core::runtime::PING_INTERVAL);
+}
