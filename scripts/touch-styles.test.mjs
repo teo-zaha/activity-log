@@ -6,7 +6,10 @@
 //   in it and in `ui.no-hover` (what a touch screen hides, such as key tags, at every width);
 // - every scroller says what its overscroll does (`overscroll-behavior` beside its `overflow`, on
 //   the scroller itself, for each axis it scrolls), so it hands its bounce on only where it means to;
-// - the viewport covers the whole screen (`viewport-fit=cover`) and keeps pinch zoom.
+// - the viewport covers the whole screen (`viewport-fit=cover`) and keeps pinch zoom;
+// - `ui.field-text` gives a field 16 px where the pointer cannot hover (its compiled form is
+//   pinned; that the fields get it, and what a layout makes of sizes, overlaps and motion, the
+//   browser specs check: `*.layout.spec.ts`, `pnpm dashboard:test:layout`).
 // Run with `node --test scripts/`.
 import assert from 'node:assert/strict'
 import { readFileSync, readdirSync } from 'node:fs'
@@ -400,4 +403,26 @@ test('the viewport covers the screen and keeps pinch zoom', () => {
   assert.equal(parts.get('viewport-fit'), 'cover')
   assert.equal(parts.get('user-scalable'), undefined)
   assert.equal(parts.get('maximum-scale'), undefined)
+})
+
+test('ui.field-text compiles to its size, and to 16 px where the pointer cannot hover', () => {
+  const { css } = sass().compileString(
+    `@use 'app/components/dashboard-shared' as ui;
+     .small { @include ui.field-text(14px); }
+     .large { @include ui.field-text(18px); }`,
+    { loadPaths: [SOURCE] }
+  )
+  const compiled = blocks(css).map(block => ({
+    rule: `${block.parent?.prelude ? `${block.parent.prelude} ` : ''}${block.prelude}`,
+    declarations: block.declarations,
+  }))
+  assert.deepEqual(compiled, [
+    { rule: '.small', declarations: [{ property: 'font-size', value: '14px' }] },
+    { rule: '@media (hover: none)', declarations: [] },
+    {
+      rule: '@media (hover: none) .small',
+      declarations: [{ property: 'font-size', value: '16px' }],
+    },
+    { rule: '.large', declarations: [{ property: 'font-size', value: '18px' }] },
+  ])
 })

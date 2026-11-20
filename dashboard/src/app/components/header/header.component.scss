@@ -45,7 +45,9 @@
   // between pages. The middle shrinks first, never the brand.
   display: grid;
   grid-template-columns: auto minmax(0, 1fr) auto;
-  grid-template-rows: 40px;
+  // As tall as the middle, which wraps where the window has no room for it in one line; the brand
+  // and the actions keep the first line's place.
+  grid-template-rows: minmax(40px, auto);
   grid-template-areas: 'brand center actions';
   align-items: center;
   column-gap: 12px;
@@ -64,6 +66,8 @@
 
 .brand {
   grid-area: brand;
+  align-self: start;
+  height: 40px;
   display: flex;
   align-items: center;
   gap: 10px;
@@ -103,12 +107,16 @@
   display: flex;
   justify-content: flex-end;
   min-width: 0;
+  // What a layout puts here sizes itself by the room it has (`RangeFormComponent`).
+  container: header-center / inline-size;
 }
 
 // ── Export actions ───────────────────────────────────────────────────────────
 
 .header-actions {
   grid-area: actions;
+  align-self: start;
+  height: 40px;
   display: flex;
   align-items: center;
   gap: 6px;

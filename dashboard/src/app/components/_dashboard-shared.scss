@@ -71,6 +71,20 @@ $breakpoints: (
   }
 }
 
+/// The size of the text typed into a field: `$size`, and at least 16 px where the pointer cannot
+/// hover (a touch screen), since iOS zooms the page into a field with smaller text as it takes
+/// focus and leaves it zoomed. Pinch zoom stays (`index.html`). Every field's text size goes
+/// through this mixin (`scripts/touch-styles.test.mjs`).
+@mixin field-text($size) {
+  font-size: $size;
+
+  @if $size < 16px {
+    @include no-hover {
+      font-size: 16px;
+    }
+  }
+}
+
 @mixin panel-shell(
   $radius: 28px,
   $background: var(--panel-bg),

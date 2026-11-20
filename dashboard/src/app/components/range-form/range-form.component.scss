@@ -1,6 +1,12 @@
 @use '../dashboard-shared' as ui;
 
-// Shrinks before anything beside it: the header's brand and actions keep their size.
+/// The narrowest middle of the header that holds both dates and Collect with its label.
+$collect-label-room: 460px;
+
+// Shrinks before anything beside it: the header's brand and actions keep their size. What it
+// holds never shrinks below its contents: where the row has no room for both dates beside Collect,
+// the To date goes below the From date, and only where one date and Collect do not fit, Collect
+// goes to a row of its own.
 :host {
   display: flex;
   min-width: 0;
@@ -8,16 +14,22 @@
 
 .range-form {
   display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
   align-items: center;
   gap: 8px;
   min-width: 0;
 }
 
+// Takes the room Collect leaves (from none: `flex-basis: 0`), so Collect stays beside the dates
+// while one date fits beside it, and never less than one date (`min-width: min-content`).
 .range {
   display: flex;
+  flex: 1 1 0;
+  flex-wrap: wrap;
   align-items: center;
-  min-width: 0;
-  height: 40px;
+  min-width: min-content;
+  min-height: 40px;
   padding: 0 2px 0 4px;
   border: 1px solid var(--border);
   border-radius: var(--radius-md);
@@ -39,7 +51,7 @@
 .range-field {
   display: flex;
   align-items: center;
-  min-width: 0;
+  height: 38px;
   padding-left: 8px;
   cursor: text;
 }
@@ -53,18 +65,23 @@
   color: var(--text-tertiary);
 }
 
+// Never narrower than the date it holds, `dd/mm/yyyy`, at whatever size the field's text is: its
+// width is in `em`, 92 px at 14 px (the date's figures and slashes in Inter, and the field's own
+// padding). What the header lacks in room, Collect gives up (below).
 .range-input {
-  flex: 0 1 92px;
-  width: 92px;
-  min-width: 0;
+  flex: none;
+  inline-size: 6.6em;
+  // Its own padding, not the browser's: Safari on iOS gives a field more, which the width in `em`
+  // does not hold.
+  padding: 1px 2px;
   border: 0;
   outline: none;
   background: transparent;
   color: var(--text-primary);
-  font:
-    500 14px Inter,
-    sans-serif;
+  font-family: Inter, sans-serif;
+  font-weight: 500;
   font-variant-numeric: tabular-nums;
+  @include ui.field-text(14px);
 
   &:focus-visible {
     outline: none;
@@ -113,6 +130,20 @@
   }
 }
 
+// Where the header's middle has no room for Collect's label beside the dates (a phone on its
+// side, whose safe area takes the width the viewport reports), Collect shows its icon alone.
+@container header-center (max-width: #{$collect-label-room}) {
+  .btn-collect {
+    width: 40px;
+    min-width: 0;
+    padding: 0;
+  }
+
+  .btn-collect-label {
+    @include ui.visually-hidden;
+  }
+}
+
 // A row of its own under the header's first: the whole width, its own space above.
 @include ui.down('phone') {
   :host {
@@ -124,19 +155,14 @@
     flex: 1;
   }
 
-  .range {
-    flex: 1;
-    min-width: 0;
-  }
-
   .range-field {
     flex: 1;
     padding-left: 6px;
   }
 
   .range-input {
-    width: 100%;
-    font-size: 13px;
+    flex: 1 0 auto;
+    @include ui.field-text(13px);
   }
 
   .btn-collect {
