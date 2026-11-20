@@ -83,7 +83,16 @@
             "tsConfig": "tsconfig.spec.json",
             "runner": "vitest",
             "include": ["src/**/*.spec.ts"],
+            "exclude": ["src/**/*.layout.spec.ts"],
             "setupFiles": ["src/test-setup.ts"]
+          },
+          "configurations": {
+            "layout": {
+              "include": ["src/**/*.layout.spec.ts"],
+              "exclude": [],
+              "browsers": ["chromiumHeadless"],
+              "browserViewport": "1280x800"
+            }
           }
         }
       }

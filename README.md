@@ -480,7 +480,9 @@ Run this before treating changes as done:
 pnpm verify
 ```
 
-`verify` is the repo-wide gate. It checks that the generated TypeScript matches the Rust contract (`pnpm types:check`), then runs formatter checks, Rust checks, clippy, Rust tests, dashboard lint, dashboard tests, Angular type-checking, and the dashboard build.
+`verify` is the repo-wide gate. It checks that the generated TypeScript matches the Rust contract (`pnpm types:check`), then runs formatter checks, Rust checks, clippy, Rust tests, dashboard lint, dashboard tests, the dashboard's layout tests, Angular type-checking, and the dashboard build.
+
+The layout tests (`*.layout.spec.ts`, `pnpm dashboard:test:layout`) run in headless Chromium, since only a browser lays a page out: overlaps, text sizes on a touch screen, slides. Install their browser once with `pnpm dashboard:browsers` (Playwright's headless shell, in its own cache folder).
 
 For Windows-specific backend coverage that also runs on macOS/Linux, use:
 

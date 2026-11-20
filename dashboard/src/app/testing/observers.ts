@@ -10,8 +10,14 @@ class InertObserver {
   }
 }
 
-/** Installs no-op `ResizeObserver` and `IntersectionObserver` globals for the current test file. */
+/**
+ * Installs no-op `ResizeObserver` and `IntersectionObserver` globals for the current test file,
+ * where they are missing (jsdom); a browser's layout specs keep the real ones.
+ */
 export function stubLayoutObservers(): void {
-  vi.stubGlobal('ResizeObserver', InertObserver)
-  vi.stubGlobal('IntersectionObserver', InertObserver)
+  if (typeof globalThis.ResizeObserver !== 'function')
+    vi.stubGlobal('ResizeObserver', InertObserver)
+  if (typeof globalThis.IntersectionObserver !== 'function') {
+    vi.stubGlobal('IntersectionObserver', InertObserver)
+  }
 }
