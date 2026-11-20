@@ -64,19 +64,25 @@
     color: var(--text-primary);
   }
 
-  :host([data-variant='secondary']:hover:not(:disabled):not([aria-disabled='true'])) {
-    border-color: var(--border-strong);
-    background: var(--surface-hover);
+  :host([data-variant='secondary']:not(:disabled):not([aria-disabled='true'])) {
+    @include ui.hover {
+      border-color: var(--border-strong);
+      background: var(--surface-hover);
+    }
   }
 
-  :host([data-variant='ghost']:hover:not(:disabled):not([aria-disabled='true'])) {
-    background: var(--surface-hover);
-    color: var(--text-primary);
+  :host([data-variant='ghost']:not(:disabled):not([aria-disabled='true'])) {
+    @include ui.hover {
+      background: var(--surface-hover);
+      color: var(--text-primary);
+    }
   }
 
-  :host([data-variant='danger-ghost']:hover:not(:disabled):not([aria-disabled='true'])) {
-    background: color-mix(in srgb, var(--status-error) 10%, transparent);
-    color: var(--status-error-fg);
+  :host([data-variant='danger-ghost']:not(:disabled):not([aria-disabled='true'])) {
+    @include ui.hover {
+      background: color-mix(in srgb, var(--status-error) 10%, transparent);
+      color: var(--status-error-fg);
+    }
   }
 
   :host([data-variant='primary']) {
@@ -87,8 +93,10 @@
       0 1px 2px color-mix(in srgb, var(--btn-primary) 40%, transparent);
   }
 
-  :host([data-variant='primary']:hover:not(:disabled):not([aria-disabled='true'])) {
-    background: var(--btn-primary-hover);
+  :host([data-variant='primary']:not(:disabled):not([aria-disabled='true'])) {
+    @include ui.hover {
+      background: var(--btn-primary-hover);
+    }
   }
 
   :host([data-variant='danger']) {
@@ -96,8 +104,10 @@
     color: #fff;
   }
 
-  :host([data-variant='danger']:hover:not(:disabled):not([aria-disabled='true'])) {
-    background: color-mix(in srgb, var(--status-error-fg) 86%, #000);
+  :host([data-variant='danger']:not(:disabled):not([aria-disabled='true'])) {
+    @include ui.hover {
+      background: color-mix(in srgb, var(--status-error-fg) 86%, #000);
+    }
   }
 
   // ── States ─────────────────────────────────────────────────────────────────

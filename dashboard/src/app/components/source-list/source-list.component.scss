@@ -26,7 +26,14 @@
   transition: opacity 0.2s ease;
 }
 
-.sources:hover .section-hint,
+.sources {
+  @include ui.hover($pressed: false) {
+    .section-hint {
+      opacity: 1;
+    }
+  }
+}
+
 .sources:focus-within .section-hint {
   opacity: 1;
 }
@@ -125,9 +132,11 @@
     --icon-size: 16px;
   }
 
-  &:hover .add-icon {
-    border-color: var(--accent);
-    color: var(--accent);
+  @include ui.hover {
+    .add-icon {
+      border-color: var(--accent);
+      color: var(--accent);
+    }
   }
 }
 
@@ -275,6 +284,7 @@
     gap: 6px;
     padding: 0 12px;
     overflow-x: auto;
+    overscroll-behavior-x: contain;
     @include ui.hide-scrollbar;
   }
 

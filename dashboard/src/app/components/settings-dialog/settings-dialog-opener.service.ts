@@ -12,8 +12,8 @@ export class SettingsDialogOpener {
     return this.dialog.open(SettingsDialogComponent, {
       panelClass: 'settings-dialog-panel',
       backdropClass: 'settings-dialog-backdrop',
-      width: 'min(1040px, calc(100vw - 32px))',
-      maxWidth: 'calc(100vw - 32px)',
+      width: 'min(1040px, var(--dialog-max-width))',
+      maxWidth: 'var(--dialog-max-width)',
       maxHeight: 'var(--dialog-max-height)',
       autoFocus: 'dialog',
       restoreFocus: true,

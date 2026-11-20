@@ -15,7 +15,10 @@ use activity_log_core::{
 };
 use anyhow::{Result, anyhow};
 use chrono::{Days, Local};
-use clap::{Args, Parser, Subcommand};
+use clap::{
+    Args, Parser, Subcommand,
+    builder::{PossibleValuesParser, TypedValueParser},
+};
 use strum::IntoEnumIterator;
 
 mod range;
@@ -74,7 +77,8 @@ enum Command {
 enum SourcesCommand {
     /// Add a source, such as a GitLab account; asks for its values.
     Add {
-        /// git, gitlab, jira, calendar, outlook or system.
+        /// The kind of source.
+        #[arg(value_parser = source_kinds())]
         kind: Source,
         /// Shown in lists and on entries; defaults to the kind's name.
         #[arg(long)]
@@ -97,6 +101,12 @@ enum SourcesCommand {
     Rename { source: String, label: String },
     /// Remove a source.
     Remove { source: String },
+}
+
+/// Every kind of source, by the name the config file and the commands use; `--help` lists them.
+fn source_kinds() -> impl TypedValueParser<Value = Source> {
+    PossibleValuesParser::new(Source::iter().map(<&'static str>::from))
+        .try_map(|kind| kind.parse::<Source>())
 }
 
 #[derive(Subcommand)]

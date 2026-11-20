@@ -108,7 +108,7 @@ ol.list {
   font-weight: 600;
   cursor: pointer;
 
-  &:hover {
+  @include ui.hover {
     color: var(--accent-hover);
   }
 

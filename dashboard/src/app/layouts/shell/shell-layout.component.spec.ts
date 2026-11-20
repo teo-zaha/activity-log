@@ -202,7 +202,9 @@ describe('ShellLayoutComponent', () => {
       const appearance = await within(dialog).findByRole('button', { name: /Appearance/ }, SLOW)
       appearance.focus()
       const details = document.querySelector('app-event-detail')
-      expect(details?.hasAttribute('inert')).toBe(true)
+      const title = jira?.title
+      if (!(details instanceof HTMLElement) || title === undefined) throw new Error('no details')
+      expect(details.hasAttribute('inert')).toBe(true)
 
       backend.activityResponse = { ...activityLog, entries: activityLog.entries.slice(0, 1) }
       backend.publish()
@@ -212,16 +214,18 @@ describe('ShellLayoutComponent', () => {
 
       backend.activityResponse = activityLog
       backend.publish()
-      await screen.findByRole('heading', { name: jira?.title }, SLOW)
+      // By its text: the dialog hides what lies under it from the accessibility tree, the details
+      // too, so their heading has no role until the dialog closes.
+      await within(details).findByText(title, { selector: '.flyout-title' }, SLOW)
       await settle()
       expect(document.activeElement).toBe(appearance)
 
       fireEvent.keyDown(document.body, { key: 'Escape', keyCode: 27 })
       await vi.waitFor(() => expect(router.parseUrl(router.url)).toEqual(router.parseUrl(group)))
       await settle()
-      expect(details?.hasAttribute('inert')).toBe(false)
+      expect(details.hasAttribute('inert')).toBe(false)
       await vi.waitFor(() =>
-        expect(document.activeElement).toBe(screen.getByRole('heading', { name: jira?.title }))
+        expect(document.activeElement).toBe(screen.getByRole('heading', { name: title }))
       )
     },
     SLOW_TEST

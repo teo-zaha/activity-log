@@ -1,3 +1,5 @@
+@use '../dashboard-shared' as ui;
+
 // The red of the system's close button, in every theme.
 $close-red: #c42b1c;
 
@@ -13,6 +15,11 @@ $close-red: #c42b1c;
   height: var(--window-controls-height);
 }
 
+@mixin hovered {
+  --control-fg: var(--text-primary);
+  background: color-mix(in srgb, var(--text-primary) 8%, transparent);
+}
+
 .control {
   display: grid;
   place-items: center;
@@ -21,7 +28,7 @@ $close-red: #c42b1c;
   padding: 0;
   border: 0;
   background: transparent;
-  color: var(--text-primary);
+  color: var(--control-fg, var(--text-primary));
   cursor: default;
   transition:
     background-color 0.1s ease,
@@ -29,9 +36,12 @@ $close-red: #c42b1c;
 
   // `is-hovered` and `is-pressed`: the maximize button under the window that shows the snap
   // layouts, which keeps the pointer from the page.
-  &:hover,
   &.is-hovered {
-    background: color-mix(in srgb, var(--text-primary) 8%, transparent);
+    @include hovered;
+  }
+
+  @include ui.hover($pressed: false) {
+    @include hovered;
   }
 
   &:active,
@@ -46,14 +56,15 @@ $close-red: #c42b1c;
 }
 
 // As the system dims its buttons in a window in the background, until the pointer is on one.
-:host(.is-inactive) .control:not(:hover, .is-hovered) {
-  color: var(--text-tertiary);
+:host(.is-inactive) {
+  --control-fg: var(--text-tertiary);
 }
 
-.close:hover,
-.close:active {
-  background: $close-red;
-  color: #fff;
+.close {
+  @include ui.hover {
+    background: $close-red;
+    color: #fff;
+  }
 }
 
 .close:active {

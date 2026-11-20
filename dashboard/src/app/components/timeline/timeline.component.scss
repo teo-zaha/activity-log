@@ -23,6 +23,7 @@
   display: flex;
   flex-direction: column;
   overflow-y: auto;
+  overscroll-behavior-y: contain;
   // Room for the scrollbar is kept from the start, so the list does not shift sideways when
   // a long range makes it appear or a filter makes it go.
   scrollbar-gutter: stable;
@@ -197,7 +198,7 @@
   cursor: pointer;
   transition: background-color 0.15s ease;
 
-  &:hover {
+  @include ui.hover($pressed: false) {
     background: color-mix(in srgb, var(--surface-hover) 65%, transparent);
 
     .entry-chevron {
@@ -251,9 +252,18 @@
   transition: background-color 0.15s ease;
 }
 
-// The hover colour of `.entry`, on the list's surface.
-.entries > li:last-child .entry:hover .entry-rail::after {
-  background: color-mix(in srgb, var(--surface-hover) 65%, var(--surface));
+// The hover and pressed colours of `.entry`, on the list's surface.
+.entries > li:last-child .entry {
+  @include ui.hover($pressed: false) {
+    .entry-rail::after {
+      background: color-mix(in srgb, var(--surface-hover) 65%, var(--surface));
+    }
+  }
+
+  &:active .entry-rail::after {
+    background: var(--surface-hover);
+    transition: none;
+  }
 }
 
 .entry-dot {

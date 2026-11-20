@@ -70,6 +70,8 @@
   align-content: start;
   min-height: 240px;
   overflow: auto;
+  // At its top or bottom the settings pane around it scrolls on; sideways it stops here.
+  overscroll-behavior: contain auto;
   border: 1px solid var(--hairline);
   border-radius: var(--radius-md);
   background: var(--surface-alt);

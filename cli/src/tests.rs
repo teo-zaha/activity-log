@@ -2,7 +2,8 @@ use activity_log_core::model::{
     ActivityLog, ActivityLogMeta, CollectedActivity, CollectedActivitySummary, ConnectionId,
     OutputFormat, ProviderInfo, ProviderStatus, Source, SupportedOs,
 };
-use clap::Parser;
+use clap::{CommandFactory, Parser};
+use strum::IntoEnumIterator;
 use tempfile::tempdir;
 
 #[path = "generate_ts_support.rs"]
@@ -131,6 +132,35 @@ fn parses_source_commands() {
     ));
     assert!(Cli::try_parse_from(["activity-log-cli", "--set", "JIRA_URL=x"]).is_err());
     assert!(Cli::try_parse_from(["activity-log-cli", "sources", "add", "nope"]).is_err());
+}
+
+#[test]
+fn sources_add_offers_every_kind_of_source() {
+    let mut command = Cli::command();
+    let add = command
+        .find_subcommand_mut("sources")
+        .and_then(|sources| sources.find_subcommand_mut("add"))
+        .expect("sources add");
+    let kind = add
+        .get_arguments()
+        .find(|argument| argument.get_id() == "kind")
+        .expect("the kind argument");
+    let offered: Vec<String> = kind
+        .get_possible_values()
+        .iter()
+        .map(|value| value.get_name().to_owned())
+        .collect();
+    let kinds: Vec<String> = Source::iter().map(|source| source.to_string()).collect();
+    assert_eq!(offered, kinds);
+    for name in &kinds {
+        let cli = Cli::try_parse_from(["activity-log-cli", "sources", "add", name]).unwrap();
+        assert!(matches!(
+            cli.command,
+            Some(crate::Command::Sources {
+                action: Some(crate::SourcesCommand::Add { kind, .. })
+            }) if kind.to_string() == *name
+        ));
+    }
 }
 
 #[test]

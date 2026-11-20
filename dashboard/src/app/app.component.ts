@@ -12,6 +12,7 @@ import { SettingsDialogLauncher } from './components/settings-dialog/settings-di
 import { WindowControlsComponent } from './components/window-controls/window-controls.component'
 import { ActivityService } from './services/activity.service'
 import { ThemeService } from './services/theme.service'
+import { followTouchInput } from './utils/touch-input'
 import { WindowChromeService } from './services/window-chrome.service'
 
 /**
@@ -34,6 +35,8 @@ export class AppComponent implements OnInit {
 
   constructor() {
     inject(SettingsDialogLauncher).followUrl()
+
+    followTouchInput(this.document)
 
     // Collection failures are not among these: <app-collection-status> shows them with Retry.
     effect(() => {

@@ -116,6 +116,7 @@ $text-inset: 4px;
   flex: 1;
   overflow-y: auto;
   overflow-x: hidden;
+  overscroll-behavior-y: contain;
   margin: 0 var(--cal-inset);
   background: transparent;
 }
@@ -165,7 +166,7 @@ $text-inset: 4px;
       transform 0.1s ease;
     z-index: 1;
 
-    &:hover {
+    @include ui.hover {
       filter: brightness(0.98);
       box-shadow: var(--control-shadow);
       transform: translateY(-1px);
@@ -209,7 +210,7 @@ $text-inset: 4px;
       color 0.1s ease,
       transform 0.1s ease;
 
-    &:hover {
+    @include ui.hover {
       background: var(--surface-hover);
       color: var(--text-primary);
       transform: translateY(-1px);

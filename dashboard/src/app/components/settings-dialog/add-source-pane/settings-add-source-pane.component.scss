@@ -39,10 +39,12 @@
     box-shadow 0.15s ease,
     transform 0.15s ease;
 
-  &:hover:not(:disabled):not(.is-upcoming) {
-    border-color: color-mix(in srgb, var(--badge-accent, var(--accent)) 45%, var(--hairline));
-    box-shadow: var(--panel-shadow-strong);
-    transform: translateY(-1px);
+  &:not(:disabled):not(.is-upcoming) {
+    @include ui.hover {
+      border-color: color-mix(in srgb, var(--badge-accent, var(--accent)) 45%, var(--hairline));
+      box-shadow: var(--panel-shadow-strong);
+      transform: translateY(-1px);
+    }
   }
 
   &:focus-visible {
@@ -191,10 +193,12 @@
     --provider-icon-glyph: 18px;
     --provider-icon-radius: 9px;
 
-    &:hover:not(:disabled):not(.is-upcoming) {
-      box-shadow: none;
-      transform: none;
-      background: var(--surface-hover);
+    &:not(:disabled):not(.is-upcoming) {
+      @include ui.hover {
+        box-shadow: none;
+        transform: none;
+        background: var(--surface-hover);
+      }
     }
 
     &:focus-visible {

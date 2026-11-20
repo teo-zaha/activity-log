@@ -1,4 +1,5 @@
 @use 'sass:map';
+@use 'sass:selector';
 
 // Keep in sync with `BREAKPOINTS` in `src/app/utils/breakpoints.ts`.
 $breakpoints: (
@@ -35,6 +36,30 @@ $breakpoints: (
 @mixin between($lower, $upper) {
   @media (min-width: breakpoint($lower) + 1px) and (max-width: breakpoint($upper)) {
     @content;
+  }
+}
+
+/// The look of a control under the pointer, written inside the control's rule (`&` is the control):
+/// `@include ui.hover { background: … }`. `:hover` applies only where the pointer can hover, since
+/// a tap on a touch screen would leave the control looking hovered, and not after a touch on a
+/// device that has a mouse too (`html.touch-input`, `utils/touch-input.ts`) until the mouse moves.
+/// With `$pressed` the same look shows at once while the control is pressed (`:active`), whatever
+/// the input: a tap shows it for as long as the finger is down and fades out on release; a mouse,
+/// already over it, sees no change. Every `:hover` in the dashboard goes through this mixin
+/// (`scripts/touch-styles.test.mjs`).
+@mixin hover($pressed: true) {
+  @media (hover: hover) {
+    // On the control itself, so Angular's style scoping leaves it as it is.
+    @at-root #{selector.append(selector.unify(&, ':not(:root.touch-input *)'), ':hover')} {
+      @content;
+    }
+  }
+
+  @if $pressed {
+    &:active {
+      transition-duration: 0s;
+      @content;
+    }
   }
 }
 
@@ -226,11 +251,13 @@ $breakpoints: (
     box-shadow 0.18s ease,
     transform 0.18s ease;
 
-  &:hover:not(:disabled):not(.active) {
-    background: color-mix(in srgb, var(--surface-hover) 80%, transparent);
-    border-color: color-mix(in srgb, var(--border) 75%, transparent);
-    color: var(--text-primary);
-    transform: $hover-transform;
+  &:not(:disabled):not(.active) {
+    @include hover {
+      background: color-mix(in srgb, var(--surface-hover) 80%, transparent);
+      border-color: color-mix(in srgb, var(--border) 75%, transparent);
+      color: var(--text-primary);
+      transform: $hover-transform;
+    }
   }
 
   &.active {

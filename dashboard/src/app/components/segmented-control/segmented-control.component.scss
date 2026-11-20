@@ -28,8 +28,10 @@
   white-space: nowrap;
   cursor: pointer;
 
-  &:hover:not([aria-checked='true']) {
-    color: var(--text-primary);
+  &:not([aria-checked='true']) {
+    @include ui.hover {
+      color: var(--text-primary);
+    }
   }
 
   &[aria-checked='true'] {
