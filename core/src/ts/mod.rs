@@ -1,18 +1,19 @@
+use strum::IntoEnumIterator;
 use ts_rs::{Config, TS};
 
 use crate::model::{
     ActivityEntry, ActivityLog, ActivityLogMeta, ActivityState, ActivityUpdate,
-    AddConnectionRequestDto, AddConnectionResponseDto, BusyStatus, CalendarEntry, CollectAnswer,
-    CollectOptions, CollectRequest, CollectedActivitySummary, CollectionFailedResponse,
-    ConnectionCount, ConnectionId, DescriptionBlock, ErrorResponse, ExportFile, ExportRequest,
-    GitEntry, GitLabEntry, GitLabType, InstallReceipt, JiraEntry, JiraEntryType, ListItem,
-    LogEntry, LogLevel, LogsResponse, MeetingWeight, OutlookEntry, OutputFormat, PartStamp,
-    ProviderConfigConnectionStateDto, ProviderConfigFieldStateDto, ProviderConfigFieldValueDto,
-    ProviderConfigSaveRequestDto, ProviderConfigSaveResponseDto, ProviderConfigSaveValueDto,
-    ProviderConfigSnapshotDto, ProviderConfigValueDto, ProviderConfigValueTypeDto, ProviderInfo,
-    ProviderKindDto, ProviderProblem, ProviderStatus, ProvidersResponse, ProvidersUpdate,
-    RecheckAnswer, RuntimeState, ShownActivity, Source, SupportedOs, SystemEntry, SystemEntryType,
-    TextSegment,
+    AddConnectionRequestDto, AddConnectionResponseDto, BackendError, BackendErrorKind, BusyStatus,
+    CalendarEntry, CollectAnswer, CollectOptions, CollectRequest, CollectedActivitySummary,
+    CollectionFailedResponse, ConnectionCount, ConnectionId, DescriptionBlock, ExportFile,
+    ExportOutcome, ExportRequest, GitEntry, GitLabEntry, GitLabType, InstallReceipt, JiraEntry,
+    JiraEntryType, ListItem, LogEntry, LogLevel, LogsResponse, MeetingWeight, OutlookEntry,
+    OutputFormat, PartStamp, ProviderConfigConnectionStateDto, ProviderConfigFieldStateDto,
+    ProviderConfigFieldValueDto, ProviderConfigSaveRequestDto, ProviderConfigSaveResponseDto,
+    ProviderConfigSaveValueDto, ProviderConfigSnapshotDto, ProviderConfigValueDto,
+    ProviderConfigValueTypeDto, ProviderInfo, ProviderKindDto, ProviderProblem, ProviderStatus,
+    ProvidersResponse, ProvidersUpdate, RecheckAnswer, RuntimeState, ShownActivity, Source,
+    SupportedOs, SystemEntry, SystemEntryType, TextSegment,
 };
 
 pub fn activity_typescript() -> String {
@@ -58,10 +59,12 @@ pub fn activity_typescript() -> String {
         export_decl::<ActivityLog>(&cfg),
         export_decl::<CollectRequest>(&cfg),
         export_decl::<CollectionFailedResponse>(&cfg),
-        export_decl::<ErrorResponse>(&cfg),
+        export_decl::<BackendErrorKind>(&cfg),
+        export_decl::<BackendError>(&cfg),
         export_decl::<OutputFormat>(&cfg),
         export_decl::<ExportRequest>(&cfg),
         export_decl::<ExportFile>(&cfg),
+        export_decl::<ExportOutcome>(&cfg),
         export_decl::<LogLevel>(&cfg),
         export_decl::<LogEntry>(&cfg),
         export_decl::<LogsResponse>(&cfg),
@@ -86,9 +89,15 @@ pub fn activity_typescript() -> String {
 
 /// Values the dashboard checks the way the backend does, so it never has its own copy.
 fn constants() -> String {
+    let kinds = BackendErrorKind::iter()
+        .map(|kind| serde_json::to_string(&kind).expect("a kind serializes"))
+        .collect::<Vec<_>>()
+        .join(", ");
     format!(
         "/** The longest range the backend collects or exports, in days (`CollectOptions::MAX_DAYS`). */\n\
-         export const COLLECT_MAX_DAYS = {}\n",
+         export const COLLECT_MAX_DAYS = {}\n\n\
+         /** Every `BackendErrorKind`, for telling a backend error body from any other. */\n\
+         export const BACKEND_ERROR_KINDS = [{kinds}] as const satisfies readonly BackendErrorKind[]\n",
         CollectOptions::MAX_DAYS
     )
 }

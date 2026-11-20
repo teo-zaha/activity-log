@@ -29,9 +29,7 @@ pub fn run() {
                 .build(),
         )
         .invoke_handler(tauri::generate_handler![
-            commands::get_activity,
             commands::get_runtime_state,
-            commands::get_providers,
             commands::collect,
             commands::get_provider_config,
             commands::save_provider_config,

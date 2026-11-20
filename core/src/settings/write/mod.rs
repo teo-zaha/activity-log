@@ -13,7 +13,9 @@ use std::{
 
 use anyhow::anyhow;
 
-use super::{ConfigFile, ContentId, NO_LOCATION, precondition, warn_if_shared};
+use super::{
+    ConfigEditError, ConfigError, ConfigFile, ContentId, NO_LOCATION, precondition, warn_if_shared,
+};
 use crate::{
     platform::private_file::{Folder, PrivateFileError, create_private_folder, open_folder},
     settings::{Conflict, Precondition},
@@ -48,12 +50,17 @@ pub enum EditError {
     /// The precondition failed: the connection was changed, replaced or removed by another
     /// writer. Nothing was written.
     Conflict(Conflict),
-    /// The change refused, or its result could not be read again; nothing was written.
-    Rejected(anyhow::Error),
+    /// The file changed while a copy of it was edited (`config edit`); nothing was written.
+    FileChanged { name: String },
+    /// The change was refused; nothing was written.
+    Rejected(ConfigEditError),
+    /// The file as found, or the text the user edited, is not a valid configuration; nothing
+    /// was written.
+    Invalid(ConfigError),
     /// The location cannot hold private files; nothing was written.
     Unprotectable { location: PathBuf },
-    /// Reading, locking or writing failed; the file is as it was.
-    Io(anyhow::Error),
+    /// Reading, locking or writing failed, or the edit stopped; the file is as it was.
+    Internal(anyhow::Error),
 }
 
 impl EditError {
@@ -76,7 +83,10 @@ impl std::fmt::Display for EditError {
             Self::Conflict(conflict) => {
                 write!(f, "{}", conflict.message(&conflict.connection.to_string()))
             }
-            Self::Rejected(err) | Self::Io(err) => write!(f, "{err:#}"),
+            Self::FileChanged { name } => write!(f, "{name} changed while you were editing"),
+            Self::Rejected(err) => write!(f, "{err}"),
+            Self::Invalid(err) => write!(f, "{err}"),
+            Self::Internal(err) => write!(f, "{err:#}"),
             Self::Unprotectable { location } => write!(
                 f,
                 "{} cannot keep the settings private; choose another location with \
@@ -94,7 +104,7 @@ impl std::error::Error for EditError {}
 pub fn edit_config<T>(
     path: &Path,
     precondition: Precondition,
-    change: impl FnOnce(&mut ConfigFile) -> anyhow::Result<T>,
+    change: impl FnOnce(&mut ConfigFile) -> Result<T, ConfigEditError>,
 ) -> Result<Edited<T>, EditError> {
     edit_config_with(lock(path)?, precondition, change)
 }
@@ -104,15 +114,17 @@ type TryLock<'a> = &'a dyn Fn(&File) -> Result<(), fs::TryLockError>;
 fn edit_config_with<T>(
     locked: Locked,
     precondition: Precondition,
-    change: impl FnOnce(&mut ConfigFile) -> anyhow::Result<T>,
+    change: impl FnOnce(&mut ConfigFile) -> Result<T, ConfigEditError>,
 ) -> Result<Edited<T>, EditError> {
     let found = locked.read()?;
     let mut file = ConfigFile::parse(&locked.path, found.as_deref().unwrap_or_default())
-        .map_err(|err| EditError::Io(err.into()))?;
+        .map_err(EditError::Invalid)?;
     let as_read = file.to_string();
     precondition::check(&file, &precondition).map_err(EditError::Conflict)?;
     let value = change(&mut file).map_err(EditError::Rejected)?;
-    file.assign_instances().map_err(EditError::Rejected)?;
+    // The change was accepted: a failure here is the writer's own.
+    file.assign_instances()
+        .map_err(|err| EditError::Internal(anyhow!(err).context("Giving connections instances")))?;
     let serialized = file.to_string();
     // An edit that changed nothing keeps the file's own bytes: its spelling, comments and line
     // endings.
@@ -165,7 +177,7 @@ impl Locked {
     /// The file's bytes, `None` when it does not exist.
     pub(super) fn read(&self) -> Result<Option<Vec<u8>>, EditError> {
         let bytes = self.folder.read(&self.name).map_err(|err| {
-            EditError::Io(anyhow!(err).context(format!("Reading {}", self.path.display())))
+            EditError::Internal(anyhow!(err).context(format!("Reading {}", self.path.display())))
         })?;
         if bytes.is_some() {
             warn_if_shared(&self.path);
@@ -180,10 +192,12 @@ impl Locked {
         found: Option<&[u8]>,
         content: Vec<u8>,
     ) -> Result<Written, EditError> {
+        // The writer made these bytes from text that parsed: one that does not read back is the
+        // writer's failure, not invalid input.
         let file = ConfigFile::parse(&self.path, &content).map_err(|err| {
-            EditError::Rejected(anyhow!(err).context("The result is not readable"))
+            EditError::Internal(anyhow!(err).context("The written settings do not read back"))
         })?;
-        let warnings = file.connections().map_err(EditError::Rejected)?.warnings;
+        let warnings = file.connections().warnings;
         if found != Some(content.as_slice()) {
             self.publish(&content)?;
         }
@@ -198,7 +212,7 @@ impl Locked {
     /// moves it over the file. A failure leaves the old file as it was.
     fn publish(&self, content: &[u8]) -> Result<(), EditError> {
         let failed = |err: io::Error| {
-            EditError::Io(anyhow!(err).context(format!("Writing {}", self.path.display())))
+            EditError::Internal(anyhow!(err).context(format!("Writing {}", self.path.display())))
         };
         let staging = self
             .folder
@@ -242,7 +256,7 @@ pub(super) fn open_parent(path: &Path) -> Result<(Folder, PathBuf), EditError> {
         _ => Path::new("."),
     };
     let folder = open_folder(parent).map_err(|err| {
-        EditError::Io(anyhow!(err).context(format!("Opening {}", parent.display())))
+        EditError::Internal(anyhow!(err).context(format!("Opening {}", parent.display())))
     })?;
     Ok((folder, path))
 }
@@ -258,7 +272,7 @@ fn lock_with(
     let lock_name = format!("{name}.lock");
     let lock_path = path.with_file_name(&lock_name);
     let file = folder.open_lock(&lock_name).map_err(|err| {
-        EditError::Io(anyhow!(err).context(format!("Opening {}", lock_path.display())))
+        EditError::Internal(anyhow!(err).context(format!("Opening {}", lock_path.display())))
     })?;
     let deadline = Instant::now() + wait;
     loop {
@@ -276,7 +290,7 @@ fn lock_with(
             }
             Err(fs::TryLockError::WouldBlock) => return Err(EditError::Busy),
             Err(fs::TryLockError::Error(err)) => {
-                return Err(EditError::Io(
+                return Err(EditError::Internal(
                     anyhow!(err).context(format!("Locking {}", lock_path.display())),
                 ));
             }
@@ -288,7 +302,7 @@ pub(super) fn file_name(path: &Path) -> Result<String, EditError> {
     path.file_name()
         .and_then(|name| name.to_str())
         .map(str::to_string)
-        .ok_or_else(|| EditError::Io(anyhow!("{} is not a file name", path.display())))
+        .ok_or_else(|| EditError::Internal(anyhow!("{} is not a file name", path.display())))
 }
 
 /// A link is followed to its target, which is replaced while the link stays; its folder is
@@ -297,7 +311,7 @@ pub(super) fn resolve(path: &Path) -> Result<PathBuf, EditError> {
     let is_link = fs::symlink_metadata(path).is_ok_and(|meta| meta.file_type().is_symlink());
     let path = if is_link {
         fs::canonicalize(path).map_err(|err| {
-            EditError::Io(if err.kind() == io::ErrorKind::NotFound {
+            EditError::Internal(if err.kind() == io::ErrorKind::NotFound {
                 anyhow!("{} links to a file that does not exist", path.display())
             } else {
                 anyhow!(err).context(format!("Resolving {}", path.display()))
@@ -312,7 +326,7 @@ pub(super) fn resolve(path: &Path) -> Result<PathBuf, EditError> {
         && !parent.exists()
     {
         create_private_folder(parent).map_err(|err| {
-            EditError::Io(anyhow!(err).context(format!("Creating {}", parent.display())))
+            EditError::Internal(anyhow!(err).context(format!("Creating {}", parent.display())))
         })?;
     }
     Ok(path)

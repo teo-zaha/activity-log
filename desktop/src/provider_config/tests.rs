@@ -1,14 +1,15 @@
 use activity_log_core::{
     model::{
-        AddConnectionRequestDto, ConnectionId, ProviderConfigConnectionStateDto,
-        ProviderConfigFieldValueDto, ProviderConfigSaveRequestDto, ProviderConfigSaveValueDto,
-        ProviderConfigValueDto, ProviderConfigValueTypeDto, Source, SupportedOs,
+        AddConnectionRequestDto, BackendError, BackendErrorKind, ConnectionId,
+        ProviderConfigConnectionStateDto, ProviderConfigFieldValueDto,
+        ProviderConfigSaveRequestDto, ProviderConfigSaveValueDto, ProviderConfigValueDto,
+        ProviderConfigValueTypeDto, Source, SupportedOs,
     },
     provider::{connection::Connection, git::default_git_root},
     settings::ConfigFile,
 };
 
-use super::{apply_add, apply_save, build_snapshot, provider_config_key_label};
+use super::{apply_add, apply_save, build_snapshot, provider_config_key_label, save_changes};
 
 const OS: SupportedOs = SupportedOs::Macos;
 
@@ -17,7 +18,7 @@ fn file(text: &str) -> ConfigFile {
 }
 
 fn connections(file: &ConfigFile) -> Vec<Connection> {
-    file.connections().unwrap().connections
+    file.connections().connections
 }
 
 fn connection_state(file: &ConfigFile, id: &str) -> ProviderConfigConnectionStateDto {
@@ -54,6 +55,15 @@ fn save(
             })
             .collect(),
     }
+}
+
+/// Checks `request` and applies it, as the save command does under the config lock.
+fn apply(
+    file: &mut ConfigFile,
+    request: &ProviderConfigSaveRequestDto,
+) -> Result<(), BackendError> {
+    let changes = save_changes(request)?;
+    Ok(apply_save(file, &changes)?)
 }
 
 fn text(value: &str) -> Option<ProviderConfigValueDto> {
@@ -143,7 +153,7 @@ fn saves_values_and_labels_of_one_connection() {
         ],
     );
     request.label = Some("Work".to_string());
-    apply_save(&mut config, &request).unwrap();
+    apply(&mut config, &request).unwrap();
 
     let gitlab = connection_state(&config, "gitlab/gitlab");
     assert_eq!(gitlab.label, "Work");
@@ -155,19 +165,27 @@ fn saves_values_and_labels_of_one_connection() {
             value: Some("https://gitlab.example.com".to_string()),
         }
     );
-    assert!(
-        apply_save(
-            &mut config,
-            &save("gitlab/gitlab", vec![("GITLAB_URL", text("nope"))]),
-        )
-        .is_err()
+    let refused = |request| apply(&mut file("[[gitlab]]\n"), &request).unwrap_err().kind;
+    assert_eq!(
+        refused(save("gitlab/gitlab", vec![("GITLAB_URL", text("nope"))])),
+        BackendErrorKind::InvalidRequest
     );
-    assert!(
-        apply_save(
-            &mut config,
-            &save("gitlab/gitlab", vec![("JIRA_URL", text("x"))]),
-        )
-        .is_err()
+    assert_eq!(
+        refused(save("gitlab/gitlab", vec![("JIRA_URL", text("x"))])),
+        BackendErrorKind::InvalidRequest
+    );
+    // Another program removed it meanwhile.
+    assert_eq!(
+        refused(save(
+            "gitlab/gone",
+            vec![("GITLAB_URL", text("https://a.example.org"))]
+        )),
+        BackendErrorKind::NotFound
+    );
+    // Also for a save that changes nothing.
+    assert_eq!(
+        refused(save("gitlab/gone", vec![])),
+        BackendErrorKind::NotFound
     );
 }
 
@@ -179,7 +197,7 @@ fn saves_lists_cleaned_and_keeps_an_empty_list_apart_from_a_cleared_one() {
         String::new(),
         "\"/srv/repos\"".to_string(),
     ];
-    apply_save(
+    apply(
         &mut config,
         &save(
             "git/this-computer",
@@ -195,7 +213,7 @@ fn saves_lists_cleaned_and_keeps_an_empty_list_apart_from_a_cleared_one() {
         }
     );
 
-    apply_save(
+    apply(
         &mut config,
         &save(
             "git/this-computer",
@@ -207,7 +225,7 @@ fn saves_lists_cleaned_and_keeps_an_empty_list_apart_from_a_cleared_one() {
     assert!(git.fields[0].is_set);
     assert!(config.to_string().contains("dirs = []"));
 
-    apply_save(
+    apply(
         &mut config,
         &save("git/this-computer", vec![("GIT_DIRS", None)]),
     )
@@ -226,7 +244,10 @@ fn rejects_a_list_for_a_single_value_key() {
         )],
     );
 
-    assert!(apply_save(&mut config, &request).is_err());
+    assert_eq!(
+        apply(&mut config, &request).unwrap_err().kind,
+        BackendErrorKind::InvalidRequest
+    );
 }
 
 #[test]
@@ -251,6 +272,25 @@ fn adds_wsl_git_connections_with_home_as_the_default_folder() {
             item_type: ProviderConfigValueTypeDto::String,
             items: vec!["~".to_string()],
         }
+    );
+}
+
+#[test]
+fn a_second_connection_of_a_single_kind_already_exists() {
+    let mut config = file("[[outlook]]\n");
+    let refused = apply_add(
+        &mut config,
+        &AddConnectionRequestDto {
+            source: Source::Outlook,
+            label: None,
+            wsl_distro: None,
+        },
+    )
+    .unwrap_err();
+
+    assert_eq!(
+        BackendError::from(refused).kind,
+        BackendErrorKind::AlreadyExists
     );
 }
 

@@ -2,12 +2,13 @@ use std::collections::VecDeque;
 
 use activity_log_core::{
     model::{ConnectionId, ProviderInfo, ProviderStatus, Source},
-    provider::{connection::Connection, provider_config::ConfigSource},
+    provider::{connection::Connection, jira::JIRA_INSECURE, provider_config::ConfigSource},
     settings::ConfigFile,
 };
 
 use super::{
-    Lines, NO_SOURCES, Prompt, add, ask_values, key, list_lines, resolve_connection, value_for,
+    Lines, NO_SOURCES, Prompt, SourcesError, add, ask_values, key, list_lines, resolve_connection,
+    value_for,
 };
 
 /// Answers questions in order and remembers which were secret.
@@ -40,7 +41,7 @@ impl Prompt for Script {
 }
 
 fn connections(file: &ConfigFile) -> Vec<Connection> {
-    file.connections().unwrap().connections
+    file.connections().connections
 }
 
 fn value(file: &ConfigFile, id: &str, key: &str) -> Option<String> {
@@ -117,12 +118,29 @@ fn sets_lists_and_single_values_and_unsets_them() {
         .unwrap();
     assert_eq!(value(&file, "git/this-computer", "GIT_DIRS"), None);
 
-    let err = value_for(&jira, "insecure", vec!["maybe".into()], &mut script).unwrap_err();
-    assert_eq!(err.to_string(), "Invalid value: expected bool");
-    let err = value_for(&jira, "nope", vec!["x".into()], &mut script).unwrap_err();
+    let refused = |field: &str, value: &str, script: &mut Script| {
+        value_for(&jira, field, vec![value.into()], script)
+            .unwrap_err()
+            .downcast::<SourcesError>()
+            .unwrap()
+    };
     assert_eq!(
-        err.to_string(),
-        "Jira has no setting nope; use one of: url, token, insecure"
+        refused("insecure", "maybe", &mut script),
+        SourcesError::InvalidValue(JIRA_INSECURE)
+    );
+    let unknown = refused("nope", "x", &mut script);
+    assert_eq!(
+        unknown,
+        SourcesError::UnknownSetting {
+            source: Source::Jira,
+            field: "nope".to_string(),
+        }
+    );
+    // What the terminal says lists the fields there are.
+    assert!(
+        unknown
+            .to_string()
+            .ends_with("use one of: url, token, insecure")
     );
 }
 
@@ -159,13 +177,14 @@ fn resolves_connections_by_id_or_unique_name() {
         resolve_connection(&connections, "gitlab/work").unwrap(),
         ConnectionId::new(Source::Gitlab, "work")
     );
-    assert!(
-        resolve_connection(&connections, "work")
-            .unwrap_err()
-            .to_string()
-            .contains("ambiguous")
+    assert!(matches!(
+        resolve_connection(&connections, "work"),
+        Err(SourcesError::Ambiguous { .. })
+    ));
+    assert_eq!(
+        resolve_connection(&connections, "gitlab/nope"),
+        Err(SourcesError::NoConnection("gitlab/nope".to_string()))
     );
-    assert!(resolve_connection(&connections, "gitlab/nope").is_err());
 }
 
 #[test]

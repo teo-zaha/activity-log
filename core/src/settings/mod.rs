@@ -21,7 +21,6 @@ use std::{
     sync::{Arc, Once},
 };
 
-use anyhow::{Context, Result, anyhow, bail};
 use toml_edit::{ArrayOfTables, DocumentMut, Item, Table, Value, value};
 
 use crate::{
@@ -39,10 +38,12 @@ use crate::{
     },
 };
 
+mod config_edit_error;
 mod external;
 mod precondition;
 mod write;
 
+pub use config_edit_error::{ConfigEditError, LoadError};
 pub use external::{ExternalEdit, ExternalEditError, edit_externally, editor_command};
 pub use precondition::{Conflict, ConflictKind, EditBase, FieldId, Precondition};
 pub(crate) use write::lock_wait;
@@ -69,9 +70,9 @@ pub fn warn_no_location() {
 
 /// The connections from the config file at `explicit` (or the default path). Problems in single
 /// connections are logged, not returned. Without a settings location there are none.
-pub fn load_connections(explicit: Option<&Path>) -> Result<Vec<Connection>> {
+pub fn load_connections(explicit: Option<&Path>) -> Result<Vec<Connection>, LoadError> {
     match ConfigFile::resolve_path(explicit) {
-        Some(path) => ConfigFile::load(path)?.logged_connections(),
+        Some(path) => Ok(ConfigFile::load(path)?.logged_connections()),
         None => {
             warn_no_location();
             Ok(Vec::new())
@@ -189,12 +190,13 @@ impl ConfigFile {
     }
 
     /// Reads the file; a missing file is an empty configuration.
-    pub fn load(path: impl Into<PathBuf>) -> Result<Self> {
+    pub fn load(path: impl Into<PathBuf>) -> Result<Self, LoadError> {
         let path = path.into();
-        let bytes = read_config_bytes(&path)
-            .with_context(|| format!("Reading {}", path.display()))?
-            .unwrap_or_default();
-        Ok(Self::parse(path, &bytes)?)
+        let bytes = match read_config_bytes(&path) {
+            Ok(bytes) => bytes.unwrap_or_default(),
+            Err(source) => return Err(LoadError::Read { path, source }),
+        };
+        Self::parse(path, &bytes).map_err(LoadError::Invalid)
     }
 
     /// Parses `bytes`; invalid UTF-8 and invalid TOML both fail with a [`ConfigError`].
@@ -227,17 +229,17 @@ impl ConfigFile {
     }
 
     /// Every connection, with the problems in single connections logged instead of returned.
-    pub fn logged_connections(&self) -> Result<Vec<Connection>> {
-        let resolved = self.connections()?;
+    pub fn logged_connections(&self) -> Vec<Connection> {
+        let resolved = self.connections();
         for warning in resolved.warnings {
             crate::diagnostics::warn("config", warning);
         }
-        Ok(resolved.connections)
+        resolved.connections
     }
 
     /// Every connection of every provider kind, in the file's order. Tables that cannot be read
     /// are skipped with a warning.
-    pub fn connections(&self) -> Result<ResolvedConnections> {
+    pub fn connections(&self) -> ResolvedConnections {
         let mut resolved = ResolvedConnections {
             connections: Vec::new(),
             warnings: Vec::new(),
@@ -254,7 +256,7 @@ impl ConfigFile {
                 );
             }
         }
-        Ok(resolved)
+        resolved
     }
 
     /// Adds a connection of `source` and returns its id, which comes from the label. Without a
@@ -264,17 +266,17 @@ impl ConfigFile {
         source: &Source,
         label: Option<&str>,
         location: ConnectionLocation,
-    ) -> Result<ConnectionId> {
+    ) -> Result<ConnectionId, ConfigEditError> {
         let adapter = adapter_for(source)?;
         let existing = self.entries(source);
         if adapter.instances() == Instances::Single && !existing.is_empty() {
-            bail!("{} is already added", source.label());
+            return Err(ConfigEditError::SingleInstance(source.clone()));
         }
         if matches!(location, ConnectionLocation::Wsl(_)) && *source != Source::Git {
-            bail!("Only Git connections can be in WSL");
+            return Err(ConfigEditError::WslOnlyForGit);
         }
         let label = match label.map(str::trim) {
-            Some("") => bail!("A connection needs a label"),
+            Some("") => return Err(ConfigEditError::EmptyLabel),
             Some(label) => label.to_string(),
             None => {
                 let taken = existing
@@ -303,7 +305,7 @@ impl ConfigFile {
         Ok(id)
     }
 
-    pub fn remove(&mut self, id: &ConnectionId) -> Result<()> {
+    pub fn remove(&mut self, id: &ConnectionId) -> Result<(), ConfigEditError> {
         let index = self.index_of(id)?;
         let before = self.lifetimes();
         let tables = self.tables_mut(&id.source)?;
@@ -361,10 +363,15 @@ impl ConfigFile {
         Ok(())
     }
 
-    pub fn rename(&mut self, id: &ConnectionId, label: &str) -> Result<()> {
+    /// Refuses an id no connection of the file has, for an edit that may change nothing.
+    pub fn require(&self, id: &ConnectionId) -> Result<(), ConfigEditError> {
+        self.entry(id).map(|_| ())
+    }
+
+    pub fn rename(&mut self, id: &ConnectionId, label: &str) -> Result<(), ConfigEditError> {
         let label = label.trim();
         if label.is_empty() {
-            bail!("A connection needs a label");
+            return Err(ConfigEditError::EmptyLabel);
         }
         // The label it already shows: nothing to write, not even its name.
         if self.entry(id)?.label == label {
@@ -385,10 +392,13 @@ impl ConfigFile {
         id: &ConnectionId,
         key: ProviderConfigKey,
         raw: Option<&str>,
-    ) -> Result<()> {
+    ) -> Result<(), ConfigEditError> {
         let adapter = adapter_for(&id.source)?;
         if !adapter.config_requirements().contains(&key) {
-            bail!("{} has no setting {}", id.source.label(), key.name);
+            return Err(ConfigEditError::UnknownSetting {
+                source: id.source.clone(),
+                key: key.name,
+            });
         }
         let field = field_name(&id.source, key);
         let item = raw.map(|raw| typed_item(key, raw));
@@ -453,7 +463,7 @@ impl ConfigFile {
     /// Gives each connection added or changed since the file was read an `instance` if it has
     /// none, or an unreadable one, and a new one where its lifetime changed. No other table is
     /// touched.
-    fn assign_instances(&mut self) -> Result<()> {
+    fn assign_instances(&mut self) -> Result<(), ConfigEditError> {
         let touched = std::mem::take(&mut self.touched);
         let instances = self.instances();
         let mut used = instances
@@ -673,7 +683,7 @@ impl ConfigFile {
     /// Writes a connection's name and label before it is edited, so its id stays as it was, and
     /// returns its index with the table's text as it was. The other tables keep their ids
     /// without it.
-    fn pin(&mut self, id: &ConnectionId) -> Result<(usize, String)> {
+    fn pin(&mut self, id: &ConnectionId) -> Result<(usize, String), ConfigEditError> {
         let entry = self.entry(id)?;
         let before = entry.table.to_string();
         self.pin_entry(&entry)?;
@@ -682,21 +692,26 @@ impl ConfigFile {
 
     /// Counts `id` as written when its table differs from `before`, so an edit that sets what
     /// is already there changes nothing.
-    fn mark_if_changed(&mut self, id: &ConnectionId, index: usize, before: &str) -> Result<()> {
+    fn mark_if_changed(
+        &mut self,
+        id: &ConnectionId,
+        index: usize,
+        before: &str,
+    ) -> Result<(), ConfigEditError> {
         if self.table_mut(&id.source, index)?.to_string() != before {
             self.touched.entry(id.clone()).or_insert(Refresh::IfMissing);
         }
         Ok(())
     }
 
-    fn entry(&self, id: &ConnectionId) -> Result<Entry> {
+    fn entry(&self, id: &ConnectionId) -> Result<Entry, ConfigEditError> {
         self.entries(&id.source)
             .into_iter()
             .find(|entry| entry.id == *id)
-            .ok_or_else(|| anyhow!("No connection {id}"))
+            .ok_or_else(|| ConfigEditError::UnknownConnection(id.clone()))
     }
 
-    fn pin_entry(&mut self, entry: &Entry) -> Result<()> {
+    fn pin_entry(&mut self, entry: &Entry) -> Result<(), ConfigEditError> {
         let table = self.table_mut(&entry.id.source, entry.index)?;
         // Indexing keeps a key's comments, unlike `insert`.
         if table.get(NAME).and_then(Item::as_str) != Some(entry.id.name.as_str()) {
@@ -708,15 +723,15 @@ impl ConfigFile {
         Ok(())
     }
 
-    fn index_of(&self, id: &ConnectionId) -> Result<usize> {
+    fn index_of(&self, id: &ConnectionId) -> Result<usize, ConfigEditError> {
         self.entries(&id.source)
             .iter()
             .find(|entry| entry.id == *id)
             .map(|entry| entry.index)
-            .ok_or_else(|| anyhow!("No connection {id}"))
+            .ok_or_else(|| ConfigEditError::UnknownConnection(id.clone()))
     }
 
-    fn tables_mut(&mut self, source: &Source) -> Result<&mut ArrayOfTables> {
+    fn tables_mut(&mut self, source: &Source) -> Result<&mut ArrayOfTables, ConfigEditError> {
         let item = self
             .doc
             .entry(source.as_ref())
@@ -725,13 +740,15 @@ impl ConfigFile {
             *item = Item::ArrayOfTables(ArrayOfTables::new());
         }
         item.as_array_of_tables_mut()
-            .ok_or_else(|| anyhow!("`{}` must be a list of tables", source.as_ref()))
+            .ok_or_else(|| ConfigEditError::NotATableList(source.clone()))
     }
 
-    fn table_mut(&mut self, source: &Source, index: usize) -> Result<&mut Table> {
-        self.tables_mut(source)?
+    /// The table at `index`, which an entry of this file just read.
+    fn table_mut(&mut self, source: &Source, index: usize) -> Result<&mut Table, ConfigEditError> {
+        Ok(self
+            .tables_mut(source)?
             .get_mut(index)
-            .ok_or_else(|| anyhow!("Connection {index} of {} is gone", source.as_ref()))
+            .expect("an entry's index names a table of its kind"))
     }
 }
 
@@ -927,11 +944,11 @@ pub fn key_for_field(source: &Source, field: &str) -> Option<ProviderConfigKey> 
     })
 }
 
-fn adapter_for(source: &Source) -> Result<Arc<dyn ProviderAdapter>> {
+fn adapter_for(source: &Source) -> Result<Arc<dyn ProviderAdapter>, ConfigEditError> {
     provider_registry()
         .into_iter()
         .find(|adapter| adapter.id() == *source)
-        .ok_or_else(|| anyhow!("Unknown provider {source}"))
+        .ok_or_else(|| ConfigEditError::UnknownProvider(source.clone()))
 }
 
 /// A connection's label when none is given: where Git reads, else the kind's name.

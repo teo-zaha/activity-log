@@ -58,29 +58,33 @@ impl Overlay {
 /// Puts the window over the button, or moves it there when the page asks again (a reload).
 /// It is made on the main thread after this returns; if that fails, the page's own button
 /// stays, without snap layouts, and the Logs pane says why.
-pub fn attach<R: Runtime>(window: WebviewWindow<R>, area: ButtonArea) -> Result<(), String> {
+pub fn attach<R: Runtime>(window: WebviewWindow<R>, area: ButtonArea) {
     let target = window.clone();
-    window
-        .run_on_main_thread(move || {
-            let attached = target
-                .hwnd()
-                .map_err(|err| format!("the window has no handle: {err}"))
-                .and_then(|parent| {
-                    let parent = HWND(parent.0);
-                    let notify = move |hovered: bool, pressed: bool| {
-                        let _ =
-                            target.emit(EVENT, json!({ "hovered": hovered, "pressed": pressed }));
-                    };
-                    unsafe { attach_to(parent, area, Box::new(notify)) }
-                });
-            if let Err(reason) = attached {
-                diagnostics::warn(
-                    "window",
-                    format!("Snap layouts over the maximize button are unavailable: {reason}"),
-                );
-            }
-        })
-        .map_err(|err| err.to_string())
+    let queued = window.run_on_main_thread(move || {
+        let attached = target
+            .hwnd()
+            .map_err(|err| format!("the window has no handle: {err}"))
+            .and_then(|parent| {
+                let parent = HWND(parent.0);
+                let notify = move |hovered: bool, pressed: bool| {
+                    let _ = target.emit(EVENT, json!({ "hovered": hovered, "pressed": pressed }));
+                };
+                unsafe { attach_to(parent, area, Box::new(notify)) }
+            });
+        if let Err(reason) = attached {
+            unavailable(&reason);
+        }
+    });
+    if let Err(err) = queued {
+        unavailable(&err.to_string());
+    }
+}
+
+fn unavailable(reason: &str) {
+    diagnostics::warn(
+        "window",
+        format!("Snap layouts over the maximize button are unavailable: {reason}"),
+    );
 }
 
 unsafe fn attach_to(

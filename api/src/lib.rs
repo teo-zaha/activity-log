@@ -4,21 +4,48 @@ use activity_log_core::{
     diagnostics,
     export::render_export_request,
     model::{
-        ActivityState, CollectAnswer, CollectRequest, ConnectionId, ErrorResponse, ExportRequest,
-        LogsResponse, RecheckAnswer, RuntimeState, ShownActivity,
+        ActivityState, BackendError, BackendErrorKind, CollectRequest, ConnectionId, ExportRequest,
+        LogsResponse, RuntimeState, ShownActivity,
     },
-    runtime::{Answered, BadConfig, Host, RunSpawner, resolve_collect_options},
+    runtime::{BadConfig, Host, RunSpawner, answer_collect, answer_recheck},
     settings::ConfigFile,
 };
 use rocket::{
-    Build, Data, Rocket, State, data::ByteUnit, delete, fairing::AdHoc, get, http::Status, post,
-    response::status, serde::json::Json,
+    Build, Data, Request, Rocket, State, catch, data::ByteUnit, delete, fairing::AdHoc, get,
+    http::Status, post, response::status, serde::json::Json,
 };
 
 type JsonResponse = status::Custom<Json<serde_json::Value>>;
 
 fn json(status: Status, body: impl serde::Serialize) -> JsonResponse {
     status::Custom(status, Json(serde_json::to_value(body).unwrap()))
+}
+
+/// The status an error answers with; its body is the error itself.
+fn status_of(kind: BackendErrorKind) -> Status {
+    match kind {
+        BackendErrorKind::NoData | BackendErrorKind::Busy => Status::ServiceUnavailable,
+        BackendErrorKind::InvalidRequest => Status::BadRequest,
+        BackendErrorKind::NotFound => Status::NotFound,
+        BackendErrorKind::AlreadyExists | BackendErrorKind::Conflict => Status::Conflict,
+        BackendErrorKind::TooLarge => Status::PayloadTooLarge,
+        BackendErrorKind::NoLocation
+        | BackendErrorKind::Unprotectable
+        | BackendErrorKind::BadConfig
+        | BackendErrorKind::Internal => Status::InternalServerError,
+    }
+}
+
+fn error(err: BackendError) -> JsonResponse {
+    json(status_of(err.kind), err)
+}
+
+/// A route's answer, or its error with the error's status.
+fn answer(status: Status, result: Result<impl serde::Serialize, BackendError>) -> JsonResponse {
+    match result {
+        Ok(body) => json(status, body),
+        Err(err) => error(err),
+    }
 }
 
 /// A running collection answers 202 with the log of what is in so far.
@@ -28,37 +55,8 @@ fn activity_response(state: ActivityState) -> JsonResponse {
         ActivityState::Ready { log } => json(Status::Ok, &*log),
         // The state of the last collection, not a failed request: its range stays readable.
         ActivityState::Failed { failure } => json(Status::Ok, &failure),
-        ActivityState::Empty => no_data_yet(),
+        ActivityState::Empty => error(BackendError::no_data()),
     }
-}
-
-/// As `activity_response`, with the activity's kind and the stamp of the state it shows.
-fn collect_answer(answered: Answered<ActivityState>) -> JsonResponse {
-    match ShownActivity::of(answered.value) {
-        Some(activity) => {
-            let status = match activity {
-                ShownActivity::Running(_) => Status::Accepted,
-                ShownActivity::Ready(_) | ShownActivity::Failed(_) => Status::Ok,
-            };
-            json(
-                status,
-                CollectAnswer {
-                    activity,
-                    stamp: answered.stamp,
-                },
-            )
-        }
-        None => no_data_yet(),
-    }
-}
-
-fn no_data_yet() -> JsonResponse {
-    json(
-        Status::ServiceUnavailable,
-        ErrorResponse {
-            error: "No data yet".to_string(),
-        },
-    )
 }
 
 // Each request first installs a config file changed since the last look, as the timer does
@@ -86,17 +84,16 @@ async fn get_providers(host: &State<Host>) -> Json<serde_json::Value> {
 /// Starts the collection and answers at once; `GET /api/activity` shows it filling up.
 #[post("/api/collect", format = "json", data = "<request>")]
 async fn post_collect(host: &State<Host>, request: Json<CollectRequest>) -> JsonResponse {
-    match resolve_collect_options(&request) {
-        Ok(options) => {
-            host.reload_if_changed().await;
-            collect_answer(host.collect(options))
+    host.reload_if_changed().await;
+    match answer_collect(host, &request) {
+        Ok(answer) => {
+            let status = match answer.activity {
+                ShownActivity::Running(_) => Status::Accepted,
+                ShownActivity::Ready(_) | ShownActivity::Failed(_) => Status::Ok,
+            };
+            json(status, answer)
         }
-        Err(message) => json(
-            Status::BadRequest,
-            ErrorResponse {
-                error: message.to_string(),
-            },
-        ),
+        Err(err) => error(err),
     }
 }
 
@@ -106,21 +103,7 @@ async fn post_collect(host: &State<Host>, request: Json<CollectRequest>) -> Json
 #[post("/api/connections/recheck", format = "json", data = "<request>")]
 async fn post_recheck(host: &State<Host>, request: Json<ConnectionId>) -> JsonResponse {
     host.reload_if_changed().await;
-    match host.recheck(&request) {
-        Some(answered) => json(
-            Status::Ok,
-            RecheckAnswer {
-                providers: answered.value,
-                stamp: answered.stamp,
-            },
-        ),
-        None => json(
-            Status::NotFound,
-            ErrorResponse {
-                error: format!("No source {}", *request),
-            },
-        ),
-    }
+    answer(Status::Ok, answer_recheck(host, &request))
 }
 
 /// The entries the dashboard sends can be many meetings with long descriptions, far more than
@@ -130,30 +113,32 @@ const EXPORT_LIMIT: ByteUnit = ByteUnit::Mebibyte(64);
 /// The entries the dashboard shows as a file for the browser to download.
 #[post("/api/export", format = "json", data = "<body>")]
 async fn post_export(body: Data<'_>) -> JsonResponse {
-    let error = |status, error: String| json(status, ErrorResponse { error });
     let body = match body.open(EXPORT_LIMIT).into_bytes().await {
         Ok(body) if body.is_complete() => body.into_inner(),
         Ok(_) => {
-            return error(
-                Status::PayloadTooLarge,
+            return error(BackendError::new(
+                BackendErrorKind::TooLarge,
                 format!("An export can hold at most {EXPORT_LIMIT} of entries"),
-            );
+            ));
         }
         Err(err) => {
-            return error(
-                Status::BadRequest,
-                format!("Reading the export failed: {err}"),
-            );
+            return error(BackendError::invalid_request(format!(
+                "Reading the export failed: {err}"
+            )));
         }
     };
     let request = match serde_json::from_slice::<ExportRequest>(&body) {
         Ok(request) => request,
-        Err(err) => return error(Status::BadRequest, format!("Not an export request: {err}")),
+        Err(err) => {
+            return error(BackendError::invalid_request(format!(
+                "Not an export request: {err}"
+            )));
+        }
     };
-    match render_export_request(&request) {
-        Ok(file) => json(Status::Ok, file),
-        Err(err) => error(Status::BadRequest, format!("{err:#}")),
-    }
+    answer(
+        Status::Ok,
+        render_export_request(&request).map_err(BackendError::from),
+    )
 }
 
 #[get("/api/logs")]
@@ -167,6 +152,20 @@ fn get_logs() -> Json<LogsResponse> {
 fn delete_logs() -> Status {
     diagnostics::clear();
     Status::NoContent
+}
+
+/// Every answer Rocket makes itself (an unknown route, a body that is no JSON or not the
+/// route's request, a panic) is a `BackendError` too, with Rocket's status.
+#[catch(default)]
+fn catch_default(status: Status, _request: &Request) -> status::Custom<Json<BackendError>> {
+    let kind = match status.code {
+        404 => BackendErrorKind::NotFound,
+        413 => BackendErrorKind::TooLarge,
+        400 | 415 | 422 => BackendErrorKind::InvalidRequest,
+        _ => BackendErrorKind::Internal,
+    };
+    let message = format!("{} {}", status.code, status.reason_lossy());
+    status::Custom(status, Json(BackendError::new(kind, message)))
 }
 
 /// The server for the connections in `config` (or the default config file), which it watches
@@ -205,6 +204,7 @@ pub fn build_rocket_with(host: Host, start_initial_collection: bool) -> Rocket<B
                 delete_logs
             ],
         )
+        .register("/", rocket::catchers![catch_default])
         .attach(AdHoc::on_liftoff("host", move |rocket| {
             Box::pin(async move {
                 let host = rocket.state::<Host>().expect("host");

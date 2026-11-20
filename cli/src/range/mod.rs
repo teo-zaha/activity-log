@@ -61,7 +61,7 @@ pub fn day_range<Tz: TimeZone>(
         start: start_of_day(tz, since)?,
         end: start_of_day(tz, next)?,
     };
-    options.check().map_err(|reason| anyhow!(reason))?;
+    options.check()?;
     Ok(options)
 }
 

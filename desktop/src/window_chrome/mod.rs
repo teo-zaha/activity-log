@@ -40,7 +40,7 @@ pub(crate) fn placement(
 
 /// Gives the dashboard's maximize button the snap layouts of Windows 11; nothing elsewhere. The
 /// button's hover and press come back as the `maximize-button` event, and a click maximizes or
-/// restores the window.
+/// restores the window. A failure leaves the page's own button, and the Logs pane says why.
 #[tauri::command]
 pub fn attach_maximize_button<R: Runtime>(
     window: WebviewWindow<R>,
@@ -48,7 +48,7 @@ pub fn attach_maximize_button<R: Runtime>(
     right: f64,
     width: f64,
     height: f64,
-) -> Result<(), String> {
+) {
     attach_impl(
         window,
         ButtonArea {
@@ -64,6 +64,4 @@ pub fn attach_maximize_button<R: Runtime>(
 use self::windows::attach as attach_impl;
 
 #[cfg(not(target_os = "windows"))]
-fn attach_impl<R: Runtime>(_window: WebviewWindow<R>, _area: ButtonArea) -> Result<(), String> {
-    Ok(())
-}
+fn attach_impl<R: Runtime>(_window: WebviewWindow<R>, _area: ButtonArea) {}

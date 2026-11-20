@@ -3,7 +3,7 @@
 
 use activity_log_core::{
     model::{
-        AddConnectionRequestDto, ConnectionId, ProviderConfigConnectionStateDto,
+        AddConnectionRequestDto, BackendError, ConnectionId, ProviderConfigConnectionStateDto,
         ProviderConfigFieldStateDto, ProviderConfigFieldValueDto, ProviderConfigSaveRequestDto,
         ProviderConfigSnapshotDto, ProviderConfigValueDto, ProviderKindDto, Source, SupportedOs,
     },
@@ -17,15 +17,13 @@ use activity_log_core::{
         },
         provider_registry,
     },
-    settings::{ConfigFile, warn_no_location},
+    settings::{ConfigEditError, ConfigFile, warn_no_location},
 };
 
 /// The settings file, `None` without a settings location.
-pub(crate) fn load_config() -> Result<Option<ConfigFile>, String> {
+pub(crate) fn load_config() -> Result<Option<ConfigFile>, BackendError> {
     match ConfigFile::resolve_path(None) {
-        Some(path) => ConfigFile::load(path)
-            .map(Some)
-            .map_err(|err| format!("{err:#}")),
+        Some(path) => Ok(Some(ConfigFile::load(path)?)),
         None => {
             warn_no_location();
             Ok(None)
@@ -34,35 +32,66 @@ pub(crate) fn load_config() -> Result<Option<ConfigFile>, String> {
 }
 
 /// The connections the settings pane shows. Its problems were logged when the file was read.
-pub(crate) fn shown_connections(file: &ConfigFile) -> Result<Vec<Connection>, String> {
-    file.connections()
-        .map(|resolved| resolved.connections)
-        .map_err(|err| format!("{err:#}"))
+pub(crate) fn shown_connections(file: &ConfigFile) -> Vec<Connection> {
+    file.connections().connections
 }
 
-/// Applies the pane's edits to one connection: its label, then each changed value. Runs on the
-/// file as read under the config lock.
-pub(crate) fn apply_save(
-    file: &mut ConfigFile,
+/// The pane's edits of one connection, checked against its kind's settings before the file is
+/// read: the label, then each value in its stored form (`None` clears it).
+pub(crate) struct SaveChanges {
+    connection: ConnectionId,
+    label: Option<String>,
+    values: Vec<(ProviderConfigKey, Option<String>)>,
+}
+
+/// The edits of `request`, or why they cannot be saved: a value that does not fit its setting,
+/// or a setting the kind does not have.
+pub(crate) fn save_changes(
     request: &ProviderConfigSaveRequestDto,
-) -> Result<(), String> {
+) -> Result<SaveChanges, BackendError> {
     let id = &request.connection;
     let keys = requirements_of(&id.source)?;
-    if let Some(label) = &request.label {
-        file.rename(id, label).map_err(|err| format!("{err:#}"))?;
+    let values = request
+        .values
+        .iter()
+        .map(|value| {
+            let key = keys
+                .iter()
+                .copied()
+                .find(|key| key.name == value.key)
+                .ok_or_else(|| {
+                    BackendError::invalid_request(format!(
+                        "Unknown setting '{}' for {id}.",
+                        value.key
+                    ))
+                })?;
+            let raw = match &value.value {
+                None => None,
+                Some(value) => normalize(key, value)?,
+            };
+            Ok((key, raw))
+        })
+        .collect::<Result<_, BackendError>>()?;
+    Ok(SaveChanges {
+        connection: id.clone(),
+        label: request.label.clone(),
+        values,
+    })
+}
+
+/// Applies checked edits to the file as read under the config lock.
+pub(crate) fn apply_save(
+    file: &mut ConfigFile,
+    changes: &SaveChanges,
+) -> Result<(), ConfigEditError> {
+    let id = &changes.connection;
+    // Also when nothing changes: a save is no answer for a connection that is gone.
+    file.require(id)?;
+    if let Some(label) = &changes.label {
+        file.rename(id, label)?;
     }
-    for value in &request.values {
-        let key = keys
-            .iter()
-            .copied()
-            .find(|key| key.name == value.key)
-            .ok_or_else(|| format!("Unknown setting '{}' for {id}.", value.key))?;
-        let raw = match &value.value {
-            None => None,
-            Some(value) => normalize(key, value)?,
-        };
-        file.set(id, key, raw.as_deref())
-            .map_err(|err| format!("{err:#}"))?;
+    for (key, raw) in &changes.values {
+        file.set(id, *key, raw.as_deref())?;
     }
     Ok(())
 }
@@ -70,13 +99,12 @@ pub(crate) fn apply_save(
 pub(crate) fn apply_add(
     file: &mut ConfigFile,
     request: &AddConnectionRequestDto,
-) -> Result<ConnectionId, String> {
+) -> Result<ConnectionId, ConfigEditError> {
     let location = match &request.wsl_distro {
         Some(distro) => ConnectionLocation::Wsl(distro.clone()),
         None => ConnectionLocation::Local,
     };
     file.add(&request.source, request.label.as_deref(), location)
-        .map_err(|err| format!("{err:#}"))
 }
 
 /// The stored form of a value, checked against its key: `None` for an empty single value,
@@ -84,7 +112,8 @@ pub(crate) fn apply_add(
 fn normalize(
     key: ProviderConfigKey,
     value: &ProviderConfigValueDto,
-) -> Result<Option<String>, String> {
+) -> Result<Option<String>, BackendError> {
+    let invalid = |message: String| Err(BackendError::invalid_request(message));
     match (value, key.shape) {
         (ProviderConfigValueDto::List(items), ProviderConfigShape::List(value_type)) => {
             let items = clean_config_list(items);
@@ -92,7 +121,7 @@ fn normalize(
                 .iter()
                 .find(|item| !provider_config_value_matches_type(item, value_type))
             {
-                return Err(format!(
+                return invalid(format!(
                     "Invalid item \"{bad}\" for '{}': expected {value_type}",
                     key.name
                 ));
@@ -101,17 +130,19 @@ fn normalize(
         }
         (ProviderConfigValueDto::Text(raw), ProviderConfigShape::List(value_type)) => {
             if !provider_config_key_accepts(key, raw) {
-                return Err(format!(
+                return invalid(format!(
                     "Invalid value for '{}': expected a list of {value_type}",
                     key.name
                 ));
             }
             Ok(Some(encode_config_list(&parse_config_list(raw))))
         }
-        (ProviderConfigValueDto::List(_), ProviderConfigShape::Single(value_type)) => Err(format!(
-            "Invalid value for '{}': expected {value_type}, not a list",
-            key.name
-        )),
+        (ProviderConfigValueDto::List(_), ProviderConfigShape::Single(value_type)) => {
+            invalid(format!(
+                "Invalid value for '{}': expected {value_type}, not a list",
+                key.name
+            ))
+        }
         (ProviderConfigValueDto::Text(raw), ProviderConfigShape::Single(value_type)) => {
             let candidate = raw.trim();
             if candidate.is_empty() {
@@ -119,7 +150,7 @@ fn normalize(
             } else if provider_config_value_matches_type(candidate, value_type) {
                 Ok(Some(candidate.to_string()))
             } else {
-                Err(format!(
+                invalid(format!(
                     "Invalid value for '{}': expected {value_type}",
                     key.name
                 ))
@@ -128,12 +159,12 @@ fn normalize(
     }
 }
 
-fn requirements_of(source: &Source) -> Result<Vec<ProviderConfigKey>, String> {
+fn requirements_of(source: &Source) -> Result<Vec<ProviderConfigKey>, BackendError> {
     provider_registry()
         .into_iter()
         .find(|adapter| adapter.id() == *source)
         .map(|adapter| adapter.config_requirements().to_vec())
-        .ok_or_else(|| format!("Unknown provider '{source}'"))
+        .ok_or_else(|| BackendError::invalid_request(format!("Unknown provider '{source}'")))
 }
 
 pub(crate) fn build_snapshot(

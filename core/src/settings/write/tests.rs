@@ -5,7 +5,7 @@ use std::{
     time::Duration,
 };
 
-use super::{EditError, Locked, TryLock, edit_config, edit_config_with, open_parent};
+use super::{EditError, Locked, TryLock, edit_config, edit_config_with, lock, open_parent};
 
 fn lock_with(path: &Path, try_lock: TryLock, wait: Duration) -> Result<Locked, EditError> {
     let (folder, path) = open_parent(path)?;
@@ -18,7 +18,7 @@ use crate::{
         gitlab::{GITLAB_TOKEN, GITLAB_URL, GITLAB_USER},
         provider_config::ConfigSource,
     },
-    settings::{ConfigFile, ConflictKind, FieldId, Precondition},
+    settings::{ConfigEditError, ConfigFile, ConflictKind, FieldId, Precondition},
 };
 
 fn config(text: &str) -> (tempfile::TempDir, PathBuf) {
@@ -43,7 +43,6 @@ fn id(text: &str) -> ConnectionId {
 fn value(path: &Path, connection: &str, key: &str) -> Option<String> {
     load(path)
         .connections()
-        .unwrap()
         .connections
         .into_iter()
         .find(|found| found.id == id(connection))
@@ -56,7 +55,7 @@ fn base(path: &Path, connection: &str, touched: &[FieldId]) -> Precondition {
 }
 
 /// Another cooperating writer.
-fn other_writer(path: &Path, change: impl FnOnce(&mut ConfigFile) -> anyhow::Result<()>) {
+fn other_writer(path: &Path, change: impl FnOnce(&mut ConfigFile) -> Result<(), ConfigEditError>) {
     edit_config(path, Precondition::None, change).unwrap();
 }
 
@@ -100,7 +99,7 @@ fn two_threads_editing_at_once_both_land() {
         thread.join().unwrap();
     }
 
-    let connections = load(&path).connections().unwrap().connections;
+    let connections = load(&path).connections().connections;
     let labels = connections
         .iter()
         .map(|connection| connection.label.as_str())
@@ -143,12 +142,37 @@ fn a_lock_error_other_than_contention_is_reported_as_such() {
     );
 
     match failed {
-        Err(EditError::Io(err)) => {
+        Err(EditError::Internal(err)) => {
             assert!(format!("{err:#}").contains("locks are not supported here"));
         }
         Err(other) => panic!("expected an I/O error, got {other}"),
         Ok(_) => panic!("expected an I/O error"),
     }
+}
+
+/// Bytes the writer made that do not read back are its own failure, not a bad config the
+/// user could fix, and are not written.
+#[test]
+fn written_bytes_that_do_not_read_back_fail_internally() {
+    let (_dir, path) = config(WORK);
+    let locked = lock(&path).unwrap();
+
+    let failed = locked.write_checked(None, b"[[gitlab]\n".to_vec());
+
+    assert!(matches!(failed, Err(EditError::Internal(_))));
+    assert_eq!(read(&path), WORK);
+}
+
+/// A file that does not parse when the edit reads it is the input's problem.
+#[test]
+fn a_file_that_does_not_parse_is_invalid_input() {
+    let (_dir, path) = config("[[gitlab]\n");
+
+    let refused = edit_config(&path, Precondition::None, |file| {
+        file.require(&id("gitlab/x"))
+    });
+
+    assert!(matches!(refused, Err(EditError::Invalid(_))));
 }
 
 #[test]
@@ -158,7 +182,10 @@ fn a_rejected_change_writes_nothing() {
         file.rename(&id("gitlab/nope"), "x")
     });
 
-    assert!(matches!(rejected, Err(EditError::Rejected(_))));
+    assert!(matches!(
+        rejected,
+        Err(EditError::Rejected(ConfigEditError::UnknownConnection(_)))
+    ));
     assert_eq!(read(&path), WORK);
 }
 
@@ -312,7 +339,7 @@ fn a_linked_config_keeps_its_link_and_a_dangling_link_creates_nothing() {
         file.add(&Source::Git, None, ConnectionLocation::Local)
     });
     match failed {
-        Err(EditError::Io(err)) => assert!(
+        Err(EditError::Internal(err)) => assert!(
             err.to_string()
                 .contains("links to a file that does not exist")
         ),
@@ -737,7 +764,6 @@ mod review {
 
         let ids = load(&path)
             .connections()
-            .unwrap()
             .connections
             .into_iter()
             .map(|connection| connection.id.to_string())
@@ -753,8 +779,7 @@ mod review {
             b"[[gitlab]]\nname = \"a\"\n\n[[jira]]\nname = \"b\"\ninstance = \"00000000000000aa\"\n\n[[gitlab]]\nname = \"c\"\ninstance = \"00000000000000aa\"\n",
         )
         .unwrap()
-        .connections()
-        .unwrap();
+        .connections();
 
         assert_eq!(
             resolved.warnings,
@@ -839,7 +864,7 @@ mod recheck {
     #[test]
     fn a_dotted_instance_is_replaced_by_an_edit() {
         let (_dir, path) = config("[[gitlab]]\nname = \"work\"\ninstance.key = 7\n");
-        let resolved = load(&path).connections().unwrap();
+        let resolved = load(&path).connections();
         assert_eq!(
             resolved.warnings,
             [
@@ -854,10 +879,7 @@ mod recheck {
 
         let written = read(&path);
         assert!(!written.contains("key = 7"), "{written}");
-        assert!(
-            load(&path).connections().unwrap().warnings.is_empty(),
-            "{written}"
-        );
+        assert!(load(&path).connections().warnings.is_empty(), "{written}");
         let refused = edit_config(&path, stale, |file| file.rename(&id("gitlab/work"), "x"));
         assert_eq!(conflict(refused), (ConflictKind::Replaced, Vec::new()));
     }

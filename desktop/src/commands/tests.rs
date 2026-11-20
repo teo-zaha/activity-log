@@ -2,7 +2,13 @@ use std::{sync::mpsc, time::Duration};
 
 use activity_log_core::{
     diagnostics,
-    settings::{ConfigFile, NO_LOCATION},
+    model::{BackendError, BackendErrorKind},
+    settings::ConfigFile,
+};
+use tauri::{
+    ipc::{CallbackFn, InvokeBody},
+    test::{INVOKE_KEY, MockRuntime, get_ipc_response, mock_builder, mock_context, noop_assets},
+    webview::InvokeRequest,
 };
 
 use super::{update_config, web_url, write_export};
@@ -10,7 +16,7 @@ use crate::app_state::AppState;
 
 fn labels(path: &std::path::Path) -> Vec<String> {
     let file = ConfigFile::load(path).unwrap();
-    let connections = file.connections().unwrap().connections;
+    let connections = file.connections().connections;
     connections.into_iter().map(|c| c.label).collect()
 }
 
@@ -25,7 +31,7 @@ async fn settings_commands_that_arrive_together_both_apply() {
         "[[gitlab]]\nlabel = \"A\"\n\n[[gitlab]]\nlabel = \"B\"\n",
     )
     .unwrap();
-    let ids = ConfigFile::load(&path).unwrap().connections().unwrap();
+    let ids = ConfigFile::load(&path).unwrap().connections();
     let [a, b] = <[_; 2]>::try_from(ids.connections)
         .ok()
         .unwrap()
@@ -41,7 +47,7 @@ async fn settings_commands_that_arrive_together_both_apply() {
                 first_loaded.send(()).unwrap();
                 // Gives the second command every chance to read the file before this one saves.
                 let _ = second_has_loaded.recv_timeout(Duration::from_millis(300));
-                file.rename(&a, "A changed").map_err(|err| err.to_string())
+                file.rename(&a, "A changed")
             })
             .await
         }
@@ -49,7 +55,7 @@ async fn settings_commands_that_arrive_together_both_apply() {
     first_has_loaded.recv().unwrap();
     update_config(&state, move |file| {
         let _ = second_loaded.send(());
-        file.rename(&b, "B changed").map_err(|err| err.to_string())
+        file.rename(&b, "B changed")
     })
     .await
     .unwrap();
@@ -71,6 +77,29 @@ async fn settings_commands_that_arrive_together_both_apply() {
     assert_eq!(shown(&first.providers_response).len(), 2);
 }
 
+/// A file that does not read as a configuration is reported as such, not as a failed save,
+/// and is left as it is.
+#[tokio::test]
+async fn a_save_over_a_file_that_does_not_parse_is_a_bad_config() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("config.toml");
+    let state = AppState::start(Some(path.clone()));
+    // Broken after the app read it, as another program could.
+    std::fs::write(&path, "[[git]\n").unwrap();
+
+    let refused = update_config(&state, |file| {
+        file.add(
+            &activity_log_core::model::Source::Calendar,
+            None,
+            activity_log_core::provider::connection::ConnectionLocation::Local,
+        )
+    })
+    .await;
+
+    assert_eq!(refused.unwrap_err().kind, BackendErrorKind::BadConfig);
+    assert_eq!(std::fs::read_to_string(&path).unwrap(), "[[git]\n");
+}
+
 #[test]
 fn opens_only_web_links() {
     for link in [
@@ -89,22 +118,156 @@ fn opens_only_web_links() {
         "not a link",
         "",
     ] {
-        assert!(web_url(link).is_err(), "{link}");
+        assert_eq!(
+            web_url(link).unwrap_err().kind,
+            BackendErrorKind::InvalidRequest,
+            "{link}"
+        );
     }
 }
 
-/// Without a settings location a save fails with the message, and nothing is written.
+/// Runs `command` with `request` as the dashboard does, over IPC: the answer, or what the
+/// command rejected with.
+fn invoke(
+    state: AppState,
+    command: &str,
+    body: serde_json::Value,
+) -> Result<serde_json::Value, serde_json::Value> {
+    let app = mock_builder()
+        .manage(state)
+        .invoke_handler(tauri::generate_handler![
+            super::collect,
+            super::recheck_connection,
+            super::save_export
+        ])
+        .build(mock_context(noop_assets()))
+        .unwrap();
+    let webview =
+        tauri::WebviewWindowBuilder::<MockRuntime, _>::new(&app, "main", Default::default())
+            .build()
+            .unwrap();
+    get_ipc_response(
+        &webview,
+        InvokeRequest {
+            cmd: command.into(),
+            callback: CallbackFn(0),
+            error: CallbackFn(1),
+            url: "tauri://localhost".parse().unwrap(),
+            body: InvokeBody::Json(body),
+            headers: Default::default(),
+            invoke_key: INVOKE_KEY.to_string(),
+        },
+    )
+    .map(|answer| answer.deserialize().unwrap())
+}
+
+fn refusal(state: AppState, command: &str, request: serde_json::Value) -> BackendError {
+    let rejected = invoke(state, command, serde_json::json!({ "request": request })).unwrap_err();
+    serde_json::from_value(rejected).expect("a command rejects with a BackendError")
+}
+
+/// The same requests as the API's tests, refused with the same kinds.
+#[test]
+fn commands_refuse_with_the_kinds_the_api_answers() {
+    let range = |start: &str, end: &str| serde_json::json!({ "start": start, "end": end });
+    assert_eq!(
+        refusal(
+            AppState::start(None),
+            "collect",
+            range("2026-03-01", "2026-03-05")
+        )
+        .kind,
+        BackendErrorKind::InvalidRequest
+    );
+    assert_eq!(
+        refusal(
+            AppState::start(None),
+            "collect",
+            range("1000-01-01T00:00:00Z", "9999-12-31T00:00:00Z")
+        )
+        .kind,
+        BackendErrorKind::InvalidRequest
+    );
+    assert_eq!(
+        refusal(
+            AppState::start(None),
+            "recheck_connection",
+            serde_json::json!({ "source": "calendar", "name": "other" })
+        )
+        .kind,
+        BackendErrorKind::NotFound
+    );
+    assert_eq!(
+        refusal(
+            AppState::start(None),
+            "save_export",
+            serde_json::json!({
+                "format": "json",
+                "start": "2026-03-01T23:00:00Z",
+                "end": "2026-03-02T23:00:00Z",
+                "timeZone": "Local",
+                "entries": [],
+            })
+        )
+        .kind,
+        BackendErrorKind::InvalidRequest
+    );
+
+    let quitting = AppState::start(None);
+    quitting.host.shutdown();
+    assert_eq!(
+        refusal(
+            quitting,
+            "collect",
+            range("2026-03-01T00:00:00Z", "2026-03-06T00:00:00Z")
+        )
+        .kind,
+        BackendErrorKind::NoData
+    );
+
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("config.toml");
+    std::fs::write(&path, "[[calendar]]\nlabel = \"Team\"\n").unwrap();
+    let shut_down = AppState::start(Some(path));
+    shut_down.host.shutdown();
+    assert_eq!(
+        refusal(
+            shut_down,
+            "recheck_connection",
+            serde_json::json!({ "source": "calendar", "name": "team" })
+        )
+        .kind,
+        BackendErrorKind::Internal
+    );
+}
+
+/// Tauri refuses a call it cannot pass to the command (no `request`) with a plain string, not
+/// a `BackendError`; the dashboard's transport reads that as an internal failure. The same
+/// call with its request reaches the command, so the refusal is Tauri's own.
+#[test]
+fn tauri_refuses_a_call_it_cannot_decode_with_a_string() {
+    let request = serde_json::json!({
+        "request": { "start": "2026-03-01T00:00:00Z", "end": "2026-03-06T00:00:00Z" }
+    });
+    assert!(invoke(AppState::start(None), "collect", request).is_ok());
+
+    let rejected = invoke(AppState::start(None), "collect", serde_json::json!({})).unwrap_err();
+
+    assert!(rejected.is_string(), "{rejected}");
+    assert!(serde_json::from_value::<BackendError>(rejected).is_err());
+}
+
+/// Without a settings location a save fails as such, and nothing is written.
 #[tokio::test]
 async fn a_save_without_a_settings_location_writes_nothing() {
     let state = AppState::start(None);
 
     let refused = update_config(&state, |file| {
         file.rename(&"gitlab/work".parse().unwrap(), "Work")
-            .map_err(|err| err.to_string())
     })
     .await;
 
-    assert_eq!(refused.err().as_deref(), Some(NO_LOCATION));
+    assert_eq!(refused.unwrap_err().kind, BackendErrorKind::NoLocation);
 }
 
 #[tokio::test]
@@ -118,14 +281,10 @@ async fn a_busy_settings_file_is_reported_and_left_alone() {
 
     let refused = update_config(&state, |file| {
         file.rename(&"git/this-computer".parse().unwrap(), "Laptop")
-            .map_err(|err| err.to_string())
     })
     .await;
 
-    assert_eq!(
-        refused.err().as_deref(),
-        Some("The settings file is busy; try again.")
-    );
+    assert_eq!(refused.unwrap_err().kind, BackendErrorKind::Busy);
     assert_eq!(std::fs::read_to_string(&path).unwrap(), "[[git]]\n");
     drop(held);
 }
@@ -139,7 +298,6 @@ async fn config_problems_after_an_edit_reach_the_logs() {
 
     let (_, saved) = update_config(&state, |file| {
         file.rename(&"gitlab/edited".parse().unwrap(), "Edited")
-            .map_err(|err| err.to_string())
     })
     .await
     .unwrap();
@@ -175,7 +333,8 @@ fn an_export_is_written_exactly_where_the_user_chose() {
     );
 }
 
-/// The pane gets the agreed text for a location that cannot keep the settings private.
+/// The pane gets the kind and the agreed text for a location that cannot keep the settings
+/// private.
 #[cfg(unix)]
 #[tokio::test]
 async fn an_unprotectable_location_is_reported_with_the_agreed_text() {
@@ -192,13 +351,13 @@ async fn an_unprotectable_location_is_reported_with_the_agreed_text() {
             None,
             activity_log_core::provider::connection::ConnectionLocation::Local,
         )
-        .map_err(|err| err.to_string())
     })
     .await
     .unwrap_err();
 
+    assert_eq!(refused.kind, BackendErrorKind::Unprotectable);
     assert_eq!(
-        refused,
+        refused.message,
         format!(
             "{} cannot keep the settings private; choose another location with ACTIVITY_LOG_CONFIG or --config",
             std::fs::canonicalize(&shared).unwrap().display()
@@ -221,7 +380,6 @@ async fn a_save_answers_with_the_added_connection_checking() {
                 Some(label),
                 activity_log_core::provider::connection::ConnectionLocation::Local,
             )
-            .map_err(|err| err.to_string())
         })
         .await
         .unwrap();

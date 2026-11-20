@@ -13,12 +13,59 @@ use activity_log_core::{
         },
         provider_registry,
     },
-    settings::{ConfigFile, field_name, key_for_field},
+    settings::{ConfigEditError, ConfigFile, field_name, key_for_field},
 };
-use anyhow::{Result, anyhow, bail};
+use anyhow::{Result, bail};
 
 #[cfg(test)]
 mod tests;
+
+/// Why a `sources` command cannot go on; said in the terminal as it is.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) enum SourcesError {
+    /// Not `kind/name`, with the parser's reason.
+    NotAnId(String),
+    NoConnection(String),
+    Ambiguous {
+        text: String,
+        first: ConnectionId,
+        second: ConnectionId,
+    },
+    NoSettings(Source),
+    UnknownSetting {
+        source: Source,
+        field: String,
+    },
+    TakesOneValue(ProviderConfigKey),
+    InvalidValue(ProviderConfigKey),
+}
+
+impl std::fmt::Display for SourcesError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::NotAnId(reason) => write!(f, "{reason}"),
+            Self::NoConnection(text) => {
+                write!(f, "No connection {text}; see `activity-log sources`")
+            }
+            Self::Ambiguous {
+                text,
+                first,
+                second,
+            } => write!(f, "{text} is ambiguous: {first} or {second}"),
+            Self::NoSettings(source) => write!(f, "{} has no settings", source.label()),
+            Self::UnknownSetting { source, field } => write!(
+                f,
+                "{} has no setting {field}; use one of: {}",
+                source.label(),
+                fields_of(source)
+            ),
+            Self::TakesOneValue(key) => write!(f, "{} takes one value", key.name),
+            Self::InvalidValue(key) => write!(f, "Invalid value: expected {}", key.shape),
+        }
+    }
+}
+
+impl std::error::Error for SourcesError {}
 
 pub(crate) const NO_SOURCES: &str =
     "No sources yet. Add one with `activity-log sources add <kind>`, such as `sources add git`.";
@@ -57,14 +104,20 @@ impl<R: BufRead> Prompt for Lines<R> {
 }
 
 /// `kind/name`, or just `name` when only one kind has a connection by that name.
-pub(crate) fn resolve_connection(connections: &[Connection], text: &str) -> Result<ConnectionId> {
+pub(crate) fn resolve_connection(
+    connections: &[Connection],
+    text: &str,
+) -> Result<ConnectionId, SourcesError> {
+    let missing = || SourcesError::NoConnection(text.to_string());
     if text.contains('/') {
-        let id = text.parse::<ConnectionId>().map_err(|err| anyhow!(err))?;
+        let id = text
+            .parse::<ConnectionId>()
+            .map_err(SourcesError::NotAnId)?;
         return connections
             .iter()
             .any(|connection| connection.id == id)
             .then_some(id)
-            .ok_or_else(|| anyhow!("No connection {text}; see `activity-log sources`"));
+            .ok_or_else(missing);
     }
     let mut matches = connections
         .iter()
@@ -72,8 +125,12 @@ pub(crate) fn resolve_connection(connections: &[Connection], text: &str) -> Resu
         .map(|connection| connection.id.clone());
     match (matches.next(), matches.next()) {
         (Some(id), None) => Ok(id),
-        (Some(first), Some(second)) => bail!("{text} is ambiguous: {first} or {second}"),
-        (None, _) => bail!("No connection {text}; see `activity-log sources`"),
+        (Some(first), Some(second)) => Err(SourcesError::Ambiguous {
+            text: text.to_string(),
+            first,
+            second,
+        }),
+        (None, _) => Err(missing()),
     }
 }
 
@@ -120,7 +177,7 @@ pub(crate) fn add(
     label: Option<&str>,
     wsl: Option<String>,
     values: &[(ProviderConfigKey, String)],
-) -> Result<ConnectionId> {
+) -> Result<ConnectionId, ConfigEditError> {
     let location = match wsl {
         Some(distro) => ConnectionLocation::Wsl(distro),
         None => ConnectionLocation::Local,
@@ -198,16 +255,15 @@ fn keys_of(source: &Source) -> Vec<ProviderConfigKey> {
         .unwrap_or_default()
 }
 
-pub(crate) fn key(source: &Source, field: &str) -> Result<ProviderConfigKey> {
+pub(crate) fn key(source: &Source, field: &str) -> Result<ProviderConfigKey, SourcesError> {
     key_for_field(source, field).ok_or_else(|| {
-        let fields = fields_of(source);
-        if fields.is_empty() {
-            anyhow!("{} has no settings", source.label())
+        if keys_of(source).is_empty() {
+            SourcesError::NoSettings(source.clone())
         } else {
-            anyhow!(
-                "{} has no setting {field}; use one of: {fields}",
-                source.label()
-            )
+            SourcesError::UnknownSetting {
+                source: source.clone(),
+                field: field.to_string(),
+            }
         }
     })
 }
@@ -217,7 +273,7 @@ fn is_secret(key: ProviderConfigKey) -> bool {
 }
 
 /// The stored form of `values` for `key`, checked against its type.
-fn raw_value(key: ProviderConfigKey, values: &[String]) -> Result<String> {
+fn raw_value(key: ProviderConfigKey, values: &[String]) -> Result<String, SourcesError> {
     let raw = match key.shape {
         ProviderConfigShape::List(_) => encode_config_list(
             &values
@@ -227,11 +283,11 @@ fn raw_value(key: ProviderConfigKey, values: &[String]) -> Result<String> {
         ),
         ProviderConfigShape::Single(_) => match values {
             [value] => value.trim().to_string(),
-            _ => bail!("{} takes one value", key.name),
+            _ => return Err(SourcesError::TakesOneValue(key)),
         },
     };
     if !provider_config_key_accepts(key, &raw) {
-        bail!("Invalid value: expected {}", key.shape);
+        return Err(SourcesError::InvalidValue(key));
     }
     Ok(raw)
 }

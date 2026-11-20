@@ -1,4 +1,7 @@
-use crate::{model::CollectRequest, runtime::resolve_collect_options};
+use crate::{
+    model::{CollectRequest, RangeError},
+    runtime::resolve_collect_options,
+};
 
 fn request(start: &str, end: &str) -> CollectRequest {
     CollectRequest {
@@ -23,11 +26,11 @@ fn resolve_collect_options_reads_instants_with_any_offset() {
 fn resolve_collect_options_rejects_dates_and_empty_ranges() {
     assert_eq!(
         resolve_collect_options(&request("2026-03-01", "2026-03-02")),
-        Err("start and end must be RFC 3339 timestamps")
+        Err(RangeError::NotRfc3339)
     );
     assert_eq!(
         resolve_collect_options(&request("2026-03-02T00:00:00Z", "2026-03-02T00:00:00Z")),
-        Err("end must be after start")
+        Err(RangeError::Empty)
     );
 }
 
@@ -38,6 +41,6 @@ fn resolve_collect_options_caps_the_range_at_ten_years() {
     );
     assert_eq!(
         resolve_collect_options(&request("1000-01-01T00:00:00Z", "9999-12-31T00:00:00Z")),
-        Err("A range can span at most 10 years (3653 days)")
+        Err(RangeError::TooLong)
     );
 }
