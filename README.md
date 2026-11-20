@@ -77,6 +77,10 @@ Every view has its own address, so Back and Forward step through views and days,
 
 Views, days and opening or closing settings add a history entry; typing in the filter, changing the range and moving between settings sections replace the current one. Selection, hidden sources and zoom are not part of the URL.
 
+A range the backend would not collect (the end before the start, or longer than ten years, counted in real time across changes to summer time) is not collected when the app opens on it, and a link drops it.
+
+**Share** in the header shares the link to the view on screen. In the browser it is the page's own address, with its whole query (the settings section too); in the desktop app it is an `activity-log:` link with the filter, the range and the open details. An event's own Share names that event in the range on screen. Where the system has no share sheet, the link is copied; without a clipboard, or when it refuses, the app says the link was not copied.
+
 ### Deep links
 
 The desktop app opens `activity-log:` links: the part after the scheme is the same path and query as above.
@@ -86,6 +90,8 @@ The desktop app opens `activity-log:` links: the part after the scheme is the sa
 | `activity-log://day/2026-11-17?q=standup`               | The day view on 17 November                       |
 | `activity-log://timeline?from=2025-08-01&to=2026-11-17` | The Timeline, collecting that range               |
 | `activity-log://week/2026-11-16?settings=logs`          | The week view with the Logs settings open over it |
+
+Hand-written links must percent-encode a `#` in a value as `%23` and a `+` as `%2B`: a raw `#` starts the fragment, so the rest of the link is lost, and a raw `+` reads as a space. Event ids can hold both (a repeated id is numbered `id#2`); the links the app builds encode them.
 
 A link brings the window to the front. A link that starts the app opens once it is loaded; on Windows and Linux a second launch with a link hands it to the running app and quits. A link only navigates: unknown views and query parameters are dropped, and nothing is written. The scheme is registered by the installed app: on macOS the bundled `.app` (not `pnpm desktop:dev`), on Windows the installer; debug builds on Windows and Linux register it when they start.
 
@@ -352,7 +358,7 @@ pnpm cli:collect sources add gitlab   # or add sources in the desktop app
 | Desktop app (Tauri) | `pnpm desktop:dev`              | The same Angular UI in a desktop window, talking to Rust commands    |
 | CLI                 | `pnpm cli:collect --range week` | Writes `logs/activity_log.json` (`--format markdown` writes a `.md`) |
 
-The last 30 days are collected automatically on startup. Use the date pickers in the header to change the range and re-collect on the fly.
+The last 30 days are collected automatically on startup. Use the date pickers in the header to change the range and re-collect on the fly. A typed date is read day first, as the pickers show it (`03/05/2026` is 3 May).
 
 ## Configuration
 
@@ -395,7 +401,7 @@ ics_url = "https://outlook.office365.com/owa/calendar/…/calendar.ics"
 - Without `label`, a connection is named after its kind (`GitLab`), or for Git after its location (`This computer`, `WSL · NixOS`).
 - `[[outlook]]` and `[[system]]` have no settings; the empty table adds them.
 - The file holds tokens. It is written readable only by your user on macOS and Linux.
-- The desktop app and the CLI edit it in place and keep comments. The API server and the desktop app look at it every 2 seconds (the server also before it answers for the activity, the providers, a collection or a recheck; exports and logs do not look) and apply a change once it has stayed the same for 0.2 seconds; a file that does not parse is reported once in the Logs pane and the last good settings stay.
+- The desktop app and the CLI edit it in place and keep comments. The API server and the desktop app look at it every 2 seconds (the server also before it answers for the activity, the providers, the runtime state, a collection or a recheck; exports and logs do not look) and apply a change once it has stayed the same for 0.2 seconds; a file that does not parse is reported once in the Logs pane and the last good settings stay.
 
 ### Environment variables
 
@@ -495,16 +501,17 @@ pnpm dashboard:dev    # dashboard on :3200
 
 - `GET /api/activity`: the last collection's log. While it runs the answer is `202` with the log of what is in so far: `meta.pending` lists the connections still being checked or collected, and is absent once the log is complete (`200`). After a collection failed as a whole: `200` with `{ "start", "end", "error" }`. Before the first collection: `503`
 - `GET /api/providers`: every connection with its startup check result, or `"status": "checking"` while the check still runs. A connection whose last collection failed is `"degraded"`, with the error as its `reason`
-- `POST /api/connections/recheck` with `{ "source": "<kind>", "name": "<connection>" }`: runs that connection's startup check again, then collects the connections of its kind again for the range of the last collection; the other sources keep what they show. Answers `200` with the providers (this one checking), `404` for an unknown connection
-- `POST /api/collect` with `{ "start": "<RFC 3339>", "end": "<RFC 3339>" }`, the range `[start, end)`: starts the collection and answers `202` at once with its first log (every connection pending, showing what the previous log had for it), or with the log of the collection of the same range that already runs; a collection of another range is stopped and this one starts. Poll `GET /api/activity` for the result
+- `GET /api/runtime-state`: both of the above from one moment, as the dashboard reads them: `{ "activity": { "epoch", "authority", "revision", "state" }, "providers": { "epoch", "authority", "revision", "providers" } }`. `state` is `{ "kind": "empty" }` before the first collection, else `running` or `ready` with the `log`, or `failed` with the `failure`. `epoch` names the server process, `authority` changes with each settings change it installs, and each part's `revision` (one counter for both) only grows while the server runs
+- `POST /api/connections/recheck` with `{ "source": "<kind>", "name": "<connection>" }`: runs that connection's startup check again, then collects the connections of its kind again for the range of the last collection; the other sources keep what they show. Answers `200` with the providers (this one checking) and their `stamp` (`epoch`, `authority`, `revision`, as in `GET /api/runtime-state`), `404` for an unknown connection
+- `POST /api/collect` with `{ "start": "<RFC 3339>", "end": "<RFC 3339>" }`, the range `[start, end)`: starts the collection and answers `202` at once with its first log (every connection pending, showing what the previous log had for it), or with the log of the collection of the same range that already runs; a collection of another range is stopped and this one starts. The answer also carries the host's `kind` for what it shows (`running`, `ready` or `failed`, as in `GET /api/runtime-state`) and the activity's `stamp`. Poll `GET /api/activity` or `GET /api/runtime-state` for the result
 - `POST /api/export`: renders the entries it is sent as Markdown or JSON (see the export buttons below)
 - `GET /api/logs`, `DELETE /api/logs`
 
-The last 30 days are collected automatically on startup; the date pickers show that range while it runs, and keep it if it fails. The startup checks run in the background: a source is listed as checking until its own check finishes, and a collection reads each source as soon as that source is checked, so a slow check or a slow source holds back only itself. Results are progressive: the dashboard shows each source's entries when they arrive, and while a range is collected again the backend keeps a source's previous entries in the partial log until the new ones are in (with GitLab pushes still folded into their commits). Every entry carries an `id` from its source (a commit hash, a GitLab event id, an ICS UID with the occurrence), unique within its connection; a source that repeats an id gets it numbered (`id#2`) with a warning in the Logs pane. GitLab entries no longer carry the raw API event (`raw`); a push names its commit in `pushedCommit`. The per-day cache was bumped for this, so GitLab and Jira days are fetched once again after the update. Saving settings (or editing `config.toml` while the server or the desktop app runs) re-runs the checks the same way. The backend then collects again only the kinds the change affects: a kind with a connection added, removed (also when it is added again with the same settings), reordered, or with other values (a token, a URL, a folder). A label rename collects nothing, unless a connection of that kind has nothing collected yet or its new check finds that the token belongs to another account. A collection that was running, or that failed, runs again whole. Entries are kept per connection and per account: once a connection's values change, or its check finds that the token belongs to someone else, what was collected before, and a failure it had, is no longer shown or carried for it. After a change in Settings the dashboard follows that collection by itself; after an edit of the file, the next **Collect** or reload shows the result, including sources that are new. Use them to change the range and re-collect on the fly.
+The last 30 days are collected automatically on startup; the date pickers show that range while it runs, and keep it if it fails. The startup checks run in the background: a source is listed as checking until its own check finishes, and a collection reads each source as soon as that source is checked, so a slow check or a slow source holds back only itself. Results are progressive: the dashboard shows each source's entries when they arrive, and while a range is collected again the backend keeps a source's previous entries in the partial log until the new ones are in (with GitLab pushes still folded into their commits). Every entry carries an `id` from its source (a commit hash, a GitLab event id, an ICS UID with the occurrence), unique within its connection; a source that repeats an id gets it numbered (`id#2`) with a warning in the Logs pane. GitLab entries no longer carry the raw API event (`raw`); a push names its commit in `pushedCommit`. The per-day cache was bumped for this, so GitLab and Jira days are fetched once again after the update. Saving settings (or editing `config.toml` while the server or the desktop app runs) re-runs the checks the same way. The backend then collects again only the kinds the change affects: a kind with a connection added, removed (also when it is added again with the same settings), reordered, or with other values (a token, a URL, a folder). A label rename collects nothing, unless a connection of that kind has nothing collected yet or its new check finds that the token belongs to another account. A collection that was running, or that failed, runs again whole. Entries are kept per connection and per account: once a connection's values change, or its check finds that the token belongs to someone else, what was collected before, and a failure it had, is no longer shown or carried for it. While a collection runs or a source is being checked (a check can start a collection, for example when it finds that the token belongs to another account), the dashboard reads the sources and the collection every second and shows each change, entries a check took away included. A read that fails, or gets no answer within 10 seconds, is tried again a second later, with "Reconnecting" shown over what is on screen (marked as possibly out of date after five seconds). After 180 failed reads in a row the dashboard says it lost the backend and offers Retry, which reconnects without collecting again; a collection still running after 180 reads shows as timed out. After a change in Settings the dashboard follows that collection by itself; after an edit of the file, the next **Collect** or reload shows the result, including sources that are new. Use them to change the range and re-collect on the fly.
 
 If you only build the dashboard (`pnpm dashboard:build`), it produces static files under `dashboard/dist/dashboard/` and does not serve them. To preview that build, run a static file server (for example `pnpm --dir dashboard exec npx http-server dist/dashboard/browser -p 3200`) or use `pnpm dashboard:dev`.
 
-The header has two export buttons. Both export the current filtered view:
+The header has two export buttons. Both export what the view shows over the range: the Timeline's filtered list, or what a calendar view draws (a meeting that runs into the range from the day before included):
 
 - **Markdown** (`description` icon): downloads a `.md` summary grouped by day in the browser's time zone
 - **JSON** (`data_object` icon): downloads the `ActivityLog` (range, per-source counts and the shown entries) as `.json`
@@ -652,7 +659,7 @@ activity-log/
 │       ├── diagnostics/       In-memory diagnostic log shown in the Logs pane
 │       ├── model/             Shared models grouped by domain/source
 │       ├── runtime/           Shared collection runtime used by Rocket and Tauri
-│       ├── ts.rs              Angular DTO generator
+│       ├── ts/                Angular DTO generator and the constants the dashboard shares
 │       └── utils/             Date utilities, markdown formatter, git/gitlab merge
 ├── api/                       Rocket API crate
 ├── cli/                       Rust CLI crate
