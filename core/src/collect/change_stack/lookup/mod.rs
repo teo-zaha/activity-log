@@ -115,21 +115,51 @@ impl FailureKind {
     }
 }
 
-/// A host's failure to answer: its kind, and the request's own failure when one was sent (its
-/// status and the server's cleaned message), for the Logs. None when no request was sent, as
-/// for a budget that ran out, or when the answer itself was wrong (a repeated page).
+/// A host's failure to answer: its kind, and what explains it when the host's answer does,
+/// for the Logs. None when no request was sent, as for a budget that ran out.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct LookupFailure {
     kind: FailureKind,
-    cause: Option<ApiError>,
+    cause: Option<LookupCause>,
+}
+
+/// What a host's answer told about a failure.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) enum LookupCause {
+    /// The request's own failure: its status and the server's cleaned message.
+    Request(ApiError),
+    /// The host named a page it had already sent, or sent only rows already read.
+    RepeatedPage,
+    /// The host answered with changes the request did not ask for (another number, branch,
+    /// state or repository): it ignored a filter, and its answer cannot be trusted.
+    IgnoredFilter,
+}
+
+impl LookupCause {
+    /// The cause for a person; `service` names the host ("GitLab").
+    pub(crate) fn message(&self, service: &str) -> String {
+        match self {
+            Self::Request(error) => error.message(service),
+            Self::RepeatedPage => format!("{service} sent a page it had sent before"),
+            Self::IgnoredFilter => {
+                format!("{service} answered with changes it was not asked for")
+            }
+        }
+    }
+}
+
+impl From<ApiError> for LookupCause {
+    fn from(error: ApiError) -> Self {
+        Self::Request(error)
+    }
 }
 
 impl LookupFailure {
-    /// A failure of `kind` that `cause`, the request's own failure, explains.
-    pub(crate) fn caused_by(kind: FailureKind, cause: ApiError) -> Self {
+    /// A failure of `kind` that `cause` explains.
+    pub(crate) fn caused_by(kind: FailureKind, cause: impl Into<LookupCause>) -> Self {
         Self {
             kind,
-            cause: Some(cause),
+            cause: Some(cause.into()),
         }
     }
 
@@ -137,7 +167,7 @@ impl LookupFailure {
         self.kind
     }
 
-    pub(crate) fn cause(&self) -> Option<&ApiError> {
+    pub(crate) fn cause(&self) -> Option<&LookupCause> {
         self.cause.as_ref()
     }
 }

@@ -152,6 +152,11 @@ impl RemoteClient {
         })
     }
 
+    /// The configured origin, the only one credentials are sent to.
+    pub(crate) fn origin(&self) -> url::Origin {
+        self.base.origin()
+    }
+
     /// The base with `segments` appended, each one path segment whatever it holds (`/`, `?`
     /// and `#` are encoded). The URL parser drops segments that are exactly `.` or `..` and
     /// removes tabs and line breaks, so values from input pass `is_path_segment` first.

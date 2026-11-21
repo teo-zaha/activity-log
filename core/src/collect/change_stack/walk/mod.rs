@@ -17,14 +17,15 @@ use futures::{
 
 use super::{
     budget::{Breaker, Budget},
-    lookup::{ChangeLookup, ChangeRef, FailureKind, LookupFailure, OpenChange, OpenPage},
+    lookup::{
+        ChangeLookup, ChangeRef, FailureKind, LookupCause, LookupFailure, OpenChange, OpenPage,
+    },
 };
 use crate::{
     diagnostics,
     model::{
         ChangeStack, ChangeStackAbove, ChangeStackBottom, ChangeStackEnd, ChangeStackNode, StackCut,
     },
-    provider::remote_error::ApiError,
 };
 
 /// Changes per direction from the current one. The last one's further end is `cut{limit}`
@@ -64,8 +65,9 @@ pub(crate) struct Failures {
     pub changes: usize,
     /// Branch questions that failed, each counted once however many stacks show its cut.
     pub questions: usize,
-    /// The first failed request's own failure: its status and the server's cleaned message.
-    pub cause: Option<ApiError>,
+    /// What explains the first failure that has an explanation: a request's status and the
+    /// server's cleaned message, a repeated page, an ignored filter.
+    pub cause: Option<LookupCause>,
 }
 
 impl Failures {

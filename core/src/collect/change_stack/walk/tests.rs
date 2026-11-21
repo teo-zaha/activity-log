@@ -15,9 +15,9 @@ use tokio::{sync::Semaphore, time::Instant};
 
 use crate::{
     collect::change_stack::{
-        Breaker, Budget, ChangeLookup, ChangeRef, FailureKind, Failures, LookupFailure, OpenChange,
-        OpenPage, STACK_BUDGET, STACK_DEPTH, STACK_MEMBERS, STACK_REQUESTS, StackReport, WebLink,
-        change_stacks, web_link,
+        Breaker, Budget, ChangeLookup, ChangeRef, FailureKind, Failures, LookupCause,
+        LookupFailure, OpenChange, OpenPage, STACK_BUDGET, STACK_DEPTH, STACK_MEMBERS,
+        STACK_REQUESTS, StackReport, WebLink, change_stacks, web_link,
     },
     model::{
         ChangeStack, ChangeStackAbove, ChangeStackBottom, ChangeStackEnd, ChangeStackNode,
@@ -981,7 +981,7 @@ async fn a_failed_question_is_counted_once_with_its_cause() {
             repositories: 0,
             changes: 0,
             questions: 1,
-            cause: Some(cause),
+            cause: Some(LookupCause::Request(cause)),
         }
     );
 }
