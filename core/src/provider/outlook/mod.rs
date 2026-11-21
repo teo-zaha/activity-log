@@ -16,6 +16,7 @@ use self::macos as imp;
 #[cfg(target_os = "windows")]
 use self::windows as imp;
 
+/// Answers on a system this provider does not run on; the runtime checks the OS first.
 #[cfg(not(any(target_os = "windows", target_os = "macos")))]
 mod fallback {
     pub(super) async fn check_outlook_ready() -> anyhow::Result<()> {

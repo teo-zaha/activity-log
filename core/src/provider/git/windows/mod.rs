@@ -8,7 +8,7 @@ const NON_USER_WSL_PREFIXES: &[&str] = &["docker-desktop", "rancher-desktop", "p
 
 /// The user's WSL distributions, read from the registry without starting WSL.
 #[cfg(target_os = "windows")]
-pub fn default_wsl_distros() -> Vec<String> {
+pub(super) fn default_wsl_distros() -> Vec<String> {
     user_wsl_distros(crate::platform::wsl_distribution_names())
 }
 
@@ -42,7 +42,7 @@ pub(super) fn check_wsl_ready(
     }
 }
 
-pub(crate) fn user_wsl_distros(names: Vec<String>) -> Vec<String> {
+pub(super) fn user_wsl_distros(names: Vec<String>) -> Vec<String> {
     names
         .into_iter()
         .filter(|name| {
