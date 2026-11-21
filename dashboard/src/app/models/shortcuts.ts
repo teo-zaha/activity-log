@@ -78,6 +78,12 @@ export interface ShortcutEntry {
   readonly chords: readonly Chord[]
   /** The macOS menu's submenu it is listed in; the menu is built from this table. */
   readonly menu?: MenuSubmenu
+  /**
+   * The global entry this scope's entry is on its own view: the same command, so it may share
+   * that entry's chords, which it wins on its view, and the help shows them as one row. Absent for
+   * a scope's own command (a future Work items `/`, which filters something else).
+   */
+  readonly standsFor?: ShortcutId
 }
 
 /** Every shortcut, in the help's order. */
@@ -158,6 +164,7 @@ const ENTRIES: { readonly [Id in ShortcutId]: Omit<ShortcutEntry, 'id'> } = {
   'timeline.filter': {
     label: 'Filter activity',
     scope: 'timeline',
+    standsFor: 'app.filter',
     chords: [{ keys: '/' }],
   },
   // ⌘1 to ⌘4 switch a browser's tabs.

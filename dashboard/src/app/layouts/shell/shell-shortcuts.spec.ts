@@ -643,7 +643,7 @@ describe('Shortcuts in the app', APP_RENDER_TEST, () => {
         within(help)
           .getAllByRole('heading', { level: 3 })
           .map(heading => heading.textContent)
-      ).toEqual(['Everywhere', 'Timeline', 'Calendar', 'Event details'])
+      ).toEqual(['Everywhere', 'Calendar', 'Event details'])
       expect(await helpRows()).toEqual([
         'Collect: R',
         'Filter Activity…: /',
@@ -654,7 +654,7 @@ describe('Shortcuts in the app', APP_RENDER_TEST, () => {
         'Settings…: ,',
         'Close details or settings: Esc',
         'Keyboard Shortcuts: ?',
-        'Filter activity: /',
+        // The Timeline's `/` is Filter's own key there: one command, one row.
         'Previous day or week: P',
         'Next day or week: N',
         'Today: T',
