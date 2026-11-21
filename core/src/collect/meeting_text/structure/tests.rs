@@ -139,6 +139,17 @@ This is a very long sentence that is no label of a link<https://example.org/long
     );
 }
 
+/// Every named reference HTML has is read, not only the common ones.
+#[test]
+fn reads_every_named_character_reference() {
+    assert_eq!(
+        html("<p>Le&oacute;n &laquo;Fran&ccedil;ois&raquo; &Aring;s &rarr; &frac12; &amp;c</p>"),
+        [paragraph(vec![TextSegment::text(
+            "León «François» Ås → ½ &c"
+        )])]
+    );
+}
+
 #[test]
 fn reads_html_paragraphs_breaks_lists_and_emphasis() {
     assert_eq!(

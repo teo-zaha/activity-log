@@ -502,72 +502,8 @@ fn outlook_item(mut line: Line) -> Line {
     line
 }
 
-/// `text` with its character references (`&amp;`, `&#228;`, `&#xE4;`) replaced.
+/// `text` with its character references (`&amp;`, `&oacute;`, `&#228;`, `&#xE4;`) replaced, by
+/// the whole table of HTML's named references.
 fn decode(text: &str) -> String {
-    let mut out = String::with_capacity(text.len());
-    let mut rest = text;
-    while let Some(start) = rest.find('&') {
-        out.push_str(&rest[..start]);
-        rest = &rest[start..];
-        let decoded = rest[1..]
-            .find(';')
-            .filter(|&end| end <= 10)
-            .and_then(|end| Some((reference(&rest[1..=end])?, end + 2)));
-        match decoded {
-            Some((c, len)) => {
-                out.push(c);
-                rest = &rest[len..];
-            }
-            None => {
-                out.push('&');
-                rest = &rest[1..];
-            }
-        }
-    }
-    out.push_str(rest);
-    out
-}
-
-fn reference(name: &str) -> Option<char> {
-    if let Some(number) = name.strip_prefix('#') {
-        let code = match number.strip_prefix(['x', 'X']) {
-            Some(hex) => u32::from_str_radix(hex, 16).ok()?,
-            None => number.parse().ok()?,
-        };
-        return char::from_u32(code);
-    }
-    Some(match name {
-        "amp" | "AMP" => '&',
-        "lt" | "LT" => '<',
-        "gt" | "GT" => '>',
-        "quot" | "QUOT" => '"',
-        "apos" => '\'',
-        "nbsp" => ' ',
-        "ndash" => '–',
-        "mdash" => '—',
-        "hellip" => '…',
-        "lsquo" => '‘',
-        "rsquo" => '’',
-        "sbquo" => '‚',
-        "ldquo" => '“',
-        "rdquo" => '”',
-        "bdquo" => '„',
-        "bull" => '•',
-        "middot" => '·',
-        "copy" => '©',
-        "reg" => '®',
-        "trade" => '™',
-        "euro" => '€',
-        "auml" => 'ä',
-        "ouml" => 'ö',
-        "uuml" => 'ü',
-        "Auml" => 'Ä',
-        "Ouml" => 'Ö',
-        "Uuml" => 'Ü',
-        "szlig" => 'ß',
-        "eacute" => 'é',
-        "egrave" => 'è',
-        "agrave" => 'à',
-        _ => return None,
-    })
+    html_escape::decode_html_entities(text).into_owned()
 }
