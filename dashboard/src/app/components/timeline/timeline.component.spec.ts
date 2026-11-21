@@ -1,4 +1,4 @@
-import { signal, type WritableSignal } from '@angular/core'
+import { signal, type Provider, type WritableSignal } from '@angular/core'
 import type { ConnectionKey, EntryKey } from '../../providers/connection'
 import type { DayGroup } from '../../models/day-group'
 import type { EntryUiAdapter } from '../../providers/types'
@@ -7,7 +7,9 @@ import { render, screen } from '@testing-library/angular'
 import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createEntryAdapter } from '../../providers/provider-adapter'
-import { ActivityService } from '../../services/activity.service'
+import { ActivityDataService } from '../../services/activity-data.service'
+import { ActivitySelection } from '../../services/activity-selection.service'
+import { ActivityViewStateService } from '../../services/activity-view-state.service'
 import { activityLog, meetingWeightOf } from '../../testing/activity-fixtures'
 import { stubLayoutObservers } from '../../testing/observers'
 import { BackendFailure } from '../../services/backend/backend-failure'
@@ -50,6 +52,32 @@ function mockActivity(overrides: { status?: CollectionStatus; query?: string } =
   }
 }
 
+/** The services the timeline reads, each faked with only what it takes from it. */
+function servicesOf(activity: TimelineActivityMock): Provider[] {
+  return [
+    { provide: ActivitySelection, useValue: { groupedByDay: activity.groupedByDay } },
+    {
+      provide: ActivityViewStateService,
+      useValue: {
+        searchQuery: activity.searchQuery,
+        setSearchQuery: activity.setSearchQuery,
+        dateFrom: activity.dateFrom,
+        dateTo: activity.dateTo,
+        activeConnections: activity.activeConnections,
+        openEvent: activity.openEvent,
+      },
+    },
+    {
+      provide: ActivityDataService,
+      useValue: {
+        isLoading: activity.isLoading,
+        collectionStatus: activity.collectionStatus,
+        providers: activity.providers,
+      },
+    },
+  ]
+}
+
 /** Two days with events: the Jira update on 18 May, the Git commit on 17 May. */
 function twoDays(activity: TimelineActivityMock): void {
   const [git, jira] = activityLog.entries.map(createEntryAdapter)
@@ -76,7 +104,7 @@ describe('TimelineComponent', () => {
     const { activity, entry } = mockActivity()
 
     await render(TimelineComponent, {
-      providers: [{ provide: ActivityService, useValue: activity }],
+      providers: servicesOf(activity),
     })
 
     const button = screen.getByRole('button', { name: /open git event/i })
@@ -108,7 +136,7 @@ describe('TimelineComponent', () => {
     ])
 
     await render(TimelineComponent, {
-      providers: [{ provide: ActivityService, useValue: activity }],
+      providers: servicesOf(activity),
     })
 
     expect(screen.getByRole('button', { name: /Maybe \(tentative\)/ }).textContent).toContain(
@@ -142,7 +170,7 @@ describe('TimelineComponent', () => {
     ])
 
     await render(TimelineComponent, {
-      providers: [{ provide: ActivityService, useValue: activity }],
+      providers: servicesOf(activity),
     })
 
     const call = screen.getByRole('button', { name: /Call \(tentative, online meeting\) at/ })
@@ -163,7 +191,7 @@ describe('TimelineComponent', () => {
     activity.groupedByDay.set([])
 
     await render(TimelineComponent, {
-      providers: [{ provide: ActivityService, useValue: activity }],
+      providers: servicesOf(activity),
     })
 
     expect(screen.getByText('No activity loaded')).toBeTruthy()
@@ -190,7 +218,7 @@ describe('TimelineComponent', () => {
     activity.groupedByDay.set([])
 
     await render(TimelineComponent, {
-      providers: [{ provide: ActivityService, useValue: activity }],
+      providers: servicesOf(activity),
     })
 
     expect(screen.getByText(new RegExp(says))).toBeTruthy()
@@ -201,7 +229,7 @@ describe('TimelineComponent', () => {
     const { activity } = mockActivity()
 
     await render(TimelineComponent, {
-      providers: [{ provide: ActivityService, useValue: activity }],
+      providers: servicesOf(activity),
     })
 
     const field = screen.getByRole('searchbox', { name: 'Filter activity' })
@@ -213,7 +241,7 @@ describe('TimelineComponent', () => {
     activity.groupedByDay.set([])
 
     await render(TimelineComponent, {
-      providers: [{ provide: ActivityService, useValue: activity }],
+      providers: servicesOf(activity),
     })
 
     // The filter field's own clear button shares the label; use the empty-state action.
@@ -229,7 +257,7 @@ describe('TimelineComponent', () => {
     activity.isLoading.set(true)
 
     const { fixture } = await render(TimelineComponent, {
-      providers: [{ provide: ActivityService, useValue: activity }],
+      providers: servicesOf(activity),
     })
     expect(screen.queryByRole('slider')).toBeNull()
 
@@ -243,7 +271,7 @@ describe('TimelineComponent', () => {
     const { activity } = mockActivity()
 
     const { fixture } = await render(TimelineComponent, {
-      providers: [{ provide: ActivityService, useValue: activity }],
+      providers: servicesOf(activity),
     })
     await fixture.whenStable()
 
@@ -256,7 +284,7 @@ describe('TimelineComponent', () => {
     twoDays(activity)
 
     await render(TimelineComponent, {
-      providers: [{ provide: ActivityService, useValue: activity }],
+      providers: servicesOf(activity),
     })
 
     const rail = await screen.findByRole('slider', { name: 'Jump to day' })
@@ -271,7 +299,7 @@ describe('TimelineComponent', () => {
     activity.dateTo.set('2026-05-31')
 
     const { fixture } = await render(TimelineComponent, {
-      providers: [{ provide: ActivityService, useValue: activity }],
+      providers: servicesOf(activity),
     })
     const rail = await screen.findByRole('slider')
     await fixture.whenStable()
@@ -285,7 +313,7 @@ describe('TimelineComponent', () => {
     twoDays(activity)
 
     await render(TimelineComponent, {
-      providers: [{ provide: ActivityService, useValue: activity }],
+      providers: servicesOf(activity),
     })
     const rail = await screen.findByRole('slider')
     rail.focus()
@@ -299,7 +327,7 @@ describe('TimelineComponent', () => {
     const { activity } = mockActivity()
     twoDays(activity)
     const { fixture } = await render(TimelineComponent, {
-      providers: [{ provide: ActivityService, useValue: activity }],
+      providers: servicesOf(activity),
     })
     const rail = await screen.findByRole('slider')
     const host = fixture.nativeElement as HTMLElement
@@ -346,7 +374,7 @@ describe('TimelineComponent', () => {
     const { activity } = mockActivity()
     twoDays(activity)
     const { fixture } = await render(TimelineComponent, {
-      providers: [{ provide: ActivityService, useValue: activity }],
+      providers: servicesOf(activity),
     })
     const rail = await screen.findByRole('slider')
     const host = fixture.nativeElement as HTMLElement
@@ -383,7 +411,7 @@ describe('TimelineComponent', () => {
     const { activity } = mockActivity()
     twoDays(activity)
     const { fixture } = await render(TimelineComponent, {
-      providers: [{ provide: ActivityService, useValue: activity }],
+      providers: servicesOf(activity),
     })
     const rail = await screen.findByRole('slider')
     const host = fixture.nativeElement as HTMLElement
@@ -420,7 +448,7 @@ describe('TimelineComponent', () => {
     try {
       const { activity } = mockActivity()
       const { fixture } = await render(TimelineComponent, {
-        providers: [{ provide: ActivityService, useValue: activity }],
+        providers: servicesOf(activity),
       })
       expect(screen.getByText('Today')).toBeTruthy()
 
