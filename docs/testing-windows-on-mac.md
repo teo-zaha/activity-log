@@ -8,10 +8,10 @@ subprocess/PowerShell:
 - **Outlook COM automation** via `IDispatch` (`CoCreateInstance(Outlook.Application)`)
   — `core/src/collect/outlook/windows.rs` + `core/src/platform/windows.rs`.
 
-Both are `#[cfg(target_os = "windows")]`-gated. On a Mac they aren't compiled —
-runtime dispatch returns the `unsupported_result(...)` stub. To **run** them you
-need a real Windows kernel (Event Log service) and, for Outlook, an installed
-Outlook.
+Both are `#[cfg(target_os = "windows")]`-gated. On a Mac they aren't compiled:
+each parent module's `imp` alias picks its `macos` implementation instead (the
+`fallback` on other targets). To **run** them you need a real Windows kernel
+(Event Log service) and, for Outlook, an installed Outlook.
 
 ## Why Docker / Wine can't run these
 
