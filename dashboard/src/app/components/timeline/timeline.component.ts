@@ -16,66 +16,19 @@ import { EmptyStateComponent } from '../empty-state/empty-state.component'
 import { ButtonComponent } from '../button/button.component'
 import { ActivityService } from '../../services/activity.service'
 import { SearchBarComponent } from '../search-bar/search-bar.component'
-import { sourceLogoUrl } from '../provider-icon/provider-icon.component'
 import type { EntryUiAdapter } from '../../providers/types'
-import { busyMarkerOf } from '../../providers/utils'
 import { dayIndexOf } from '../../utils/day-index'
 import { injectMinuteClock } from '../../utils/clock'
-import { dayKeyOf, longDayLabel, relativeDayLabel, type DayKey } from '../../utils/local-day'
+import { dayKeyOf } from '../../utils/local-day'
 import { AutoAnimateDirective } from '../auto-animate/auto-animate.directive'
 import { DayIndexComponent } from './day-index/day-index.component'
-import { refusedRange, retryable } from '../../services/collection-failure'
+import { timelineEmptyState } from './timeline-empty-state'
+import { TimelineRows } from './timeline-rows'
 
 /** How many frames after a jump its landing is corrected, see `jumpTo`. */
 const ALIGN_FRAMES = 4
 /** How far below the sticky day header the line that picks the active day runs. */
 const TRACK_LINE_GAP = 2
-
-/** One entry of the list, with what its row shows worked out once per entry. */
-interface TimelineRow {
-  readonly entry: EntryUiAdapter
-  readonly ariaLabel: string
-  /** The source's logo for the badge; null when it shows `entry.badge.icon` instead. */
-  readonly logoUrl: string | null
-  /** Tentative and free meetings get a tag. */
-  readonly busy: { readonly label: string; readonly className: string } | null
-}
-
-interface TimelineDay {
-  readonly date: DayKey
-  /** `Monday, 16 November 2026` */
-  readonly label: string
-  /** `Today` or `Yesterday`, else null. */
-  readonly relative: string | null
-  /** `3 events` */
-  readonly count: string
-  readonly rows: readonly TimelineRow[]
-}
-
-const BUSY_TAGS = { tentative: 'Tentative', free: 'Free' } as const
-
-function timelineRow(entry: EntryUiAdapter): TimelineRow {
-  const marker = busyMarkerOf(entry.busyStatus)
-  const status = [marker, entry.joinUrl ? 'online meeting' : null].filter(Boolean).join(', ')
-  const details = status ? ` (${status})` : ''
-  return {
-    entry,
-    ariaLabel: `Open ${entry.badges.map(badge => badge.label).join(' and ')} event: ${entry.title}${details} at ${entry.timeLabel}`,
-    logoUrl: sourceLogoUrl(entry.badge.source),
-    busy: marker && { label: BUSY_TAGS[marker], className: `busy-tag is-${marker}` },
-  }
-}
-
-function sameRows(a: readonly TimelineRow[], b: readonly TimelineRow[]): boolean {
-  return a.length === b.length && a.every((row, index) => row === b[index])
-}
-
-interface TimelineEmptyState {
-  readonly icon: string
-  readonly title: string
-  readonly message: string
-  readonly action: 'clear-search' | null
-}
 
 @Component({
   selector: 'app-timeline',
@@ -106,118 +59,24 @@ export class TimelineComponent {
     return query ? `${base} matching “${query}”` : base
   })
 
-  protected readonly emptyState = computed<TimelineEmptyState>(() => {
-    const query = this.activity.searchQuery().trim()
-    const status = this.activity.collectionStatus()
-    if (status.kind === 'failed' && refusedRange(status)) {
-      return {
-        icon: 'cloud_off',
-        title: 'No activity loaded',
-        message: 'The backend refused to collect this range. Choose another one.',
-        action: null,
-      }
-    }
-    if (status.kind === 'failed' && !retryable(status)) {
-      return {
-        icon: 'cloud_off',
-        title: 'No activity loaded',
-        message: 'The backend refused to show its activity; check source status in Settings.',
-        action: null,
-      }
-    }
-    if (status.kind === 'failed') {
-      return {
-        icon: 'cloud_off',
-        title: 'No activity loaded',
-        message:
-          'The last collection did not finish. Retry above, or check source status in Settings.',
-        action: null,
-      }
-    }
-    if (query) {
-      return {
-        icon: 'search_off',
-        title: `No matches for “${query}”`,
-        message: 'Try a different term, or filter by repo, branch, ticket key or author.',
-        action: 'clear-search',
-      }
-    }
-    if (this.activity.providers().length === 0) {
-      return {
-        icon: 'power_off',
-        title: 'No sources are ready',
-        message: 'Open Settings to see why each source is unavailable and configure it.',
-        action: null,
-      }
-    }
-    if (this.activity.activeConnections().size === 0) {
-      return {
-        icon: 'filter_alt_off',
-        title: 'All sources are hidden',
-        message: 'Turn on at least one source in the sidebar to see its activity.',
-        action: null,
-      }
-    }
-    return {
-      icon: 'event_busy',
-      title: 'Nothing recorded in this range',
-      message: 'Pick a wider date range and collect again.',
-      action: null,
-    }
-  })
+  protected readonly emptyState = computed(() =>
+    timelineEmptyState({
+      query: this.activity.searchQuery().trim(),
+      status: this.activity.collectionStatus(),
+      hasSources: this.activity.providers().length > 0,
+      anyShown: this.activity.activeConnections().size > 0,
+    })
+  )
 
   private readonly clock = injectMinuteClock()
   /** Today, which changes at midnight: the timeline stays open all session. */
   private readonly todayKey = computed(() => dayKeyOf(this.clock()))
 
-  /** Rows by entry: an entry kept across answers and filters keeps its row's strings. */
-  private readonly rows = new WeakMap<EntryUiAdapter, TimelineRow>()
-  /**
-   * The days last drawn. A day whose rows are the same objects as before stays the same object,
-   * so its list is not compared row by row again when another day changes.
-   */
-  private drawnDays = new Map<string, TimelineDay>()
-
+  private readonly rows = new TimelineRows()
   /** The list, ready to draw: the template binds plain values, not per-row function calls. */
-  protected readonly days = computed<TimelineDay[]>(() => {
-    const today = this.todayKey()
-    const drawn = new Map<string, TimelineDay>()
-    const days = this.activity.groupedByDay().map(group => {
-      const rows = group.entries.map(entry => {
-        let row = this.rows.get(entry)
-        if (!row) {
-          row = timelineRow(entry)
-          this.rows.set(entry, row)
-        }
-        return row
-      })
-      const previous = this.drawnDays.get(group.date)
-      const relative = relativeDayLabel(group.date, today)
-      const day =
-        previous && previous.relative === relative && sameRows(previous.rows, rows)
-          ? previous
-          : this.timelineDay(group.date, relative, rows)
-      drawn.set(group.date, day)
-      return day
-    })
-    this.drawnDays = drawn
-    return days
-  })
-
-  private timelineDay(
-    date: DayKey,
-    relative: string | null,
-    rows: readonly TimelineRow[]
-  ): TimelineDay {
-    const count = rows.length
-    return {
-      date,
-      label: longDayLabel(date),
-      relative,
-      count: `${count} ${count === 1 ? 'event' : 'events'}`,
-      rows,
-    }
-  }
+  protected readonly days = computed(() =>
+    this.rows.days(this.activity.groupedByDay(), this.todayKey())
+  )
 
   private readonly host = inject<ElementRef<HTMLElement>>(ElementRef).nativeElement
   private readonly scroller = viewChild.required<ElementRef<HTMLElement>>('scroller')
