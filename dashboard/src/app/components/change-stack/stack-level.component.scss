@@ -1,0 +1,31 @@
+:host {
+  display: block;
+}
+
+// Each level up steps in, on a line that ties it to the change it builds on, up to
+// `MAX_STACK_INDENT`; past it the lists nest on without moving.
+:host(.is-indented) {
+  margin-left: 14px;
+  padding-left: 6px;
+  border-left: 1px solid var(--hairline);
+}
+
+.level {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.node + .node {
+  margin-top: 2px;
+}
+
+.cut {
+  margin: 0;
+  padding: 6px 8px;
+  color: var(--text-tertiary);
+  font-size: 12.5px;
+  font-style: italic;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+}

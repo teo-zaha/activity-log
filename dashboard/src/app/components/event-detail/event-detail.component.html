@@ -156,6 +156,10 @@
             </dl>
           }
 
+          @if (entry.changeStack; as stack) {
+            <app-change-stack class="flyout-section flyout-stack" [stack]="stack" />
+          }
+
           @if (entry.descriptionBlocks.length) {
             <section class="flyout-description" aria-labelledby="event-detail-description-title">
               <h3 id="event-detail-description-title" class="flyout-description-title">

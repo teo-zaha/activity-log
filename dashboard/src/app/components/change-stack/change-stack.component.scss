@@ -1,0 +1,60 @@
+:host {
+  display: block;
+}
+
+.stack-header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  column-gap: 12px;
+  row-gap: 2px;
+  margin-bottom: 8px;
+}
+
+.stack-title {
+  margin: 0;
+  color: var(--text-tertiary);
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.stack-caption {
+  margin: 0;
+  color: var(--text-tertiary);
+  font-size: 12px;
+}
+
+// What the stack stands on: a branch, or why that is not known.
+.stack-base {
+  margin: 0;
+  padding: 4px 8px;
+  color: var(--text-secondary);
+  font-size: 12.5px;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+
+  &.is-cut {
+    color: var(--text-tertiary);
+    font-style: italic;
+  }
+}
+
+.stack-branch {
+  padding: 1px 5px;
+  border-radius: var(--radius-xs);
+  background: var(--surface-hover);
+  color: var(--text-primary);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 12px;
+}
+
+.stack-chain {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.stack-item + .stack-item {
+  margin-top: 2px;
+}

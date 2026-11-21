@@ -458,6 +458,45 @@ describe('EventDetailComponent', () => {
     })
   })
 
+  it('shows a merge request’s stack below its fields, and no section for an entry without one', async () => {
+    const mergeRequest = createEntryAdapter({
+      source: 'gitlab',
+      connection: 'work',
+      id: 'opened-12',
+      type: 'opened',
+      timestamp: '2026-11-17T09:00:00Z',
+      title: 'Stack the parser',
+      targetType: 'MergeRequest',
+      mrIid: 12,
+      changeStack: {
+        current: { number: 12, title: 'Stack the parser' },
+        below: [
+          {
+            number: 11,
+            title: 'Groundwork',
+            webUrl: 'https://gitlab.example.org/group/app/-/merge_requests/11',
+          },
+        ],
+        bottom: { kind: 'reached', branch: 'main' },
+        above: { changes: [], end: { kind: 'complete' } },
+      },
+    })
+    const plain = createEntryAdapter(activityLog.entries[0])
+    const { activity, settle } = await renderDetails([mergeRequest, plain], {
+      event: mergeRequest.trackKey,
+    })
+
+    const stack = screen.getByRole('region', { name: 'Stack' })
+    expect(within(stack).getByRole('link', { name: '!11 Groundwork' })).toBeTruthy()
+    // Below the fields, before what follows them.
+    const fields = document.querySelector('.flyout-fields')
+    expect(fields?.compareDocumentPosition(stack) ?? 0).toBe(Node.DOCUMENT_POSITION_FOLLOWING)
+
+    activity.openEventKey.set(plain.trackKey)
+    await settle()
+    expect(screen.queryByRole('region', { name: 'Stack' })).toBeNull()
+  })
+
   it('shows no meeting block for an entry without description or join link', async () => {
     const entry = createEntryAdapter(activityLog.entries[0])
     await renderDetails([entry], { event: entry.trackKey })
