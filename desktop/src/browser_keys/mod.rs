@@ -18,14 +18,20 @@ use tauri::{Runtime, WebviewWindow};
 /// Leaves every key in `window`'s web view to the page. A failure leaves the browser keys on,
 /// and the Logs pane says why.
 pub fn leave_to_page<R: Runtime>(window: &WebviewWindow<R>) {
-    leave_to_page_impl(window)
+    imp::leave_to_page(window)
 }
 
+#[cfg(not(target_os = "windows"))]
+use self::fallback as imp;
 #[cfg(target_os = "windows")]
-use self::windows::leave_to_page as leave_to_page_impl;
+use self::windows as imp;
 
 #[cfg(not(target_os = "windows"))]
-fn leave_to_page_impl<R: Runtime>(_window: &WebviewWindow<R>) {}
+mod fallback {
+    use tauri::{Runtime, WebviewWindow};
+
+    pub(super) fn leave_to_page<R: Runtime>(_window: &WebviewWindow<R>) {}
+}
 
 /// The first failure of a key press, reported once with its cause: a runtime that takes the
 /// handler but lacks what it uses fails the same way on every key.
