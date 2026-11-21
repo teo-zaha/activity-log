@@ -145,12 +145,12 @@ Add Git, GitLab, Jira, and Calendar as many times as you need—for example, two
 
 ### Themes and phone layout
 
-**Settings → Appearance** includes eight themes: Light, Green, Lilac, Solarized, Dim, Mocha, Dark, and Midnight. Until you pick one, Activity Log follows your system light or dark preference automatically.
+**Settings → General** includes eight themes: Light, Green, Lilac, Solarized, Dim, Mocha, Dark, and Midnight. Until you pick one, Activity Log follows your system light or dark preference automatically.
 
 At widths of 640 px or less, navigation and Settings move to a bottom tab bar, source chips scroll horizontally, and event details and Settings sections open as full-screen sliding pages (disabled under reduced motion). Touch support respects screen safe areas, prevents tap flash and accidental zoom on form fields, and applies hover styles only to hovering pointers. On a touch screen, at any width, pulling Timeline down from the top collects the date range on screen again, as **Collect** does; a mouse, trackpad, or wheel never triggers it, and it is off while a collection runs or while details or Settings cover Timeline.
 
 <p align="center">
-  <img src="pics/theme-picker.png" width="820" alt="Theme picker in Settings, Appearance">
+  <img src="pics/theme-picker.png" width="820" alt="Theme picker in Settings, General">
 </p>
 
 <table>
@@ -181,15 +181,15 @@ At widths of 640 px or less, navigation and Settings move to a bottom tab bar, s
 
 Every view, date range, filter, open event, and Settings section lives in the URL so reloads and shared links open the same state:
 
-| Path or query                                                                        | What it opens                                                                                 |
-| ------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------- |
-| `/timeline` (`/` and unknown paths redirect here)                                    | Timeline view                                                                                 |
-| `/day/2026-11-17`, `/workweek/2026-11-17`, `/week/2026-11-17`                        | Calendar view on that local day; missing or invalid dates open today                          |
-| `?q=review`                                                                          | Timeline filter text (cleared when switching views)                                           |
-| `?from=2026-11-01&to=2026-11-14`                                                     | Collection range; collected on startup when valid (end after start, at most 10 years)         |
-| `?settings=home`, `general`, `logs`, `add`, or `<source>/<name>` (e.g. `gitlab/oss`) | Settings open over the view (`home` lists sections on phones and shows Appearance on desktop) |
-| `?event=<source>/<connection>/<id>`                                                  | Event detail panel for that entry (or the open entry inside an `events` group)                |
-| `?events=<key>&events=<key>`                                                         | Overlap group list for two or more entries (a single `events` value opens that entry)         |
+| Path or query                                                                        | What it opens                                                                              |
+| ------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------ |
+| `/timeline` (`/` and unknown paths redirect here)                                    | Timeline view                                                                              |
+| `/day/2026-11-17`, `/workweek/2026-11-17`, `/week/2026-11-17`                        | Calendar view on that local day; missing or invalid dates open today                       |
+| `?q=review`                                                                          | Timeline filter text (cleared when switching views)                                        |
+| `?from=2026-11-01&to=2026-11-14`                                                     | Collection range; collected on startup when valid (end after start, at most 10 years)      |
+| `?settings=home`, `general`, `logs`, `add`, or `<source>/<name>` (e.g. `gitlab/oss`) | Settings open over the view (`home` lists sections on phones and shows General on desktop) |
+| `?event=<source>/<connection>/<id>`                                                  | Event detail panel for that entry (or the open entry inside an `events` group)             |
+| `?events=<key>&events=<key>`                                                         | Overlap group list for two or more entries (a single `events` value opens that entry)      |
 
 **History and Back:**
 
@@ -221,18 +221,21 @@ The `activity-log:` scheme is registered by the packaged app bundle on macOS (no
 
 ### Keyboard shortcuts
 
-Press <kbd>?</kbd> anywhere to open the keyboard shortcuts reference for your current platform and mode. In a browser tab, browser-owned keys stay with the browser, so only <kbd>/</kbd>, <kbd>?</kbd>, and <kbd>Esc</kbd> are handled by the app.
+Press <kbd>?</kbd> anywhere, or open **Settings → General → Keyboard shortcuts**, for the reference of your platform: every command once, with all its keys, by where it works. The single keys work in the browser and in the desktop app alike; the desktop app adds the <kbd>⌘</kbd>/<kbd>Ctrl</kbd> chords, which a browser keeps for itself.
 
-| Keys                                                                  | Action                                                                                   | Scope                         |
-| --------------------------------------------------------------------- | ---------------------------------------------------------------------------------------- | ----------------------------- |
-| <kbd>/</kbd>                                                          | Focus the Timeline filter                                                                | Timeline                      |
-| <kbd>?</kbd>                                                          | Toggle the keyboard shortcuts dialog                                                     | Everywhere                    |
-| <kbd>Esc</kbd>                                                        | Close the topmost open layer (event details, or Settings on phone width)                 | Everywhere                    |
-| <kbd>⌘R</kbd> / <kbd>Ctrl+R</kbd>, <kbd>F5</kbd> on Windows and Linux | Collect the date range on screen (works while typing)                                    | Desktop app                   |
-| <kbd>⌘F</kbd> / <kbd>Ctrl+F</kbd>                                     | Switch to Timeline (keeping the range) and focus its filter (works while typing)         | Desktop app                   |
-| <kbd>⌘[</kbd> on macOS, <kbd>Alt+←</kbd> on Windows and Linux         | Back: from an event to its group, out of details or a Settings section, or previous view | Desktop app, not while typing |
+| Keys                                                                                    | Action                                                                                   | Where                         |
+| --------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------- | ----------------------------- |
+| <kbd>R</kbd>; <kbd>⌘R</kbd> / <kbd>Ctrl+R</kbd>, <kbd>F5</kbd> on Windows and Linux     | Collect the date range on screen (the desktop chords also while typing)                  | Everywhere                    |
+| <kbd>/</kbd>; <kbd>⌘F</kbd> / <kbd>Ctrl+F</kbd>                                         | Focus the Timeline's filter, switching to Timeline (keeping the range) from another view | Everywhere                    |
+| <kbd>1</kbd>–<kbd>4</kbd>; <kbd>⌘1</kbd>–<kbd>⌘4</kbd> / <kbd>Ctrl+1</kbd>–<kbd>4</kbd> | Timeline, Day, Work week, Week                                                           | Everywhere                    |
+| <kbd>,</kbd>; <kbd>⌘,</kbd> / <kbd>Ctrl+,</kbd>                                         | Settings                                                                                 | Everywhere                    |
+| <kbd>P</kbd> / <kbd>N</kbd>, <kbd>T</kbd>                                               | Previous or next day (Day) or week (Work week, Week), and today                          | Day, Work week, Week          |
+| <kbd>P</kbd> / <kbd>N</kbd>                                                             | Previous or next event of a group of overlapping events                                  | Event details                 |
+| <kbd>?</kbd>                                                                            | Toggle the keyboard shortcuts dialog                                                     | Everywhere                    |
+| <kbd>Esc</kbd>                                                                          | Close the topmost open layer (event details, or Settings on phone width)                 | Everywhere                    |
+| <kbd>⌘[</kbd> on macOS, <kbd>Alt+←</kbd> on Windows and Linux                           | Back: from an event to its group, out of details or a Settings section, or previous view | Desktop app, not while typing |
 
-Keys that type a character never trigger inside text inputs. On Windows, the desktop app disables WebView2's built-in reload, print, find, and back accelerators so these shortcuts reach the dashboard while standard editing and clipboard shortcuts continue to work.
+Single keys never trigger while typing in a field or picking from a list. Letters are read by where they are on the keyboard, so <kbd>R</kbd> and <kbd>⌘R</kbd> work on a Cyrillic or Greek layout too; punctuation and digits by the character typed. **Settings → General → Single-key shortcuts** turns every single key off (<kbd>/</kbd> and <kbd>?</kbd> included) for speech input or stray presses; <kbd>Esc</kbd> and the <kbd>⌘</kbd>/<kbd>Ctrl</kbd> chords stay. The setting is kept on the device, like the theme. On Windows, the desktop app disables WebView2's built-in reload, print, find, and back accelerators so these shortcuts reach the dashboard while standard editing and clipboard shortcuts continue to work.
 
 <p align="center">
   <img src="pics/shortcuts-help.png" width="820" alt="Keyboard shortcuts help dialog opened with ?">
