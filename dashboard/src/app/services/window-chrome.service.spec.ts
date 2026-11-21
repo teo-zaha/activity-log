@@ -189,6 +189,40 @@ describe('WindowChromeService in the desktop window', () => {
     expect(root.classList.contains('fullscreen')).toBe(true)
   })
 
+  it.each([
+    ['fullscreen', 'plugin:window|is_maximized'],
+    ['maximized', 'plugin:window|is_fullscreen'],
+  ] as const)(
+    'shows %s where the other read is refused, and says so once',
+    async (_name, refused) => {
+      root.classList.add('frameless')
+      const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined)
+      mockWindows('main')
+      mockIPC(
+        cmd => {
+          if (cmd === refused) return Promise.reject(new Error('not allowed'))
+          return cmd.startsWith('plugin:window|is_') ? true : 0
+        },
+        { shouldMockEvents: true }
+      )
+
+      startWindow()
+      const chrome = TestBed.inject(WindowChromeService)
+
+      await vi.waitFor(() =>
+        expect(
+          refused === 'plugin:window|is_maximized'
+            ? root.classList.contains('fullscreen')
+            : chrome.maximized()
+        ).toBe(true)
+      )
+      await emit('tauri://resize', { width: 1280, height: 800 })
+      await new Promise(resolve => setTimeout(resolve))
+      expect(warn).toHaveBeenCalledOnce()
+      warn.mockRestore()
+    }
+  )
+
   it('follows a fullscreen restore that lands right after the first read', async () => {
     let fullscreen = false
     let reads = 0

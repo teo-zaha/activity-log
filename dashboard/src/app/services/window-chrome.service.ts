@@ -9,6 +9,7 @@ import {
   selectionRects,
 } from '../utils/context-menu'
 import { RuntimeEnvironmentService } from './backend/runtime-environment.service'
+import { failureWhile } from './failure'
 
 /**
  * The desktop window's frame: dragging and maximizing it from the app's own surfaces and, where
@@ -117,15 +118,24 @@ export class WindowChromeService {
     const root = document.documentElement
     // Reads can overlap and answer out of order; only the latest one counts.
     let latest = 0
+    let warned = false
     const sync = async (): Promise<void> => {
       const read = ++latest
-      const [fullscreen, maximized] = await Promise.all([
+      // Each read that answers applies; one the window refuses leaves its own state as it was.
+      const [fullscreen, maximized] = await Promise.allSettled([
         appWindow.isFullscreen(),
-        this.frameless ? appWindow.isMaximized() : false,
+        this.frameless ? appWindow.isMaximized() : Promise.resolve(false),
       ])
       if (read !== latest || this.destroyed) return
-      root.classList.toggle('fullscreen', fullscreen)
-      this.maximized.set(maximized)
+      if (fullscreen.status === 'fulfilled') root.classList.toggle('fullscreen', fullscreen.value)
+      if (maximized.status === 'fulfilled') this.maximized.set(maximized.value)
+      const refused = [fullscreen, maximized].find(result => result.status === 'rejected')
+      if (refused && !warned) {
+        // Once: every resize would read it again.
+        warned = true
+        const failed = failureWhile('Reading the window’s state', refused.reason)
+        console.warn(failed.message, failed.cause)
+      }
     }
     // Listening first: the desktop app restores fullscreen just after the window shows, maybe
     // between the first read and the listener.
