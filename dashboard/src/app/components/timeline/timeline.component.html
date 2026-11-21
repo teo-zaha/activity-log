@@ -49,7 +49,7 @@
         [heading]="emptyState().title"
       >
         {{ emptyState().message }}
-        @if (emptyState().action === 'clear-search') {
+        @if (emptyState().action?.kind === 'clear-search') {
           <button appButton emptyStateAction (click)="activity.setSearchQuery('')">
             Clear filter
           </button>
