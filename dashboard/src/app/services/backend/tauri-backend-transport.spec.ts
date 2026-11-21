@@ -125,7 +125,7 @@ describe('TauriBackendTransport', () => {
     expect(opened).toEqual([launch, live])
   })
 
-  it('opens the links that arrived meanwhile even when the launch link cannot be read', async () => {
+  it('still opens the links it held when the launch link cannot be read', async () => {
     const live = 'activity-log://day/2026-11-17'
     mockIPC(
       async command => {

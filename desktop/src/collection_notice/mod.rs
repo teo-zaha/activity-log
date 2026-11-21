@@ -61,8 +61,10 @@ impl WindowFocus {
     }
 }
 
-/// Shows a notice for each run end that deserves one, until the spawner is gone. `is_current`
-/// is asked last, so a run that another replaced meanwhile shows nothing.
+/// Shows a notice for each run end that deserves one, for the app's life: the host the spawner
+/// lives in outlasts this task, so the ends never close. After shutdown every run ends stopped
+/// and none is current, so it shows nothing more. `is_current` is asked last, so a run that
+/// another replaced meanwhile shows nothing.
 pub(crate) async fn follow(
     mut ends: UnboundedReceiver<RunEnd>,
     focused: impl Fn() -> bool,
