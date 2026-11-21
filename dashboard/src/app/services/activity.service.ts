@@ -13,9 +13,8 @@ import type {
 } from '../generated/activity'
 import type { SettingsSelection } from '../components/settings-dialog/settings-dialog.types'
 import type { ConnectionKey, EntryKey } from '../providers/connection'
-import type { DayGroup } from '../models/day-group'
-import type { EntryUiAdapter } from '../providers/types'
 import { ActivityDataService } from './activity-data.service'
+import { ActivitySelection } from './activity-selection.service'
 import { failure, failureWhile, type Notice } from './failure'
 import { ActivityExportService } from './activity-export.service'
 import { ActivityViewStateService } from './activity-view-state.service'
@@ -28,6 +27,7 @@ import { localDayRange, type DayKey } from '../utils/local-day'
 @Service()
 export class ActivityService {
   private readonly data = inject(ActivityDataService)
+  private readonly selection = inject(ActivitySelection)
   private readonly viewState = inject(ActivityViewStateService)
   private readonly exportService = inject(ActivityExportService)
   private readonly providerConfig = inject(ProviderConfigFacade)
@@ -67,81 +67,13 @@ export class ActivityService {
   readonly settings = this.viewState.settings
   readonly workWeekDays = this.viewState.workWeekDays
 
-  /** Every entry by its `trackKey`, for the details the URL names. */
-  private readonly entryByKey = computed(
-    () => new Map(this.allEntryAdapters().map(entry => [entry.trackKey, entry]))
-  )
-  /** The event whose details are open, once its entry is loaded. */
-  readonly selectedEntry = computed<EntryUiAdapter | null>(() => {
-    const key = this.openEventKey()
-    return key === null ? null : (this.entryByKey().get(key) ?? null)
-  })
-  /** The listed group's events that are loaded; null without a group. */
-  readonly selectedEntries = computed<readonly EntryUiAdapter[] | null>(() => {
-    const keys = this.openGroupKeys()
-    if (keys.length === 0) return null
-    const byKey = this.entryByKey()
-    return keys.flatMap(key => byKey.get(key) ?? [])
-  })
-
-  /** Entries of the connections the source filter shows. */
-  private readonly shownEntries = computed(() => {
-    const active = this.activeConnections()
-    return this.allEntryAdapters().filter(entry => entry.connections.some(key => active.has(key)))
-  })
-
-  readonly filteredEntries = computed(() => {
-    const from = this.dateFrom()
-    const to = this.dateTo()
-    const query = this.currentView() === 'list' ? this.searchQuery().toLowerCase() : ''
-
-    return this.shownEntries().filter(entry => {
-      const day = entry.dayKey
-      if (from && day < from) return false
-      if (to && day > to) return false
-      if (query && !entry.searchText.includes(query)) return false
-      return true
-    })
-  })
-
-  /**
-   * The entries the calendar views draw: like `filteredEntries`, but a meeting that starts before
-   * the range and runs into it stays, for its blocks and meeting time on the days it covers.
-   */
-  readonly calendarEntries = computed(() => {
-    const from = this.dateFrom()
-    const to = this.dateTo()
-    return this.shownEntries().filter(
-      entry => (!from || entry.lastDayKey >= from) && (!to || entry.dayKey <= to)
-    )
-  })
-
-  readonly groupedByDay = computed<DayGroup<EntryUiAdapter>[]>(() => {
-    const byDay = new Map<DayKey, EntryUiAdapter[]>()
-    for (const entry of this.filteredEntries()) {
-      const day = entry.dayKey
-      if (!byDay.has(day)) byDay.set(day, [])
-      byDay.get(day)!.push(entry)
-    }
-    return Array.from(byDay.entries())
-      .sort(([a], [b]) => b.localeCompare(a))
-      .map(([date, entries]) => ({ date, entries }))
-  })
-
-  readonly dayEntries = computed(() =>
-    this.filteredEntries().filter(entry => entry.dayKey === this.selectedDay())
-  )
-
-  readonly weekEntriesByDay = computed<Map<string, EntryUiAdapter[]>>(() => {
-    const days = new Set(this.weekDays())
-    const map = new Map<string, EntryUiAdapter[]>()
-    for (const day of days) map.set(day, [])
-    for (const entry of this.filteredEntries()) {
-      const day = entry.dayKey
-      if (map.has(day)) map.get(day)!.push(entry)
-    }
-    return map
-  })
+  readonly selectedEntry = this.selection.selectedEntry
+  readonly selectedEntries = this.selection.selectedEntries
+  readonly filteredEntries = this.selection.filteredEntries
+  readonly calendarEntries = this.selection.calendarEntries
+  readonly groupedByDay = this.selection.groupedByDay
+  readonly dayEntries = this.selection.dayEntries
+  readonly weekEntriesByDay = this.selection.weekEntriesByDay
 
   navigateDay(delta: number): void {
     this.viewState.navigateDay(delta)
@@ -223,11 +155,11 @@ export class ActivityService {
   }
 
   toggleConnection(key: ConnectionKey): void {
-    this.viewState.toggleConnection(key, this.providerInfo())
+    this.selection.toggleConnection(key)
   }
 
   isolateConnection(key: ConnectionKey): void {
-    this.viewState.isolateConnection(key, this.providerInfo())
+    this.selection.isolateConnection(key)
   }
 
   initLoad(): Promise<void> {
@@ -280,7 +212,7 @@ export class ActivityService {
       return
     }
     try {
-      const shown = this.currentView() === 'list' ? this.filteredEntries() : this.calendarEntries()
+      const shown = this.selection.exportedEntries()
       const outcome = await this.exportService.export(
         format,
         shown.map(entry => entry.entry),
