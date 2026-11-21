@@ -457,11 +457,8 @@ describe('Shortcuts in the app', APP_RENDER_TEST, () => {
       phone = mockPhone(true)
       const { router } = await openApp(`${group}&event=${key(git)}`, { platform: BROWSER })
       await screen.findByRole('heading', { name: git?.title }, SLOW)
-      // `,` opens the Settings tab, which goes under the details.
-      expect(press(',', { code: 'Comma' }).defaultPrevented).toBe(true)
-      await vi.waitFor(() =>
-        expect(router.parseUrl(router.url).queryParams['settings']).toBeDefined()
-      )
+      // A link puts the Settings tab on screen too, opened after the details and under them.
+      await router.navigateByUrl(`${group}&event=${key(git)}&settings=home`)
       await screen.findByRole('region', { name: 'Settings' }, SLOW)
 
       expect(press('n', { code: 'KeyN' }).defaultPrevented).toBe(true)
@@ -469,6 +466,37 @@ describe('Shortcuts in the app', APP_RENDER_TEST, () => {
         expect(router.parseUrl(router.url).queryParams['event']).toBe(jira?.trackKey)
       )
     })
+
+    it('leave Settings alone on a phone, where they would open unseen under the details', async () => {
+      phone = mockPhone(true)
+      const { router, settle } = await openApp(`${group}&event=${key(git)}`, {
+        platform: MAC_DESKTOP,
+      })
+      await screen.findByRole('heading', { name: git?.title }, SLOW)
+
+      expect(press(',', { code: 'Comma' }).defaultPrevented).toBe(false)
+      expect(press(',', { code: 'Comma', metaKey: true }).defaultPrevented).toBe(false)
+      await settle()
+      expect(router.parseUrl(router.url).queryParams['settings']).toBeUndefined()
+      expect(screen.queryByRole('region', { name: 'Settings' })).toBeNull()
+    })
+
+    it(
+      'open Settings over the details on a wider screen, as a dialog',
+      async () => {
+        const { router } = await openApp(`${group}&event=${key(git)}`, { platform: BROWSER })
+        await screen.findByRole('heading', { name: git?.title }, SLOW)
+
+        expect(press(',', { code: 'Comma' }).defaultPrevented).toBe(true)
+        await vi.waitFor(() =>
+          expect(router.parseUrl(router.url).queryParams['settings']).toBe('general')
+        )
+        await screen.findByRole('heading', { name: 'General' }, SLOW)
+        await userEvent.click(screen.getByRole('button', { name: 'Close settings' }))
+        await vi.waitFor(() => expect(TestBed.inject(MatDialog).openDialogs).toHaveLength(0))
+      },
+      SLOW_TEST
+    )
   })
 
   describe('Single-key shortcuts off', () => {
