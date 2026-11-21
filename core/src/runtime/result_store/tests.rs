@@ -88,6 +88,7 @@ fn push(id: &str, sha: &str, timestamp: &str) -> ActivityEntry {
         note_file: None,
         note_resolved: None,
         pushed_commit: Some(sha.to_string()),
+        change_stack: None,
     })
 }
 

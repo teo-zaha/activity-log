@@ -1437,6 +1437,7 @@ async fn both_pushes_of_one_commit_survive_a_recheck_of_either_kind() {
             note_file: None,
             note_resolved: None,
             pushed_commit: Some("abc123".into()),
+            change_stack: None,
         })
     };
     let world = World::shared();

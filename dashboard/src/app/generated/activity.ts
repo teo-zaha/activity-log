@@ -151,6 +151,37 @@ depth: number, segments: Array<TextSegment>, };
 
 export type DescriptionBlock = { "kind": "paragraph", segments: Array<TextSegment>, } | { "kind": "heading", segments: Array<TextSegment>, } | { "kind": "list", ordered: boolean, items: Array<ListItem>, } | { "kind": "image", src?: string, alt?: string, };
 
+export type StackCut = "limit" | "unreadable" | "throttled" | "failed" | "cycle";
+
+export type StackedChange = { 
+/**
+ * The host's number for it in its repository (GitLab `iid`, GitHub `number`).
+ */
+number: number, title: string, 
+/**
+ * Its page: http(s), on the host's web origin, without user info.
+ */
+webUrl?: string, };
+
+export type ChangeStackBottom = { "kind": "reached", branch: string, } | { "kind": "ambiguous" } | { "kind": "cut", reason: StackCut, };
+
+export type ChangeStackEnd = { "kind": "complete" } | { "kind": "cut", reason: StackCut, };
+
+export type ChangeStackNode = { change: StackedChange, above: ChangeStackAbove, };
+
+export type ChangeStackAbove = { changes: Array<ChangeStackNode>, end: ChangeStackEnd, };
+
+export type ChangeStack = { 
+/**
+ * The entry's own change as it is now.
+ */
+current: StackedChange, 
+/**
+ * What it builds on, from the stack's base up to the change whose source branch it
+ * targets; empty when it is the base.
+ */
+below: Array<StackedChange>, bottom: ChangeStackBottom, above: ChangeStackAbove, };
+
 export type GitLabEntry = { source: "gitlab", 
 /**
  * The connection within its kind, such as `oss`; stamped by the runtime before the entry is
@@ -188,7 +219,13 @@ issueIid?: number, branch?: string, commitCount?: number, noteBody?: string, not
  * The commit a push (`pushedTo`, `pushedNew`) pushed (`push_data.commit_to`); it folds into
  * that commit.
  */
-pushedCommit?: string, };
+pushedCommit?: string, 
+/**
+ * Where the merge request the event is about stands among its project's open merge
+ * requests now, as of the collection, not on the event's day. Never cached: it is looked
+ * up again on every collection, after the day cache.
+ */
+changeStack?: ChangeStack, };
 
 export type GitEntry = { source: "git", 
 /**

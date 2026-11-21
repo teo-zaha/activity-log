@@ -1,7 +1,9 @@
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
-use crate::model::{ConnectionName, GitLabTag, Timestamp, gitlab::gitlab_entry_type::GitLabType};
+use crate::model::{
+    ChangeStack, ConnectionName, GitLabTag, Timestamp, gitlab::gitlab_entry_type::GitLabType,
+};
 
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
@@ -63,4 +65,10 @@ pub struct GitLabEntry {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[ts(optional)]
     pub pushed_commit: Option<String>,
+    /// Where the merge request the event is about stands among its project's open merge
+    /// requests now, as of the collection, not on the event's day. Never cached: it is looked
+    /// up again on every collection, after the day cache.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub change_stack: Option<ChangeStack>,
 }

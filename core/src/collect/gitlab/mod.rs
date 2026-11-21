@@ -170,6 +170,7 @@ pub(crate) fn map_gitlab_event(event: GitLabEvent) -> GitLabEntry {
         connection: crate::model::ConnectionName::unstamped(),
         id: event.id.to_string(),
         pushed_commit: commit_to.filter(|_| entry_type.is_push()),
+        change_stack: None,
         entry_type,
         timestamp: event.created_at,
         title: event.target_title,
