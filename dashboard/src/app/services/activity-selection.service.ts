@@ -121,22 +121,6 @@ export class ActivitySelection {
     }
   })
 
-  /** Transitional, deleted by stream A once the calendar draws from `calendarEntries`. */
-  readonly dayEntries: Signal<readonly EntryUiAdapter[]> = computed(() =>
-    this.filteredEntries().filter(entry => entry.dayKey === this.viewState.selectedDay())
-  )
-
-  /**
-   * Transitional, deleted by stream A once the calendar draws from `calendarEntries`. The week
-   * view still hands its lists on as mutable arrays, so they are typed so until then.
-   */
-  readonly weekEntriesByDay: Signal<ReadonlyMap<DayKey, EntryUiAdapter[]>> = computed(() => {
-    const map = new Map<DayKey, EntryUiAdapter[]>()
-    for (const day of this.viewState.weekDays()) map.set(day, [])
-    for (const entry of this.filteredEntries()) map.get(entry.dayKey)?.push(entry)
-    return map
-  })
-
   /** Shows or hides a connection's entries, against the sources on screen. */
   toggleConnection(key: ConnectionKey): void {
     this.viewState.toggleConnection(key, this.data.providerInfo())
