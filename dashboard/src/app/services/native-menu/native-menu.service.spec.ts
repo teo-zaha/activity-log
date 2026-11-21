@@ -1,4 +1,4 @@
-import { Component, signal } from '@angular/core'
+import { Component, signal, type WritableSignal } from '@angular/core'
 import { ShortcutDirective } from '../../components/shortcut/shortcut.directive'
 import { SHORTCUTS, type ShortcutEntry } from '../../models/shortcuts'
 import { TestBed } from '@angular/core/testing'
@@ -95,10 +95,17 @@ class FakeMenu implements NativeMenuIpc {
   }
 }
 
+interface MenuSetup {
+  readonly menu: FakeMenu
+  readonly shortcuts: ShortcutService
+  readonly service: NativeMenuService
+  readonly currentView: WritableSignal<ViewMode>
+}
+
 async function setup(
   platform: ShortcutPlatform = { os: 'mac', build: 'desktop' },
   table: readonly ShortcutEntry[] = SHORTCUTS
-) {
+): Promise<MenuSetup> {
   const menu = new FakeMenu()
   const currentView = signal<ViewMode>('list')
   TestBed.configureTestingModule({
@@ -120,7 +127,11 @@ async function setup(
 }
 
 /** Installs the menu as generation `generation`. */
-async function installed(menu: FakeMenu, shortcuts: ShortcutService, generation = 7) {
+async function installed(
+  menu: FakeMenu,
+  shortcuts: ShortcutService,
+  generation = 7
+): Promise<void> {
   await vi.waitFor(() => expect(menu.installs).toHaveLength(1))
   menu.installed.resolve({ kind: 'installed', generation })
   await vi.waitFor(() => expect(shortcuts.menuOwnsAccelerators()).toBe(true))
