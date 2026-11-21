@@ -14,6 +14,8 @@ pub use windows::{
 
 #[cfg(test)]
 mod tests;
+#[cfg(test)]
+pub(crate) mod thread_time;
 
 /// A `background_command` whose output is parsed: it runs in the C locale, so the dates and
 /// words it prints are English whatever language the user runs (AGENTS.md).

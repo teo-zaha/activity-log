@@ -4,7 +4,10 @@ use calcard::common::timezone::Tz;
 use chrono::{TimeZone, Utc};
 
 use super::parse_events;
-use crate::model::{BusyStatus, CollectOptions, MeetingWeight};
+use crate::{
+    model::{BusyStatus, CollectOptions, MeetingWeight},
+    platform::thread_time::thread_time,
+};
 
 /// 2–8 March 2026, UTC.
 fn week() -> CollectOptions {
@@ -995,32 +998,52 @@ END:VEVENT
     }));
 }
 
-/// Each series is expanded without walking the others: 8,000 short series stay far below a
-/// second (walking the whole feed per series took about 13 s).
-#[test]
-fn many_short_series_expand_in_linear_time() {
+/// A feed of `series` short series, spread over ten zones.
+fn short_series(series: usize) -> String {
     let mut events = String::new();
     for zone in 0..10 {
         events.push_str(&format!(
             "BEGIN:VTIMEZONE\nTZID:Zone {zone}\nX-LIC-LOCATION:Europe/Berlin\nEND:VTIMEZONE\n"
         ));
     }
-    for series in 0..8_000 {
+    for series in 0..series {
         events.push_str(&format!(
             "BEGIN:VEVENT\nUID:short-{series}\nDTSTART;TZID=Zone {zone}:20260303T090000\nDTEND;TZID=Zone {zone}:20260303T093000\nRRULE:FREQ=DAILY;COUNT=1\nEND:VEVENT\n",
             zone = series % 10
         ));
     }
-    let text = feed(&events);
+    feed(&events)
+}
 
-    let started = std::time::Instant::now();
-    let entries = parse_events(&text, &week(), Tz::UTC).unwrap();
+/// Each series is expanded without walking the others (walking the whole feed per series took
+/// about 13 s for 8,000). Measured as growth, not against a clock: four times the series take
+/// about four times as long, and a walk per series would take sixteen. The time is the thread's
+/// own processor time, which other processes on a loaded machine do not add to, and each size is
+/// timed a few times, alternately, its fastest run counting.
+#[test]
+fn many_short_series_expand_in_linear_time() {
+    const SMALL: usize = 2_000;
+    const LARGE: usize = 4 * SMALL;
+    let (small, large) = (short_series(SMALL), short_series(LARGE));
+    let time = |text: &str, expected: usize| {
+        let started = thread_time();
+        let entries = parse_events(text, &week(), Tz::UTC).unwrap();
+        let elapsed = thread_time() - started;
+        assert_eq!(entries.len(), expected);
+        elapsed
+    };
+    let (mut fastest_small, mut fastest_large) =
+        (std::time::Duration::MAX, std::time::Duration::MAX);
+    for _ in 0..5 {
+        fastest_small = fastest_small.min(time(&small, SMALL));
+        fastest_large = fastest_large.min(time(&large, LARGE));
+    }
 
-    assert_eq!(entries.len(), 8_000);
+    let growth = fastest_large.as_secs_f64() / fastest_small.as_secs_f64();
+    // Halfway between linear (4) and quadratic (16), on a log scale.
     assert!(
-        started.elapsed() < std::time::Duration::from_secs(2),
-        "{:?}",
-        started.elapsed()
+        growth < 8.0,
+        "{LARGE} series took {growth:.1} times as long as {SMALL} ({fastest_large:?} and {fastest_small:?})"
     );
 }
 
