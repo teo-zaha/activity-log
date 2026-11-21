@@ -54,8 +54,8 @@ pub(crate) fn http_client_builder() -> reqwest::ClientBuilder {
 macro_rules! provider {
     (
         $provider:ident($source:expr, $supported_os:expr $(, config: $config:ty)? $(, cache: $cache:expr)?) {
-            async fn startup_check(&self, $startup_os:ident, $startup_ctx:ident $(, $startup_config:ident)?) $startup_body:block
-            async fn collect(&self, $collect_os:ident, $collect_options:ident, $collect_ctx:ident) $collect_body:block
+            async fn startup_check(&self, $startup_ctx:ident $(, $startup_config:ident)?) $startup_body:block
+            async fn collect(&self, $collect_options:ident, $collect_ctx:ident) $collect_body:block
             $($rest:tt)*
         }
     ) => {
@@ -84,13 +84,11 @@ macro_rules! provider {
 
             fn startup_check(
                 &self,
-                current_os: $crate::model::SupportedOs,
                 context: $crate::provider::provider_context::ProviderContext,
             ) -> futures::future::BoxFuture<
                 '_,
                 $crate::provider::provider_check_result::ProviderCheckResult,
             > {
-                let $startup_os = current_os;
                 let $startup_ctx = context;
                 Box::pin(async move {
                     // The runtime resolves the settings before it checks, and checks only
@@ -112,12 +110,10 @@ macro_rules! provider {
 
             fn collect(
                 &self,
-                current_os: $crate::model::SupportedOs,
                 options: $crate::model::CollectOptions,
                 context: $crate::provider::provider_context::ProviderContext,
             ) -> futures::future::BoxFuture<'_, anyhow::Result<Vec<$crate::model::ActivityEntry>>>
             {
-                let $collect_os = current_os;
                 let $collect_options = options;
                 let $collect_ctx = context;
                 Box::pin(async move { $collect_body })

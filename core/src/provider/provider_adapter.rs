@@ -66,14 +66,9 @@ pub trait ProviderAdapter: Send + Sync {
         None
     }
 
-    fn startup_check(
-        &self,
-        current_os: SupportedOs,
-        context: ProviderContext,
-    ) -> BoxFuture<'_, ProviderCheckResult>;
+    fn startup_check(&self, context: ProviderContext) -> BoxFuture<'_, ProviderCheckResult>;
     fn collect(
         &self,
-        current_os: SupportedOs,
         options: CollectOptions,
         context: ProviderContext,
     ) -> BoxFuture<'_, anyhow::Result<Vec<ActivityEntry>>>;

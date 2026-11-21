@@ -26,14 +26,14 @@ mod fallback {
 
 crate::provider! {
     OutlookProvider(Source::Outlook, &[SupportedOs::Windows, SupportedOs::Macos]) {
-        async fn startup_check(&self, _current_os, _context) {
+        async fn startup_check(&self, _context) {
             match imp::check_outlook_ready().await {
                 Ok(()) => ProviderCheckResult::available(),
                 Err(err) => ProviderCheckResult::unavailable_from(&err),
             }
         }
 
-        async fn collect(&self, _current_os, options, _context) {
+        async fn collect(&self, options, _context) {
             let entries = collect_outlook(&options).await?;
             Ok(entries.into_activity_entries())
         }

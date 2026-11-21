@@ -146,11 +146,7 @@ impl ProviderAdapter for Fake {
         &[SupportedOs::Windows, SupportedOs::Macos, SupportedOs::Linux]
     }
 
-    fn startup_check(
-        &self,
-        _current_os: SupportedOs,
-        context: ProviderContext,
-    ) -> BoxFuture<'_, ProviderCheckResult> {
+    fn startup_check(&self, context: ProviderContext) -> BoxFuture<'_, ProviderCheckResult> {
         let id = context.connection().unwrap().id.clone();
         Box::pin(async move {
             self.world.checks.fetch_add(1, Ordering::SeqCst);
@@ -170,7 +166,6 @@ impl ProviderAdapter for Fake {
 
     fn collect(
         &self,
-        _current_os: SupportedOs,
         options: CollectOptions,
         context: ProviderContext,
     ) -> BoxFuture<'_, anyhow::Result<Vec<ActivityEntry>>> {

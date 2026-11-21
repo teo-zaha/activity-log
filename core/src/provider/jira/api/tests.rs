@@ -12,7 +12,7 @@ use crate::{
 
 use super::JiraApi;
 use crate::provider::{
-    current_os, provider_adapter::ProviderAdapter, provider_config::ProviderConfigResolve,
+    provider_adapter::ProviderAdapter, provider_config::ProviderConfigResolve,
     provider_context::ProviderContext, provider_runtime::with_startup_timeout,
 };
 
@@ -216,7 +216,7 @@ async fn a_denial_whose_headers_come_near_the_deadline_is_still_denied() {
     context.with_typed::<JiraConfig>().unwrap();
 
     let result = with_startup_timeout(
-        JiraProvider.startup_check(current_os(), context),
+        JiraProvider.startup_check(context),
         std::time::Duration::from_secs(2),
     )
     .await;

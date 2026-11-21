@@ -177,11 +177,7 @@ impl ProviderAdapter for FakeSource {
         &[SupportedOs::Windows, SupportedOs::Macos, SupportedOs::Linux]
     }
 
-    fn startup_check(
-        &self,
-        _current_os: SupportedOs,
-        context: ProviderContext,
-    ) -> BoxFuture<'_, ProviderCheckResult> {
+    fn startup_check(&self, context: ProviderContext) -> BoxFuture<'_, ProviderCheckResult> {
         let off = context
             .connection()
             .is_some_and(|connection| connection.id.name == "off");
@@ -196,7 +192,6 @@ impl ProviderAdapter for FakeSource {
 
     fn collect(
         &self,
-        _current_os: SupportedOs,
         _options: CollectOptions,
         context: ProviderContext,
     ) -> BoxFuture<'_, anyhow::Result<Vec<ActivityEntry>>> {
