@@ -330,7 +330,7 @@ pub fn install_menu<R: Runtime>(
     spec: MenuSpec,
 ) -> Result<MenuInstall, BackendError> {
     let items = MenuItems::of(&spec).map_err(BackendError::from)?;
-    install_impl(&app, &menus, &spec, items).map_err(BackendError::from)
+    imp::install(&app, &menus, &spec, items).map_err(BackendError::from)
 }
 
 /// Changes what the items of the menu installed as `generation` show.
@@ -369,21 +369,33 @@ pub(crate) fn page_loading<R: Runtime>(app: &AppHandle<R>) {
         return;
     };
     menus.retire();
-    restore_default_impl(app);
+    imp::restore_default(app);
 }
 
+#[cfg(not(target_os = "macos"))]
+use self::fallback as imp;
 #[cfg(target_os = "macos")]
-use self::macos::{install as install_impl, restore_default as restore_default_impl};
+use self::macos as imp;
 
+/// No menu bar of the app's own: nothing is installed, and the dashboard keeps its keys.
 #[cfg(not(target_os = "macos"))]
-fn install_impl<R: Runtime>(
-    _app: &AppHandle<R>,
-    _menus: &AppMenu<R>,
-    _spec: &MenuSpec,
-    _items: MenuItems,
-) -> Result<MenuInstall, MenuError> {
-    Ok(MenuInstall::NotOffered)
+mod fallback {
+    use activity_log_core::{
+        menu::{MenuError, MenuItems},
+        model::{MenuInstall, MenuSpec},
+    };
+    use tauri::{AppHandle, Runtime};
+
+    use super::AppMenu;
+
+    pub(super) fn install<R: Runtime>(
+        _app: &AppHandle<R>,
+        _menus: &AppMenu<R>,
+        _spec: &MenuSpec,
+        _items: MenuItems,
+    ) -> Result<MenuInstall, MenuError> {
+        Ok(MenuInstall::NotOffered)
+    }
+
+    pub(super) fn restore_default<R: Runtime>(_app: &AppHandle<R>) {}
 }
-
-#[cfg(not(target_os = "macos"))]
-fn restore_default_impl<R: Runtime>(_app: &AppHandle<R>) {}
