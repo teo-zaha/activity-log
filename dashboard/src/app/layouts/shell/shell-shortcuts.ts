@@ -9,6 +9,7 @@ import { VIEW_SHORTCUTS } from '../../models/shortcuts'
 import { ActivityDataService } from '../../services/activity-data.service'
 import { ActivityExportService } from '../../services/activity-export.service'
 import { ActivityViewStateService } from '../../services/activity-view-state.service'
+import { BreakpointState } from '../../services/breakpoint-state.service'
 import { ShortcutService } from '../../services/shortcut.service'
 import { TopLayer } from './top-layer.service'
 
@@ -25,6 +26,7 @@ export function bindShellShortcuts(): void {
   const viewState = inject(ActivityViewStateService)
   const exports = inject(ActivityExportService)
   const layers = inject(TopLayer)
+  const breakpoints = inject(BreakpointState)
   const location = inject(Location)
   const dialogs = inject(MatDialog)
   const injector = inject(Injector)
@@ -72,7 +74,13 @@ export function bindShellShortcuts(): void {
         () => layers.top() === null
       )
     ),
-    shortcuts.fallback('app.settings', () => settings.open()),
+    // Over the details on a wider screen as a dialog; not on a phone, where the Settings tab would
+    // open under the details, unseen until they close.
+    shortcuts.fallback(
+      'app.settings',
+      () => settings.open(),
+      () => !(breakpoints.phone() && layers.top() === 'details')
+    ),
     shortcuts.fallback(
       'app.export-markdown',
       () => void exports.exportShown('markdown'),
