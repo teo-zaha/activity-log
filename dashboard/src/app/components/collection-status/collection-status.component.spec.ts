@@ -6,7 +6,8 @@ import { describe, expect, it, vi } from 'vitest'
 import { ActivityService } from '../../services/activity.service'
 import { BackendFailure } from '../../services/backend/backend-failure'
 import { failure, failureOf } from '../../services/failure'
-import type { SourceLink } from '../../services/activity-data.service'
+import { ActivityDataService, type SourceLink } from '../../services/activity-data.service'
+import { ActivityViewStateService } from '../../services/activity-view-state.service'
 import type { CollectionStatus } from '../../services/types'
 import { CollectionStatusComponent, STATUS_CLEARANCE } from './collection-status.component'
 import { stubLayoutObservers } from '../../testing/observers'
@@ -45,13 +46,20 @@ async function setup(
     dismissCollectionStatus,
     collectShownRange,
     connection: signal(link),
+  }
+  const viewState = {
     dateFrom: signal(own.from),
     dateTo: signal(own.to),
     collectedRange: signal(ranges.collected === undefined ? MAY : ranges.collected),
   }
 
   const { fixture } = await render(CollectionStatusComponent, {
-    providers: [{ provide: ActivityService, useValue: activity }],
+    providers: [
+      { provide: ActivityService, useValue: activity },
+      // The real `ActivitySelection` decides how the collection covers this tab's range.
+      { provide: ActivityViewStateService, useValue: viewState },
+      { provide: ActivityDataService, useValue: {} },
+    ],
   })
 
   return { retryCollection, dismissCollectionStatus, collectShownRange, fixture }
@@ -124,11 +132,17 @@ describe('CollectionStatusComponent', () => {
             dismissCollectionStatus: vi.fn(),
             collectShownRange: vi.fn(),
             connection: signal({ status: { kind: 'open' }, since: 0, episode: 0 }),
+          },
+        },
+        {
+          provide: ActivityViewStateService,
+          useValue: {
             dateFrom: signal(MAY.from),
             dateTo: signal(MAY.to),
             collectedRange: signal(MAY),
           },
         },
+        { provide: ActivityDataService, useValue: {} },
       ],
     })
     await fixture.whenStable()

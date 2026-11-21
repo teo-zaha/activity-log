@@ -16,6 +16,7 @@ import { interval } from '@signality/core/scheduling/interval'
 import { AutoAnimateDirective } from '../auto-animate/auto-animate.directive'
 import { ButtonComponent } from '../button/button.component'
 import { IconButtonComponent } from '../button/icon-button.component'
+import { ActivitySelection } from '../../services/activity-selection.service'
 import { ActivityService } from '../../services/activity.service'
 import { retryable } from '../../services/collection-failure'
 import { dayRangeLabel } from '../../utils/local-day'
@@ -51,6 +52,7 @@ interface CollectionBannerVm {
 })
 export class CollectionStatusComponent {
   protected readonly activity = inject(ActivityService)
+  private readonly selection = inject(ActivitySelection)
   private readonly now = signal(Date.now())
   private readonly host = inject<ElementRef<HTMLElement>>(ElementRef)
   /** The pill or the card on screen, if any. */
@@ -153,13 +155,11 @@ export class CollectionStatusComponent {
    */
   protected readonly otherRange = computed<{ shown: string; own: string } | null>(() => {
     if (this.banner() !== null) return null
-    const collected = this.activity.collectedRange()
-    const [from, to] = [this.activity.dateFrom(), this.activity.dateTo()]
-    if (collected === null || from === null || to === null) return null
-    if (from >= collected.from && to <= collected.to) return null
+    const coverage = this.selection.rangeCoverage()
+    if (coverage.kind !== 'other') return null
     return {
-      shown: dayRangeLabel(collected.from, collected.to),
-      own: dayRangeLabel(from, to),
+      shown: dayRangeLabel(coverage.collected.from, coverage.collected.to),
+      own: dayRangeLabel(coverage.own.from, coverage.own.to),
     }
   })
 
