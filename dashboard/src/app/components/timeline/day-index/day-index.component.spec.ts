@@ -20,11 +20,11 @@ const items: DayIndexItem[] = buildDayIndex(
   '2026-11-17'
 )
 
-async function renderRail(activeDay: string): Promise<{ rail: HTMLElement; jumps: string[] }> {
-  const jumps: string[] = []
+async function renderRail(activeDay: DayKey): Promise<{ rail: HTMLElement; jumps: DayKey[] }> {
+  const jumps: DayKey[] = []
   await render(DayIndexComponent, {
     inputs: { items, activeDay },
-    on: { jump: (day: string) => jumps.push(day) },
+    on: { jump: (day: DayKey) => jumps.push(day) },
   })
   const rail = screen.getByRole('slider', { name: 'Jump to day' })
   rail.focus()
@@ -46,19 +46,19 @@ const threeYears: DayIndexItem[] = ((): DayIndexItem[] => {
 /** Renders `items` on a track `height` px high, with the layout jsdom lacks stubbed. */
 async function renderLongRail(
   items: DayIndexItem[],
-  activeDay: string,
+  activeDay: DayKey,
   height: number
-): Promise<{ rail: HTMLElement; jumps: string[] }> {
+): Promise<{ rail: HTMLElement; jumps: DayKey[] }> {
   vi.spyOn(Element.prototype, 'clientHeight', 'get').mockReturnValue(height)
   vi.spyOn(Element.prototype, 'getBoundingClientRect').mockReturnValue(
     new DOMRect(0, 0, 30, height + 12)
   )
   // jsdom has no pointer capture.
   HTMLElement.prototype.setPointerCapture = vi.fn()
-  const jumps: string[] = []
+  const jumps: DayKey[] = []
   await render(DayIndexComponent, {
     inputs: { items, activeDay },
-    on: { jump: (day: string) => jumps.push(day) },
+    on: { jump: (day: DayKey) => jumps.push(day) },
   })
   const rail = screen.getByRole('slider', { name: 'Jump to day' })
   rail.focus()

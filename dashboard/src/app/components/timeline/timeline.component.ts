@@ -26,7 +26,7 @@ import { SearchBarComponent } from '../search-bar/search-bar.component'
 import type { EntryUiAdapter } from '../../providers/types'
 import { dayIndexOf } from '../../utils/day-index'
 import { injectMinuteClock } from '../../utils/clock'
-import { dayKeyOf } from '../../utils/local-day'
+import { dayKeyOf, isDayKey, type DayKey } from '../../utils/local-day'
 import { AutoAnimateDirective } from '../auto-animate/auto-animate.directive'
 import { DayIndexComponent } from './day-index/day-index.component'
 import { trackActiveDay } from './active-day'
@@ -104,7 +104,7 @@ export class TimelineComponent {
    * Days on or near the screen. Only their lists animate entries coming and going: AutoAnimate
    * keeps an observer and a timer for every row of a list it animates.
    */
-  protected readonly nearDays = signal<ReadonlySet<string>>(new Set(), {
+  protected readonly nearDays = signal<ReadonlySet<DayKey>>(new Set(), {
     equal: (a, b) => a.size === b.size && [...a].every(day => b.has(day)),
   })
 
@@ -155,12 +155,12 @@ export class TimelineComponent {
     // takes a fixed list of targets.
     afterRenderEffect(onCleanup => {
       const sections = this.sections()
-      const near = new Set<string>()
+      const near = new Set<DayKey>()
       const observer = new IntersectionObserver(
         records => {
           for (const record of records) {
             const day = record.target.getAttribute('data-day')
-            if (!day) continue
+            if (day === null || !isDayKey(day)) continue
             if (record.isIntersecting) near.add(day)
             else near.delete(day)
           }
@@ -200,7 +200,7 @@ export class TimelineComponent {
     void this.data.collectShownRange()
   }
 
-  protected focusFirstEntry(day: string): void {
+  protected focusFirstEntry(day: DayKey): void {
     this.activeDay.sectionOf(day)?.querySelector<HTMLElement>('.entry')?.focus()
   }
 
