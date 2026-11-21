@@ -229,22 +229,68 @@ pub(crate) fn clear_logs() {
     diagnostics::clear();
 }
 
-/// Renders the entries the dashboard shows and saves them where the user picks.
+/// Renders the entries the dashboard shows and saves them where the user picks. Async, so the
+/// render, the dialog and the write never hold the window's thread; rfd puts the dialog on the
+/// main thread itself where the OS needs it (macOS). It renders first, so a request that does
+/// not render opens no dialog. One export at a time: another while its dialog is open is
+/// refused as `busy`.
 #[tauri::command]
-pub(crate) fn save_export(request: ExportRequest) -> Result<ExportOutcome, BackendError> {
-    let file = render_export_request(&request)?;
-    let extension = request.format.extension();
-    let selected_path = FileDialog::new()
-        .set_title("Export activity log")
-        .set_file_name(&file.file_name)
-        .add_filter(request.format.label(), &[extension])
-        .save_file();
-
-    let Some(path) = selected_path else {
+pub(crate) async fn save_export(
+    exports: tauri::State<'_, ExportTurn>,
+    request: ExportRequest,
+) -> Result<ExportOutcome, BackendError> {
+    let _turn = exports.take()?;
+    let format = request.format;
+    let file =
+        blocking(move || render_export_request(&request).map_err(BackendError::from)).await??;
+    let name = file.file_name.clone();
+    let chosen = blocking(move || {
+        FileDialog::new()
+            .set_title("Export activity log")
+            .set_file_name(&name)
+            .add_filter(format.label(), &[format.extension()])
+            .save_file()
+    })
+    .await?;
+    let Some(path) = chosen else {
         return Ok(ExportOutcome::Cancelled);
     };
-    write_export(&path, &file.content)?;
+    blocking(move || write_export(&path, &file.content)).await??;
     Ok(ExportOutcome::Saved)
+}
+
+/// Whether an export is under way; `take` claims the turn until its guard drops.
+#[derive(Default)]
+pub(crate) struct ExportTurn(std::sync::atomic::AtomicBool);
+
+impl ExportTurn {
+    pub(crate) fn take(&self) -> Result<ExportGuard<'_>, BackendError> {
+        use std::sync::atomic::Ordering;
+        if self.0.swap(true, Ordering::AcqRel) {
+            return Err(BackendError::new(
+                BackendErrorKind::Busy,
+                "An export is already open",
+            ));
+        }
+        Ok(ExportGuard(&self.0))
+    }
+}
+
+pub(crate) struct ExportGuard<'a>(&'a std::sync::atomic::AtomicBool);
+
+impl Drop for ExportGuard<'_> {
+    fn drop(&mut self) {
+        self.0.store(false, std::sync::atomic::Ordering::Release);
+    }
+}
+
+/// `work` on a blocking thread; a panic in it is an internal failure.
+async fn blocking<T: Send + 'static>(
+    work: impl FnOnce() -> T + Send + 'static,
+) -> Result<T, BackendError> {
+    tauri::async_runtime::spawn_blocking(work)
+        .await
+        .map_err(|err| BackendError::internal(format!("Exporting failed: {err}")))
 }
 
 /// Writes exactly the file the user confirmed in the dialog, which asked before replacing it.
