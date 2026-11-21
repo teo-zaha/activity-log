@@ -1,6 +1,7 @@
 /// <reference types="@vitest/browser-playwright" />
-// The keyboard help in a real browser (`ng test --configuration layout`, Chromium): the help's
-// columns and rows that keep their label and keys apart, which only a layout engine can tell.
+// The keyboard help and the Keyboard card in a real browser (`ng test --configuration layout`,
+// Chromium): the help's columns, rows that keep their label and keys apart, and the card on a
+// touch screen, which only a layout engine can tell.
 import { afterEach, describe, expect, it } from 'vitest'
 import { cdp, page } from 'vitest/browser'
 import type { ShortcutPlatform } from '../../services/shortcut.service'
@@ -83,5 +84,22 @@ describe('the keyboard help in a browser', () => {
     if (!body) throw new Error('the help has a body')
     expect(getComputedStyle(body).overflowY).toBe('auto')
     expect(help.getBoundingClientRect().bottom).toBeLessThanOrEqual(innerHeight)
+  })
+
+  it('shows the Keyboard card on a touch screen, without the `?` key tag', async () => {
+    await page.viewport(402, 800)
+    await touch(true)
+    await openApp('/timeline?settings=general', { platform: BROWSER })
+
+    await expect
+      .poll(() => document.querySelector('app-settings-keyboard-card'), { timeout: 10_000 })
+      .not.toBeNull()
+    await frames()
+    const card = document.querySelector<HTMLElement>('app-settings-keyboard-card')
+    const toggle = card?.querySelector('[role="switch"]')?.getBoundingClientRect()
+    expect(toggle?.width ?? 0).toBeGreaterThan(0)
+    const tag = card?.querySelector('app-key-tag')
+    if (!tag) throw new Error('the help row has its key tag')
+    expect(getComputedStyle(tag).display).toBe('none')
   })
 })

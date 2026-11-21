@@ -154,7 +154,7 @@ export class SettingsDialogComponent {
         return 'Add source'
       case 'general':
       case 'home':
-        return 'Appearance'
+        return 'General'
       default:
         return (
           this.selectedProvider()?.label ??

@@ -157,8 +157,8 @@ describe('ShellLayoutComponent', APP_RENDER_TEST, () => {
         if (!(container instanceof HTMLElement)) throw new Error('no settings dialog yet')
         return container
       }, SLOW)
-      const appearance = await within(dialog).findByRole('button', { name: /Appearance/ }, SLOW)
-      appearance.focus()
+      const general = await within(dialog).findByRole('button', { name: /General/ }, SLOW)
+      general.focus()
       const details = document.querySelector('app-event-detail')
       const title = jira?.title
       if (!(details instanceof HTMLElement) || title === undefined) throw new Error('no details')
@@ -168,7 +168,7 @@ describe('ShellLayoutComponent', APP_RENDER_TEST, () => {
       backend.publish()
       await screen.findByText('This event is not in the collected range', {}, SLOW)
       await settle()
-      expect(document.activeElement).toBe(appearance)
+      expect(document.activeElement).toBe(general)
 
       backend.activityResponse = activityLog
       backend.publish()
@@ -176,7 +176,7 @@ describe('ShellLayoutComponent', APP_RENDER_TEST, () => {
       // too, so their heading has no role until the dialog closes.
       await within(details).findByText(title, { selector: '.flyout-title' }, SLOW)
       await settle()
-      expect(document.activeElement).toBe(appearance)
+      expect(document.activeElement).toBe(general)
 
       fireEvent.keyDown(document.body, { key: 'Escape', keyCode: 27 })
       await vi.waitFor(() => expect(router.parseUrl(router.url)).toEqual(router.parseUrl(group)))

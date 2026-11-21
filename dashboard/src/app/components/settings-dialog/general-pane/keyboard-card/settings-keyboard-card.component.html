@@ -1,0 +1,23 @@
+<div class="keyboard-row">
+  <div class="keyboard-text">
+    <span id="single-key-shortcuts-label" class="keyboard-label">Single-key shortcuts</span>
+    <p id="single-key-shortcuts-description" class="keyboard-description">
+      Keys such as R, 1–4, / and ? run commands when you are not typing in a field. Turn them off if
+      you use speech input or press keys by accident.
+    </p>
+  </div>
+  <mat-slide-toggle
+    class="keyboard-switch"
+    hideIcon
+    aria-labelledby="single-key-shortcuts-label"
+    aria-describedby="single-key-shortcuts-description"
+    [checked]="characterKeys() === 'on'"
+    (change)="setCharacterKeys($event.checked)"
+  />
+</div>
+<div class="keyboard-row">
+  <button appButton variant="secondary" size="sm" type="button" (click)="openHelp()">
+    Keyboard shortcuts
+    <app-key-tag shortcut="app.help" />
+  </button>
+</div>

@@ -20,7 +20,7 @@ export type SettingsTarget = ConnectionKey | 'add'
 
 /** The settings sections that are not sources, in the order the navigation lists them. */
 export const SETTINGS_SECTIONS = [
-  { id: 'general', label: 'Appearance', icon: 'palette' },
+  { id: 'general', label: 'General', icon: 'tune' },
   { id: 'logs', label: 'Logs', icon: 'receipt_long' },
 ] as const satisfies readonly { id: SettingsSelection; label: string; icon: string }[]
 

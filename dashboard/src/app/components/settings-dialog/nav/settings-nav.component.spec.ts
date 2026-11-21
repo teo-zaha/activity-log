@@ -31,9 +31,7 @@ describe('SettingsNavComponent', () => {
 
     expect(screen.getByRole('navigation', { name: 'Settings sections' })).toBeTruthy()
     expect(screen.getByRole('button', { name: /Logs/ }).getAttribute('aria-current')).toBe('page')
-    expect(
-      screen.getByRole('button', { name: /Appearance/ }).getAttribute('aria-current')
-    ).toBeNull()
+    expect(screen.getByRole('button', { name: /General/ }).getAttribute('aria-current')).toBeNull()
 
     await userEvent.click(screen.getByRole('button', { name: /GitLab/ }))
     await userEvent.click(screen.getByRole('button', { name: /Add source/ }))
@@ -50,14 +48,12 @@ describe('SettingsNavComponent', () => {
 
     expect(screen.getByRole('heading', { name: 'Settings' })).toBeTruthy()
     // No section is open beside the list.
-    expect(
-      screen.getByRole('button', { name: /Appearance/ }).getAttribute('aria-current')
-    ).toBeNull()
+    expect(screen.getByRole('button', { name: /General/ }).getAttribute('aria-current')).toBeNull()
     expect(screen.getByRole('button', { name: /GitLab/ }).textContent).toContain(
       'Token expires soon'
     )
 
-    await userEvent.click(screen.getByRole('button', { name: /Appearance/ }))
+    await userEvent.click(screen.getByRole('button', { name: /General/ }))
     expect(selected).toHaveBeenCalledWith('general')
     expect(screen.queryByRole('button', { name: 'Close settings' })).toBeNull()
   })
