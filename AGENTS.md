@@ -133,8 +133,8 @@ Working code is not done code. A change that works but misses these rules is unf
 - Use comments sparingly and only where behavior is not obvious
 - Keep PowerShell and subprocess integrations parity-focused unless the task explicitly replaces them
 - For OS-specific Rust implementations, gate child modules at the parent boundary with `#[cfg(target_os = "...")]`
-- Name OS-specific child modules by platform (`windows`, `macos`, `linux`) and keep runtime dispatch in the parent module
-- In parent modules, prefer a `*_impl` alias/stub pattern so runtime dispatch never calls raw `windows`/`macos`/`linux` modules directly
+- Name OS-specific child modules by platform (`windows`, `macos`, `linux`) and keep the dispatch in the parent module
+- A parent module with OS children chooses its implementation at compile time with an `imp` alias: `#[cfg(target_os = "windows")] use self::windows as imp;` (and `macos`, `linux` where they exist) plus one `fallback` module for every other target (`#[cfg(not(any(...)))] use self::fallback as imp;`), which answers as an unsupported system would. The parent's own functions call `imp::…`; callers outside the parent go through those functions, never `imp` or a platform module
 - Keep shared cross-platform logic in shared modules; only split into OS-specific modules when behavior is genuinely platform-specific
 
 ## Angular and TypeScript Rules

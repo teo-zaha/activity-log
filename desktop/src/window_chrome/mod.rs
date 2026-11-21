@@ -49,7 +49,7 @@ pub fn attach_maximize_button<R: Runtime>(
     width: f64,
     height: f64,
 ) {
-    attach_impl(
+    imp::attach(
         window,
         ButtonArea {
             top,
@@ -60,8 +60,16 @@ pub fn attach_maximize_button<R: Runtime>(
     )
 }
 
+#[cfg(not(target_os = "windows"))]
+use self::fallback as imp;
 #[cfg(target_os = "windows")]
-use self::windows::attach as attach_impl;
+use self::windows as imp;
 
 #[cfg(not(target_os = "windows"))]
-fn attach_impl<R: Runtime>(_window: WebviewWindow<R>, _area: ButtonArea) {}
+mod fallback {
+    use tauri::{Runtime, WebviewWindow};
+
+    use super::ButtonArea;
+
+    pub(super) fn attach<R: Runtime>(_window: WebviewWindow<R>, _area: ButtonArea) {}
+}
