@@ -101,6 +101,11 @@ export class EventDetailComponent {
   protected readonly group = this.selection.selectedEntries
   /** The open event, once its entry is loaded. */
   protected readonly detail = this.selection.selectedEntry
+  /** When the open event happened, in words: formatted once per event, not at every check. */
+  protected readonly detailTime = computed(() => {
+    const entry = this.detail()
+    return entry && formatDateTime(entry.timestamp)
+  })
   /** Where the open event sits in the group; null while the list shows, and without a group. */
   protected readonly openIndex = computed(() => {
     const group = this.group()
@@ -286,17 +291,6 @@ export class EventDetailComponent {
     )
   }
 
-  protected formatDateTime(ts: string): string {
-    return new Date(ts).toLocaleString('en-GB', {
-      weekday: 'long',
-      year: 'numeric',
-      month: 'long',
-      day: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit',
-    })
-  }
-
   private restoreFocus(): void {
     const element = this.previouslyFocusedElement
     this.previouslyFocusedElement = null
@@ -309,4 +303,15 @@ export class EventDetailComponent {
       element.focus()
     })
   }
+}
+
+function formatDateTime(timestamp: string): string {
+  return new Date(timestamp).toLocaleString('en-GB', {
+    weekday: 'long',
+    year: 'numeric',
+    month: 'long',
+    day: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+  })
 }

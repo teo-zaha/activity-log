@@ -126,9 +126,7 @@
                           }
                         </span>
                         @if (row.busy) {
-                          <span class="busy-tag" [class]="row.busy.className">{{
-                            row.busy.label
-                          }}</span>
+                          <span [class]="row.busy.className">{{ row.busy.label }}</span>
                         }
                         @if (row.entry.joinUrl) {
                           <span

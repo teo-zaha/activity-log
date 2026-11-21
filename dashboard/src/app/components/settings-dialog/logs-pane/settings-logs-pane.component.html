@@ -48,10 +48,11 @@
     aria-live="polite"
     aria-label="Diagnostic log, newest first"
   >
-    @for (entry of rows(); track entry.id) {
+    @for (row of rows(); track row.entry.id) {
+      @let entry = row.entry;
       <div class="log-row" [attr.data-level]="entry.level">
         <time class="log-time" [attr.datetime]="entry.timestamp" [title]="entry.timestamp">
-          {{ formatTime(entry.timestamp) }}
+          {{ row.time }}
         </time>
         <span class="log-level">{{ entry.level }}</span>
         <!-- Long sources break after the slash only (zero-width space), never inside a name. -->

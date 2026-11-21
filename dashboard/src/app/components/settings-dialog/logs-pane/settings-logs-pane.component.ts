@@ -91,8 +91,13 @@ export class SettingsLogsPaneComponent {
   private readonly filtered = computed(() =>
     this.entries().filter(entry => matchesLevelFilter(entry.level, this.filter()))
   )
-  /** Newest first, which is what you want when chasing the last failure. */
-  protected readonly rows = computed(() => [...this.filtered()].reverse())
+  /**
+   * Newest first, which is what you want when chasing the last failure; each with its time as
+   * shown, formatted once per read of the log rather than at every check.
+   */
+  protected readonly rows = computed(() =>
+    [...this.filtered()].reverse().map(entry => ({ entry, time: formatLogTime(entry.timestamp) }))
+  )
   /**
    * A new line moves every row below it, and AutoAnimate measures and moves each row of the list
    * on every change. That is fine for a short log; the backend keeps up to 1000 lines.
@@ -106,8 +111,6 @@ export class SettingsLogsPaneComponent {
       error: entries.filter(entry => entry.level === 'error').length,
     }
   })
-
-  protected readonly formatTime = formatLogTime
 
   private copiedTimer: ReturnType<typeof setTimeout> | undefined
 
