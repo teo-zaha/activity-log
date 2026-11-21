@@ -2,10 +2,13 @@
 // The keyboard help and the Keyboard card in a real browser (`ng test --configuration layout`,
 // Chromium): the help's columns, rows that keep their label and keys apart, and the card on a
 // touch screen, which only a layout engine can tell.
+import { TestBed } from '@angular/core/testing'
+import { MatDialog } from '@angular/material/dialog'
 import { afterEach, describe, expect, it } from 'vitest'
 import { cdp, page } from 'vitest/browser'
 import type { ShortcutPlatform } from '../../services/shortcut.service'
 import { openApp } from '../../testing/app'
+import { openShortcutHelp } from './shortcut-help-dialog.component'
 
 const BROWSER: ShortcutPlatform = { os: 'mac', build: 'browser' }
 const WINDOWS_DESKTOP: ShortcutPlatform = { os: 'other', build: 'desktop' }
@@ -71,6 +74,24 @@ describe('the keyboard help in a browser', () => {
     expect(columns(help)).toHaveLength(2)
     expect(brokenRows(help)).toEqual([])
     expect(help.getBoundingClientRect().bottom).toBeLessThanOrEqual(innerHeight)
+  })
+
+  it('keeps one column for one section, as with single keys off, using its width', async () => {
+    await page.viewport(1280, 800)
+    localStorage.setItem('character-shortcuts', 'off')
+    await openApp('/timeline', { platform: { os: 'mac', build: 'desktop' } })
+    // From its row in the settings: `?` is off.
+    openShortcutHelp(TestBed.inject(MatDialog))
+    await expect.poll(() => document.querySelector('app-shortcut-help-dialog')).not.toBeNull()
+    await frames()
+    const help = document.querySelector<HTMLElement>('app-shortcut-help-dialog')
+    if (!help) throw new Error('the help is open')
+
+    expect(help.querySelectorAll('.help-section')).toHaveLength(1)
+    const section = help.querySelector('.help-section')?.getBoundingClientRect()
+    const sections = help.querySelector('.help-sections')?.getBoundingClientRect()
+    expect(section?.width).toBeCloseTo(sections?.width ?? 0, 0)
+    expect(brokenRows(help)).toEqual([])
   })
 
   it('shows one column on a phone, scrolling within the screen, three keys wrapping', async () => {
