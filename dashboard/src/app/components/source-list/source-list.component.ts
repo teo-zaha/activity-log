@@ -2,9 +2,12 @@ import { Component, computed, inject } from '@angular/core'
 import { MatIconModule } from '@angular/material/icon'
 import { MatTooltipModule } from '@angular/material/tooltip'
 import type { ConnectionKey } from '../../providers/connection'
-import { ActivityService } from '../../services/activity.service'
+import { ActivityDataService } from '../../services/activity-data.service'
+import { ActivitySelection } from '../../services/activity-selection.service'
+import { ActivityViewStateService } from '../../services/activity-view-state.service'
 import { BreakpointState } from '../../services/breakpoint-state.service'
 import { failureWhile } from '../../services/failure'
+import { NoticeService } from '../../services/notice.service'
 import type { ProviderViewModel } from '../../services/types'
 import { AutoAnimateDirective } from '../auto-animate/auto-animate.directive'
 import { IconButtonComponent } from '../button/icon-button.component'
@@ -32,7 +35,10 @@ import { StatusDotComponent } from '../ui-status/status-dot.component'
   host: { '[class.is-rail]': 'isRail()' },
 })
 export class SourceListComponent {
-  protected readonly activity = inject(ActivityService)
+  protected readonly data = inject(ActivityDataService)
+  protected readonly selection = inject(ActivitySelection)
+  private readonly viewState = inject(ActivityViewStateService)
+  private readonly notices = inject(NoticeService)
   private readonly settings = inject(SettingsDialogLauncher)
   private readonly breakpoints = inject(BreakpointState)
 
@@ -40,19 +46,19 @@ export class SourceListComponent {
   protected readonly isRail = this.breakpoints.rail
 
   protected readonly issuesTooltip = computed(() =>
-    this.activity
+    this.data
       .unusableProviders()
       .map(provider => `${provider.label}: ${provider.info.reason ?? 'Unavailable'}`)
       .join('\n')
   )
 
   protected readonly issuesAriaLabel = computed(() => {
-    const count = this.activity.unusableProviders().length
+    const count = this.data.unusableProviders().length
     return `${count} ${count === 1 ? 'source' : 'sources'} unavailable. ${this.issuesTooltip()}. Open settings`
   })
 
   protected isActive(key: ConnectionKey): boolean {
-    return this.activity.activeConnections().has(key)
+    return this.viewState.activeConnections().has(key)
   }
 
   protected sourceTooltip(provider: ProviderViewModel): string {
@@ -77,9 +83,9 @@ export class SourceListComponent {
 
   protected async recheck(provider: ProviderViewModel): Promise<void> {
     try {
-      await this.activity.recheckConnection(provider.info.connection)
+      await this.data.recheckConnection(provider.info.connection)
     } catch (error) {
-      this.activity.notice.set({
+      this.notices.show({
         origin: 'recheck',
         failure: failureWhile(`Checking ${provider.label} again`, error),
       })

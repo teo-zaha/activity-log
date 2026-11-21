@@ -3,7 +3,8 @@ import { render, screen } from '@testing-library/angular'
 import userEvent from '@testing-library/user-event'
 import { describe, expect, it, vi } from 'vitest'
 import { appConfig } from '../../app.config'
-import { ActivityService } from '../../services/activity.service'
+import { ActivityDataService } from '../../services/activity-data.service'
+import { ActivityViewStateService } from '../../services/activity-view-state.service'
 import type { DayKey } from '../../utils/local-day'
 import { RangeFormComponent } from './range-form.component'
 
@@ -20,18 +21,23 @@ async function setup(): Promise<{
   await render(RangeFormComponent, {
     providers: [
       {
-        provide: ActivityService,
+        provide: ActivityViewStateService,
         useValue: {
           dateFrom,
           dateTo,
           setDateFrom: (day: DayKey | null): void => dateFrom.set(day),
           setDateTo: (day: DayKey | null): void => dateTo.set(day),
+          setRangeEditing: (editing: boolean): void => editing$.set(editing),
+        },
+      },
+      {
+        provide: ActivityDataService,
+        useValue: {
           collectShownRange: (): Promise<void> | null => {
             const [from, to] = [dateFrom(), dateTo()]
             return from !== null && to !== null ? collect(from, to) : null
           },
           isLoading: signal(false),
-          setRangeEditing: (editing: boolean): void => editing$.set(editing),
         },
       },
       // The app's own providers: the date adapter is the one the app starts with.

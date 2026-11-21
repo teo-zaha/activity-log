@@ -4,7 +4,7 @@ import { MatIconModule } from '@angular/material/icon'
 import { MatTooltipModule } from '@angular/material/tooltip'
 import { RouterLink, RouterLinkActive } from '@angular/router'
 import { NAV_GROUPS } from '../../models/nav'
-import { ActivityService } from '../../services/activity.service'
+import { ActivityViewStateService } from '../../services/activity-view-state.service'
 import { BreakpointState } from '../../services/breakpoint-state.service'
 import type { ViewMode } from '../../utils/app-url'
 import { viewCommands } from '../../utils/app-url'
@@ -24,7 +24,7 @@ export class SidebarComponent {
   /** The layout's part of the sidebar, such as the views' source chips; none on other pages. */
   readonly sources = input<TemplateRef<unknown> | null>(null)
 
-  private readonly activity = inject(ActivityService)
+  private readonly viewState = inject(ActivityViewStateService)
   private readonly settings = inject(SettingsDialogLauncher)
   private readonly breakpoints = inject(BreakpointState)
 
@@ -36,7 +36,7 @@ export class SidebarComponent {
 
   /** A calendar view opens on the day shown last. */
   protected viewLink(view: ViewMode): string[] {
-    return viewCommands(view, this.activity.selectedDay())
+    return viewCommands(view, this.viewState.selectedDay())
   }
 
   /** Tapping the open tab again keeps the page it is on. */

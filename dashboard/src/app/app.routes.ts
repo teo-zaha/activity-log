@@ -22,7 +22,7 @@ import type { ShortcutScope } from './models/shortcuts'
 import { ShellLayoutComponent } from './layouts/shell/shell-layout.component'
 import { ViewsLayoutComponent } from './layouts/views/views-layout.component'
 import { provideNavigationMotion } from './navigation-motion'
-import { ActivityService } from './services/activity.service'
+import { NoticeService } from './services/notice.service'
 import { failureWhile } from './services/failure'
 import { SHORTCUT_SCOPE } from './services/shortcut.service'
 import { type CalendarView, VIEW_PATHS, viewCommands } from './utils/app-url'
@@ -40,10 +40,10 @@ const APP_TITLE = 'Activity Log'
 export function loadView(load: () => Promise<Type<unknown>>): () => Promise<Type<unknown>> {
   return () => {
     const router = inject(Router)
-    const activity = inject(ActivityService)
+    const notices = inject(NoticeService)
     return load().catch((error: unknown) => {
       if (router.navigated) throw error
-      activity.notice.set({ origin: 'view', failure: failureWhile('Opening this view', error) })
+      notices.show({ origin: 'view', failure: failureWhile('Opening this view', error) })
       return ViewUnavailableComponent
     })
   }
@@ -173,7 +173,7 @@ export function provideAppRouter(): (Provider | EnvironmentProviders)[] {
       withRouterConfig({ defaultQueryParamsHandling: 'merge' }),
       // A view's code failed to load (an app update, a dropped dev server): say so and stay.
       withNavigationErrorHandler(error =>
-        inject(ActivityService).notice.set({
+        inject(NoticeService).show({
           origin: 'view',
           failure: failureWhile('Opening this view', error.error),
         })

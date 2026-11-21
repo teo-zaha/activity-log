@@ -6,7 +6,7 @@ import { render, screen, within } from '@testing-library/angular'
 import userEvent from '@testing-library/user-event'
 import { describe, expect, it, vi } from 'vitest'
 import { provideAppRouter } from '../../app.routes'
-import { ActivityService } from '../../services/activity.service'
+import { ActivityViewStateService } from '../../services/activity-view-state.service'
 import { BreakpointState } from '../../services/breakpoint-state.service'
 import { SettingsDialogLauncher } from '../settings-dialog/settings-dialog-launcher.service'
 import { SidebarComponent } from './sidebar.component'
@@ -18,7 +18,7 @@ describe('SidebarComponent', () => {
         provideAppRouter(),
         provideLocationMocks(),
         {
-          provide: ActivityService,
+          provide: ActivityViewStateService,
           useValue: { selectedDay: signal('2026-11-10') },
         },
         { provide: SettingsDialogLauncher, useValue: { open: vi.fn(), pageOpen: signal(false) } },
@@ -45,7 +45,7 @@ describe('SidebarComponent', () => {
       providers: [
         provideAppRouter(),
         provideLocationMocks(),
-        { provide: ActivityService, useValue: { selectedDay: signal('2026-11-10') } },
+        { provide: ActivityViewStateService, useValue: { selectedDay: signal('2026-11-10') } },
         { provide: SettingsDialogLauncher, useValue: { open: vi.fn(), pageOpen: signal(false) } },
         { provide: BreakpointState, useValue: { phone: signal(false), rail: signal(true) } },
       ],
@@ -59,7 +59,7 @@ describe('SidebarComponent', () => {
       providers: [
         provideAppRouter(),
         provideLocationMocks(),
-        { provide: ActivityService, useValue: { selectedDay: signal('2026-11-10') } },
+        { provide: ActivityViewStateService, useValue: { selectedDay: signal('2026-11-10') } },
         { provide: SettingsDialogLauncher, useValue: { open: vi.fn(), pageOpen: signal(false) } },
         { provide: BreakpointState, useValue: { phone: signal(false), rail: signal(true) } },
       ],

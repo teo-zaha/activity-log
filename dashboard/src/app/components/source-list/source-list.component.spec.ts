@@ -3,7 +3,9 @@ import { render, screen } from '@testing-library/angular'
 import userEvent from '@testing-library/user-event'
 import { describe, expect, it, vi } from 'vitest'
 import type { ConnectionKey } from '../../providers/connection'
-import { ActivityService } from '../../services/activity.service'
+import { ActivityDataService } from '../../services/activity-data.service'
+import { ActivitySelection } from '../../services/activity-selection.service'
+import { ActivityViewStateService } from '../../services/activity-view-state.service'
 import { BreakpointState } from '../../services/breakpoint-state.service'
 import type { ProviderViewModel } from '../../services/types'
 import { providerInfo } from '../../testing/activity-fixtures'
@@ -47,15 +49,24 @@ describe('SourceListComponent', () => {
     await render(SourceListComponent, {
       providers: [
         {
-          provide: ActivityService,
+          provide: ActivityDataService,
           useValue: {
-            selectedDay: signal('2026-11-17'),
             providers: signal([git]),
             unusableProviders: signal([outlook]),
+            recheckConnection,
+          },
+        },
+        {
+          provide: ActivityViewStateService,
+          useValue: {
             activeConnections: signal(new Set<ConnectionKey>(['git/default'])),
+          },
+        },
+        {
+          provide: ActivitySelection,
+          useValue: {
             toggleConnection,
             isolateConnection: vi.fn(),
-            recheckConnection,
           },
         },
         { provide: SettingsDialogLauncher, useValue: { open } },
@@ -83,9 +94,8 @@ describe('SourceListComponent', () => {
     await render(SourceListComponent, {
       providers: [
         {
-          provide: ActivityService,
+          provide: ActivityDataService,
           useValue: {
-            selectedDay: signal('2026-11-17'),
             providers: signal([git]),
             unusableProviders: signal([
               {
@@ -93,10 +103,20 @@ describe('SourceListComponent', () => {
                 info: { ...outlook.info, problem: 'notConfigured', recheckable: false },
               },
             ]),
+            recheckConnection: vi.fn(),
+          },
+        },
+        {
+          provide: ActivityViewStateService,
+          useValue: {
             activeConnections: signal(new Set<ConnectionKey>(['git/default'])),
+          },
+        },
+        {
+          provide: ActivitySelection,
+          useValue: {
             toggleConnection: vi.fn(),
             isolateConnection: vi.fn(),
-            recheckConnection: vi.fn(),
           },
         },
         { provide: SettingsDialogLauncher, useValue: { open: vi.fn() } },
@@ -111,12 +131,21 @@ describe('SourceListComponent', () => {
     const { container } = await render(SourceListComponent, {
       providers: [
         {
-          provide: ActivityService,
+          provide: ActivityDataService,
           useValue: {
-            selectedDay: signal('2026-11-17'),
             providers: signal([{ ...git, count: 0, collecting: true }]),
             unusableProviders: signal([]),
+          },
+        },
+        {
+          provide: ActivityViewStateService,
+          useValue: {
             activeConnections: signal(new Set<ConnectionKey>(['git/default'])),
+          },
+        },
+        {
+          provide: ActivitySelection,
+          useValue: {
             toggleConnection,
             isolateConnection: vi.fn(),
           },
@@ -138,10 +167,15 @@ describe('SourceListComponent', () => {
     const { container } = await render(SourceListComponent, {
       providers: [
         {
-          provide: ActivityService,
+          provide: ActivityDataService,
           useValue: {
             providers: signal([git]),
             unusableProviders: signal([]),
+          },
+        },
+        {
+          provide: ActivityViewStateService,
+          useValue: {
             activeConnections: signal(new Set<ConnectionKey>(['git/default'])),
           },
         },

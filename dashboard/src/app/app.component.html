@@ -2,7 +2,7 @@
 <a
   class="skip-link"
   href="#main-content"
-  [attr.inert]="activity.detailsOpen() ? '' : null"
+  [attr.inert]="viewState.detailsOpen() ? '' : null"
   (click)="skipToMain($event)"
   >Skip to activity</a
 >
@@ -10,7 +10,7 @@
 <mat-progress-bar
   mode="indeterminate"
   class="top-loader"
-  [class.visible]="activity.isLoading()"
+  [class.visible]="data.isLoading()"
   aria-hidden="true"
 />
 

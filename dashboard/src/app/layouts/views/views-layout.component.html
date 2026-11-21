@@ -3,7 +3,7 @@
 
 <!-- Also without sources: a backend that cannot be reached shows here, with Retry. -->
 <app-collection-status />
-@if (activity.hasNoSources()) {
+@if (data.hasNoSources()) {
   <app-no-sources />
 } @else {
   <router-outlet />

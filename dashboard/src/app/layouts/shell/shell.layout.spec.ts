@@ -8,8 +8,8 @@ import { MatFormFieldModule } from '@angular/material/form-field'
 import { MatInputModule } from '@angular/material/input'
 import { afterEach, describe, expect, it } from 'vitest'
 import { cdp, page } from 'vitest/browser'
-import { ActivityService } from '../../services/activity.service'
 import { failure } from '../../services/failure'
+import { NoticeService } from '../../services/notice.service'
 import { activityLog, MockBackendTransport } from '../../testing/activity-fixtures'
 import { openApp } from '../../testing/app'
 
@@ -167,7 +167,7 @@ describe('the shell in a browser', () => {
     backend.activityResponses = [failed]
     backend.activityResponse = failed
     await openApp(`/timeline?${RANGE}`, { backend })
-    TestBed.inject(ActivityService).notice.set({
+    TestBed.inject(NoticeService).show({
       origin: 'export',
       failure: failure('Export failed: the backend did not answer'),
     })

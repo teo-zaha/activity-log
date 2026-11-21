@@ -10,8 +10,10 @@ import {
 import { RouterOutlet } from '@angular/router'
 import { SettingsDialogLauncher } from './components/settings-dialog/settings-dialog-launcher.service'
 import { WindowControlsComponent } from './components/window-controls/window-controls.component'
-import { ActivityService } from './services/activity.service'
+import { ActivityDataService } from './services/activity-data.service'
+import { ActivityViewStateService } from './services/activity-view-state.service'
 import { NativeMenuService } from './services/native-menu/native-menu.service'
+import { NoticeService } from './services/notice.service'
 import { ThemeService } from './services/theme.service'
 import { followTouchInput } from './utils/touch-input'
 import { WindowChromeService } from './services/window-chrome.service'
@@ -27,7 +29,9 @@ import { WindowChromeService } from './services/window-chrome.service'
   styleUrl: './app.component.scss',
 })
 export class AppComponent implements OnInit {
-  protected readonly activity = inject(ActivityService)
+  protected readonly data = inject(ActivityDataService)
+  protected readonly viewState = inject(ActivityViewStateService)
+  private readonly notices = inject(NoticeService)
   protected readonly chrome = inject(WindowChromeService)
   protected readonly theme = inject(ThemeService)
   private readonly document = inject(DOCUMENT)
@@ -43,7 +47,7 @@ export class AppComponent implements OnInit {
 
     // Collection failures are not among these: <app-collection-status> shows them with Retry.
     effect(() => {
-      const notice = this.activity.notice()
+      const notice = this.notices.current()
       if (notice?.failure.cause !== undefined) {
         console.warn(notice.failure.message, notice.failure.cause)
       }
@@ -65,6 +69,6 @@ export class AppComponent implements OnInit {
   }
 
   ngOnInit(): void {
-    void this.activity.initLoad()
+    void this.data.initLoad()
   }
 }

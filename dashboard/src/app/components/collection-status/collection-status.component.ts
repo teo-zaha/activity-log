@@ -16,8 +16,8 @@ import { interval } from '@signality/core/scheduling/interval'
 import { AutoAnimateDirective } from '../auto-animate/auto-animate.directive'
 import { ButtonComponent } from '../button/button.component'
 import { IconButtonComponent } from '../button/icon-button.component'
+import { ActivityDataService } from '../../services/activity-data.service'
 import { ActivitySelection } from '../../services/activity-selection.service'
-import { ActivityService } from '../../services/activity.service'
 import { retryable } from '../../services/collection-failure'
 import { dayRangeLabel } from '../../utils/local-day'
 
@@ -51,7 +51,7 @@ interface CollectionBannerVm {
   styleUrl: './collection-status.component.scss',
 })
 export class CollectionStatusComponent {
-  protected readonly activity = inject(ActivityService)
+  private readonly data = inject(ActivityDataService)
   private readonly selection = inject(ActivitySelection)
   private readonly now = signal(Date.now())
   private readonly host = inject<ElementRef<HTMLElement>>(ElementRef)
@@ -62,14 +62,14 @@ export class CollectionStatusComponent {
   private readonly viewport = windowSize()
 
   protected readonly elapsedSeconds = computed(() => {
-    const status = this.activity.collectionStatus()
+    const status = this.data.collectionStatus()
     if (status.kind !== 'collecting') return 0
     return Math.max(0, Math.floor((this.now() - status.startedAt) / 1000))
   })
 
   protected readonly banner = computed<CollectionBannerVm | null>(() => {
-    const status = this.activity.collectionStatus()
-    const { status: link, since } = this.activity.connection()
+    const status = this.data.collectionStatus()
+    const { status: link, since } = this.data.connection()
     if (link.kind === 'reconnecting') {
       const stale = this.now() - since >= STALE_AFTER_MS
       return {
@@ -85,7 +85,7 @@ export class CollectionStatusComponent {
       case 'idle':
         return null
       case 'collecting': {
-        const providers = this.activity.providers()
+        const providers = this.data.providers()
         const sources = providers.map(provider => provider.label)
         const pending = providers.filter(provider => provider.collecting).map(p => p.label)
         return {
@@ -140,8 +140,8 @@ export class CollectionStatusComponent {
     interval(
       () => this.now.set(Date.now()),
       computed(() =>
-        this.activity.collectionStatus().kind === 'collecting' ||
-        this.activity.connection().status.kind === 'reconnecting'
+        this.data.collectionStatus().kind === 'collecting' ||
+        this.data.connection().status.kind === 'reconnecting'
           ? 1000
           : 0
       )
@@ -164,14 +164,14 @@ export class CollectionStatusComponent {
   })
 
   protected collectOwnRange(): void {
-    void this.activity.collectShownRange()
+    void this.data.collectShownRange()
   }
 
   protected retry(): void {
-    void this.activity.retryCollection()
+    void this.data.retryCollection()
   }
 
   protected dismiss(): void {
-    this.activity.dismissCollectionStatus()
+    this.data.dismissCollectionStatus()
   }
 }

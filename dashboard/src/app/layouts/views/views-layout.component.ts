@@ -4,7 +4,7 @@ import { CollectionStatusComponent } from '../../components/collection-status/co
 import { NoSourcesComponent } from '../../components/no-sources/no-sources.component'
 import { RangeFormComponent } from '../../components/range-form/range-form.component'
 import { SourceListComponent } from '../../components/source-list/source-list.component'
-import { ActivityService } from '../../services/activity.service'
+import { ActivityDataService } from '../../services/activity-data.service'
 import { ShellSlotDirective } from '../shell/shell-slots'
 
 /**
@@ -26,5 +26,5 @@ import { ShellSlotDirective } from '../shell/shell-slots'
   encapsulation: ViewEncapsulation.None,
 })
 export class ViewsLayoutComponent {
-  protected readonly activity = inject(ActivityService)
+  protected readonly data = inject(ActivityDataService)
 }

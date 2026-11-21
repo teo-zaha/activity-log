@@ -14,7 +14,8 @@ import { MatDatepickerModule } from '@angular/material/datepicker'
 import { MatIconModule } from '@angular/material/icon'
 import { MatTooltipModule } from '@angular/material/tooltip'
 import { elementFocusWithin } from '@signality/core/elements/element-focus-within'
-import { ActivityService } from '../../services/activity.service'
+import { ActivityDataService } from '../../services/activity-data.service'
+import { ActivityViewStateService } from '../../services/activity-view-state.service'
 import { ShortcutService } from '../../services/shortcut.service'
 import { dateOfKey, localDateKey, type DayKey } from '../../utils/local-day'
 import { ButtonComponent } from '../button/button.component'
@@ -43,13 +44,14 @@ interface DateRange {
   styleUrl: './range-form.component.scss',
 })
 export class RangeFormComponent {
-  protected readonly activity = inject(ActivityService)
+  protected readonly data = inject(ActivityDataService)
+  protected readonly viewState = inject(ActivityViewStateService)
   private readonly shortcuts = inject(ShortcutService)
   /** While a picker's calendar is open, it owns the keyboard; the app's keys wait. */
   private closePickerLayer: (() => void) | null = null
 
-  protected readonly dateFromObj = computed(() => this.parseDateStr(this.activity.dateFrom()))
-  protected readonly dateToObj = computed(() => this.parseDateStr(this.activity.dateTo()))
+  protected readonly dateFromObj = computed(() => this.parseDateStr(this.viewState.dateFrom()))
+  protected readonly dateToObj = computed(() => this.parseDateStr(this.viewState.dateTo()))
 
   private readonly fields = viewChild<ElementRef<HTMLElement>>('fields')
   private readonly fieldFocused = elementFocusWithin(this.fields)
@@ -78,16 +80,16 @@ export class RangeFormComponent {
       ignoreValidators: 'all',
       action: async () => {
         await this.commitTypedRange()
-        await this.activity.collectShownRange()
+        await this.data.collectShownRange()
       },
     },
   })
 
   constructor() {
-    effect(() => this.activity.setRangeEditing(this.editing()))
+    effect(() => this.viewState.setRangeEditing(this.editing()))
     inject(DestroyRef).onDestroy(() => {
       this.pickerClosed()
-      this.activity.setRangeEditing(false)
+      this.viewState.setRangeEditing(false)
     })
   }
 
@@ -110,11 +112,11 @@ export class RangeFormComponent {
   private async commitTypedRange(): Promise<void> {
     const { from, to } = this.range()
     const [fromDay, toDay] = [this.fmtDate(from), this.fmtDate(to)]
-    if (fromDay !== null && fromDay !== this.activity.dateFrom()) {
-      await this.activity.setDateFrom(fromDay)
+    if (fromDay !== null && fromDay !== this.viewState.dateFrom()) {
+      await this.viewState.setDateFrom(fromDay)
     }
-    if (toDay !== null && toDay !== this.activity.dateTo()) {
-      await this.activity.setDateTo(toDay)
+    if (toDay !== null && toDay !== this.viewState.dateTo()) {
+      await this.viewState.setDateTo(toDay)
     }
   }
 

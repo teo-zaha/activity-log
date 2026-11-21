@@ -23,7 +23,7 @@ import {
   type MenuSpec,
 } from '../../generated/activity'
 import type { ShortcutEntry } from '../../models/shortcuts'
-import { ActivityService } from '../activity.service'
+import { ActivityViewStateService } from '../activity-view-state.service'
 import { tauriFailureOf } from '../backend/backend-failure'
 import { failureWhile } from '../failure'
 import { SHORTCUT_PLATFORM, SHORTCUT_TABLE, ShortcutService } from '../shortcut.service'
@@ -94,7 +94,7 @@ type Phase =
 @Service()
 export class NativeMenuService {
   private readonly shortcuts = inject(ShortcutService)
-  private readonly activity = inject(ActivityService)
+  private readonly viewState = inject(ActivityViewStateService)
   private readonly platform = inject(SHORTCUT_PLATFORM)
   private readonly table = inject(SHORTCUT_TABLE)
   private readonly ipc = inject(NATIVE_MENU_IPC)
@@ -188,7 +188,7 @@ export class NativeMenuService {
           state:
             view === null
               ? { kind: 'command', title, enabled }
-              : { kind: 'check', title, enabled, checked: this.activity.currentView() === view },
+              : { kind: 'check', title, enabled, checked: this.viewState.currentView() === view },
         }
       })
     )

@@ -5,7 +5,7 @@ import { fireEvent, screen, within } from '@testing-library/angular'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { loadView } from '../../app.routes'
 import { createEntryAdapter } from '../../providers/provider-adapter'
-import { ActivityService } from '../../services/activity.service'
+import { NoticeService } from '../../services/notice.service'
 import { activityLog } from '../../testing/activity-fixtures'
 import { openApp as open } from '../../testing/app'
 import { mockPhone } from '../../testing/media'
@@ -315,7 +315,7 @@ describe('A view whose code does not load as the app starts', () => {
 
       expect(router.url).toBe('/timeline')
       expect(screen.getByRole('button', { name: 'Reload the app' })).toBeTruthy()
-      expect(TestBed.inject(ActivityService).notice()).toMatchObject({
+      expect(TestBed.inject(NoticeService).current()).toMatchObject({
         origin: 'view',
         failure: { cause: blocked },
       })

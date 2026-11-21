@@ -6,7 +6,9 @@ import { injectCopyLink, injectViewLink } from '../../components/share/share-lin
 import { toggleShortcutHelp } from '../../components/shortcut/shortcut-help-dialog.component'
 import { NAV_GROUPS } from '../../models/nav'
 import { VIEW_SHORTCUTS } from '../../models/shortcuts'
-import { ActivityService } from '../../services/activity.service'
+import { ActivityDataService } from '../../services/activity-data.service'
+import { ActivityExportService } from '../../services/activity-export.service'
+import { ActivityViewStateService } from '../../services/activity-view-state.service'
 import { ShortcutService } from '../../services/shortcut.service'
 import { TopLayer } from './top-layer.service'
 
@@ -19,7 +21,9 @@ import { TopLayer } from './top-layer.service'
  */
 export function bindShellShortcuts(): void {
   const shortcuts = inject(ShortcutService)
-  const activity = inject(ActivityService)
+  const data = inject(ActivityDataService)
+  const viewState = inject(ActivityViewStateService)
+  const exports = inject(ActivityExportService)
   const layers = inject(TopLayer)
   const location = inject(Location)
   const dialogs = inject(MatDialog)
@@ -33,10 +37,10 @@ export function bindShellShortcuts(): void {
    * filter does not take it; from another view after switching there, keeping the range.
    */
   const showTimelineFilter = (): false | void => {
-    if (activity.currentView() === 'list') {
+    if (viewState.currentView() === 'list') {
       return shortcuts.handOff('timeline.filter') ? undefined : false
     }
-    void activity.setView('list').then(shown => {
+    void viewState.setView('list').then(shown => {
       if (shown) afterNextRender(() => shortcuts.handOff('timeline.filter'), { injector })
     })
   }
@@ -44,31 +48,35 @@ export function bindShellShortcuts(): void {
   const unbind = [
     shortcuts.fallback(
       'app.collect',
-      () => (activity.collectShownRange() === null ? false : undefined),
-      () => !activity.isLoading()
+      () => (data.collectShownRange() === null ? false : undefined),
+      () => !data.isLoading()
     ),
     // Not from under a layer, where the filter is out of reach, nor without sources, where the
     // Timeline has no filter.
     shortcuts.fallback(
       'app.filter',
       showTimelineFilter,
-      () => layers.top() === null && !activity.hasNoSources()
+      () => layers.top() === null && !data.hasNoSources()
     ),
     // Not from under a layer, as ⌘F: the view would change behind the details or the settings.
     ...NAV_GROUPS.flatMap(group => group.items).map(item =>
       shortcuts.fallback(
         VIEW_SHORTCUTS[item.id],
-        () => void activity.setView(item.id),
+        () => void viewState.setView(item.id),
         () => layers.top() === null
       )
     ),
     shortcuts.fallback('app.settings', () => settings.open()),
     shortcuts.fallback(
       'app.export-markdown',
-      () => void activity.exportMarkdown(),
-      activity.canExport
+      () => void exports.exportShown('markdown'),
+      exports.canExport
     ),
-    shortcuts.fallback('app.export-json', () => void activity.exportJson(), activity.canExport),
+    shortcuts.fallback(
+      'app.export-json',
+      () => void exports.exportShown('json'),
+      exports.canExport
+    ),
     shortcuts.fallback('app.copy-link', () => void copyLink(viewLink())),
     // What Alt+← did in the desktop app's web view before its browser keys were turned off.
     shortcuts.fallback('app.back', () => location.back()),
