@@ -26,10 +26,13 @@ interface HelpSection {
 /** Opens the help, or closes it when it is open: `?` does both. */
 export function toggleShortcutHelp(dialogs: MatDialog): void {
   const open = dialogs.getDialogById(SHORTCUT_HELP_DIALOG_ID)
-  if (open) {
-    open.close()
-    return
-  }
+  if (open) open.close()
+  else openShortcutHelp(dialogs)
+}
+
+/** Opens the help, over whatever is open (the settings dialog); nothing if it is open already. */
+export function openShortcutHelp(dialogs: MatDialog): void {
+  if (dialogs.getDialogById(SHORTCUT_HELP_DIALOG_ID)) return
   dialogs.open(ShortcutHelpDialogComponent, {
     id: SHORTCUT_HELP_DIALOG_ID,
     panelClass: 'app-dialog-panel',
@@ -45,8 +48,9 @@ export function toggleShortcutHelp(dialogs: MatDialog): void {
 }
 
 /**
- * The help (`?`): every command that has a key here, once, with all its keys, by where it
- * works, from the registry. With single-key shortcuts off it lists only the keys left.
+ * The help (`?`, or Settings › General): every command that has a key here, once, with all its
+ * keys, by where it works, from the registry. With single-key shortcuts off it lists only the
+ * keys left and says so.
  */
 @Component({
   selector: 'app-shortcut-help-dialog',
@@ -56,6 +60,8 @@ export function toggleShortcutHelp(dialogs: MatDialog): void {
 })
 export class ShortcutHelpDialogComponent {
   private readonly shortcuts = inject(ShortcutService)
+
+  protected readonly characterKeys = this.shortcuts.characterKeys
 
   protected readonly sections = computed<readonly HelpSection[]>(() =>
     SHORTCUT_SCOPES.map(scope => ({

@@ -120,7 +120,7 @@ describe('SettingsPageHostComponent', APP_RENDER_TEST, () => {
 
     expect(await screen.findByRole('heading', { name: 'Source not found' })).toBeTruthy()
     expect(screen.getByText('This source is not set up')).toBeTruthy()
-    fireEvent.click(screen.getByRole('button', { name: 'Show Appearance' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Show General' }))
     await vi.waitFor(() => expect(router.url).toBe('/timeline?settings=general'))
   })
 

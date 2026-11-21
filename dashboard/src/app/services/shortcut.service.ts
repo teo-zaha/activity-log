@@ -325,6 +325,9 @@ export class ShortcutService {
     return isEditable(this.document.activeElement)
   }
 
+  /** Whether single-key shortcuts are on (the help says so when they are not). */
+  readonly characterKeys = this.preferences.characterKeys
+
   /** The chords of an entry here: on this platform, in this build, with the single-key setting. */
   chords(entry: ShortcutEntry): readonly Chord[] {
     return chordsIn(entry, this.here())

@@ -347,7 +347,7 @@ describe('Shortcuts in the app', APP_RENDER_TEST, () => {
 
         expect(press(',', { code: 'Comma' }).defaultPrevented).toBe(true)
         await vi.waitFor(() => expect(router.url).toBe('/timeline?settings=general'))
-        await screen.findByRole('heading', { name: 'Appearance' }, SLOW)
+        await screen.findByRole('heading', { name: 'General' }, SLOW)
         await userEvent.click(screen.getByRole('button', { name: 'Close settings' }))
         await vi.waitFor(() => expect(router.url).toBe('/timeline'))
         await vi.waitFor(() => expect(TestBed.inject(MatDialog).openDialogs).toHaveLength(0))
@@ -443,6 +443,70 @@ describe('Shortcuts in the app', APP_RENDER_TEST, () => {
       await vi.waitFor(() =>
         expect(router.parseUrl(router.url).queryParams['event']).toBe(jira?.trackKey)
       )
+    })
+  })
+
+  describe('Single-key shortcuts off', () => {
+    it(
+      'turns them off from Settings › General, keeping ⌘R and Escape, and the help says so',
+      async () => {
+        const { router } = await ready('/timeline?settings=general', MAC_DESKTOP)
+        const toggle = await screen.findByRole('switch', { name: 'Single-key shortcuts' }, SLOW)
+        expect(toggle.getAttribute('aria-checked')).toBe('true')
+        const helpButton = screen.getByRole('button', { name: /Keyboard shortcuts/ })
+        expect(helpButton.querySelector('app-key-tag')?.textContent).toBe('?')
+
+        await userEvent.click(toggle)
+        expect(toggle.getAttribute('aria-checked')).toBe('false')
+        expect(localStorage.getItem('character-shortcuts')).toBe('off')
+        expect(helpButton.querySelector('app-key-tag')?.hasAttribute('hidden')).toBe(true)
+
+        // The help, from its row: over the settings, without the keys that are off.
+        await userEvent.click(helpButton)
+        expect(await helpRows()).toEqual([
+          'Collect: ⌘R',
+          'Filter Activity…: ⌘F',
+          'Timeline: ⌘1',
+          'Day: ⌘2',
+          'Work week: ⌘3',
+          'Week: ⌘4',
+          'Settings…: ⌘,',
+          'Back: ⌘[',
+          'Close details or settings: Esc',
+        ])
+        const help = screen.getByRole('dialog', { name: 'Keyboard shortcuts' })
+        expect(within(help).getByText(/Single-key shortcuts are off/)).toBeTruthy()
+        await userEvent.click(within(help).getByRole('button', { name: 'Close' }))
+        await vi.waitFor(() =>
+          expect(screen.queryByRole('dialog', { name: 'Keyboard shortcuts' })).toBeNull()
+        )
+
+        await userEvent.click(screen.getByRole('button', { name: 'Close settings' }))
+        await vi.waitFor(() => expect(router.url).toBe('/timeline'))
+        expect(press('?', { shiftKey: true, code: 'Slash' }).defaultPrevented).toBe(false)
+        expect(press('2', { code: 'Digit2' }).defaultPrevented).toBe(false)
+        expect(press('r', { code: 'KeyR' }).defaultPrevented).toBe(false)
+        // Once the settings dialog has left, which hides the page from the tree meanwhile.
+        await vi.waitFor(() =>
+          expect(collectButton().getAttribute('aria-keyshortcuts')).toBe('Meta+R')
+        )
+        const collect = vi.spyOn(TestBed.inject(ActivityDataService), 'collect')
+        expect(press('r', { metaKey: true, code: 'KeyR' }).defaultPrevented).toBe(true)
+        await vi.waitFor(() => expect(collect).toHaveBeenCalledOnce())
+        expect(router.url).toBe('/timeline')
+      },
+      SLOW_TEST
+    )
+
+    it('leaves the browser no key but Escape, and no tag on its controls', async () => {
+      localStorage.setItem('character-shortcuts', 'off')
+      await ready('/timeline', BROWSER)
+
+      expect(press('r', { code: 'KeyR' }).defaultPrevented).toBe(false)
+      expect(press('/', { code: 'Slash' }).defaultPrevented).toBe(false)
+      expect(collectButton().hasAttribute('aria-keyshortcuts')).toBe(false)
+      expect(collectButton().querySelector('app-key-tag')?.hasAttribute('hidden')).toBe(true)
+      expect(filter().hasAttribute('aria-keyshortcuts')).toBe(false)
     })
   })
 

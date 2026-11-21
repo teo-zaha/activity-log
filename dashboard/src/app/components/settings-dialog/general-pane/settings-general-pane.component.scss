@@ -2,3 +2,19 @@
   display: block;
   padding-bottom: 24px;
 }
+
+.general-detail {
+  display: flex;
+  flex-direction: column;
+  gap: 22px;
+}
+
+.general-section-title {
+  margin: 0 0 8px;
+  color: var(--text-tertiary);
+  font:
+    600 11.5px Inter,
+    sans-serif;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
