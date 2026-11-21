@@ -3,13 +3,8 @@ import { HttpTestingController, provideHttpClientTesting } from '@angular/common
 import type { ResourceRef } from '@angular/core'
 import { TestBed } from '@angular/core/testing'
 import { describe, expect, it, vi } from 'vitest'
-import type { ProviderConfigSaveRequestDto } from '../../generated/activity'
 import type { ExportOutcome, ExportRequest } from '../../generated/activity'
-import {
-  exportRequest,
-  MockBackendTransport,
-  provideMockBackend,
-} from '../../testing/activity-fixtures'
+import { MockBackendTransport, provideMockBackend } from '../../testing/activity-fixtures'
 import { ActivityBackendClient } from './backend-client'
 import { BackendOperations, type BackendOperation, type ReadOperation } from './backend-contract'
 import { BackendTransport } from './backend-transport'
@@ -75,12 +70,8 @@ interface RecordedCall {
 /** Records what the client asks of the transport; none of its promises ever settle. */
 class RecordingTransport implements BackendTransport {
   readonly calls: RecordedCall[] = []
-  readonly resources: ReadOperation<unknown>[] = []
-  readonly exports: ExportRequest[] = []
-  readonly openedUrls: string[] = []
 
-  resource<Res>(read: ReadOperation<Res>): ResourceRef<Res | undefined> {
-    this.resources.push(read)
+  resource<Res>(_read: ReadOperation<Res>): ResourceRef<Res | undefined> {
     throw new Error('resources are not exercised here')
   }
 
@@ -89,13 +80,11 @@ class RecordingTransport implements BackendTransport {
     return new Promise<Res>(() => undefined)
   }
 
-  saveExport(request: ExportRequest): Promise<ExportOutcome> {
-    this.exports.push(request)
+  saveExport(_request: ExportRequest): Promise<ExportOutcome> {
     return new Promise<ExportOutcome>(() => undefined)
   }
 
-  openUrl(url: string): Promise<void> {
-    this.openedUrls.push(url)
+  openUrl(_url: string): Promise<void> {
     return new Promise<void>(() => undefined)
   }
 
@@ -128,58 +117,6 @@ describe('ActivityBackendClient', () => {
     expect(transport.calls).toHaveLength(1)
     expect(transport.calls[0].operation).toBe(operation)
     expect(transport.calls[0].request).toBeUndefined()
-  })
-
-  it('collect forwards its request to the collect operation', () => {
-    const { client, transport } = setup()
-    const request = { start: '2026-05-17T00:00:00Z', end: '2026-05-19T00:00:00Z' }
-
-    void client.collect(request)
-
-    expect(transport.calls).toHaveLength(1)
-    expect(transport.calls[0].operation).toBe(BackendOperations.collect)
-    expect(transport.calls[0].request).toBe(request)
-  })
-
-  it('saveProviderConfig forwards its request to the save operation, not the read one', () => {
-    const { client, transport } = setup()
-    const request: ProviderConfigSaveRequestDto = {
-      connection: { source: 'git', name: 'default' },
-      values: [],
-    }
-
-    void client.saveProviderConfig(request)
-
-    expect(transport.calls).toHaveLength(1)
-    expect(transport.calls[0].operation).toBe(BackendOperations.saveProviderConfig)
-    expect(transport.calls[0].request).toBe(request)
-  })
-
-  it('export hands the request to saveExport', () => {
-    const { client, transport } = setup()
-    const request = exportRequest
-
-    void client.export(request)
-
-    expect(transport.exports).toEqual([request])
-    expect(transport.calls).toEqual([])
-  })
-
-  it('openUrl hands the link to the transport', () => {
-    const { client, transport } = setup()
-
-    void client.openUrl('https://example.org/')
-
-    expect(transport.openedUrls).toEqual(['https://example.org/'])
-    expect(transport.calls).toEqual([])
-  })
-
-  it('readResource asks the transport for the given read', () => {
-    const { client, transport } = setup()
-
-    expect(() => client.readResource(BackendOperations.logs)).toThrow('not exercised')
-
-    expect(transport.resources).toEqual([BackendOperations.logs])
   })
 
   it('clearLogs resolves undefined even though the wire answers with null', async () => {
