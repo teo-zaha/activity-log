@@ -330,15 +330,17 @@ describe('ShortcutService', () => {
     expect(next).toHaveBeenCalledOnce()
   })
 
-  it('reads a letter by its physical key: R collects on a Cyrillic layout', async () => {
+  it('takes R as the layout labels it, and where a Latin keyboard has it on a Cyrillic layout', async () => {
     const shortcuts = await setup(BROWSER)
     const collect = vi.fn()
     shortcuts.bind('app.collect', collect)
 
+    // Dvorak: the key printed R (QWERTY's O) collects, the one printed P (QWERTY's R) does not.
+    expect(press('r', { code: 'KeyO' }).defaultPrevented).toBe(true)
+    expect(press('p', { code: 'KeyR' }).defaultPrevented).toBe(false)
+    // Cyrillic: к has no Latin letter, so its key's place decides.
     expect(press('к', { code: 'KeyR' }).defaultPrevented).toBe(true)
-    // The key that types r elsewhere (Dvorak's O) is not R.
-    expect(press('r', { code: 'KeyO' }).defaultPrevented).toBe(false)
-    expect(collect).toHaveBeenCalledOnce()
+    expect(collect).toHaveBeenCalledTimes(2)
   })
 
   it('counts keys as typing while a command hands on to a field, until it has', async () => {

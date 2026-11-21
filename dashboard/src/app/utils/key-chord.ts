@@ -10,8 +10,8 @@ import type { MenuKey } from '../generated/activity'
 export type Os = 'mac' | 'other'
 
 /**
- * A key that types a character, WCAG 2.1.4's "letter, punctuation, number or symbol": a letter
- * as the physical key it is on (`KeyboardEvent.code`), anything else as the character typed.
+ * A key that types a character, WCAG 2.1.4's "letter, punctuation, number or symbol", as the
+ * character typed (a letter outside A–Z as its physical key, `chordOf`).
  */
 export const CHARACTER_KEYS = [
   '/',
@@ -61,11 +61,14 @@ export function osOf(userAgent: string): Os {
 /** The Latin letter of a letter key's physical place (`KeyR`), whatever the layout types there. */
 const PHYSICAL_LETTER = /^Key([A-Z])$/
 
+const LATIN_LETTER = /^[a-z]$/i
+
 /**
  * The chord a key press is, written as the registry writes chords: modifiers in a fixed order,
- * then the key. A letter is read by its physical key, so `R` and ⌘R are where a Latin keyboard
- * has them on a Cyrillic or Greek layout too; punctuation and digits by the character typed (`/`
- * is Shift+7 on a German layout). Shift counts only where it does not make the character (`?` is
+ * then the key, as the character the layout types: `R` is the key printed R on QWERTY, Dvorak or
+ * Colemak alike, as the macOS menu reads ⌘R, and `/` is Shift+7 on a German layout. Only a letter
+ * outside A–Z (Cyrillic, Greek, Hebrew) is read by its physical key, so `R` and ⌘R are where a
+ * Latin keyboard has them there. Shift counts only where it does not make the character (`?` is
  * Shift+/ on many layouts, and the registry names `?`); Ctrl on macOS and the Windows key
  * elsewhere are named as themselves, so no chord matches them. Null for a modifier alone or a key
  * still being composed.
@@ -75,7 +78,8 @@ export function chordOf(event: KeyboardEvent, os: Os): string | null {
   if (key === '' || MODIFIER_KEYS.has(key) || NO_KEY.has(key)) return null
   const character = key.length === 1
   const letter = character && key.toLowerCase() !== key.toUpperCase()
-  const physical = letter ? PHYSICAL_LETTER.exec(event.code)?.[1] : undefined
+  const physical =
+    letter && !LATIN_LETTER.test(key) ? PHYSICAL_LETTER.exec(event.code)?.[1] : undefined
   const mod = os === 'mac' ? event.metaKey : event.ctrlKey
   const unused = os === 'mac' ? event.ctrlKey : event.metaKey
   const parts = [

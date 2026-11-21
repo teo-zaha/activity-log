@@ -27,13 +27,23 @@ describe('chordOf', () => {
     expect(chordOf(press('[', { metaKey: true }), 'mac')).toBe('mod+[')
   })
 
-  it('reads a letter by its physical key, whatever the layout types there', () => {
-    // A Cyrillic layout types к where a Latin keyboard has R.
+  it('reads a Latin letter as the letter the layout types', () => {
+    // Dvorak types r on the key a QWERTY keyboard has O, and p on its R.
+    expect(chordOf(press('r', { code: 'KeyO' }), 'other')).toBe('r')
+    expect(chordOf(press('p', { code: 'KeyR' }), 'other')).toBe('p')
+    expect(chordOf(press('r', { code: 'KeyO', metaKey: true }), 'mac')).toBe('mod+r')
+    // QWERTZ swaps Y and Z.
+    expect(chordOf(press('z', { code: 'KeyY' }), 'mac')).toBe('z')
+  })
+
+  it('reads a letter outside A–Z by its physical key', () => {
+    // A Cyrillic layout types к where a Latin keyboard has R, a Greek one ν where it has N.
     expect(chordOf(press('к', { code: 'KeyR' }), 'other')).toBe('r')
     expect(chordOf(press('к', { code: 'KeyR', metaKey: true }), 'mac')).toBe('mod+r')
     expect(chordOf(press('Н', { code: 'KeyN', shiftKey: true }), 'other')).toBe('shift+n')
-    // QWERTZ swaps Y and Z: the key is read where it is.
-    expect(chordOf(press('z', { code: 'KeyY' }), 'mac')).toBe('y')
+    expect(chordOf(press('ν', { code: 'KeyN' }), 'mac')).toBe('n')
+    // Without a letter key under it there is no Latin letter to fall back to.
+    expect(chordOf(press('ж', { code: 'Semicolon' }), 'other')).toBe('ж')
   })
 
   it('reads punctuation and digits by the character typed', () => {
