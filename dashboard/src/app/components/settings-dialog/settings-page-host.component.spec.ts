@@ -15,6 +15,7 @@ import { SettingsPageHostComponent } from './settings-page-host.component'
 import { SourceDrafts } from './source-pane/source-drafts.service'
 import { mockPhone } from '../../testing/media'
 import { holdMotion } from '../../testing/motion'
+import { APP_RENDER_TEST } from '../../testing/timeouts'
 
 async function openSettings(
   url: string
@@ -50,7 +51,7 @@ async function openLogs(): Promise<{ router: Router; settle: () => Promise<void>
   return opened
 }
 
-describe('SettingsPageHostComponent', () => {
+describe('SettingsPageHostComponent', APP_RENDER_TEST, () => {
   it('keeps focus in the settings when the focused control is disabled', async () => {
     const { settle } = await openLogs()
     const clear = screen.getByRole('button', { name: /Clear/ })

@@ -12,6 +12,7 @@ import { RECONNECT_DELAYS_MS } from './services/runtime-state/push-state-source'
 import { MockBackendTransport, provideMockBackend } from './testing/activity-fixtures'
 import { provideDashboardDates } from './utils/date-adapter'
 import { BackendFailure } from './services/backend/backend-failure'
+import { APP_RENDER_TEST } from './testing/timeouts'
 
 /** The shell in a browser, whatever globals other specs left: no desktop window to ask. */
 function shell(backend: MockBackendTransport): (Provider | EnvironmentProviders)[] {
@@ -25,7 +26,7 @@ function shell(backend: MockBackendTransport): (Provider | EnvironmentProviders)
   ]
 }
 
-describe('AppComponent', () => {
+describe('AppComponent', APP_RENDER_TEST, () => {
   it('offers Retry for a backend it cannot reach, also with no sources set up', async () => {
     const backend = new MockBackendTransport()
     backend.providersResponse = { currentOs: 'macos', providers: [] }

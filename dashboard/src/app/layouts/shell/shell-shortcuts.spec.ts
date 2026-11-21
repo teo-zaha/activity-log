@@ -10,6 +10,7 @@ import type { ShortcutPlatform } from '../../services/shortcut.service'
 import { activityLog, MockBackendTransport } from '../../testing/activity-fixtures'
 import { type OpenApp, openApp } from '../../testing/app'
 import { mockPhone } from '../../testing/media'
+import { APP_RENDER_TEST } from '../../testing/timeouts'
 
 const MAC_DESKTOP: ShortcutPlatform = { os: 'mac', build: 'desktop' }
 const WINDOWS_DESKTOP: ShortcutPlatform = { os: 'other', build: 'desktop' }
@@ -43,7 +44,7 @@ async function ready(url: string, platform: ShortcutPlatform): Promise<OpenApp> 
   return app
 }
 
-describe('Shortcuts in the app', () => {
+describe('Shortcuts in the app', APP_RENDER_TEST, () => {
   let phone: ReturnType<typeof mockPhone> | null = null
   afterEach(() => {
     phone?.restore()

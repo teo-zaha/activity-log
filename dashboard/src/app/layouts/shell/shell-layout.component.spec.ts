@@ -13,6 +13,7 @@ import { mockPhone } from '../../testing/media'
 import { holdMotion } from '../../testing/motion'
 import { ShellLayoutComponent } from './shell-layout.component'
 import { ViewsLayoutComponent } from '../views/views-layout.component'
+import { APP_RENDER_TEST } from '../../testing/timeouts'
 
 /**
  * For what loads its code on demand (the settings dialog), which takes seconds on a cold build
@@ -29,7 +30,7 @@ const key = (entry: { trackKey: string } | undefined): string =>
   encodeURIComponent(entry?.trackKey ?? '')
 const classesOf = (element: Element | null | undefined): string[] => [...(element?.classList ?? [])]
 
-describe('ShellLayoutComponent', () => {
+describe('ShellLayoutComponent', APP_RENDER_TEST, () => {
   let phone: ReturnType<typeof mockPhone> | null = null
   let motion: ReturnType<typeof holdMotion> | null = null
   afterEach(() => {
@@ -199,7 +200,7 @@ describe('ShellLayoutComponent', () => {
   })
 })
 
-describe('Navigation motion, rendered', () => {
+describe('Navigation motion, rendered', APP_RENDER_TEST, () => {
   let phone: ReturnType<typeof mockPhone> | null = null
   let motion: ReturnType<typeof holdMotion> | null = null
   afterEach(() => {
@@ -289,7 +290,7 @@ describe('Navigation motion, rendered', () => {
 @Component({ template: 'day' })
 class DayStub {}
 
-describe('A view whose code does not load as the app starts', () => {
+describe('A view whose code does not load as the app starts', APP_RENDER_TEST, () => {
   it('still brings up the shell, the navigation and a way to reload, and lets the splash go', async () => {
     const splash = document.createElement('div')
     splash.id = 'splash'
@@ -331,7 +332,7 @@ describe('A view whose code does not load as the app starts', () => {
   })
 })
 
-describe('The app’s live regions', () => {
+describe('The app’s live regions', APP_RENDER_TEST, () => {
   afterEach(() => document.getElementById('splash')?.remove())
 
   /** Whatever screen readers announce on a change: a region inside another is read twice. */
