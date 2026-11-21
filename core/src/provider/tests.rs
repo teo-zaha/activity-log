@@ -529,6 +529,25 @@ async fn git_provider_is_unavailable_when_no_repositories_are_found() {
     assert!(runtime.info().recheckable);
 }
 
+/// A WSL connection in a `config.toml` read off Windows can never be checked: it is unsupported,
+/// and "Check again" is not offered.
+#[cfg(not(target_os = "windows"))]
+#[tokio::test]
+async fn git_wsl_connection_off_windows_is_unsupported() {
+    let connection = Connection::new(
+        ConnectionId::new(Source::Git, "ubuntu"),
+        "Ubuntu",
+        ConnectionLocation::Wsl("Ubuntu".to_string()),
+        ConnectionValues::default(),
+    );
+
+    let runtime = ProviderRuntime::inspect(Arc::new(GitProvider), &connection).await;
+
+    assert!(!runtime.info().usable);
+    assert_eq!(runtime.info().problem, Some(ProviderProblem::Unsupported));
+    assert!(!runtime.info().recheckable);
+}
+
 /// A folder the OS refuses to list is a permission to grant, not a folder without repositories.
 #[cfg(unix)]
 #[tokio::test]

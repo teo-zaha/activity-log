@@ -30,7 +30,10 @@ use self::windows as imp;
 
 #[cfg(not(target_os = "windows"))]
 mod fallback {
-    use crate::provider::{git::GitConfig, provider_check_result::ProviderCheckResult};
+    use crate::{
+        model::ProviderProblem,
+        provider::{git::GitConfig, provider_check_result::ProviderCheckResult},
+    };
 
     pub(super) fn default_wsl_distros() -> Vec<String> {
         Vec::new()
@@ -41,7 +44,11 @@ mod fallback {
         _config: &GitConfig,
         _cancelled: &std::sync::atomic::AtomicBool,
     ) -> ProviderCheckResult {
-        ProviderCheckResult::unavailable(format!("WSL {distro} needs Windows"))
+        // Not recheckable: this OS can never reach the distribution.
+        ProviderCheckResult::unavailable_as(
+            ProviderProblem::Unsupported,
+            format!("WSL {distro} needs Windows"),
+        )
     }
 }
 
