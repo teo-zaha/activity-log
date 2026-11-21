@@ -15,15 +15,15 @@ use tokio::{sync::Semaphore, time::Instant};
 
 use crate::{
     collect::change_stack::{
-        Breaker, Budget, ChangeLookup, ChangeRef, LookupFailure, OpenChange, OpenPage,
-        STACK_BUDGET, STACK_DEPTH, STACK_MEMBERS, STACK_REQUESTS, StackReport, WebLink,
+        Breaker, Budget, ChangeLookup, ChangeRef, FailureKind, Failures, LookupFailure, OpenChange,
+        OpenPage, STACK_BUDGET, STACK_DEPTH, STACK_MEMBERS, STACK_REQUESTS, StackReport, WebLink,
         change_stacks, web_link,
     },
     model::{
         ChangeStack, ChangeStackAbove, ChangeStackBottom, ChangeStackEnd, ChangeStackNode,
-        StackCut, StackedChange,
+        LogLevel, StackCut, StackedChange,
     },
-    provider::remote_api::RequestBudget,
+    provider::{remote_api::RequestBudget, remote_error::ApiError},
 };
 
 const WIDGETS: u64 = 42;
@@ -46,7 +46,8 @@ fn into<R>(repo: R, branch: &str) -> Call<R> {
 
 /// A host that answers from tables: each repository's open changes in the order it lists them,
 /// at most `page_size` on its first page. Every call spends one request, is recorded, and then
-/// waits for `gate`, never answers (`hang`) or fails (`fail`) as the test says.
+/// waits for `gate` (only the `gated` calls, when it names some), never answers (`hang`) or
+/// fails (`fail`) as the test says.
 struct Fake<R> {
     repos: HashMap<R, Vec<OpenChange>>,
     page_size: usize,
@@ -54,6 +55,7 @@ struct Fake<R> {
     fail: HashMap<Call<R>, LookupFailure>,
     hang: HashSet<Call<R>>,
     gate: Option<Arc<Semaphore>>,
+    gated: Option<HashSet<Call<R>>>,
     calls: Mutex<Vec<Call<R>>>,
     in_flight: AtomicUsize,
     most_in_flight: AtomicUsize,
@@ -68,6 +70,7 @@ impl<R: Clone + Eq + Hash> Fake<R> {
             fail: HashMap::new(),
             hang: HashSet::new(),
             gate: None,
+            gated: None,
             calls: Mutex::new(Vec::new()),
             in_flight: AtomicUsize::new(0),
             most_in_flight: AtomicUsize::new(0),
@@ -80,8 +83,8 @@ impl<R: Clone + Eq + Hash> Fake<R> {
         self
     }
 
-    fn failing(mut self, call: Call<R>, failure: LookupFailure) -> Self {
-        self.fail.insert(call, failure);
+    fn failing(mut self, call: Call<R>, failure: impl Into<LookupFailure>) -> Self {
+        self.fail.insert(call, failure.into());
         self
     }
 
@@ -103,7 +106,12 @@ impl<R: Clone + Eq + Hash> Fake<R> {
         self.calls.lock().unwrap().push(call.clone());
         let now = self.in_flight.fetch_add(1, Ordering::SeqCst) + 1;
         self.most_in_flight.fetch_max(now, Ordering::SeqCst);
-        if let Some(gate) = &self.gate {
+        if let Some(gate) = &self.gate
+            && self
+                .gated
+                .as_ref()
+                .is_none_or(|gated| gated.contains(&call))
+        {
             drop(gate.acquire().await.unwrap());
         }
         if self.hang.contains(&call) {
@@ -111,7 +119,7 @@ impl<R: Clone + Eq + Hash> Fake<R> {
         }
         self.in_flight.fetch_sub(1, Ordering::SeqCst);
         match self.fail.get(&call) {
-            Some(failure) => Err(*failure),
+            Some(failure) => Err(failure.clone()),
             None => Ok(answer()),
         }
     }
@@ -448,7 +456,7 @@ async fn a_lone_or_closed_change_has_no_stack() {
     ] {
         let report = stacks_of(&fake, wanted(WIDGETS, &[5, 6])).await;
         assert!(report.stacks.is_empty(), "{:?}", report.stacks);
-        assert!(report.unknown.is_empty());
+        assert!(report.failures.is_empty());
     }
 }
 
@@ -805,7 +813,7 @@ async fn the_deadline_cuts_what_was_not_read_and_keeps_the_rest() {
 async fn a_busy_host_stops_every_later_request() {
     let mut fake = Fake::new([(WIDGETS, four())])
         .paged(0)
-        .failing(from(WIDGETS, "feature/parse-a"), LookupFailure::Throttled);
+        .failing(from(WIDGETS, "feature/parse-a"), FailureKind::Throttled);
     fake.concurrency = 1;
     let report = stacks_of(&fake, wanted(WIDGETS, &[2, 3])).await;
 
@@ -834,7 +842,7 @@ async fn a_busy_host_stops_every_later_request() {
 #[tokio::test]
 async fn a_refused_token_stops_before_any_other_request() {
     let mut fake = Fake::new([(WIDGETS, four()), (77, four())])
-        .failing(Call::Page(WIDGETS), LookupFailure::TokenRefused);
+        .failing(Call::Page(WIDGETS), FailureKind::ScopeMissing);
     fake.concurrency = 1;
     let mut wanted = wanted(WIDGETS, &[1, 2]);
     wanted.extend(
@@ -846,24 +854,24 @@ async fn a_refused_token_stops_before_any_other_request() {
 
     assert_eq!(fake.calls(), [Call::Page(WIDGETS)]);
     assert!(report.stacks.is_empty());
-    assert_eq!(report.stopped, Some(Breaker::TokenRefused));
-    let unknown = report.unknown[&LookupFailure::TokenRefused];
-    assert_eq!((unknown.repositories, unknown.changes), (2, 3));
+    assert_eq!(report.stopped, Some(Breaker::ScopeMissing));
+    let failures = &report.failures[&FailureKind::ScopeMissing];
+    assert_eq!((failures.repositories, failures.changes), (2, 3));
 }
 
 /// A repository hidden from the token tells nothing of its changes; others are still read.
 #[tokio::test]
 async fn an_unreadable_repository_shows_no_stacks_and_is_counted() {
     let fake = Fake::new([(WIDGETS, four()), (77, four())])
-        .failing(Call::Page(77), LookupFailure::Unreadable);
+        .failing(Call::Page(77), FailureKind::Unreadable);
     let mut wanted = wanted(WIDGETS, &[2]);
     wanted.extend(self::wanted(77, &[2]));
     let report = stacks_of(&fake, wanted).await;
 
     assert!(stack_of(&report, WIDGETS, 2).is_some());
     assert_eq!(stack_of(&report, 77, 2), None);
-    let unknown = report.unknown[&LookupFailure::Unreadable];
-    assert_eq!((unknown.repositories, unknown.changes), (1, 1));
+    let failures = &report.failures[&FailureKind::Unreadable];
+    assert_eq!((failures.repositories, failures.changes), (1, 1));
     assert_eq!(report.stopped, None);
 }
 
@@ -873,21 +881,21 @@ async fn an_unreadable_repository_shows_no_stacks_and_is_counted() {
 async fn changes_whose_openness_is_unknown_have_no_stack() {
     let fake = Fake::new([(WIDGETS, four())])
         .paged(2)
-        .failing(Call::Numbers(WIDGETS, vec![4]), LookupFailure::Failed);
+        .failing(Call::Numbers(WIDGETS, vec![4]), FailureKind::Failed);
     let report = stacks_of(&fake, wanted(WIDGETS, &[4, 2])).await;
 
     assert_eq!(stack_of(&report, WIDGETS, 4), None);
     assert!(stack_of(&report, WIDGETS, 2).is_some());
-    let unknown = report.unknown[&LookupFailure::Failed];
-    assert_eq!((unknown.repositories, unknown.changes), (1, 1));
+    let failures = &report.failures[&FailureKind::Failed];
+    assert_eq!((failures.repositories, failures.changes), (1, 1));
 }
 
 /// Other failures cut the end they were asked for, as their kind.
 #[tokio::test]
 async fn a_failed_question_cuts_its_end_by_kind() {
     for (failure, reason) in [
-        (LookupFailure::Failed, StackCut::Failed),
-        (LookupFailure::Unreadable, StackCut::Unreadable),
+        (FailureKind::Failed, StackCut::Failed),
+        (FailureKind::Unreadable, StackCut::Unreadable),
     ] {
         let fake = Fake::new([(WIDGETS, four())])
             .paged(0)
@@ -906,7 +914,8 @@ async fn a_failed_question_cuts_its_end_by_kind() {
     }
 }
 
-/// Two walks that reach the same branch at once share one request.
+/// Two walks that reach the same branch while its question is still in flight wait for that
+/// one request: the question is held until both have asked.
 #[tokio::test(start_paused = true)]
 async fn walks_that_meet_share_one_request() {
     let changes = vec![
@@ -918,12 +927,20 @@ async fn walks_that_meet_share_one_request() {
     let gate = Arc::new(Semaphore::new(0));
     let mut fake = Fake::new([(WIDGETS, changes)]).paged(0);
     fake.gate = Some(gate.clone());
+    fake.gated = Some([from(WIDGETS, "main")].into());
     let budget = budget();
 
     let (report, ()) = tokio::join!(
         change_stacks(wanted(WIDGETS, &[1, 2]), &fake, &budget),
         async {
+            // Paused time moves on only once nothing else can: both walks then wait at `main`.
             tokio::time::sleep(Duration::from_secs(1)).await;
+            assert_eq!(
+                fake.in_flight.load(Ordering::SeqCst),
+                1,
+                "{:?}",
+                fake.calls()
+            );
             gate.add_permits(1000);
         }
     );
@@ -936,6 +953,46 @@ async fn walks_that_meet_share_one_request() {
         1
     );
     assert_eq!(report.stacks.len(), 2);
+}
+
+/// A failed branch question shows as a cut in every stack that reaches it, and counts once,
+/// with the request's own failure as its cause.
+#[tokio::test]
+async fn a_failed_question_is_counted_once_with_its_cause() {
+    let cause = server_error("database is down");
+    let fake = Fake::new([(WIDGETS, four())]).paged(0).failing(
+        into(WIDGETS, "feature/parse-c"),
+        LookupFailure::caused_by(FailureKind::Failed, cause.clone()),
+    );
+    let report = stacks_of(&fake, wanted(WIDGETS, &[1, 2, 3])).await;
+
+    let failed = ChangeStackEnd::Cut {
+        reason: StackCut::Failed,
+    };
+    for number in [1, 2, 3] {
+        assert!(
+            ends(stack_of(&report, WIDGETS, number).unwrap().above()).contains(&failed),
+            "!{number}"
+        );
+    }
+    assert_eq!(
+        report.failures[&FailureKind::Failed],
+        Failures {
+            repositories: 0,
+            changes: 0,
+            questions: 1,
+            cause: Some(cause),
+        }
+    );
+}
+
+fn server_error(message: &str) -> ApiError {
+    ApiError::Status {
+        status: reqwest::StatusCode::INTERNAL_SERVER_ERROR,
+        message: message.to_string(),
+        retry_after: None,
+        refusal: None,
+    }
 }
 
 /// No more requests are in flight than the host allows, and more than one is.
@@ -1083,28 +1140,85 @@ async fn any_repository_key_works_and_repositories_never_chain() {
     assert_eq!(stack_of(&report, dev, 1), None);
 }
 
-/// The summary is one line, and each reason something is missing at most one warning.
+fn log_lines(report: &StackReport<u64>, scope: &str) -> Vec<crate::model::LogEntry> {
+    report.log(scope, "GitLab");
+    crate::diagnostics::entries()
+        .into_iter()
+        .filter(|entry| entry.scope == scope)
+        .collect()
+}
+
+fn levels(lines: &[crate::model::LogEntry]) -> Vec<LogLevel> {
+    lines.iter().map(|line| line.level).collect()
+}
+
+/// The summary is one line, and each reason something is missing one warning, which names the
+/// first request failure behind it once.
 #[tokio::test]
-async fn the_report_logs_one_line_per_reason() {
+async fn the_report_logs_one_line_per_reason_with_its_cause() {
+    let hidden = ApiError::Status {
+        status: reqwest::StatusCode::FORBIDDEN,
+        message: "merge requests are turned off".to_string(),
+        retry_after: None,
+        refusal: None,
+    };
     let fake = Fake::new([(WIDGETS, four()), (77, four()), (78, four())])
-        .failing(Call::Page(77), LookupFailure::Unreadable)
-        .failing(Call::Page(78), LookupFailure::Unreadable);
+        .paged(0)
+        .failing(
+            Call::Page(77),
+            LookupFailure::caused_by(FailureKind::Unreadable, hidden),
+        )
+        .failing(Call::Page(78), FailureKind::Unreadable)
+        .failing(
+            into(WIDGETS, "feature/parse-c"),
+            LookupFailure::caused_by(FailureKind::Failed, server_error("database is down")),
+        );
     let mut wanted = wanted(WIDGETS, &[2]);
     wanted.extend(self::wanted(77, &[2]));
     wanted.extend(self::wanted(78, &[2, 3]));
     let report = stacks_of(&fake, wanted).await;
-    let scope = "change-stack-log-test";
 
-    report.log(scope, "GitLab");
+    let lines = log_lines(&report, "change-stack-log-reasons");
 
-    let lines: Vec<_> = crate::diagnostics::entries()
-        .into_iter()
-        .filter(|entry| entry.scope == scope)
-        .collect();
-    assert_eq!(lines.len(), 2, "{lines:?}");
     assert_eq!(
-        lines.iter().map(|line| line.level).collect::<Vec<_>>(),
-        [crate::model::LogLevel::Info, crate::model::LogLevel::Warn]
+        levels(&lines),
+        [LogLevel::Info, LogLevel::Warn, LogLevel::Warn]
+    );
+    for cause in ["merge requests are turned off", "database is down"] {
+        assert_eq!(
+            lines
+                .iter()
+                .filter(|line| line.message.contains(cause))
+                .count(),
+            1,
+            "{cause}: {lines:?}"
+        );
+    }
+}
+
+/// A refused token is one cause and one warning, however many changes it leaves unknown.
+#[tokio::test]
+async fn a_tripped_breaker_logs_one_warning() {
+    let mut fake = Fake::new([(WIDGETS, four()), (77, four())])
+        .paged(0)
+        .failing(Call::Page(WIDGETS), FailureKind::TokenInvalid);
+    fake.concurrency = 1;
+    let mut wanted = wanted(WIDGETS, &[1, 2]);
+    wanted.extend(self::wanted(77, &[3]));
+    let report = stacks_of(&fake, wanted).await;
+
+    assert_eq!(report.stopped, Some(Breaker::TokenInvalid));
+    let lines = log_lines(&report, "change-stack-log-breaker");
+    assert_eq!(levels(&lines), [LogLevel::Info, LogLevel::Warn]);
+}
+
+#[test]
+fn counts_are_worded_for_one_and_for_many() {
+    assert_eq!(super::counted(1, "change", "changes"), "1 change");
+    assert_eq!(super::counted(0, "change", "changes"), "0 changes");
+    assert_eq!(
+        super::counted(2, "repository", "repositories"),
+        "2 repositories"
     );
 }
 
