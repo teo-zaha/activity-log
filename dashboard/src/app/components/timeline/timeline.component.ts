@@ -1,6 +1,7 @@
 import {
   Component,
   ElementRef,
+  type Signal,
   afterNextRender,
   afterRenderEffect,
   computed,
@@ -33,6 +34,8 @@ import { trackActiveDay } from './active-day'
 import { keepScroll } from './keep-scroll'
 import { timelineEmptyState, timelineEmptyView } from './timeline-empty-state'
 import { TimelineRows } from './timeline-rows'
+import { indicatorDistance, pullToRefresh, type PullState } from './pull-to-refresh'
+import { TopLayer } from '../../layouts/shell/top-layer.service'
 
 @Component({
   selector: 'app-timeline',
@@ -90,6 +93,7 @@ export class TimelineComponent {
   private readonly host = inject<ElementRef<HTMLElement>>(ElementRef).nativeElement
   private readonly scroller = viewChild.required<ElementRef<HTMLElement>>('scroller')
   private readonly content = viewChild.required<ElementRef<HTMLElement>>('content')
+  private readonly controls = viewChild.required<ElementRef<HTMLElement>>('controls')
   private readonly sections = viewChildren<ElementRef<HTMLElement>>('daySection')
 
   /** Scroller height and the sticky day header offset, re-read whenever the scroller resizes. */
@@ -134,6 +138,12 @@ export class TimelineComponent {
     enabled: this.showDayIndex,
     attached: this.kept.attached,
   })
+
+  /** A pull at the top of the list collects the range on screen again, as Collect does. */
+  protected readonly pull = this.pullToCollect()
+
+  /** How far down the pull indicator shows. */
+  protected readonly pullDistance = computed(() => indicatorDistance(this.pull()))
 
   constructor() {
     const measure = (): void => {
@@ -193,6 +203,33 @@ export class TimelineComponent {
     )
     watcher(debounced(shown, inject(SEARCH_URL_DELAY_MS)), summary => {
       if (summary !== null && untracked(onScreen)) void announcer.announce(summary, 'polite')
+    })
+  }
+
+  /**
+   * Pull to refresh, for touch input only: offered while the Timeline is what the user is on, with
+   * nothing over it, no collection running and a source to collect. A collection it starts, or a
+   * refused one, shows as every collection does (`CollectionStatus`), which screen readers hear;
+   * the indicator itself is hidden from them, and says once that releasing collects.
+   */
+  private pullToCollect(): Signal<PullState> {
+    const layers = inject(TopLayer)
+    const announcer = inject(LiveAnnouncer)
+    return pullToRefresh({
+      scroller: this.scroller,
+      controls: this.controls,
+      enabled: computed(
+        () =>
+          // Under another view the router holds the Timeline out of the document, and WebKit
+          // still sends a touch that began on it its events.
+          this.viewState.currentView() === 'list' &&
+          layers.top() === null &&
+          this.data.anySourceReady() &&
+          !this.data.isLoading()
+      ),
+      running: this.data.isLoading,
+      refresh: () => this.data.collectShownRange() !== null,
+      announce: () => void announcer.announce('Release to collect', 'polite'),
     })
   }
 

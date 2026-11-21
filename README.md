@@ -147,7 +147,7 @@ Add Git, GitLab, Jira, and Calendar as many times as you need—for example, two
 
 **Settings → Appearance** includes eight themes: Light, Green, Lilac, Solarized, Dim, Mocha, Dark, and Midnight. Until you pick one, Activity Log follows your system light or dark preference automatically.
 
-At widths of 640 px or less, navigation and Settings move to a bottom tab bar, source chips scroll horizontally, and event details and Settings sections open as full-screen sliding pages (disabled under reduced motion). Touch support respects screen safe areas, prevents tap flash and accidental zoom on form fields, and applies hover styles only to hovering pointers.
+At widths of 640 px or less, navigation and Settings move to a bottom tab bar, source chips scroll horizontally, and event details and Settings sections open as full-screen sliding pages (disabled under reduced motion). Touch support respects screen safe areas, prevents tap flash and accidental zoom on form fields, and applies hover styles only to hovering pointers. On a touch screen, at any width, pulling Timeline down from the top collects the date range on screen again, as **Collect** does; a mouse, trackpad, or wheel never triggers it, and it is off while a collection runs or while details or Settings cover Timeline.
 
 <p align="center">
   <img src="pics/theme-picker.png" width="820" alt="Theme picker in Settings, Appearance">

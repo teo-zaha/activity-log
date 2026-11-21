@@ -1,6 +1,6 @@
 <div class="timeline-scroll" #scroller>
   <!-- The rail sits in the sticky top block, so it stays put and is the tab stop after the filter. -->
-  <div class="timeline-top">
+  <div class="timeline-top" #controls>
     <app-search-bar
       placeholder="Filter activity…"
       label="Filter activity"
@@ -155,5 +155,36 @@
         }
       </div>
     }
+  </div>
+</div>
+
+<!-- Pull to refresh: comes out from under the filter. Screen readers hear the collection itself. -->
+@let pullState = pull();
+<div
+  class="pull"
+  aria-hidden="true"
+  [attr.data-pull]="pullState.kind"
+  [style.--pull-distance]="pullDistance() + 'px'"
+>
+  <div class="pull-indicator">
+    <span
+      class="u-glyph pull-icon"
+      [class.u-spin]="pullState.kind === 'refreshing'"
+      translate="no"
+      >{{ pullState.kind === 'refreshing' ? 'sync' : 'arrow_downward' }}</span
+    >
+    <span class="pull-label">
+      @switch (pullState.kind) {
+        @case ('armed') {
+          Release to collect
+        }
+        @case ('refreshing') {
+          Collecting…
+        }
+        @default {
+          Pull to collect
+        }
+      }
+    </span>
   </div>
 </div>
