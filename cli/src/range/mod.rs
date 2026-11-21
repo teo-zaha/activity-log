@@ -12,9 +12,9 @@ pub use preset::RangePreset;
 #[cfg(test)]
 mod tests;
 
-pub fn parse_date(value: &str, name: &str) -> Result<NaiveDate> {
-    NaiveDate::parse_from_str(value, "%Y-%m-%d")
-        .map_err(|_| anyhow!("Invalid date for {name}: {value:?} (expected YYYY-MM-DD)"))
+/// A local day as `--since` and `--until` take it.
+pub fn parse_day(value: &str) -> Result<NaiveDate, String> {
+    NaiveDate::parse_from_str(value, "%Y-%m-%d").map_err(|_| "expected YYYY-MM-DD".to_string())
 }
 
 pub fn today() -> NaiveDate {

@@ -1,6 +1,6 @@
-use strum::{Display, EnumIter, EnumString};
+use strum::{Display, EnumIter, EnumString, IntoStaticStr};
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Display, EnumString, EnumIter)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Display, EnumString, EnumIter, IntoStaticStr)]
 #[strum(serialize_all = "camelCase", ascii_case_insensitive)]
 pub enum RangePreset {
     Today,

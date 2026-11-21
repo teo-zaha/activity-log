@@ -22,7 +22,7 @@ pub struct CollectionKey(u64);
 
 impl CollectionKey {
     /// For collections outside a host, such as the CLI's, which keep nothing between runs.
-    pub(crate) const UNKEYED: Self = Self(0);
+    pub const UNKEYED: Self = Self(0);
 }
 
 /// How a recorded check changed a connection's collection key.

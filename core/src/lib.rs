@@ -33,16 +33,17 @@ use runtime::report::{
 // Keeps one stuck provider from leaving the whole app in the collecting state.
 const COLLECT_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(120);
 
-/// Collects connections whose startup checks are done, such as the CLI's.
-pub async fn collect_activity_detailed_with_provider_runtimes(
+/// Collects connections whose startup checks are done, such as the CLI's: the report says how
+/// each one ended, `RunReport::project` makes the log.
+pub async fn collect_runtimes(
     options: CollectOptions,
     provider_runtimes: &[ProviderRuntime],
-) -> CollectedActivity {
+) -> RunReport {
     let connections = provider_runtimes
         .iter()
         .map(|runtime| (runtime.id().clone(), std::future::ready(runtime.clone())))
         .collect();
-    collect_progressively(options, connections, |_| {}).await
+    collect_planned(options, checked_plans(connections), |_| {}).await
 }
 
 /// Collects every connection as soon as its startup check (the future next to its id) ends, so
@@ -57,7 +58,19 @@ pub async fn collect_progressively<Check>(
 where
     Check: Future<Output = ProviderRuntime> + Send + 'static,
 {
-    let plans = connections
+    collect_planned(options, checked_plans(connections), |report| {
+        on_progress(report.project(options).log)
+    })
+    .await
+    .project(options)
+}
+
+/// A plan per connection that collects it once its check ends, carrying nothing.
+fn checked_plans<Check>(connections: Vec<(ConnectionId, Check)>) -> Vec<(ConnectionId, Plan)>
+where
+    Check: Future<Output = ProviderRuntime> + Send + 'static,
+{
+    connections
         .into_iter()
         .map(|(id, check)| {
             let check = check
@@ -76,12 +89,7 @@ where
                 },
             )
         })
-        .collect();
-    collect_planned(options, plans, |report| {
-        on_progress(report.project(options).log)
-    })
-    .await
-    .project(options)
+        .collect()
 }
 
 enum Step {

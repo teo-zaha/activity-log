@@ -1,30 +1,125 @@
-use activity_log_core::model::{
-    ActivityLog, ActivityLogMeta, CollectedActivity, CollectedActivitySummary, ConnectionId,
-    OutputFormat, ProviderInfo, ProviderStatus, Source, SupportedOs,
-};
-use clap::{CommandFactory, Parser};
+use std::path::PathBuf;
+
+use activity_log_core::model::{ConnectionId, OutputFormat, Source};
+use chrono::NaiveDate;
+use clap::{CommandFactory, Parser, error::ErrorKind};
 use strum::IntoEnumIterator;
 use tempfile::tempdir;
 
 #[path = "generate_ts_support.rs"]
 mod generate_ts_support;
 
-use crate::{Cli, build_collect_request, parse_format, provider_summary_lines};
+use crate::{Cli, Output, collect_options, range::RangePreset};
 use generate_ts_support::{generate_ts, stale_files};
 
+fn parse(args: &[&str]) -> Result<Cli, clap::Error> {
+    Cli::try_parse_from(std::iter::once("activity-log").chain(args.iter().copied()))
+}
+
 #[test]
-fn parses_cli_defaults() {
-    let cli = Cli::try_parse_from(["activity-log-cli"]).unwrap();
-    let request = build_collect_request(&cli.collect, &OutputFormat::Json).unwrap();
+fn collects_json_into_the_default_file() {
+    let cli = parse(&[]).unwrap();
+    assert_eq!(cli.collect.format, OutputFormat::Json);
+    assert_eq!(cli.collect.output, None);
     assert_eq!(
-        request.output_path.as_deref(),
-        Some("logs/activity_log.json")
+        Output::default_for(OutputFormat::Json),
+        Output::File(PathBuf::from("logs/activity_log.json"))
+    );
+    assert_eq!(
+        Output::default_for(OutputFormat::Markdown),
+        Output::File(PathBuf::from("logs/activity_log.md"))
     );
 }
 
 #[test]
-fn rejects_invalid_format() {
-    assert!(parse_format("xml").is_err());
+fn a_dash_writes_to_standard_output_and_anything_else_is_a_file() {
+    let output = |value| parse(&["--output", value]).unwrap().collect.output;
+    assert_eq!(output("-"), Some(Output::Stdout));
+    assert_eq!(output("./-"), Some(Output::File(PathBuf::from("./-"))));
+    assert_eq!(
+        output("reports/week.md"),
+        Some(Output::File(PathBuf::from("reports/week.md")))
+    );
+}
+
+/// The spellings that worked before the flags were typed still do, in any case.
+#[test]
+fn ranges_and_formats_keep_their_spellings_in_any_case() {
+    for (spelling, preset) in [
+        ("today", RangePreset::Today),
+        ("yesterday", RangePreset::Yesterday),
+        ("week", RangePreset::Week),
+        ("lastweek", RangePreset::LastWeek),
+        ("LastWeek", RangePreset::LastWeek),
+        ("month", RangePreset::Month),
+        ("lastmonth", RangePreset::LastMonth),
+        ("LASTMONTH", RangePreset::LastMonth),
+    ] {
+        assert_eq!(
+            parse(&["--range", spelling]).unwrap().collect.range,
+            Some(preset),
+            "{spelling}"
+        );
+    }
+    for (spelling, format) in [
+        ("json", OutputFormat::Json),
+        ("JSON", OutputFormat::Json),
+        ("markdown", OutputFormat::Markdown),
+        ("Markdown", OutputFormat::Markdown),
+    ] {
+        assert_eq!(
+            parse(&["--format", spelling]).unwrap().collect.format,
+            format,
+            "{spelling}"
+        );
+    }
+}
+
+#[test]
+fn unknown_values_are_refused_with_what_to_enter() {
+    for args in [
+        ["--range", "fortnight"],
+        ["--range", "last-week"],
+        ["--format", "xml"],
+        ["--since", "2026-13-01"],
+        ["--until", "yesterday"],
+    ] {
+        let err = parse(&args).err().unwrap_or_else(|| panic!("{args:?}"));
+        assert!(
+            matches!(
+                err.kind(),
+                ErrorKind::InvalidValue | ErrorKind::ValueValidation
+            ),
+            "{args:?}: {:?}",
+            err.kind()
+        );
+        assert!(err.use_stderr(), "{args:?}");
+    }
+    let help = Cli::command().render_long_help().to_string();
+    assert!(help.contains("lastweek"), "{help}");
+}
+
+#[test]
+fn a_range_wins_over_since_and_until() {
+    let today = NaiveDate::from_ymd_opt(2026, 3, 25).unwrap();
+    let cli = parse(&["--range", "today", "--since", "2026-01-01"]).unwrap();
+    let options = collect_options(&cli.collect, today).unwrap();
+    let explicit = crate::range::day_range(&chrono::Local, today, today).unwrap();
+    assert_eq!(options, explicit);
+}
+
+#[test]
+fn without_a_range_it_collects_the_last_thirty_days() {
+    let today = NaiveDate::from_ymd_opt(2026, 3, 25).unwrap();
+    let cli = parse(&[]).unwrap();
+    let options = collect_options(&cli.collect, today).unwrap();
+    let expected = crate::range::day_range(
+        &chrono::Local,
+        NaiveDate::from_ymd_opt(2026, 2, 23).unwrap(),
+        today,
+    )
+    .unwrap();
+    assert_eq!(options, expected);
 }
 
 #[test]
@@ -98,16 +193,6 @@ fn the_drift_check_names_changed_files_and_writes_nothing() {
 }
 
 #[test]
-fn invalid_range_lists_values_from_enum() {
-    let cli = Cli::try_parse_from(["activity-log-cli", "--range", "nope"]).unwrap();
-    let err = build_collect_request(&cli.collect, &OutputFormat::Json).unwrap_err();
-    assert_eq!(
-        err.to_string(),
-        "Unknown range: \"nope\". Use today|yesterday|week|lastweek|month|lastmonth"
-    );
-}
-
-#[test]
 fn parses_source_commands() {
     let cli = Cli::try_parse_from([
         "activity-log-cli",
@@ -161,61 +246,6 @@ fn sources_add_offers_every_kind_of_source() {
             }) if kind.to_string() == *name
         ));
     }
-}
-
-#[test]
-fn provider_summary_includes_skipped_and_usable_providers() {
-    let provider_info = vec![
-        ProviderInfo {
-            connection: ConnectionId::new(Source::Git, "this-computer"),
-            label: "Git".to_string(),
-            wsl_distro: None,
-            status: ProviderStatus::Available,
-            usable: true,
-            supported_os: vec![SupportedOs::Windows, SupportedOs::Macos, SupportedOs::Linux],
-            reason: None,
-            problem: None,
-            recheckable: false,
-            checked_at: "2026-01-01T00:00:00Z".to_string(),
-        },
-        ProviderInfo {
-            connection: ConnectionId::new(Source::Outlook, "outlook"),
-            label: "Outlook".to_string(),
-            wsl_distro: None,
-            status: ProviderStatus::Unavailable,
-            usable: false,
-            supported_os: vec![SupportedOs::Windows],
-            reason: Some("OS not supported".to_string()),
-            problem: None,
-            recheckable: false,
-            checked_at: "2026-01-01T00:00:00Z".to_string(),
-        },
-    ];
-
-    let collected = CollectedActivity {
-        summary: CollectedActivitySummary::default(),
-        log: ActivityLog {
-            meta: ActivityLogMeta {
-                generated: "2026-01-01T00:00:00Z".to_string(),
-                start: "2026-01-01T00:00:00Z".to_string(),
-                end: "2026-01-02T00:00:00Z".to_string(),
-                pending: Vec::new(),
-            },
-            summary: CollectedActivitySummary::default(),
-            entries: Vec::new(),
-        },
-    };
-
-    let lines = provider_summary_lines(&provider_info, &collected);
-
-    assert_eq!(
-        lines[0],
-        "  ✓ git/this-computer (Git) (0 entries, 0 merged with gitlab)"
-    );
-    assert_eq!(
-        lines[1],
-        "  - outlook/outlook (Outlook) — skipped (OS not supported)"
-    );
 }
 
 /// The terminal gets the message with the connection's label; the typed cause stays reachable.

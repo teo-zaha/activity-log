@@ -1,35 +1,45 @@
 use std::{
+    ffi::OsString,
     fs,
+    io::{self, Write},
     path::{Path, PathBuf},
+    process::ExitCode,
 };
 
 use activity_log_core::{
-    collect_activity_detailed_with_provider_runtimes, diagnostics,
+    collect_runtimes, diagnostics,
     export::render_export,
-    model::{CollectOptions, CollectedActivity, ConnectionId, OutputFormat, ProviderInfo, Source},
+    model::{CollectOptions, ConnectionId, OutputFormat, Source},
     provider::{connection::ConnectionLocation, inspect_provider_runtimes_with},
     settings::{
-        ConfigEditError, ConfigFile, EditError, ExternalEdit, FieldId, NO_LOCATION, Precondition,
-        Editor, edit_config, edit_externally, load_connections,
+        ConfigEditError, ConfigFile, EditError, Editor, ExternalEdit, FieldId, NO_LOCATION,
+        Precondition, edit_config, edit_externally, load_connections,
     },
 };
 use anyhow::{Result, anyhow};
-use chrono::{Days, Local};
+use chrono::{Days, Local, NaiveDate};
 use clap::{
     Args, Parser, Subcommand,
-    builder::{PossibleValuesParser, TypedValueParser},
+    builder::{OsStringValueParser, PossibleValuesParser, TypedValueParser},
 };
 use strum::IntoEnumIterator;
 
 mod range;
+mod results;
 mod sources;
 
-use range::{RangePreset, day_range, parse_date, resolve_preset, today};
+use range::{RangePreset, day_range, parse_day, resolve_preset, today};
+use results::connection_results;
 use sources::{Terminal, list_lines, resolve_connection};
 
 /// Collects your activity, or manages the sources it is collected from.
 #[derive(Parser)]
-#[command(author, version, about)]
+#[command(
+    author,
+    version,
+    about,
+    after_help = "Exit status: 0 when every source was collected or has nothing to give here (another OS, an app not installed or not running); 1 when a source failed, after writing what the others collected, or when nothing could be collected."
+)]
 struct Cli {
     /// The config file; default: ACTIVITY_LOG_CONFIG, else activity-log/config.toml in the OS
     /// config folder.
@@ -44,19 +54,54 @@ struct Cli {
 #[derive(Args)]
 struct CollectArgs {
     /// First local day, YYYY-MM-DD.
-    #[arg(long)]
-    since: Option<String>,
+    #[arg(long, value_parser = parse_day)]
+    since: Option<NaiveDate>,
     /// Last local day, YYYY-MM-DD.
-    #[arg(long)]
-    until: Option<String>,
-    #[arg(long)]
-    output: Option<String>,
-    /// today, yesterday, week, lastweek, month or lastmonth.
-    #[arg(long)]
-    range: Option<String>,
-    /// json or markdown.
-    #[arg(long, default_value = "json")]
-    format: String,
+    #[arg(long, value_parser = parse_day)]
+    until: Option<NaiveDate>,
+    /// Where the export goes, `-` for standard output; default: logs/activity_log.json or .md.
+    #[arg(long, value_name = "PATH", value_parser = output_target())]
+    output: Option<Output>,
+    /// A range of days instead of --since and --until; weeks start on Monday.
+    #[arg(long, value_parser = spellings::<RangePreset>(), ignore_case = true)]
+    range: Option<RangePreset>,
+    #[arg(long, default_value = "json", value_parser = spellings::<OutputFormat>(), ignore_case = true)]
+    format: OutputFormat,
+}
+
+/// Where the export goes.
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum Output {
+    File(PathBuf),
+    /// `-`: the export alone on standard output, everything else on standard error.
+    Stdout,
+}
+
+impl Output {
+    fn default_for(format: OutputFormat) -> Self {
+        Self::File(PathBuf::from(format!(
+            "logs/activity_log.{}",
+            format.extension()
+        )))
+    }
+}
+
+fn output_target() -> impl TypedValueParser<Value = Output> {
+    OsStringValueParser::new().map(|value: OsString| match value.to_str() {
+        Some("-") => Output::Stdout,
+        _ => Output::File(PathBuf::from(value)),
+    })
+}
+
+/// The values of an enum, by the names it parses, so `--help` lists them and every spelling
+/// comes from the enum.
+fn spellings<T>() -> impl TypedValueParser<Value = T>
+where
+    T: IntoEnumIterator + Into<&'static str> + std::str::FromStr + Clone + Send + Sync + 'static,
+    T::Err: std::error::Error + Send + Sync + 'static,
+{
+    PossibleValuesParser::new(T::iter().map(Into::<&'static str>::into))
+        .try_map(|value| value.parse::<T>())
 }
 
 #[derive(Subcommand)]
@@ -78,7 +123,7 @@ enum SourcesCommand {
     /// Add a source, such as a GitLab account; asks for its values.
     Add {
         /// The kind of source.
-        #[arg(value_parser = source_kinds())]
+        #[arg(value_parser = spellings::<Source>())]
         kind: Source,
         /// Shown in lists and on entries; defaults to the kind's name.
         #[arg(long)]
@@ -103,12 +148,6 @@ enum SourcesCommand {
     Remove { source: String },
 }
 
-/// Every kind of source, by the name the config file and the commands use; `--help` lists them.
-fn source_kinds() -> impl TypedValueParser<Value = Source> {
-    PossibleValuesParser::new(Source::iter().map(<&'static str>::from))
-        .try_map(|kind| kind.parse::<Source>())
-}
-
 #[derive(Subcommand)]
 enum ConfigCommand {
     /// Print the config file's path.
@@ -118,41 +157,50 @@ enum ConfigCommand {
     Edit,
 }
 
-#[derive(Debug, Clone)]
-struct CliCollectionRequest {
-    collect_options: CollectOptions,
-    output_path: Option<String>,
-}
-
 #[tokio::main]
-async fn main() {
-    if let Err(err) = run().await {
-        eprintln!("Fatal: {err}");
-        std::process::exit(1);
+async fn main() -> ExitCode {
+    let cli = match Cli::try_parse() {
+        Ok(cli) => cli,
+        Err(err) => {
+            // Help and version go to stdout and succeed; any other refusal is an error, which
+            // exits 1 like every other error.
+            let _ = err.print();
+            return if err.use_stderr() {
+                ExitCode::FAILURE
+            } else {
+                ExitCode::SUCCESS
+            };
+        }
+    };
+    match run(cli).await {
+        Ok(status) => status,
+        Err(err) => fatal(&err),
     }
 }
 
-async fn run() -> Result<()> {
+fn fatal(err: &anyhow::Error) -> ExitCode {
+    eprintln!("Fatal: {err}");
+    ExitCode::FAILURE
+}
+
+async fn run(cli: Cli) -> Result<ExitCode> {
     dotenvy::dotenv().ok();
 
-    let cli = Cli::parse();
     let config = cli.config.as_deref();
     match cli.command {
-        None => collect(&cli.collect, config).await,
-        Some(Command::Sources { action: None }) => list_sources(config).await,
+        None => return collect(&cli.collect, config).await,
+        Some(Command::Sources { action: None }) => list_sources(config).await?,
         Some(Command::Sources {
             action: Some(action),
-        }) => change_sources(action, config),
+        }) => change_sources(action, config)?,
         Some(Command::Config {
             action: ConfigCommand::Path,
-        }) => {
-            println!("{}", config_path(config)?.display());
-            Ok(())
-        }
+        }) => println!("{}", config_path(config)?.display()),
         Some(Command::Config {
             action: ConfigCommand::Edit,
-        }) => edit_in_editor(config),
+        }) => edit_in_editor(config)?,
     }
+    Ok(ExitCode::SUCCESS)
 }
 
 /// The settings file, or the message that there is no place for it.
@@ -298,130 +346,119 @@ fn edit_in_editor(config: Option<&Path>) -> Result<()> {
     Ok(())
 }
 
-async fn collect(args: &CollectArgs, config: Option<&Path>) -> Result<()> {
-    let format = parse_format(&args.format)?;
-    let request = build_collect_request(args, &format)?;
+/// Collects the range `args` name from every source, writes the export, and says how each
+/// source did. A source that failed fails the run, after the others' entries are written.
+async fn collect(args: &CollectArgs, config: Option<&Path>) -> Result<ExitCode> {
+    let output = args
+        .output
+        .clone()
+        .unwrap_or_else(|| Output::default_for(args.format));
+    let mut status = Status::for_output(&output);
+    let options = collect_options(args, today())?;
     let connections = load_connections(config)?;
     if connections.is_empty() {
-        println!("{}", sources::NO_SOURCES);
-        return Ok(());
+        status.say(sources::NO_SOURCES)?;
+        return Ok(ExitCode::SUCCESS);
     }
 
-    println!(
+    status.say(&format!(
         "\nCollecting activity from {} to {} ...\n",
-        request.collect_options.start.with_timezone(&Local),
-        request.collect_options.end.with_timezone(&Local)
-    );
+        options.start.with_timezone(&Local),
+        options.end.with_timezone(&Local)
+    ))?;
 
-    let provider_runtimes = inspect_provider_runtimes_with(&connections).await;
-    let provider_info = provider_runtimes
+    let runtimes = inspect_provider_runtimes_with(&connections).await;
+    let providers = runtimes
         .iter()
         .map(|runtime| runtime.info().clone())
         .collect::<Vec<_>>();
-    let collected = collect_activity_detailed_with_provider_runtimes(
-        request.collect_options,
-        &provider_runtimes,
-    )
-    .await;
-
-    for line in provider_summary_lines(&provider_info, &collected) {
-        println!("{line}");
+    let report = collect_runtimes(options, &runtimes).await;
+    let collected = report.project(options);
+    let results = connection_results(&providers, &report, &collected.summary);
+    for result in &results {
+        status.say(&result.line())?;
+    }
+    if collected.summary.merged_count > 0 {
+        status.say(&format!(
+            "  {} GitLab pushes shown with their git commits",
+            collected.summary.merged_count
+        ))?;
     }
 
-    let content = render_export(&collected.log, format, &Local).content;
-
-    if let Some(output) = &request.output_path {
-        if let Some(parent) = Path::new(output).parent() {
-            fs::create_dir_all(parent)?;
-        }
-        fs::write(output, content)?;
-        println!(
-            "\n✅ {} total entries → {}\n",
-            collected.log.entries.len(),
-            output
-        );
-    } else {
-        println!("{content}");
-    }
-
-    Ok(())
-}
-
-fn parse_format(value: &str) -> Result<OutputFormat> {
-    value
-        .parse::<OutputFormat>()
-        .map_err(|_| anyhow!("Invalid --format \"{value}\". Use json or markdown."))
-}
-
-fn build_collect_request(cli: &CollectArgs, format: &OutputFormat) -> Result<CliCollectionRequest> {
-    let default_output = match format {
-        OutputFormat::Json => "logs/activity_log.json",
-        OutputFormat::Markdown => "logs/activity_log.md",
-    };
-
-    let (since, until) = if let Some(range) = &cli.range {
-        let preset = range
-            .parse::<RangePreset>()
-            .map_err(|_| anyhow!("Unknown range: \"{range}\". Use {}", valid_range_presets()))?;
-        resolve_preset(preset, today())
-    } else {
-        let since = match &cli.since {
-            Some(since) => parse_date(since, "since")?,
-            None => today() - Days::new(30),
-        };
-        let until = match &cli.until {
-            Some(until) => parse_date(until, "until")?,
-            None => today(),
-        };
-        (since, until)
-    };
-
-    Ok(CliCollectionRequest {
-        collect_options: day_range(&Local, since, until)?,
-        output_path: Some(
-            cli.output
-                .clone()
-                .unwrap_or_else(|| default_output.to_string()),
-        ),
-    })
-}
-
-fn valid_range_presets() -> String {
-    RangePreset::iter()
-        .map(|preset| preset.to_string())
-        .collect::<Vec<_>>()
-        .join("|")
-}
-
-fn provider_summary_lines(
-    provider_info: &[ProviderInfo],
-    collected: &CollectedActivity,
-) -> Vec<String> {
-    provider_info
-        .iter()
-        .map(|info| {
-            let id = &info.connection;
-            if !info.usable {
-                let reason = info.reason.as_deref().unwrap_or("unavailable");
-                return format!("  - {id} ({}) — skipped ({reason})", info.label);
+    let content = render_export(&collected.log, args.format, &Local).content;
+    match &output {
+        Output::File(path) => {
+            if let Some(parent) = path.parent() {
+                fs::create_dir_all(parent)?;
             }
+            fs::write(path, content)?;
+            status.say(&format!(
+                "\n✅ {} total entries → {}\n",
+                collected.log.entries.len(),
+                path.display()
+            ))?;
+        }
+        Output::Stdout => write_stdout(content.as_bytes())?,
+    }
 
-            let count = collected.summary.entry_count_for(id);
-            let detail = match id.source {
-                Source::Git => format!(
-                    " ({count} entries, {} merged with gitlab)",
-                    collected.summary.merged_count
-                ),
-                Source::Gitlab => format!(
-                    " ({count} entries, {} push events merged into git)",
-                    collected.summary.merged_count
-                ),
-                _ => format!(" ({count} entries)"),
-            };
+    let failed = results.iter().filter(|result| result.fails_run()).count();
+    if failed == 0 {
+        return Ok(ExitCode::SUCCESS);
+    }
+    status.say(&format!("{failed} of {} sources failed", results.len()))?;
+    Ok(ExitCode::FAILURE)
+}
 
-            format!("  ✓ {id} ({}){detail}", info.label)
-        })
-        .collect()
+/// The instants of the days `args` name, `today` in the terminal's zone: a range preset, else
+/// `--since` (30 days ago) to `--until` (today).
+fn collect_options(args: &CollectArgs, today: NaiveDate) -> Result<CollectOptions> {
+    let (since, until) = match args.range {
+        Some(preset) => resolve_preset(preset, today),
+        None => (
+            args.since.unwrap_or(today - Days::new(30)),
+            args.until.unwrap_or(today),
+        ),
+    };
+    day_range(&Local, since, until)
+}
+
+/// Writes the export to standard output; a reader that went away (`| head`) ends it quietly.
+fn write_stdout(content: &[u8]) -> io::Result<()> {
+    let mut stdout = io::stdout().lock();
+    match stdout.write_all(content).and_then(|()| stdout.flush()) {
+        Err(err) if err.kind() == io::ErrorKind::BrokenPipe => Ok(()),
+        result => result,
+    }
+}
+
+/// Where the lines for people go: standard output, or standard error while the export goes to
+/// standard output. Once its reader went away, nothing more is said.
+struct Status {
+    out: Box<dyn Write>,
+    closed: bool,
+}
+
+impl Status {
+    fn for_output(output: &Output) -> Self {
+        let out: Box<dyn Write> = match output {
+            Output::File(_) => Box::new(io::stdout()),
+            Output::Stdout => Box::new(io::stderr()),
+        };
+        Self { out, closed: false }
+    }
+
+    fn say(&mut self, line: &str) -> io::Result<()> {
+        if self.closed {
+            return Ok(());
+        }
+        match writeln!(self.out, "{line}") {
+            Err(err) if err.kind() == io::ErrorKind::BrokenPipe => {
+                self.closed = true;
+                Ok(())
+            }
+            result => result,
+        }
+    }
 }
 
 #[cfg(test)]
