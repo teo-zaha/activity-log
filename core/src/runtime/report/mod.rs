@@ -115,7 +115,7 @@ impl RunReport {
                 Slot::Pending { carried: shown } => {
                     pending.push(id.clone());
                     if let Some(shown) = shown {
-                        carried.push((id.clone(), shown.entries.to_vec()));
+                        carried.push((id, &shown.entries[..]));
                     }
                 }
                 Slot::Skipped => {}
@@ -128,7 +128,7 @@ impl RunReport {
                 }
             }
         }
-        let carried = carried_for(&carried, &pending, &results);
+        let carried = carried_for(carried, &pending, &results);
         collect_activity_from_results(options, results, pending, carried)
     }
 }
