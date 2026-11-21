@@ -69,10 +69,6 @@ fn each_refused_config_edit_has_its_kind() {
             BackendErrorKind::InvalidRequest,
         ),
         (
-            ConfigEditError::UnknownProvider(Source::Jira),
-            BackendErrorKind::InvalidRequest,
-        ),
-        (
             ConfigEditError::NotATableList(Source::Gitlab),
             BackendErrorKind::BadConfig,
         ),

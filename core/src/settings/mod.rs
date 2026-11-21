@@ -18,7 +18,7 @@ use std::{
     collections::{BTreeMap, BTreeSet, HashMap},
     fs, io,
     path::{Path, PathBuf},
-    sync::{Arc, Once},
+    sync::Once,
 };
 
 use toml_edit::{ArrayOfTables, DocumentMut, Item, Table, Value, value};
@@ -27,6 +27,7 @@ use crate::{
     model::{ConnectionId, Source},
     platform::private_file::readable_by_others,
     provider::{
+        adapter as adapter_of,
         connection::{Connection, ConnectionLocation, ConnectionValues, Instances, slug},
         git::{LOCAL_LABEL, wsl_label},
         provider_adapter::ProviderAdapter,
@@ -275,7 +276,7 @@ impl ConfigFile {
         label: Option<&str>,
         location: ConnectionLocation,
     ) -> Result<ConnectionId, ConfigEditError> {
-        let adapter = adapter_for(source)?;
+        let adapter = adapter_of(source);
         let existing = self.entries(source);
         if adapter.instances() == Instances::Single && !existing.is_empty() {
             return Err(ConfigEditError::SingleInstance(source.clone()));
@@ -401,7 +402,7 @@ impl ConfigFile {
         key: ProviderConfigKey,
         raw: Option<&str>,
     ) -> Result<(), ConfigEditError> {
-        let adapter = adapter_for(&id.source)?;
+        let adapter = adapter_of(&id.source);
         if !adapter.config_requirements().contains(&key) {
             return Err(ConfigEditError::UnknownSetting {
                 source: id.source.clone(),
@@ -433,7 +434,7 @@ impl ConfigFile {
     /// What a writer sees of `id` before it changes the `touched` fields: those fields, the
     /// kind's account fields and the connection's instance. `None` for an unknown connection.
     pub fn edit_base(&self, id: &ConnectionId, touched: &[FieldId]) -> Option<EditBase> {
-        let adapter = adapter_for(&id.source).ok()?;
+        let adapter = adapter_of(&id.source);
         let account = adapter
             .config_requirements()
             .iter()
@@ -451,7 +452,7 @@ impl ConfigFile {
 
     /// The instance of `id` and the values of `fields`, as preconditions compare them.
     fn seen(&self, id: &ConnectionId, fields: &[FieldId]) -> Option<Seen> {
-        let adapter = adapter_for(&id.source).ok()?;
+        let adapter = adapter_of(&id.source);
         let entry = self
             .entries(&id.source)
             .into_iter()
@@ -532,8 +533,7 @@ impl ConfigFile {
                 return Vec::new();
             }
         };
-        let single =
-            adapter_for(source).is_ok_and(|adapter| adapter.instances() == Instances::Single);
+        let single = adapter_of(source).instances() == Instances::Single;
         let mut readable = Vec::new();
         for (index, table) in tables {
             if *source != Source::Git && table.contains_key(WSL) {
@@ -950,7 +950,7 @@ pub fn field_name(source: &Source, key: ProviderConfigKey) -> String {
 
 /// The config keys of `source`, as its provider declares them.
 pub fn config_keys(source: &Source) -> &'static [ProviderConfigKey] {
-    adapter_for(source).map_or(&[], |adapter| adapter.config_requirements())
+    adapter_of(source).config_requirements()
 }
 
 /// The config key a file field names for `source`, as the CLI accepts it.
@@ -959,13 +959,6 @@ pub fn key_for_field(source: &Source, field: &str) -> Option<ProviderConfigKey> 
         .iter()
         .copied()
         .find(|key| field_name(source, *key) == field.to_ascii_lowercase())
-}
-
-fn adapter_for(source: &Source) -> Result<Arc<dyn ProviderAdapter>, ConfigEditError> {
-    provider_registry()
-        .into_iter()
-        .find(|adapter| adapter.id() == *source)
-        .ok_or_else(|| ConfigEditError::UnknownProvider(source.clone()))
 }
 
 /// A connection's label when none is given: where Git reads, else the kind's name.

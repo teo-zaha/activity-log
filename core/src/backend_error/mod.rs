@@ -76,8 +76,7 @@ impl From<ConfigEditError> for BackendError {
             ConfigEditError::SingleInstance(_) => BackendErrorKind::AlreadyExists,
             ConfigEditError::WslOnlyForGit
             | ConfigEditError::EmptyLabel
-            | ConfigEditError::UnknownSetting { .. }
-            | ConfigEditError::UnknownProvider(_) => BackendErrorKind::InvalidRequest,
+            | ConfigEditError::UnknownSetting { .. } => BackendErrorKind::InvalidRequest,
             ConfigEditError::NotATableList(_) => BackendErrorKind::BadConfig,
         };
         Self::new(kind, err.to_string())

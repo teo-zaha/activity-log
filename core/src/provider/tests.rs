@@ -36,14 +36,18 @@ use crate::{
         provider_runtime::{ProviderRuntime, with_startup_timeout},
     },
 };
+use strum::IntoEnumIterator;
 use tempfile::tempdir;
 
 #[test]
 fn registry_includes_all_builtin_providers() {
     let ids = provider_registry()
-        .into_iter()
+        .iter()
         .map(|adapter| adapter.id())
         .collect::<Vec<_>>();
+    for source in Source::iter() {
+        assert_eq!(crate::provider::adapter(&source).id(), source);
+    }
 
     assert_eq!(
         ids,
@@ -62,7 +66,7 @@ fn registry_includes_all_builtin_providers() {
 fn outlook_and_system_declare_windows_and_macos_support() {
     let adapters = provider_registry();
     let desktop_native = adapters
-        .into_iter()
+        .iter()
         .filter(|adapter| matches!(adapter.id(), Source::Outlook | Source::System))
         .collect::<Vec<_>>();
 
@@ -153,7 +157,10 @@ impl ProviderAdapter for TestProvider {
 
 #[tokio::test]
 async fn missing_required_config_skips_startup_check() {
-    static REQUIRED_KEYS: &[ProviderConfigKey] = &[ProviderConfigKey::required_string("TEST_KEY")];
+    static REQUIRED_KEYS: &[ProviderConfigKey] = &[ProviderConfigKey::required(
+        "TEST_KEY",
+        ProviderConfigValueType::String,
+    )];
 
     let calls = Arc::new(AtomicUsize::new(0));
     let runtime = ProviderRuntime::inspect(
@@ -202,7 +209,10 @@ async fn unsupported_os_is_derived_from_provider_metadata() {
 
 #[tokio::test]
 async fn startup_check_runs_with_resolved_config() {
-    static REQUIRED_KEYS: &[ProviderConfigKey] = &[ProviderConfigKey::required_string("TEST_KEY")];
+    static REQUIRED_KEYS: &[ProviderConfigKey] = &[ProviderConfigKey::required(
+        "TEST_KEY",
+        ProviderConfigValueType::String,
+    )];
 
     let calls = Arc::new(AtomicUsize::new(0));
     let mut config = TestConfigSource::default();
@@ -260,7 +270,10 @@ async fn invalid_typed_config_skips_startup_check() {
 
 #[tokio::test]
 async fn strict_bool_config_rejects_non_true_false_values() {
-    static REQUIRED_KEYS: &[ProviderConfigKey] = &[ProviderConfigKey::required_bool("TEST_BOOL")];
+    static REQUIRED_KEYS: &[ProviderConfigKey] = &[ProviderConfigKey::required(
+        "TEST_BOOL",
+        ProviderConfigValueType::Bool,
+    )];
 
     let calls = Arc::new(AtomicUsize::new(0));
     let mut config = TestConfigSource::default();
@@ -292,7 +305,10 @@ struct TypedTestConfig {
     value: String,
 }
 
-static TYPED_KEYS: &[ProviderConfigKey] = &[ProviderConfigKey::required_string("TYPED_KEY")];
+static TYPED_KEYS: &[ProviderConfigKey] = &[ProviderConfigKey::required(
+    "TYPED_KEY",
+    ProviderConfigValueType::String,
+)];
 
 impl ProviderConfigResolve for TypedTestConfig {
     fn requirements() -> &'static [ProviderConfigKey] {
@@ -725,7 +741,8 @@ fn cache_fingerprint_separates_accounts_but_ignores_secrets() {
         );
     }
 
-    const LIST_KEYS: &[ProviderConfigKey] = &[ProviderConfigKey::optional_url("URLS").list_of()];
+    const LIST_KEYS: &[ProviderConfigKey] =
+        &[ProviderConfigKey::optional("URLS", ProviderConfigValueType::Url).list_of()];
     let list = |urls: &str| {
         let mut source = TestConfigSource::default();
         source.values.insert("URLS".into(), urls.into());
@@ -1034,7 +1051,7 @@ fn git_config_tells_unset_lists_from_empty_ones() {
 
 #[test]
 fn list_keys_validate_every_item_against_their_value_type() {
-    let ports = ProviderConfigKey::optional_int("TEST_PORTS").list_of();
+    let ports = ProviderConfigKey::optional("TEST_PORTS", ProviderConfigValueType::Int).list_of();
 
     assert_eq!(
         ports.shape,
@@ -1280,4 +1297,23 @@ fn recheckable_follows_the_problem() {
     }
     assert!(!unavailable(ProviderProblem::Unsupported).recheckable());
     assert!(!degraded(ProviderProblem::Unsupported).recheckable());
+}
+
+/// A configured kind's check gets its typed settings from the runtime; a context the runtime
+/// did not resolve says so as `notConfigured`, with the cause, instead of a made-up message.
+#[tokio::test]
+async fn a_check_without_resolved_settings_is_not_configured() {
+    for source in [Source::Git, Source::Gitlab, Source::Jira, Source::Calendar] {
+        let result = crate::provider::adapter(&source)
+            .startup_check(
+                crate::provider::current_os(),
+                crate::provider::provider_context::ProviderContext::default(),
+            )
+            .await;
+        assert_eq!(
+            result.outcome.problem(),
+            Some(ProviderProblem::NotConfigured),
+            "{source}"
+        );
+    }
 }

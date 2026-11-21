@@ -58,15 +58,8 @@ pub fn default_wsl_distros() -> Vec<String> {
 }
 
 crate::provider! {
-    GitProvider(Source::Git, &[SupportedOs::Windows, SupportedOs::Macos, SupportedOs::Linux], GitConfig) {
-        async fn startup_check(&self, _current_os, context) {
-            let config = match context.config::<GitConfig>() {
-                Ok(c) => c,
-                Err(err) => {
-                    return ProviderCheckResult::unavailable(format!("Git config is invalid: {err:#}"));
-                }
-            };
-
+    GitProvider(Source::Git, &[SupportedOs::Windows, SupportedOs::Macos, SupportedOs::Linux], config: GitConfig) {
+        async fn startup_check(&self, _current_os, context, config) {
             let config = config.clone();
             let location = context.location();
             // Its timeout drops the wait, which stops a `wsl.exe` that hangs.
