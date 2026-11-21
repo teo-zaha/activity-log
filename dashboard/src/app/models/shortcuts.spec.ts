@@ -59,7 +59,8 @@ const BROWSER_DOES_ITSELF = new Set<ShortcutId>(['app.back'])
 /** Only the menu and the header's buttons: a single key would write a file or the clipboard. */
 const MENU_ONLY = new Set<ShortcutId>(['app.export-markdown', 'app.export-json', 'app.copy-link'])
 /**
- * Keys every common layout types without AltGr or ⌥: letters by their physical key, and these
+ * Keys every common layout types without AltGr or ⌥: the Latin letters (a non-Latin layout's by
+ * the Latin letter in their place), and these
  * characters, with Shift where the layout needs it (`/` is Shift+7 on a German layout). `[` is not
  * among them: it needs ⌥ or AltGr on German and Nordic layouts, so it is only ever ⌘[.
  */
