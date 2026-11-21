@@ -1,5 +1,4 @@
 @use '../calendar-shared' as cal;
-@use '../dashboard-shared' as ui;
 
 :host {
   @include cal.host;
@@ -50,19 +49,11 @@
   }
 }
 
-.event-count {
-  font-size: 13px;
-  color: var(--text-tertiary);
-  padding-left: 10px;
-  border-left: 1px solid var(--border-subtle);
-  margin-left: 10px;
-}
-
 .cal-scroll {
   @include cal.scroll-container;
 }
 
-// ── All-day banner row ──────────────────────────────────────────────────────
+// ── All-day banner row: sticky above the grid ─────────────────────────────────
 
 .cal-sticky-header {
   position: sticky;
@@ -71,92 +62,11 @@
   background: var(--surface);
 }
 
-.cal-allday-row {
-  display: flex;
-  flex-shrink: 0;
-  border-bottom: 1px solid var(--border-subtle);
-  overflow: hidden;
-}
-
-.time-gutter-allday {
-  width: var(--cal-gutter);
-  flex-shrink: 0;
-  border-right: 1px solid var(--border-subtle);
-}
-
-.allday-bars {
-  flex: 1;
-  position: relative;
-}
-
-.cal-allday-bar {
-  appearance: none;
-  position: absolute;
-  border-radius: 4px;
-  padding: 2px 6px;
-  font-size: 12px;
-  font-family: inherit;
-  font-weight: 500;
-  text-align: left;
-  overflow: hidden;
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  cursor: pointer;
-  background: var(--badge-bg);
-  color: var(--badge-fg);
-  border-left: 3px solid var(--badge-accent);
-  transition: filter 0.1s ease;
-  z-index: 1;
-
-  @include ui.hover {
-    filter: brightness(0.93);
-  }
-
-  &:focus-visible {
-    outline: 2px solid var(--accent);
-    outline-offset: 2px;
-  }
-
-  @include cal.busy-markers;
-
-  .cal-event-icon {
-    --icon-size: 11px;
-    opacity: 0.85;
-  }
-
-  .cal-event-title {
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    min-width: 0;
-  }
-}
-
 .cal-grid {
   position: relative;
   display: grid;
   grid-template-columns: var(--cal-gutter) 1fr;
   padding: 18px 18px 18px 0;
-}
-
-.hour-slot {
-  position: absolute;
-  left: 0;
-  right: 0;
-  height: 64px;
-  display: grid;
-  grid-template-columns: var(--cal-gutter) 1fr;
-  align-items: flex-start;
-  pointer-events: none;
-}
-
-.hour-label {
-  @include cal.hour-label;
-}
-
-.hour-line {
-  @include cal.hour-line;
 }
 
 .events-col {
@@ -167,6 +77,10 @@
   bottom: 18px;
 }
 
-@include cal.event-styles;
-@include cal.now-line;
+// The day's one column fills the events area.
+.day-col {
+  position: absolute;
+  inset: 0;
+}
+
 @include cal.now-label;
