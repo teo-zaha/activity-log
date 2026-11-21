@@ -1,4 +1,4 @@
-import { Service, signal } from '@angular/core'
+import { Service, signal, type Signal } from '@angular/core'
 import type { Notice } from './failure'
 
 /**
@@ -8,15 +8,17 @@ import type { Notice } from './failure'
  */
 @Service()
 export class NoticeService {
-  /** The notice on screen, null for none. `ActivityService.notice` is this same signal. */
-  readonly current = signal<Notice | null>(null)
+  private readonly notice = signal<Notice | null>(null)
+
+  /** The notice on screen, null for none. */
+  readonly current: Signal<Notice | null> = this.notice.asReadonly()
 
   show(notice: Notice): void {
-    this.current.set(notice)
+    this.notice.set(notice)
   }
 
   /** Clears the notice if it came from `origin` (a new attempt of the same action). */
   clear(origin: Notice['origin']): void {
-    if (this.current()?.origin === origin) this.current.set(null)
+    if (this.notice()?.origin === origin) this.notice.set(null)
   }
 }
