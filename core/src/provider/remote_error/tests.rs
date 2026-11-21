@@ -194,6 +194,22 @@ fn an_oauth_refusal_is_read_from_the_bearer_challenge() {
             ][..],
             Some(OAuthRefusal::InsufficientScope),
         ),
+        (
+            &[r#"Basic realm="x", Bearer error="insufficient_scope""#][..],
+            Some(OAuthRefusal::InsufficientScope),
+        ),
+        (
+            &[r#"Basic realm="a, b", Bearer realm="GitLab", error = "invalid_token""#][..],
+            Some(OAuthRefusal::InvalidToken),
+        ),
+        (
+            &[r#"Negotiate abc==, Bearer error="insufficient_scope""#][..],
+            Some(OAuthRefusal::InsufficientScope),
+        ),
+        (
+            &[r#"Bearer realm="GitLab", Basic error="invalid_token""#][..],
+            None,
+        ),
         (&[r#"Basic error="invalid_token""#][..], None),
         (&[r#"Bearer realm="GitLab""#][..], None),
         (&[r#"Bearer error="unknown_code""#][..], None),
