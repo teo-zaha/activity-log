@@ -12,7 +12,8 @@ import { HeaderComponent } from '../../components/header/header.component'
 import { SettingsDialogLauncher } from '../../components/settings-dialog/settings-dialog-launcher.service'
 import { SettingsPageHostComponent } from '../../components/settings-dialog/settings-page-host.component'
 import { SidebarComponent } from '../../components/sidebar/sidebar.component'
-import { ActivityService } from '../../services/activity.service'
+import { ActivityDataService } from '../../services/activity-data.service'
+import { ActivityViewStateService } from '../../services/activity-view-state.service'
 import { dismissSplash } from '../../utils/splash'
 import { bindShellShortcuts } from './shell-shortcuts'
 import { type ShellSlotName, ShellSlots } from './shell-slots'
@@ -36,7 +37,7 @@ import { type ShellSlotName, ShellSlots } from './shell-slots'
   styleUrl: './shell-layout.component.scss',
 })
 export class ShellLayoutComponent {
-  protected readonly activity = inject(ActivityService)
+  protected readonly data = inject(ActivityDataService)
   private readonly slots = inject(ShellSlots)
   /**
    * On a phone the settings are a tab: they take the view's place in the main content, and the
@@ -44,7 +45,7 @@ export class ShellLayoutComponent {
    */
   protected readonly settingsTab = inject(SettingsDialogLauncher).pageOpen
   /** The event details are modal at every size: what lies under them is `inert`. */
-  protected readonly underDetails = this.activity.detailsOpen
+  protected readonly underDetails = inject(ActivityViewStateService).detailsOpen
   protected readonly headerSlot = this.slot('header')
   protected readonly sidebarSlot = this.slot('sidebar')
 

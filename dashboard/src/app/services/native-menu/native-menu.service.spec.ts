@@ -6,7 +6,7 @@ import { Router, provideRouter } from '@angular/router'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { MenuInstall, MenuItemState, MenuItemUpdate, MenuSpec } from '../../generated/activity'
 import type { ViewMode } from '../../utils/app-url'
-import { ActivityService } from '../activity.service'
+import { ActivityViewStateService } from '../activity-view-state.service'
 import { BackendFailure } from '../backend/backend-failure'
 import {
   SHORTCUT_PLATFORM,
@@ -109,7 +109,7 @@ async function setup(
       ]),
       { provide: SHORTCUT_PLATFORM, useValue: platform },
       { provide: NATIVE_MENU_IPC, useValue: menu },
-      { provide: ActivityService, useValue: { currentView } },
+      { provide: ActivityViewStateService, useValue: { currentView } },
       { provide: SHORTCUT_TABLE, useValue: table },
     ],
   })

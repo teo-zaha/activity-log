@@ -3,7 +3,7 @@ import { TestBed } from '@angular/core/testing'
 import { Router } from '@angular/router'
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 import { provideAppRouter } from '../app.routes'
-import { ActivityService } from './activity.service'
+import { ActivityDataService } from './activity-data.service'
 import { appLink } from '../components/share/share-link'
 import { DeepLinkService } from './deep-link.service'
 
@@ -24,7 +24,7 @@ describe('DeepLinkService', () => {
       providers: [
         provideAppRouter(),
         provideLocationMocks(),
-        { provide: ActivityService, useValue: { collect } },
+        { provide: ActivityDataService, useValue: { collect } },
       ],
     })
     const router = TestBed.inject(Router)

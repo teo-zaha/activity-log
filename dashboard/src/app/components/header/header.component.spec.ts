@@ -5,7 +5,7 @@ import { render, screen } from '@testing-library/angular'
 import userEvent from '@testing-library/user-event'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { ActivityLog } from '../../generated/activity'
-import { ActivityService } from '../../services/activity.service'
+import { ActivityExportService } from '../../services/activity-export.service'
 import { RuntimeEnvironmentService } from '../../services/backend/runtime-environment.service'
 import { ToastService } from '../../services/toast.service'
 import { activityLog } from '../../testing/activity-fixtures'
@@ -16,7 +16,7 @@ async function setup(state: { loading?: boolean; meta?: ActivityLog['meta'] } = 
     providers: [
       provideRouter([]),
       {
-        provide: ActivityService,
+        provide: ActivityExportService,
         useValue: {
           canExport: signal(state.meta !== undefined && !state.loading),
         },
@@ -75,7 +75,7 @@ describe('HeaderComponent share', () => {
       providers: [
         provideRouter([{ path: '**', children: [] }]),
         {
-          provide: ActivityService,
+          provide: ActivityExportService,
           useValue: { canExport: signal(false) },
         },
         { provide: ToastService, useValue: { success, failure } },

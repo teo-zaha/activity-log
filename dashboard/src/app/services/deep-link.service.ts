@@ -9,7 +9,7 @@ import {
   viewCommands,
 } from '../utils/app-url'
 import { todayKey } from '../utils/local-day'
-import { ActivityService } from './activity.service'
+import { ActivityDataService } from './activity-data.service'
 
 /**
  * The one way in for links from outside the dashboard, such as a desktop deep link
@@ -19,7 +19,7 @@ import { ActivityService } from './activity.service'
 export class DeepLinkService {
   private readonly router = inject(Router)
   private readonly serializer = inject(UrlSerializer)
-  private readonly activity = inject(ActivityService)
+  private readonly data = inject(ActivityDataService)
 
   /**
    * Shows what `link` names: an `activity-log:` URL or an app path. A link to no view is ignored
@@ -31,7 +31,7 @@ export class DeepLinkService {
     if (target === null) return false
     const navigated = await this.router.navigateByUrl(target)
     const { from, to } = parseAppUrl(target) ?? DEFAULT_LOCATION
-    if (navigated && from && to) void this.activity.collect(from, to)
+    if (navigated && from && to) void this.data.collect(from, to)
     return navigated
   }
 

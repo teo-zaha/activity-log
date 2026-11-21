@@ -1,5 +1,5 @@
 <form class="range-form" [formRoot]="rangeForm" aria-label="Collection date range">
-  <div #fields class="range" [class.is-disabled]="activity.isLoading()">
+  <div #fields class="range" [class.is-disabled]="data.isLoading()">
     <label class="range-field">
       <span class="range-label">From</span>
       <input
@@ -9,7 +9,7 @@
         [matDatepicker]="pickerFrom"
         [formField]="rangeForm.from"
         [max]="dateToObj()"
-        (dateChange)="activity.setDateFrom(fmtDate($event.value))"
+        (dateChange)="viewState.setDateFrom(fmtDate($event.value))"
       />
       <mat-datepicker-toggle class="range-toggle" [for]="pickerFrom" />
       <mat-datepicker #pickerFrom (opened)="pickerOpened()" (closed)="pickerClosed()" />
@@ -26,7 +26,7 @@
         [matDatepicker]="pickerTo"
         [formField]="rangeForm.to"
         [min]="dateFromObj()"
-        (dateChange)="activity.setDateTo(fmtDate($event.value))"
+        (dateChange)="viewState.setDateTo(fmtDate($event.value))"
       />
       <mat-datepicker-toggle class="range-toggle" [for]="pickerTo" />
       <mat-datepicker #pickerTo (opened)="pickerOpened()" (closed)="pickerClosed()" />
@@ -41,15 +41,15 @@
     icon="sync"
     class="btn-collect"
     [appShortcut]="'app.collect'"
-    [busy]="activity.isLoading()"
-    [disabled]="activity.isLoading()"
-    [attr.aria-label]="activity.isLoading() ? 'Collecting activity' : 'Collect activity'"
+    [busy]="data.isLoading()"
+    [disabled]="data.isLoading()"
+    [attr.aria-label]="data.isLoading() ? 'Collecting activity' : 'Collect activity'"
     matTooltip="Collect activity for the selected range"
   >
     <!-- Both labels share one grid cell so the button keeps its width while busy. -->
     <span class="btn-collect-label" aria-hidden="true">
-      <span [class.is-inactive]="activity.isLoading()">Collect</span>
-      <span [class.is-inactive]="!activity.isLoading()">Collecting…</span>
+      <span [class.is-inactive]="data.isLoading()">Collect</span>
+      <span [class.is-inactive]="!data.isLoading()">Collecting…</span>
     </span>
     <app-key-tag class="btn-collect-key" shortcut="app.collect" />
   </button>

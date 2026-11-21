@@ -3,7 +3,7 @@ import { Component, type TemplateRef, inject, input } from '@angular/core'
 import { MatIconModule } from '@angular/material/icon'
 import { MatTooltipModule } from '@angular/material/tooltip'
 import { IconButtonComponent } from '../button/icon-button.component'
-import { ActivityService } from '../../services/activity.service'
+import { ActivityExportService } from '../../services/activity-export.service'
 import { WindowChromeService } from '../../services/window-chrome.service'
 import { injectShareLink, injectViewLink } from '../share/share-link'
 
@@ -21,17 +21,18 @@ export class HeaderComponent {
   /** The layout's part of the row, such as the views' range and Collect; none on other pages. */
   readonly center = input<TemplateRef<unknown> | null>(null)
 
-  protected readonly activity = inject(ActivityService)
+  private readonly exports = inject(ActivityExportService)
+  protected readonly canExport = this.exports.canExport
   private readonly chrome = inject(WindowChromeService)
   private readonly shareLink = injectShareLink()
   private readonly viewLink = injectViewLink()
 
   protected exportMd(): void {
-    void this.activity.exportMarkdown()
+    void this.exports.exportShown('markdown')
   }
 
   protected exportJson(): void {
-    void this.activity.exportJson()
+    void this.exports.exportShown('json')
   }
 
   /** Shares the link to this view (`injectViewLink`). */

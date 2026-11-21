@@ -1,13 +1,13 @@
 <section class="sources" aria-labelledby="source-list-label">
   <div class="section-head">
     <span id="source-list-label" class="section-label">Sources</span>
-    @if (activity.providers().length > 1 && !isRail()) {
+    @if (data.providers().length > 1 && !isRail()) {
       <span class="section-hint">Double-click to solo</span>
     }
   </div>
 
   <div class="source-list" appAutoAnimate>
-    @for (provider of activity.providers(); track provider.key) {
+    @for (provider of data.providers(); track provider.key) {
       <button
         type="button"
         class="source-chip"
@@ -17,8 +17,8 @@
         [attr.aria-disabled]="provider.info.status === 'checking' || null"
         [attr.data-src]="provider.chipKey"
         [attr.aria-label]="sourceAriaLabel(provider)"
-        (click)="activity.toggleConnection(provider.key)"
-        (dblclick)="activity.isolateConnection(provider.key)"
+        (click)="selection.toggleConnection(provider.key)"
+        (dblclick)="selection.isolateConnection(provider.key)"
         [matTooltip]="sourceTooltip(provider)"
         [matTooltipDisabled]="!sourceTooltip(provider)"
         [matTooltipPosition]="isRail() ? 'right' : 'above'"
@@ -50,27 +50,27 @@
       <span class="source-label">Add source</span>
     </button>
 
-    @if (activity.unusableProviders().length && (isRail() || isPhone())) {
+    @if (data.unusableProviders().length && (isRail() || isPhone())) {
       <button
         type="button"
         class="issues-chip"
-        (click)="openSettings(activity.unusableProviders()[0].key)"
+        (click)="openSettings(data.unusableProviders()[0].key)"
         [matTooltip]="issuesTooltip()"
         [matTooltipPosition]="isRail() ? 'right' : 'above'"
         [attr.aria-label]="issuesAriaLabel()"
       >
         <mat-icon>report_gmailerrorred</mat-icon>
-        <span class="issues-count">{{ activity.unusableProviders().length }}</span>
+        <span class="issues-count">{{ data.unusableProviders().length }}</span>
         <span class="issues-label">unavailable</span>
       </button>
     }
   </div>
 </section>
 
-@if (activity.unusableProviders().length && !isRail() && !isPhone()) {
+@if (data.unusableProviders().length && !isRail() && !isPhone()) {
   <section class="issues" aria-labelledby="source-issues-label">
     <span id="source-issues-label" class="section-label">Unavailable</span>
-    @for (provider of activity.unusableProviders(); track provider.key) {
+    @for (provider of data.unusableProviders(); track provider.key) {
       <div class="issue-row">
         <button
           type="button"

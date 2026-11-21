@@ -4,7 +4,7 @@ import { Router } from '@angular/router'
 import { describe, expect, it, type MockInstance, vi } from 'vitest'
 import { provideAppRouter } from '../app.routes'
 import { MockBackendTransport, provideMockBackend } from '../testing/activity-fixtures'
-import { ActivityService } from './activity.service'
+import { ActivityDataService } from './activity-data.service'
 import { DeepLinkInboxService } from './deep-link-inbox.service'
 import { DeepLinkService } from './deep-link.service'
 import { BackendFailure } from './backend/backend-failure'
@@ -18,7 +18,7 @@ function setup(links: string[]): MockInstance<DeepLinkService['open']> {
       provideMockBackend(backend),
       provideAppRouter(),
       provideLocationMocks(),
-      { provide: ActivityService, useValue: { collect: vi.fn(() => Promise.resolve()) } },
+      { provide: ActivityDataService, useValue: { collect: vi.fn(() => Promise.resolve()) } },
     ],
   })
   return vi.spyOn(TestBed.inject(DeepLinkService), 'open')

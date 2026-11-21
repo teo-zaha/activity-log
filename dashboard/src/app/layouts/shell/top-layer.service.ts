@@ -1,6 +1,6 @@
 import { Injector, Service, afterNextRender, computed, effect, inject } from '@angular/core'
 import { SettingsDialogLauncher } from '../../components/settings-dialog/settings-dialog-launcher.service'
-import { ActivityService } from '../../services/activity.service'
+import { ActivityViewStateService } from '../../services/activity-view-state.service'
 
 /**
  * The layers over the views, top first. The settings dialog (wider screens) is a Material dialog
@@ -16,12 +16,12 @@ export type ShellLayer = (typeof LAYERS)[number]
  */
 @Service()
 export class TopLayer {
-  private readonly activity = inject(ActivityService)
+  private readonly viewState = inject(ActivityViewStateService)
   private readonly settings = inject(SettingsDialogLauncher)
 
   readonly top = computed<ShellLayer | null>(() => {
     if (this.settings.dialogOpen()) return 'settingsDialog'
-    if (this.activity.detailsOpen()) return 'details'
+    if (this.viewState.detailsOpen()) return 'details'
     if (this.settings.pageOpen()) return 'settingsPage'
     return null
   })

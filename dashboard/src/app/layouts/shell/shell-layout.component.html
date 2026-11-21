@@ -4,12 +4,7 @@
 <div class="shell-body" [attr.inert]="underDetails() ? '' : null">
   <app-sidebar [sources]="sidebarSlot()" />
 
-  <main
-    id="main-content"
-    class="main-content"
-    tabindex="-1"
-    [attr.aria-busy]="activity.isLoading()"
-  >
+  <main id="main-content" class="main-content" tabindex="-1" [attr.aria-busy]="data.isLoading()">
     <div class="view" [class.under-settings]="settingsTab()">
       <router-outlet />
     </div>

@@ -3,7 +3,6 @@ import type { ComponentFixture } from '@angular/core/testing'
 import { render, screen } from '@testing-library/angular'
 import userEvent from '@testing-library/user-event'
 import { describe, expect, it, vi } from 'vitest'
-import { ActivityService } from '../../services/activity.service'
 import { BackendFailure } from '../../services/backend/backend-failure'
 import { failure, failureOf } from '../../services/failure'
 import { ActivityDataService, type SourceLink } from '../../services/activity-data.service'
@@ -55,10 +54,9 @@ async function setup(
 
   const { fixture } = await render(CollectionStatusComponent, {
     providers: [
-      { provide: ActivityService, useValue: activity },
+      { provide: ActivityDataService, useValue: activity },
       // The real `ActivitySelection` decides how the collection covers this tab's range.
       { provide: ActivityViewStateService, useValue: viewState },
-      { provide: ActivityDataService, useValue: {} },
     ],
   })
 
@@ -124,7 +122,7 @@ describe('CollectionStatusComponent', () => {
     const { fixture } = await render(CollectionStatusComponent, {
       providers: [
         {
-          provide: ActivityService,
+          provide: ActivityDataService,
           useValue: {
             collectionStatus: status,
             providers: signal([]),
@@ -142,7 +140,6 @@ describe('CollectionStatusComponent', () => {
             collectedRange: signal(MAY),
           },
         },
-        { provide: ActivityDataService, useValue: {} },
       ],
     })
     await fixture.whenStable()
