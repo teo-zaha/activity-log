@@ -192,3 +192,23 @@ async fn failures_are_the_requests_own() {
         PageError::Request(ApiError::Decode)
     );
 }
+
+/// After one page the pager tells whether GitLab named another: a first page is then the whole
+/// list or only part of it.
+#[tokio::test]
+async fn the_pager_tells_whether_a_page_follows() {
+    let server = TestServer::start(|request| match request.query("page").as_deref() {
+        Some("1") => {
+            Reply::json(200, json!([{ "id": 1 }]).to_string()).with_header("x-next-page", "2")
+        }
+        _ => Reply::json(200, json!([{ "id": 2 }]).to_string()).with_header("x-next-page", ""),
+    });
+    let api = api(&server.url);
+    let mut pager = Pager::new(&api, first_page(&api), Retry::Never, &Unmetered);
+
+    assert!(pager.has_next(), "the first page is still to read");
+    pager.next_page::<Row>().await.unwrap().unwrap();
+    assert!(pager.has_next());
+    pager.next_page::<Row>().await.unwrap().unwrap();
+    assert!(!pager.has_next());
+}
