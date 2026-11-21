@@ -1,4 +1,4 @@
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 
 use chrono::Duration;
 
@@ -48,7 +48,7 @@ pub fn collect_activity_from_results(
 
     // A GitLab "pushed to" event is folded into the matching git commit so the timeline does not
     // show the same change twice.
-    let merged = merge_git_with_gitlab(&git_entries, &gitlab_entries);
+    let merged = merge_git_with_gitlab(git_entries, gitlab_entries);
     let counted = |source: Source, name: &str| {
         connections
             .iter()
@@ -69,20 +69,24 @@ pub fn collect_activity_from_results(
     entries.extend(merged.remaining_gitlab.into_iter().into_activity_entries());
     entries.sort_by(|a, b| b.timestamp().cmp(a.timestamp()));
 
+    let mut counts = HashMap::<(Source, &str), usize>::new();
+    for entry in &entries {
+        if let Some(name) = entry.connection() {
+            *counts.entry((entry.source(), name)).or_default() += 1;
+        }
+    }
+    let connections = connections
+        .into_iter()
+        .map(|connection| ConnectionCount {
+            count: counts
+                .get(&(connection.source.clone(), connection.name.as_str()))
+                .copied()
+                .unwrap_or_default(),
+            connection,
+        })
+        .collect();
     let summary = CollectedActivitySummary {
-        connections: connections
-            .into_iter()
-            .map(|connection| ConnectionCount {
-                count: entries
-                    .iter()
-                    .filter(|entry| {
-                        entry.source() == connection.source
-                            && entry.connection() == Some(connection.name.as_str())
-                    })
-                    .count(),
-                connection,
-            })
-            .collect(),
+        connections,
         merged_count,
     };
 
@@ -109,11 +113,9 @@ pub fn collect_activity_from_results(
 /// order, so a log rebuilt from its parts folds the same way: the earliest push (then by
 /// connection and id) goes to the first commit by connection and repository.
 pub(crate) fn merge_git_with_gitlab(
-    git_entries: &[GitEntry],
-    gitlab_entries: &[GitLabEntry],
+    git_entries: Vec<GitEntry>,
+    gitlab_entries: Vec<GitLabEntry>,
 ) -> MergeResult {
-    use std::collections::HashMap;
-
     let mut pushes = HashMap::<&str, Vec<usize>>::new();
     for (index, entry) in gitlab_entries.iter().enumerate() {
         if let Some(sha) = push_sha(entry) {
@@ -128,7 +130,6 @@ pub(crate) fn merge_git_with_gitlab(
     }
 
     let mut folded_into = vec![None; git_entries.len()];
-    let mut folded = vec![false; gitlab_entries.len()];
     for (sha, mut commit_indices) in commits {
         let mut push_indices = pushes.remove(sha).unwrap_or_default();
         push_indices.sort_by_key(|&index| {
@@ -145,27 +146,22 @@ pub(crate) fn merge_git_with_gitlab(
         });
         for (commit, push) in commit_indices.into_iter().zip(push_indices) {
             folded_into[commit] = Some(push);
-            folded[push] = true;
         }
     }
 
+    // Each push moves into its commit or stays; both lists keep their order.
+    let mut pushes = gitlab_entries.into_iter().map(Some).collect::<Vec<_>>();
     let merged_git = git_entries
-        .iter()
-        .zip(folded_into)
-        .map(|(entry, push)| {
-            let mut entry = entry.clone();
-            if let Some(push) = push {
-                entry.gitlab_event = Some(Box::new(gitlab_entries[push].clone()));
+        .into_iter()
+        .zip(&folded_into)
+        .map(|(mut entry, push)| {
+            if let Some(push) = push.and_then(|push| pushes[push].take()) {
+                entry.gitlab_event = Some(Box::new(push));
             }
             entry
         })
         .collect::<Vec<_>>();
-    let remaining_gitlab = gitlab_entries
-        .iter()
-        .zip(folded)
-        .filter(|(_, folded)| !folded)
-        .map(|(entry, _)| entry.clone())
-        .collect::<Vec<_>>();
+    let remaining_gitlab = pushes.into_iter().flatten().collect::<Vec<_>>();
 
     MergeResult {
         merged_git,
@@ -190,16 +186,26 @@ pub fn make_ids_unique(entries: &mut [ActivityEntry]) -> usize {
         .iter()
         .map(|entry| entry.id().to_string())
         .collect::<HashSet<_>>();
+    if taken.len() == entries.len() {
+        return 0;
+    }
     let mut seen = HashSet::new();
+    // The next number to try per repeated id: every `id#n` below it is taken, and `taken`
+    // only grows, so starting there finds what counting from 2 would.
+    let mut next = HashMap::<String, usize>::new();
     let mut renamed = 0;
     for entry in entries {
         if seen.insert(entry.id().to_string()) {
             continue;
         }
-        let unique = (2..)
-            .map(|n| format!("{}#{n}", entry.id()))
-            .find(|candidate| !taken.contains(candidate))
-            .expect("an unused id exists");
+        let n = next.entry(entry.id().to_string()).or_insert(2);
+        let unique = loop {
+            let candidate = format!("{}#{n}", entry.id());
+            *n += 1;
+            if !taken.contains(&candidate) {
+                break candidate;
+            }
+        };
         taken.insert(unique.clone());
         seen.insert(unique.clone());
         *entry.id_mut() = unique;
@@ -221,8 +227,8 @@ pub(crate) fn within(entry: &ActivityEntry, options: CollectOptions) -> bool {
 /// The part of `carried` to show while `pending` connections are not in: only theirs, without
 /// the commits a connection in `finished` already has (two clones or locations can hold the
 /// same commit, and Git lists it once) and without a commit carried twice.
-pub fn carried_for(
-    carried: &[ConnectionEntries],
+pub fn carried_for<'a>(
+    carried: impl IntoIterator<Item = (&'a ConnectionId, &'a [ActivityEntry])>,
     pending: &[ConnectionId],
     finished: &[ConnectionEntries],
 ) -> Vec<ConnectionEntries> {
@@ -230,18 +236,18 @@ pub fn carried_for(
         .iter()
         .flat_map(|(_, entries)| entries)
         .filter_map(|entry| match entry {
-            ActivityEntry::Git(commit) => Some(commit.hash.clone()),
+            ActivityEntry::Git(commit) => Some(commit.hash.as_str()),
             _ => None,
         })
         .collect::<HashSet<_>>();
     carried
-        .iter()
+        .into_iter()
         .filter(|(id, _)| pending.contains(id))
         .map(|(id, entries)| {
             let entries = entries
                 .iter()
                 .filter(|entry| match entry {
-                    ActivityEntry::Git(commit) => commits.insert(commit.hash.clone()),
+                    ActivityEntry::Git(commit) => commits.insert(commit.hash.as_str()),
                     _ => true,
                 })
                 .cloned()

@@ -160,6 +160,12 @@ fn meeting(timestamp: &str, duration_minutes: i32) -> ActivityEntry {
     })
 }
 
+fn entries_of(
+    carried: &[crate::provider::provider_adapter::ConnectionEntries],
+) -> impl Iterator<Item = (&ConnectionId, &[ActivityEntry])> {
+    carried.iter().map(|(id, entries)| (id, entries.as_slice()))
+}
+
 fn id(source: Source, name: &str) -> ConnectionId {
     ConnectionId::new(source, name)
 }
@@ -199,7 +205,7 @@ fn a_carried_commit_a_finished_connection_has_is_shown_once() {
     )];
     let pending = vec![wsl.clone(), id(Source::Git, "server")];
 
-    let shown = carried_for(&carried, &pending, &finished);
+    let shown = carried_for(entries_of(&carried), &pending, &finished);
     let log = collect_activity_from_results(march(), finished, pending, shown).log;
 
     // abc123 is the fresh one; def456, carried by two connections, shows once.
@@ -224,7 +230,7 @@ fn a_carried_push_folds_into_a_fresh_commit() {
         vec![commit_in("laptop", "abc123", "2026-03-10T10:00:00Z")],
     )];
     let carried = carried_for(
-        &[(work.clone(), vec![push("abc123")])],
+        entries_of(&[(work.clone(), vec![push("abc123")])]),
         std::slice::from_ref(&work),
         &finished,
     );
@@ -244,8 +250,8 @@ fn only_pending_connections_carry() {
     let work = id(Source::Gitlab, "work");
     let carried = [(work.clone(), vec![push("abc123")])];
 
-    assert!(carried_for(&carried, &[], &[]).is_empty());
-    assert_eq!(carried_for(&carried, &[work], &[]).len(), 1);
+    assert!(carried_for(entries_of(&carried), &[], &[]).is_empty());
+    assert_eq!(carried_for(entries_of(&carried), &[work], &[]).len(), 1);
 }
 
 #[test]
@@ -336,7 +342,7 @@ fn merges_git_and_gitlab_push_events() {
     let crate::model::MergeResult {
         merged_git,
         remaining_gitlab,
-    } = merge_git_with_gitlab(&[git_commit("abc123")], &[gitlab_push("abc123")]);
+    } = merge_git_with_gitlab(vec![git_commit("abc123")], vec![gitlab_push("abc123")]);
 
     assert!(merged_git[0].gitlab_event.is_some());
     assert!(remaining_gitlab.is_empty());
@@ -348,8 +354,8 @@ fn a_push_without_its_git_commit_stays_an_entry() {
         merged_git,
         remaining_gitlab,
     } = merge_git_with_gitlab(
-        &[git_commit("abc123")],
-        &[gitlab_push("abc123"), gitlab_push("def456")],
+        vec![git_commit("abc123")],
+        vec![gitlab_push("abc123"), gitlab_push("def456")],
     );
 
     assert!(merged_git[0].gitlab_event.is_some());
@@ -358,7 +364,7 @@ fn a_push_without_its_git_commit_stays_an_entry() {
     };
     assert_eq!(unmatched.pushed_commit.as_deref(), Some("def456"));
 
-    let alone = merge_git_with_gitlab(&[], &[gitlab_push("abc123")]);
+    let alone = merge_git_with_gitlab(vec![], vec![gitlab_push("abc123")]);
     assert_eq!(alone.remaining_gitlab.len(), 1, "nothing to fold into yet");
 }
 
@@ -372,8 +378,8 @@ fn two_pushes_of_one_commit_fold_one_and_keep_the_other() {
         merged_git,
         remaining_gitlab,
     } = merge_git_with_gitlab(
-        &[git_commit("abc123")],
-        &[gitlab_push("abc123"), other_branch],
+        vec![git_commit("abc123")],
+        vec![gitlab_push("abc123"), other_branch],
     );
 
     let folded = merged_git[0].gitlab_event.as_ref().expect("one push folds");
@@ -390,7 +396,7 @@ fn a_push_of_a_new_branch_folds_into_its_commit() {
     let mut push = gitlab_push("abc123");
     push.entry_type = crate::model::GitLabType::PushedNew;
 
-    let merged = merge_git_with_gitlab(&[git_commit("abc123")], &[push]);
+    let merged = merge_git_with_gitlab(vec![git_commit("abc123")], vec![push]);
 
     assert!(merged.merged_git[0].gitlab_event.is_some());
     assert!(merged.remaining_gitlab.is_empty());
@@ -407,7 +413,7 @@ fn pushes_at_one_instant_fold_by_connection_not_by_how_the_instant_is_written() 
     z.connection = "z".into();
     z.timestamp = "2026-03-10T10:05:00Z".into();
 
-    let merged = merge_git_with_gitlab(&[git_commit("abc123")], &[z, a]);
+    let merged = merge_git_with_gitlab(vec![git_commit("abc123")], vec![z, a]);
 
     let folded = merged.merged_git[0].gitlab_event.as_ref().unwrap();
     assert_eq!(folded.connection, "a");
@@ -419,8 +425,10 @@ fn a_push_folds_into_one_commit_even_when_two_clones_have_it() {
     let mut wsl_clone = git_commit("abc123");
     wsl_clone.connection = "wsl".into();
 
-    let merged =
-        merge_git_with_gitlab(&[git_commit("abc123"), wsl_clone], &[gitlab_push("abc123")]);
+    let merged = merge_git_with_gitlab(
+        vec![git_commit("abc123"), wsl_clone],
+        vec![gitlab_push("abc123")],
+    );
 
     let folded = merged
         .merged_git
