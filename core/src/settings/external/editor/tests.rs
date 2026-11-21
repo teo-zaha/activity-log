@@ -1,4 +1,4 @@
-use super::{Editor, command_line_words};
+use super::{Editor, command_line_words, program_path};
 
 #[test]
 fn a_blank_variable_does_not_choose_the_editor() {
@@ -57,4 +57,69 @@ fn an_editor_with_arguments_gets_the_file_last() {
         std::fs::read_to_string(bin.join("args")).unwrap(),
         format!("--wait\n-n\n{}\n", file.display())
     );
+}
+
+/// A name without an extension is found with `PATHEXT` in `PATH`, as Windows' shell finds it:
+/// VS Code's `code` is a `code.cmd`.
+#[test]
+fn a_windows_program_is_found_with_its_extension() {
+    let folder = tempfile::tempdir().unwrap();
+    let empty = folder.path().join("empty");
+    let bin = folder.path().join("my bin");
+    std::fs::create_dir(&empty).unwrap();
+    std::fs::create_dir(&bin).unwrap();
+    std::fs::write(bin.join("code.CMD"), "").unwrap();
+    let dirs = [empty, bin.clone()];
+    let extensions = ".COM;.EXE;.BAT;.CMD";
+
+    assert_eq!(
+        program_path("code", &dirs, extensions),
+        bin.join("code.CMD")
+    );
+    let named = bin.join("code");
+    assert_eq!(
+        program_path(named.to_str().unwrap(), &[], extensions),
+        bin.join("code.CMD"),
+        "a path without an extension"
+    );
+    assert_eq!(
+        program_path("vim.exe", &dirs, extensions),
+        std::path::PathBuf::from("vim.exe"),
+        "an extension is kept"
+    );
+    assert_eq!(
+        program_path("nano", &dirs, extensions),
+        std::path::PathBuf::from("nano"),
+        "not found: left to Command"
+    );
+}
+
+/// `code --wait` on Windows: a `.cmd` shim in a folder with a space gets the editor's own
+/// arguments, then the file. Runs under `win:test`.
+#[cfg(windows)]
+#[test]
+fn a_cmd_editor_starts_with_its_arguments_and_the_file() {
+    let folder = tempfile::tempdir().unwrap();
+    let bin = folder.path().join("my bin");
+    std::fs::create_dir(&bin).unwrap();
+    std::fs::write(
+        bin.join("edit.cmd"),
+        "@echo off\r\necho %*> \"%~dp0args.txt\"\r\n",
+    )
+    .unwrap();
+    let file = folder.path().join("a config.toml");
+
+    let status = super::windows_command(
+        "edit --wait",
+        std::slice::from_ref(&bin),
+        ".COM;.EXE;.BAT;.CMD",
+    )
+    .arg(&file)
+    .status()
+    .unwrap();
+
+    assert!(status.success());
+    let args = std::fs::read_to_string(bin.join("args.txt")).unwrap();
+    assert!(args.starts_with("--wait "), "{args}");
+    assert!(args.contains(file.to_str().unwrap()), "{args}");
 }
