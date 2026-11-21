@@ -11,7 +11,7 @@ use std::{
 
 use tokio::time::Instant;
 
-use super::lookup::LookupFailure;
+use super::lookup::{FailureKind, LookupFailure};
 use crate::provider::remote_api::RequestBudget;
 
 /// Requests (pages) one connection's lookups may send in one collection, each reserved before
@@ -23,14 +23,28 @@ pub(crate) const STACK_BUDGET: Duration = Duration::from_secs(20);
 /// Why a connection's lookups stopped for good.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum Breaker {
-    TokenRefused,
+    TokenInvalid,
+    ScopeMissing,
     Throttled,
 }
 
-impl From<Breaker> for LookupFailure {
+impl Breaker {
+    /// The breaker a failure of `kind` trips, if any: one that holds for every later request.
+    fn of(kind: FailureKind) -> Option<Self> {
+        match kind {
+            FailureKind::TokenInvalid => Some(Self::TokenInvalid),
+            FailureKind::ScopeMissing => Some(Self::ScopeMissing),
+            FailureKind::Throttled => Some(Self::Throttled),
+            FailureKind::Unreadable | FailureKind::Limit | FailureKind::Failed => None,
+        }
+    }
+}
+
+impl From<Breaker> for FailureKind {
     fn from(breaker: Breaker) -> Self {
         match breaker {
-            Breaker::TokenRefused => Self::TokenRefused,
+            Breaker::TokenInvalid => Self::TokenInvalid,
+            Breaker::ScopeMissing => Self::ScopeMissing,
             Breaker::Throttled => Self::Throttled,
         }
     }
@@ -75,10 +89,10 @@ impl Budget {
     /// deadline (`Limit`).
     pub(crate) fn check(&self) -> Result<(), LookupFailure> {
         if let Some(breaker) = self.breaker() {
-            return Err(breaker.into());
+            return Err(FailureKind::from(breaker).into());
         }
         if Instant::now() >= self.deadline {
-            return Err(LookupFailure::Limit);
+            return Err(FailureKind::Limit.into());
         }
         Ok(())
     }
@@ -93,20 +107,17 @@ impl Budget {
         self.check()?;
         let answer = tokio::time::timeout_at(self.deadline, call)
             .await
-            .unwrap_or(Err(LookupFailure::Limit));
-        if let Err(failure) = answer {
-            self.trip(failure);
+            .unwrap_or_else(|_| Err(FailureKind::Limit.into()));
+        if let Err(failure) = &answer {
+            self.trip(failure.kind());
         }
         answer
     }
 
-    fn trip(&self, failure: LookupFailure) {
-        let breaker = match failure {
-            LookupFailure::TokenRefused => Breaker::TokenRefused,
-            LookupFailure::Throttled => Breaker::Throttled,
-            LookupFailure::Unreadable | LookupFailure::Limit | LookupFailure::Failed => return,
-        };
-        let _ = self.breaker.set(breaker);
+    fn trip(&self, kind: FailureKind) {
+        if let Some(breaker) = Breaker::of(kind) {
+            let _ = self.breaker.set(breaker);
+        }
     }
 }
 
@@ -121,7 +132,7 @@ impl RequestBudget for Budget {
                 (spent < self.limit).then_some(spent + 1)
             })
             .map(|_| ())
-            .map_err(|_| LookupFailure::Limit)
+            .map_err(|_| FailureKind::Limit.into())
     }
 }
 

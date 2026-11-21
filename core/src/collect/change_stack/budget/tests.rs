@@ -3,7 +3,14 @@ use std::time::Duration;
 use tokio::time::Instant;
 
 use super::{Breaker, Budget};
-use crate::{collect::change_stack::lookup::LookupFailure, provider::remote_api::RequestBudget};
+use crate::{
+    collect::change_stack::lookup::{FailureKind, LookupFailure},
+    provider::remote_api::RequestBudget,
+};
+
+fn limit() -> LookupFailure {
+    FailureKind::Limit.into()
+}
 
 fn budget(requests: usize) -> Budget {
     Budget::new(requests, Instant::now() + Duration::from_secs(20))
@@ -14,7 +21,7 @@ async fn no_more_than_the_limit_is_spent() {
     let budget = budget(2);
     assert_eq!(budget.try_spend(), Ok(()));
     assert_eq!(budget.try_spend(), Ok(()));
-    assert_eq!(budget.try_spend(), Err(LookupFailure::Limit));
+    assert_eq!(budget.try_spend(), Err(limit()));
     assert_eq!(budget.spent(), 2);
 }
 
@@ -42,7 +49,7 @@ fn requests_are_reserved_atomically() {
 async fn nothing_is_spent_past_the_deadline() {
     let budget = budget(10);
     tokio::time::advance(Duration::from_secs(20)).await;
-    assert_eq!(budget.try_spend(), Err(LookupFailure::Limit));
+    assert_eq!(budget.try_spend(), Err(limit()));
     assert_eq!(budget.spent(), 0);
 }
 
@@ -53,7 +60,7 @@ async fn a_call_past_the_deadline_is_a_limit() {
     let answer = budget
         .run(std::future::pending::<Result<(), LookupFailure>>())
         .await;
-    assert_eq!(answer, Err(LookupFailure::Limit));
+    assert_eq!(answer, Err(limit()));
 
     let mut started = false;
     let answer = budget
@@ -62,7 +69,7 @@ async fn a_call_past_the_deadline_is_a_limit() {
             Ok(())
         })
         .await;
-    assert_eq!(answer, Err(LookupFailure::Limit));
+    assert_eq!(answer, Err(limit()));
     assert!(!started);
 }
 
@@ -70,22 +77,24 @@ async fn a_call_past_the_deadline_is_a_limit() {
 /// stays.
 #[tokio::test]
 async fn the_breaker_stops_every_later_request() {
-    for (failure, breaker) in [
-        (LookupFailure::TokenRefused, Breaker::TokenRefused),
-        (LookupFailure::Throttled, Breaker::Throttled),
+    for (kind, breaker) in [
+        (FailureKind::TokenInvalid, Breaker::TokenInvalid),
+        (FailureKind::ScopeMissing, Breaker::ScopeMissing),
+        (FailureKind::Throttled, Breaker::Throttled),
     ] {
         let budget = budget(10);
+        let failure = LookupFailure::from(kind);
         assert_eq!(
-            budget.run(async { Err::<(), _>(failure) }).await,
-            Err(failure)
+            budget.run(async { Err::<(), _>(failure.clone()) }).await,
+            Err(failure.clone())
         );
         assert_eq!(budget.breaker(), Some(breaker));
-        assert_eq!(budget.try_spend(), Err(failure));
+        assert_eq!(budget.try_spend(), Err(failure.clone()));
         assert_eq!(budget.check(), Err(failure));
 
-        let other = match failure {
-            LookupFailure::TokenRefused => LookupFailure::Throttled,
-            _ => LookupFailure::TokenRefused,
+        let other = match kind {
+            FailureKind::Throttled => FailureKind::TokenInvalid,
+            _ => FailureKind::Throttled,
         };
         budget.trip(other);
         assert_eq!(budget.breaker(), Some(breaker));
@@ -95,14 +104,15 @@ async fn the_breaker_stops_every_later_request() {
 /// Other failures are the call's own: later requests still go.
 #[tokio::test]
 async fn other_failures_leave_the_breaker_alone() {
-    for failure in [
-        LookupFailure::Unreadable,
-        LookupFailure::Limit,
-        LookupFailure::Failed,
+    for kind in [
+        FailureKind::Unreadable,
+        FailureKind::Limit,
+        FailureKind::Failed,
     ] {
         let budget = budget(10);
+        let failure = LookupFailure::from(kind);
         assert_eq!(
-            budget.run(async { Err::<(), _>(failure) }).await,
+            budget.run(async { Err::<(), _>(failure.clone()) }).await,
             Err(failure)
         );
         assert_eq!(budget.breaker(), None);

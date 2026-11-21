@@ -17,13 +17,14 @@ use futures::{
 
 use super::{
     budget::{Breaker, Budget},
-    lookup::{ChangeLookup, ChangeRef, LookupFailure, OpenChange, OpenPage},
+    lookup::{ChangeLookup, ChangeRef, FailureKind, LookupFailure, OpenChange, OpenPage},
 };
 use crate::{
     diagnostics,
     model::{
         ChangeStack, ChangeStackAbove, ChangeStackBottom, ChangeStackEnd, ChangeStackNode, StackCut,
     },
+    provider::remote_error::ApiError,
 };
 
 /// Changes per direction from the current one. The last one's further end is `cut{limit}`
@@ -45,70 +46,134 @@ pub(crate) struct StackReport<R> {
     pub read_whole: usize,
     /// Repositories with more than a page of open changes, asked per branch.
     pub read_in_part: usize,
-    /// Event changes whose openness could not be told, and in how many repositories, by why;
-    /// they have no stack.
-    pub unknown: BTreeMap<LookupFailure, Unknown>,
+    /// What failed, by kind: event changes whose openness could not be told (they have no
+    /// stack), questions about a branch whose answer is a cut, and the first request failure
+    /// that explains them.
+    pub failures: BTreeMap<FailureKind, Failures>,
     /// Requests sent.
     pub requests: usize,
     /// Why lookups stopped before they were done, if they did.
     pub stopped: Option<Breaker>,
 }
 
-/// Event changes whose openness is unknown for one reason.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
-pub(crate) struct Unknown {
+/// What failed for one kind of reason.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub(crate) struct Failures {
+    /// Repositories with event changes whose openness is unknown, and those changes.
     pub repositories: usize,
     pub changes: usize,
+    /// Branch questions that failed, each counted once however many stacks show its cut.
+    pub questions: usize,
+    /// The first failed request's own failure: its status and the server's cleaned message.
+    pub cause: Option<ApiError>,
 }
 
-impl<R> StackReport<R> {
-    /// One summary line, and at most one warning for each reason something was not found.
-    /// `service` names the host (`GitLab`).
-    pub(crate) fn log(&self, scope: &str, service: &str) {
-        diagnostics::info(
-            scope,
-            format!(
-                "Change stacks: {} found with {} requests; {} repositories read whole, {} in part",
-                self.stacks.len(),
-                self.requests,
-                self.read_whole,
-                self.read_in_part
-            ),
-        );
-        match self.stopped {
-            Some(Breaker::TokenRefused) => diagnostics::warn(
-                scope,
-                format!(
-                    "{service} refused the token for change stacks, or it lacks API scope; stacks were skipped"
-                ),
-            ),
-            Some(Breaker::Throttled) => diagnostics::warn(
-                scope,
-                format!("{service} asked to slow down; change stacks stopped"),
-            ),
-            None => {}
-        }
-        for (failure, unknown) in &self.unknown {
-            let why = match failure {
-                LookupFailure::Unreadable => "they are hidden from the token",
-                LookupFailure::TokenRefused => "the token was refused",
-                LookupFailure::Throttled => "the host asked to slow down",
-                LookupFailure::Limit => "the time or request limit ran out",
-                LookupFailure::Failed => "the request failed",
-            };
-            diagnostics::warn(
-                scope,
-                format!(
-                    "Could not tell whether {} changes in {} repositories are open ({why}); they show no stack",
-                    unknown.changes, unknown.repositories
-                ),
-            );
+impl Failures {
+    fn add(&mut self, failure: &LookupFailure) {
+        if self.cause.is_none() {
+            self.cause = failure.cause().cloned();
         }
     }
 }
 
-/// The stacks of `wanted`'s changes, each with the instant of its latest event: newest first,
-/// so the budget goes to them first. Infallible: what cannot be read is a cut, or absent.
+/// The failures of one collection's lookups as they come, from all walks at once.
+#[derive(Default)]
+struct Recorder(Mutex<BTreeMap<FailureKind, Failures>>);
+
+impl Recorder {
+    fn record(&self, failure: &LookupFailure, count: impl FnOnce(&mut Failures)) {
+        let mut failures = self.0.lock().unwrap_or_else(PoisonError::into_inner);
+        let entry = failures.entry(failure.kind()).or_default();
+        entry.add(failure);
+        count(entry);
+    }
+
+    fn unknown(&self, failure: &LookupFailure, changes: usize) {
+        self.record(failure, |entry| {
+            entry.repositories += 1;
+            entry.changes += changes;
+        });
+    }
+
+    fn question(&self, failure: &LookupFailure) {
+        self.record(failure, |entry| entry.questions += 1);
+    }
+
+    fn into_inner(self) -> BTreeMap<FailureKind, Failures> {
+        self.0.into_inner().unwrap_or_else(PoisonError::into_inner)
+    }
+}
+
+impl<R> StackReport<R> {
+    /// One summary line, and one warning for each reason something was not found, with the
+    /// first request failure that explains it. `scope` is the kind's log scope (`gitlab`), so
+    /// the lines show under the connection; `service` names the host (`GitLab`).
+    pub(crate) fn log(&self, scope: &str, service: &str) {
+        diagnostics::info(
+            scope,
+            format!(
+                "Change stacks: {} found with {}; {} read whole, {} in part",
+                self.stacks.len(),
+                counted(self.requests, "request", "requests"),
+                counted(self.read_whole, "repository", "repositories"),
+                self.read_in_part
+            ),
+        );
+        for (kind, failures) in &self.failures {
+            let what = match kind {
+                FailureKind::TokenInvalid => {
+                    format!(
+                        "{service} refused the token as invalid or expired; change stacks stopped"
+                    )
+                }
+                FailureKind::ScopeMissing => format!(
+                    "{service} refused the token: it lacks the scope to read the API; change stacks stopped"
+                ),
+                FailureKind::Throttled => {
+                    format!("{service} asked to slow down; change stacks stopped")
+                }
+                FailureKind::Unreadable => {
+                    "Change stacks: repositories or branches are hidden from the token".to_string()
+                }
+                FailureKind::Limit => {
+                    "Change stacks: the time or request limit ran out".to_string()
+                }
+                FailureKind::Failed => "Change stacks: requests failed".to_string(),
+            };
+            let mut parts = Vec::new();
+            if failures.changes > 0 {
+                parts.push(format!(
+                    "whether {} in {} {} open is unknown",
+                    counted(failures.changes, "change", "changes"),
+                    counted(failures.repositories, "repository", "repositories"),
+                    if failures.changes == 1 { "is" } else { "are" }
+                ));
+            }
+            if failures.questions > 0 {
+                parts.push(format!(
+                    "{} cut short",
+                    counted(failures.questions, "branch lookup", "branch lookups")
+                ));
+            }
+            let cause = failures
+                .cause
+                .as_ref()
+                .map(|cause| format!(" ({})", cause.message(service)))
+                .unwrap_or_default();
+            diagnostics::warn(scope, format!("{what}: {}{cause}", parts.join(", ")));
+        }
+    }
+}
+
+/// `count` with its noun, singular for one.
+fn counted(count: usize, one: &str, many: &str) -> String {
+    format!("{count} {}", if count == 1 { one } else { many })
+}
+
+/// The stacks of `wanted`'s changes, each with the instant of its latest event. Infallible: what
+/// cannot be read is a cut, or absent. Two phases share the budget: first each repository's
+/// page (and the numbers it did not show), then the walks. Newest first holds within each
+/// phase, so many repositories' pages can use the budget before the newest change is walked.
 pub(crate) async fn change_stacks<R, L>(
     wanted: impl IntoIterator<Item = (ChangeRef<R>, DateTime<Utc>)>,
     lookup: &L,
@@ -120,9 +185,11 @@ where
 {
     let order = newest_first(wanted);
     let concurrency = lookup.concurrency().max(1);
+    let recorder = Recorder::default();
     let runner = Runner {
         lookup,
         budget,
+        recorder: &recorder,
         memo: Mutex::new(HashMap::new()),
     };
 
@@ -148,7 +215,7 @@ where
         .iter()
         .filter_map(|resolved| match resolved {
             Resolved::Read(repo) => Some((&repo.repo, repo)),
-            Resolved::Unread { .. } => None,
+            Resolved::Unread => None,
         })
         .collect();
     let mut walks = Vec::new();
@@ -165,32 +232,24 @@ where
         .collect()
         .await;
 
-    let mut report = StackReport {
-        stacks,
-        read_whole: 0,
-        read_in_part: 0,
-        unknown: BTreeMap::new(),
-        requests: budget.spent(),
-        stopped: budget.breaker(),
-    };
+    let (mut read_whole, mut read_in_part) = (0, 0);
     for resolved in &resolved {
-        let unknown = match resolved {
-            Resolved::Read(repo) => {
-                match repo.branches {
-                    Branches::Index(_) => report.read_whole += 1,
-                    Branches::Remote => report.read_in_part += 1,
-                }
-                repo.unknown
+        if let Resolved::Read(repo) = resolved {
+            match repo.branches {
+                Branches::Index(_) => read_whole += 1,
+                Branches::Remote => read_in_part += 1,
             }
-            Resolved::Unread { failure, changes } => Some((*failure, *changes)),
-        };
-        if let Some((failure, changes)) = unknown {
-            let unknown = report.unknown.entry(failure).or_default();
-            unknown.repositories += 1;
-            unknown.changes += changes;
         }
     }
-    report
+    drop(runner);
+    StackReport {
+        stacks,
+        read_whole,
+        read_in_part,
+        failures: recorder.into_inner(),
+        requests: budget.spent(),
+        stopped: budget.breaker(),
+    }
 }
 
 /// Each change once, by its latest event, newest first; ties by repository and number.
@@ -223,11 +282,8 @@ type Answer = Result<Arc<[OpenChange]>, LookupFailure>;
 /// One repository, once its first page was asked for.
 enum Resolved<R> {
     Read(Repo<R>),
-    /// Its page could not be read, so whether its `changes` event changes are open is unknown.
-    Unread {
-        failure: LookupFailure,
-        changes: usize,
-    },
+    /// Its page could not be read, so whether its event changes are open is unknown.
+    Unread,
 }
 
 /// What is known of one repository once its page was read.
@@ -236,8 +292,6 @@ struct Repo<R> {
     branches: Branches,
     /// The event changes found open.
     open: HashMap<u64, OpenChange>,
-    /// Event changes whose openness is unknown, and why.
-    unknown: Option<(LookupFailure, usize)>,
 }
 
 /// Where a repository's branch questions are answered.
@@ -295,6 +349,7 @@ type MemoKey<R> = (R, Direction, String);
 struct Runner<'a, R, L> {
     lookup: &'a L,
     budget: &'a Budget,
+    recorder: &'a Recorder,
     /// Every branch question asked of the host, answered or still running: walks that reach
     /// the same branch at once share one request, and a failure is not asked again.
     memo: Mutex<HashMap<MemoKey<R>, Shared<BoxFuture<'a, Answer>>>>,
@@ -320,10 +375,10 @@ where
                 .collect()
         };
         match page {
-            Err(failure) => Resolved::Unread {
-                failure,
-                changes: numbers.len(),
-            },
+            Err(failure) => {
+                self.recorder.unknown(&failure, numbers.len());
+                Resolved::Unread
+            }
             Ok(OpenPage::Complete(changes)) => {
                 let index = RepoIndex::new(&changes);
                 let known = numbered(changes);
@@ -331,7 +386,6 @@ where
                     open: pick(&known),
                     repo,
                     branches: Branches::Index(index),
-                    unknown: None,
                 })
             }
             Ok(OpenPage::Partial(changes)) => {
@@ -341,7 +395,6 @@ where
                     .copied()
                     .filter(|number| !known.contains_key(number))
                     .collect();
-                let mut unknown = None;
                 if !missing.is_empty() {
                     match self
                         .budget
@@ -353,14 +406,13 @@ where
                                 .into_iter()
                                 .filter(|(number, _)| missing.contains(number)),
                         ),
-                        Err(failure) => unknown = Some((failure, missing.len())),
+                        Err(failure) => self.recorder.unknown(&failure, missing.len()),
                     }
                 }
                 Resolved::Read(Repo {
                     open: pick(&known),
                     repo,
                     branches: Branches::Remote,
-                    unknown,
                 })
             }
         }
@@ -375,7 +427,7 @@ where
 
     /// The host's answer about `branch`, asked once however many walks wait for it.
     fn ask(&self, repo: &R, direction: Direction, branch: &str) -> Shared<BoxFuture<'a, Answer>> {
-        let (lookup, budget) = (self.lookup, self.budget);
+        let (lookup, budget, recorder) = (self.lookup, self.budget, self.recorder);
         let mut memo = self.memo.lock().unwrap_or_else(PoisonError::into_inner);
         memo.entry((repo.clone(), direction, branch.to_string()))
             .or_insert_with_key(|(repo, direction, branch)| {
@@ -388,8 +440,14 @@ where
                         Direction::Into => {
                             budget.run(lookup.open_into(&repo, &branch, budget)).await
                         }
-                    }?;
-                    Ok(by_number(changes))
+                    };
+                    match changes {
+                        Ok(changes) => Ok(by_number(changes)),
+                        Err(failure) => {
+                            recorder.question(&failure);
+                            Err(failure)
+                        }
+                    }
                 }
                 .boxed()
                 .shared()
@@ -414,7 +472,7 @@ where
             let target = below.last().unwrap_or(current).target_branch().to_string();
             let found = match self.branch(repo, Direction::From, &target).await {
                 Ok(found) => found,
-                Err(failure) => break cut_bottom(failure.cut()),
+                Err(failure) => break cut_bottom(failure.kind().cut()),
             };
             // A change from a fork comes from the fork's branch of that name, not this one.
             let parents: Vec<&OpenChange> =
@@ -466,7 +524,7 @@ where
             } else {
                 let source = node.source_branch().to_string();
                 match self.branch(repo, Direction::Into, &source).await {
-                    Err(failure) => cut_end(failure.cut()),
+                    Err(failure) => cut_end(failure.kind().cut()),
                     Ok(children) => {
                         let (mut cycle, mut full) = (false, false);
                         for child in children.iter() {

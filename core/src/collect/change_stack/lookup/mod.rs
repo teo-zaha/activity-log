@@ -4,7 +4,10 @@
 use futures::future::BoxFuture;
 
 use super::{budget::Budget, web_link::WebLink};
-use crate::model::{StackCut, StackedChange};
+use crate::{
+    model::{StackCut, StackedChange},
+    provider::remote_error::ApiError,
+};
 
 /// One open change of a repository, as its host listed it: a number, a title and two branches
 /// that are not blank (a blank branch would read as no filter where it is asked about).
@@ -83,13 +86,15 @@ pub(crate) enum OpenPage {
     Partial(Vec<OpenChange>),
 }
 
-/// Why a host could not answer.
+/// Why a host could not answer, as a kind every host shares.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
-pub(crate) enum LookupFailure {
+pub(crate) enum FailureKind {
     /// The repository is hidden from this token, or its changes are (404, a project-level 403).
     Unreadable,
-    /// The token is invalid or lacks the API scope: stops the connection's lookups.
-    TokenRefused,
+    /// The token is invalid, expired or revoked: stops the connection's lookups.
+    TokenInvalid,
+    /// The token lacks the scope the lookups need: stops the connection's lookups.
+    ScopeMissing,
     /// The host asked to slow down: stops the connection's lookups.
     Throttled,
     /// The request budget or the deadline ran out.
@@ -98,15 +103,48 @@ pub(crate) enum LookupFailure {
     Failed,
 }
 
-impl LookupFailure {
+impl FailureKind {
     /// How a stack's end shows this failure.
     pub(crate) fn cut(self) -> StackCut {
         match self {
-            Self::Unreadable | Self::TokenRefused => StackCut::Unreadable,
+            Self::Unreadable | Self::TokenInvalid | Self::ScopeMissing => StackCut::Unreadable,
             Self::Throttled => StackCut::Throttled,
             Self::Limit => StackCut::Limit,
             Self::Failed => StackCut::Failed,
         }
+    }
+}
+
+/// A host's failure to answer: its kind, and the request's own failure when one was sent (its
+/// status and the server's cleaned message), for the Logs. None when no request was sent, as
+/// for a budget that ran out, or when the answer itself was wrong (a repeated page).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct LookupFailure {
+    kind: FailureKind,
+    cause: Option<ApiError>,
+}
+
+impl LookupFailure {
+    /// A failure of `kind` that `cause`, the request's own failure, explains.
+    pub(crate) fn caused_by(kind: FailureKind, cause: ApiError) -> Self {
+        Self {
+            kind,
+            cause: Some(cause),
+        }
+    }
+
+    pub(crate) fn kind(&self) -> FailureKind {
+        self.kind
+    }
+
+    pub(crate) fn cause(&self) -> Option<&ApiError> {
+        self.cause.as_ref()
+    }
+}
+
+impl From<FailureKind> for LookupFailure {
+    fn from(kind: FailureKind) -> Self {
+        Self { kind, cause: None }
     }
 }
 

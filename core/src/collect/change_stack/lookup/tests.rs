@@ -1,4 +1,4 @@
-use super::{LookupFailure, OpenChange};
+use super::{FailureKind, OpenChange};
 use crate::model::{StackCut, StackedChange};
 
 fn change(title: &str, source: &str, target: &str) -> Option<OpenChange> {
@@ -44,11 +44,12 @@ fn a_change_shows_as_its_number_title_and_link() {
 #[test]
 fn each_failure_shows_as_its_cut() {
     for (failure, cut) in [
-        (LookupFailure::Unreadable, StackCut::Unreadable),
-        (LookupFailure::TokenRefused, StackCut::Unreadable),
-        (LookupFailure::Throttled, StackCut::Throttled),
-        (LookupFailure::Limit, StackCut::Limit),
-        (LookupFailure::Failed, StackCut::Failed),
+        (FailureKind::Unreadable, StackCut::Unreadable),
+        (FailureKind::TokenInvalid, StackCut::Unreadable),
+        (FailureKind::ScopeMissing, StackCut::Unreadable),
+        (FailureKind::Throttled, StackCut::Throttled),
+        (FailureKind::Limit, StackCut::Limit),
+        (FailureKind::Failed, StackCut::Failed),
     ] {
         assert_eq!(failure.cut(), cut, "{failure:?}");
     }
