@@ -57,7 +57,10 @@ pub fn run() {
         }))
         .plugin(tauri_plugin_deep_link::init())
         .plugin(window_state::plugin())
-        // Used from Rust only (`collection_notice`), so the page gets no permission for it.
+        // Shown from Rust only (`collection_notice`): the page may not notify. The plugin still
+        // injects its `window.Notification` into every page, which asks whether notifications
+        // are permitted as it loads; the capability allows that question alone (on the desktop
+        // the answer is always yes, no prompt), so no load leaves a refused call behind.
         .plugin(tauri_plugin_notification::init())
         // Only `open_url` opens links, with its own check; the plugin's commands stay without a
         // permission and its click interception is off.
