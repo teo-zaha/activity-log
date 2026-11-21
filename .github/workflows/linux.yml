@@ -1,0 +1,44 @@
+# Builds the workspace for Linux, where the macOS and Windows children are left
+# out, through clippy with warnings as errors, and runs the backend's tests
+# there. `pnpm verify` only covers the dev host OS.
+name: Linux
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # What the desktop crate links against (Tauri's WebKitGTK shell), as in
+      # the Desktop Build workflow.
+      - name: Linux deps
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev \
+            libgtk-3-dev \
+            libayatana-appindicator3-dev \
+            librsvg2-dev
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+
+      - uses: Swatinem/rust-cache@v2
+
+      # The desktop crate builds without the dashboard: without Tauri's
+      # `custom-protocol` feature it loads the dev server instead of embedding
+      # `dashboard/dist`.
+      - name: Clippy
+        run: cargo clippy --workspace --all-targets -- -D warnings
+
+      # The desktop's tests have not been run on a headless Linux runner yet;
+      # they run on Windows and in `pnpm verify`.
+      - name: Test
+        run: cargo test --workspace --exclude activity-log-desktop
