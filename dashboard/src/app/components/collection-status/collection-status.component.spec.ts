@@ -39,7 +39,10 @@ async function setup(
   const activity = {
     collectionStatus: signal(status),
     providers: signal(
-      ['Git', 'System'].map(label => ({ label, collecting: collecting.includes(label) }))
+      ['Git', 'System'].map(label => ({
+        info: { label },
+        collecting: collecting.includes(label),
+      }))
     ),
     retryCollection,
     dismissCollectionStatus,

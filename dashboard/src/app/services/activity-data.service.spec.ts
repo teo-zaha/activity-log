@@ -1032,7 +1032,7 @@ describe('ActivityDataService', () => {
 
     await service.initLoad()
 
-    expect(service.providers().map(p => p.label)).toEqual(['Laptop'])
+    expect(service.providers().map(p => p.info.label)).toEqual(['Laptop'])
   })
 
   it('applies each check as it ends and keeps the sources the user switched off', async () => {

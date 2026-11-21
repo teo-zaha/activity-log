@@ -27,8 +27,6 @@ export const SETTINGS_SECTIONS = [
 export interface SettingsProviderRow {
   readonly info: ProviderInfo
   readonly key: ConnectionKey
-  /** The connection's label when its kind has several, else the kind's name. */
-  readonly label: string
   /** The kind's name, such as `GitLab`. */
   readonly kindLabel: string
   readonly tooltip: string | null

@@ -46,7 +46,7 @@
         >
           <app-provider-icon [source]="provider.info.connection.source" size="sm" />
           <span class="nav-copy">
-            <span class="nav-name">{{ provider.label }}</span>
+            <span class="nav-name">{{ provider.info.label }}</span>
             <span class="source-status">{{ statusText(provider) }}</span>
           </span>
           <app-status-dot [status]="provider.info.status" size="sm" [glow]="false" />

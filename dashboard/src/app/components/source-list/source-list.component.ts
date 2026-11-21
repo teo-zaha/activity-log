@@ -48,7 +48,7 @@ export class SourceListComponent {
   protected readonly issuesTooltip = computed(() =>
     this.data
       .unusableProviders()
-      .map(provider => `${provider.label}: ${provider.info.reason ?? 'Unavailable'}`)
+      .map(provider => `${provider.info.label}: ${provider.info.reason ?? 'Unavailable'}`)
       .join('\n')
   )
 
@@ -62,18 +62,18 @@ export class SourceListComponent {
   }
 
   protected sourceTooltip(provider: ProviderViewModel): string {
-    if (provider.info.status === 'checking') return `${provider.label}: checking`
-    if (provider.collecting) return `${provider.label}: collecting`
-    const parts = this.isRail() ? [`${provider.label} · ${provider.count}`] : []
+    if (provider.info.status === 'checking') return `${provider.info.label}: checking`
+    if (provider.collecting) return `${provider.info.label}: collecting`
+    const parts = this.isRail() ? [`${provider.info.label} · ${provider.count}`] : []
     if (provider.tooltip) parts.push(provider.tooltip)
     return parts.join('\n')
   }
 
   protected sourceAriaLabel(provider: ProviderViewModel): string {
-    if (provider.info.status === 'checking') return `${provider.label}, checking`
-    if (provider.collecting) return `${provider.label}, collecting`
+    if (provider.info.status === 'checking') return `${provider.info.label}, checking`
+    if (provider.collecting) return `${provider.info.label}, collecting`
     const reason = provider.tooltip ? `, ${provider.tooltip}` : ''
-    return `${provider.label}, ${provider.count} events${reason}`
+    return `${provider.info.label}, ${provider.count} events${reason}`
   }
 
   /** The backend says which problems a new check can fix (`ProviderInfo.recheckable`). */
@@ -87,7 +87,7 @@ export class SourceListComponent {
     } catch (error) {
       this.notices.show({
         origin: 'recheck',
-        failure: failureWhile(`Checking ${provider.label} again`, error),
+        failure: failureWhile(`Checking ${provider.info.label} again`, error),
       })
     }
   }

@@ -265,8 +265,6 @@ export class ActivityDataService {
       return {
         info,
         key,
-        label: info.label,
-        chipKey: info.connection.source,
         tooltip: adapter.getStatusTooltip(info),
         count: this.connectionCounts().get(key) ?? 0,
         collecting: pending.has(key),
