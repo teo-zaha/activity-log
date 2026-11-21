@@ -22,15 +22,15 @@ use ::windows::{
     },
     core::{PCWSTR, w},
 };
-use activity_log_core::{diagnostics, model::MaximizeButtonState};
+// The window over the button keeps the pointer from the page, so the page hears of it as
+// `MAXIMIZE_BUTTON_EVENT`.
+use activity_log_core::{diagnostics, ipc::MAXIMIZE_BUTTON_EVENT, model::MaximizeButtonState};
 use tauri::{Emitter, Runtime, WebviewWindow};
 
 use super::{ButtonArea, placement};
 
 const CLASS_NAME: PCWSTR = w!("ACTIVITY_LOG_MAXIMIZE_BUTTON");
 const SUBCLASS_ID: usize = 0x6d61_7862;
-/// The window over the button keeps the pointer from the page, so the page hears of it here.
-const EVENT: &str = "maximize-button";
 
 /// What the window over the button knows; it lives in the window's `GWLP_USERDATA`.
 struct Overlay {
@@ -66,7 +66,10 @@ pub fn attach<R: Runtime>(window: WebviewWindow<R>, area: ButtonArea) {
             .and_then(|parent| {
                 let parent = HWND(parent.0);
                 let notify = move |hovered: bool, pressed: bool| {
-                    let _ = target.emit(EVENT, MaximizeButtonState { hovered, pressed });
+                    let _ = target.emit(
+                        MAXIMIZE_BUTTON_EVENT,
+                        MaximizeButtonState { hovered, pressed },
+                    );
                 };
                 unsafe { attach_to(parent, area, Box::new(notify)) }
             });

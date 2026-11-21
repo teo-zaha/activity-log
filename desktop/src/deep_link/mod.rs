@@ -5,7 +5,7 @@
 
 use std::sync::Mutex;
 
-use activity_log_core::diagnostics;
+use activity_log_core::{diagnostics, ipc::DEEP_LINK_EVENT};
 use tauri::{AppHandle, Emitter, Manager, Runtime, Url};
 use tauri_plugin_deep_link::DeepLinkExt;
 
@@ -14,8 +14,6 @@ mod tests;
 
 /// The scheme `tauri.conf.json` registers.
 pub(crate) const SCHEME: &str = "activity-log";
-/// The app event a link arrives with once the dashboard listens; the payload is the URL.
-pub(crate) const EVENT: &str = "deep-link";
 pub(crate) const MAIN_WINDOW: &str = "main";
 
 /// The first link of ours among `urls`; anything else the OS hands over is dropped.
@@ -108,7 +106,7 @@ fn receive<R: Runtime>(app: &AppHandle<R>, urls: Vec<Url>) {
     let delivery = app.state::<DeepLinkInbox>().receive(link);
     let shows_window = delivery.shows_window();
     if let Delivery::Forward(link) = delivery
-        && let Err(err) = app.emit_to(MAIN_WINDOW, EVENT, link)
+        && let Err(err) = app.emit_to(MAIN_WINDOW, DEEP_LINK_EVENT, link)
     {
         diagnostics::warn(
             "desktop",

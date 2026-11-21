@@ -16,6 +16,34 @@ use tauri::{Emitter, Manager, RunEvent, Runtime, WebviewWindow, webview::PageLoa
 
 use app_state::AppState;
 
+/// Every command the dashboard calls. Tauri names each by its function; `core::ipc` and
+/// `core::menu` name them for the dashboard, and `tests.rs` checks both name the same.
+macro_rules! app_commands {
+    () => {
+        tauri::generate_handler![
+            app_menu::install_menu,
+            app_menu::update_menu,
+            commands::get_runtime_state,
+            commands::collect,
+            commands::get_provider_config,
+            commands::check_provider_config,
+            commands::save_provider_config,
+            commands::add_connection,
+            commands::remove_connection,
+            commands::recheck_connection,
+            commands::save_export,
+            commands::open_url,
+            commands::get_logs,
+            commands::clear_logs,
+            deep_link::take_launch_deep_link,
+            window_chrome::attach_maximize_button
+        ]
+    };
+}
+
+#[cfg(test)]
+mod tests;
+
 pub fn run() {
     tauri::Builder::default()
         // First, so a second launch hands its link (Windows, Linux) to this app and quits.
@@ -41,24 +69,7 @@ pub fn run() {
                 app_menu::page_loading(webview.app_handle());
             }
         })
-        .invoke_handler(tauri::generate_handler![
-            app_menu::install_menu,
-            app_menu::update_menu,
-            commands::get_runtime_state,
-            commands::collect,
-            commands::get_provider_config,
-            commands::check_provider_config,
-            commands::save_provider_config,
-            commands::add_connection,
-            commands::remove_connection,
-            commands::recheck_connection,
-            commands::save_export,
-            commands::open_url,
-            commands::get_logs,
-            commands::clear_logs,
-            deep_link::take_launch_deep_link,
-            window_chrome::attach_maximize_button
-        ])
+        .invoke_handler(app_commands!())
         .setup(move |app| {
             deep_link::setup(app.handle());
             if let Some(window) = app.get_webview_window(deep_link::MAIN_WINDOW) {

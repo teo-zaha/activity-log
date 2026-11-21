@@ -1,7 +1,7 @@
 import { DestroyRef, Service, inject, signal } from '@angular/core'
 import { listener, setupSync } from '@signality/core/browser/listener'
 import type { Window as TauriWindow } from '@tauri-apps/api/window'
-import type { MaximizeButtonState } from '../generated/activity'
+import { DESKTOP_COMMANDS, DESKTOP_EVENTS, type MaximizeButtonState } from '../generated/activity'
 import {
   APP_CONTEXT_MENU,
   type SelectionRects,
@@ -70,7 +70,7 @@ export class WindowChromeService {
     const { top, right, width, height } = button.getBoundingClientRect()
     const { invoke } = await import('@tauri-apps/api/core')
     // Without it the button still maximizes, only without the snap layouts.
-    await invoke('attach_maximize_button', {
+    await invoke(DESKTOP_COMMANDS.attachMaximizeButton, {
       top,
       right: window.innerWidth - right,
       width,
@@ -132,7 +132,7 @@ export class WindowChromeService {
     this.keep(await appWindow.onResized(() => void sync()))
     if (this.frameless) {
       this.keep(
-        await appWindow.listen<MaximizeButtonState>('maximize-button', ({ payload }) =>
+        await appWindow.listen<MaximizeButtonState>(DESKTOP_EVENTS.maximizeButton, ({ payload }) =>
           this.maximizeButton.set(payload)
         )
       )

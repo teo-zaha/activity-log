@@ -88,3 +88,19 @@ fn names_the_menu_commands_and_event_and_keeps_their_shapes() {
         serde_json::json!({ "kind": "check", "title": "Day", "enabled": true, "checked": false })
     );
 }
+
+/// The desktop's own commands and events, and the events of the host's state, by the names the
+/// desktop registers and the dashboard calls.
+#[test]
+fn names_the_desktop_commands_and_events() {
+    let output = activity_typescript();
+    assert!(output.contains(
+        "export const DESKTOP_COMMANDS = { getRuntimeState: \"get_runtime_state\", collect: \"collect\","
+    ));
+    assert!(output.contains(
+        "export const DESKTOP_EVENTS = { deepLink: \"deep-link\", maximizeButton: \"maximize-button\" } as const\n"
+    ));
+    assert!(output.contains(
+        "export const RUNTIME_EVENTS = [\"state\", \"activity\", \"providers\", \"ping\"] as const\n"
+    ));
+}

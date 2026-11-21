@@ -46,13 +46,17 @@ impl RuntimeMessage {
         })
     }
 
+    /// Every event's name, in the order of `event`'s variants.
+    pub const EVENTS: [&'static str; 4] = ["state", "activity", "providers", "ping"];
+
     /// The event's name: `state`, `activity`, `providers` or `ping`.
     pub fn event(&self) -> &'static str {
+        let [state, activity, providers, ping] = Self::EVENTS;
         match self {
-            Self::State(_) => "state",
-            Self::Activity(_) => "activity",
-            Self::Providers(_) => "providers",
-            Self::Ping(_) => "ping",
+            Self::State(_) => state,
+            Self::Activity(_) => activity,
+            Self::Providers(_) => providers,
+            Self::Ping(_) => ping,
         }
     }
 

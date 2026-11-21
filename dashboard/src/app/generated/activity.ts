@@ -455,3 +455,12 @@ export const MENU_SUBMENUS = ["app", "file", "edit", "view", "window", "help"] a
 
 /** The desktop commands that install the macOS menu and change what its items show. */
 export const MENU_COMMANDS = { install: "install_menu", update: "update_menu" } as const
+
+/** The desktop app's commands, by the names it registers them under (`core::ipc`). */
+export const DESKTOP_COMMANDS = { getRuntimeState: "get_runtime_state", collect: "collect", getProviderConfig: "get_provider_config", checkProviderConfig: "check_provider_config", saveProviderConfig: "save_provider_config", addConnection: "add_connection", removeConnection: "remove_connection", recheckConnection: "recheck_connection", saveExport: "save_export", openUrl: "open_url", getLogs: "get_logs", clearLogs: "clear_logs", takeLaunchDeepLink: "take_launch_deep_link", attachMaximizeButton: "attach_maximize_button" } as const
+
+/** The desktop app's own events (`core::ipc`); the host's state comes as `RUNTIME_EVENTS`. */
+export const DESKTOP_EVENTS = { deepLink: "deep-link", maximizeButton: "maximize-button" } as const
+
+/** The events the host's state comes as, on `GET /api/events` and from the desktop app. */
+export const RUNTIME_EVENTS = ["state", "activity", "providers", "ping"] as const

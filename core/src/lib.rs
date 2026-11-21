@@ -4,6 +4,7 @@ pub mod cache;
 pub mod collect;
 pub mod diagnostics;
 pub mod export;
+pub mod ipc;
 pub mod menu;
 pub mod model;
 pub(crate) mod platform;

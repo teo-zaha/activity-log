@@ -13,7 +13,7 @@ import {
   type RuntimeStream,
   type RuntimeStreamHandlers,
 } from './runtime-stream'
-import type { ExportOutcome, ExportRequest } from '../../generated/activity'
+import { DESKTOP_EVENTS, type ExportOutcome, type ExportRequest } from '../../generated/activity'
 
 @Service()
 export class TauriBackendTransport implements BackendTransport {
@@ -120,16 +120,15 @@ export class TauriBackendTransport implements BackendTransport {
 
   /** Listens first, so no link falls between the launch link and the first event. */
   async listenForDeepLinks(open: (link: string) => void): Promise<void> {
-    await listen<string>(DEEP_LINK_EVENT, event => open(event.payload)).catch((error: unknown) => {
-      throw tauriFailureOf(error)
-    })
+    await listen<string>(DESKTOP_EVENTS.deepLink, event => open(event.payload)).catch(
+      (error: unknown) => {
+        throw tauriFailureOf(error)
+      }
+    )
     const launch = await this.call(BackendOperations.takeLaunchDeepLink, undefined)
     if (launch !== null) open(launch)
   }
 }
-
-/** The app event the desktop shell sends a deep link with (`desktop/src/deep_link`). */
-const DEEP_LINK_EVENT = 'deep-link'
 
 /**
  * Rejects once `signal` is aborted, with its reason. A plain listener: it is per call, outside
