@@ -455,7 +455,8 @@ fn push_in(connection: &str, commit_to: &str, timestamp: &str) -> ActivityEntry 
     entry
 }
 
-/// A run with every kind of slot: repeated ids, ties in time (one written with an offset),
+/// A run with every kind of slot: repeated ids, ties in time (one written with an offset, two
+/// unfolded pushes of two connections),
 /// carried entries (one a finished connection has too), a push folded into a carried commit, a
 /// second push of a folded commit, a failed, a skipped and a kept connection.
 fn projected_fixture() -> String {
@@ -488,6 +489,15 @@ fn projected_fixture() -> String {
                     push_in("work", "zz", "2026-03-10T10:00:00Z"),
                     push_in("work", "w1", "2026-03-09T09:30:00Z"),
                 ]))),
+            ),
+            // Its push is at `zz`'s instant and folds into nothing: the two keep connection order.
+            (
+                id(Source::Gitlab, "oss"),
+                Slot::Settled(Outcome::Collected(stored(vec![push_in(
+                    "oss",
+                    "yy",
+                    "2026-03-10T10:00:00Z",
+                )]))),
             ),
             (
                 id(Source::Git, "wsl"),
