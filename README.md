@@ -576,6 +576,5 @@ These items are in progress or planned and are not yet part of the current build
 
 - Native macOS menu bar
 - Touch pull-to-refresh on the Timeline
-- Styled installers (macOS DMG, Windows NSIS)
 - GitLab merge request stacks
 - Additional sources: GitHub, Microsoft Teams, Figma, Miro, and Odoo
