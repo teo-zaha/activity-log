@@ -1,18 +1,10 @@
+// Every plugin is a plain import: a missing one fails the lint instead of leaving its rules out.
+import angular from '@angular-eslint/eslint-plugin'
+import angularTemplate from '@angular-eslint/eslint-plugin-template'
+import angularTemplateParser from '@angular-eslint/template-parser'
 import tsPlugin from '@typescript-eslint/eslint-plugin'
 import tsParser from '@typescript-eslint/parser'
 import prettier from 'eslint-config-prettier'
-
-async function optionalImport(packageName) {
-  try {
-    return (await import(packageName)).default
-  } catch {
-    return null
-  }
-}
-
-const angular = await optionalImport('@angular-eslint/eslint-plugin')
-const angularTemplate = await optionalImport('@angular-eslint/eslint-plugin-template')
-const angularTemplateParser = await optionalImport('@angular-eslint/template-parser')
 
 /**
  * Code that decides on a `.message` (`x.message`, `x?.message`, `x['message']`): comparing it,
@@ -73,7 +65,7 @@ const config = [
     },
     plugins: {
       '@typescript-eslint': tsPlugin,
-      ...(angular ? { '@angular-eslint': angular } : {}),
+      '@angular-eslint': angular,
     },
     rules: {
       ...tsPlugin.configs.recommended.rules,
@@ -83,16 +75,6 @@ const config = [
     },
   },
   {
-    // Failures are told apart by their kind; a message is for people (AGENTS.md).
-    files: ['dashboard/src/app/**/*.ts'],
-    ignores: ['dashboard/src/app/**/*.spec.ts'],
-    rules: { 'no-restricted-syntax': ['error', ...messageDecisions()] },
-  },
-  prettier,
-]
-
-if (angularTemplate && angularTemplateParser) {
-  config.splice(2, 0, {
     files: ['dashboard/src/**/*.html'],
     languageOptions: {
       parser: angularTemplateParser,
@@ -106,7 +88,14 @@ if (angularTemplate && angularTemplateParser) {
       '@angular-eslint/template/label-has-associated-control': 'error',
       '@angular-eslint/template/mouse-events-have-key-events': 'error',
     },
-  })
-}
+  },
+  {
+    // Failures are told apart by their kind; a message is for people (AGENTS.md).
+    files: ['dashboard/src/app/**/*.ts'],
+    ignores: ['dashboard/src/app/**/*.spec.ts'],
+    rules: { 'no-restricted-syntax': ['error', ...messageDecisions()] },
+  },
+  prettier,
+]
 
 export default config
