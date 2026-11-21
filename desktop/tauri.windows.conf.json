@@ -14,5 +14,13 @@
         "shadow": true
       }
     ]
+  },
+  "bundle": {
+    "windows": {
+      "nsis": {
+        "headerImage": "installer/nsis-header.bmp",
+        "sidebarImage": "installer/nsis-sidebar.bmp"
+      }
+    }
   }
 }
