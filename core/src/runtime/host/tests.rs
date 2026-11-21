@@ -14,7 +14,7 @@ use tokio::sync::{Semaphore, mpsc, watch};
 
 use super::{
     BadConfig, CheckStarter, Host, HostInner, HostWork, Published, RecheckRefused, RunSpawner,
-    Shown, load, planned_collector,
+    config::load, run::planned_collector, state::Shown,
 };
 use crate::{
     model::{
@@ -33,7 +33,7 @@ use crate::{
     settings::{EditError, Precondition},
 };
 
-fn march() -> CollectOptions {
+pub(super) fn march() -> CollectOptions {
     CollectOptions {
         start: Utc.with_ymd_and_hms(2026, 3, 1, 0, 0, 0).unwrap(),
         end: Utc.with_ymd_and_hms(2026, 4, 1, 0, 0, 0).unwrap(),
@@ -236,7 +236,7 @@ fn labels(state: &ActivityState) -> Vec<String> {
     labels
 }
 
-fn connection(id: &ConnectionId, values: &[(&str, &str)]) -> Connection {
+pub(super) fn connection(id: &ConnectionId, values: &[(&str, &str)]) -> Connection {
     Connection::new(
         id.clone(),
         id.name.clone(),
@@ -967,45 +967,6 @@ async fn a_label_edit_after_a_failed_run_runs_whole() {
     assert_eq!(spawned.end().await.outcome, RunOutcome::Failed);
 }
 
-/// Every Git connection has its outcome and none changed: only the order and the list tell
-/// whether Git is affected.
-#[test]
-fn reordering_or_removing_connections_affects_their_kind() {
-    let git = |name: &str| ConnectionId::new(Source::Git, name);
-    let mut keys = crate::runtime::keys::KeyTable::default();
-    keys.install(&[connection(&git("a"), &[]), connection(&git("b"), &[])]);
-    let outcome = |id: ConnectionId| {
-        let key = keys.key(&id).unwrap();
-        (
-            id,
-            Slot::Settled(Outcome::Collected(Stored {
-                key,
-                entries: Vec::new().into(),
-            })),
-        )
-    };
-    let store = super::ResultStore::new(
-        march(),
-        RunReport {
-            slots: vec![outcome(git("a")), outcome(git("b"))],
-        },
-    );
-    let none = BTreeSet::new();
-    let affected = |old: &[ConnectionId], new: &[ConnectionId]| {
-        super::affected_kinds(old, new, &none, Some(&store))
-    };
-
-    assert!(affected(&[git("a"), git("b")], &[git("a"), git("b")]).is_empty());
-    assert_eq!(
-        affected(&[git("a"), git("b")], &[git("b"), git("a")]),
-        BTreeSet::from([Source::Git])
-    );
-    assert_eq!(
-        affected(&[git("a"), git("b")], &[git("a")]),
-        BTreeSet::from([Source::Git])
-    );
-}
-
 /// Two clones of one repository: the commit belongs to the first Git table, also after the
 /// tables are reversed and after the first one is removed.
 #[tokio::test]
@@ -1223,7 +1184,7 @@ async fn an_outside_edit_is_installed_within_one_look() {
     })
     .await;
 
-    assert!(started.elapsed() <= super::RELOAD_INTERVAL + super::SETTLE);
+    assert!(started.elapsed() <= super::config::RELOAD_INTERVAL + super::config::SETTLE);
     host.shutdown();
     watcher.await.unwrap();
 }
@@ -1237,8 +1198,8 @@ async fn a_change_still_being_written_is_installed_once_complete() {
     std::fs::write(&path, "[[calendar]]\nlabel = \"Team\"\n").unwrap();
     let (spawner, _spawned) = spawner();
     let host = Host::start(Some(path.clone()), spawner, BadConfig::Fail).unwrap();
-    let read = super::Pause::new();
-    host.set_pauses(super::Pauses {
+    let read = super::pauses::Pause::new();
+    host.set_pauses(super::pauses::Pauses {
         after_first_read: Some(read.clone()),
         ..Default::default()
     });
@@ -1262,7 +1223,7 @@ async fn a_change_still_being_written_is_installed_once_complete() {
         "the empty file was not installed"
     );
 
-    host.set_pauses(super::Pauses::default());
+    host.set_pauses(super::pauses::Pauses::default());
     host.reload_if_changed().await;
     assert_eq!(host.providers_response().providers.len(), 2);
 }
@@ -1273,8 +1234,8 @@ async fn a_change_still_being_written_is_installed_once_complete() {
 async fn an_edit_and_a_reload_install_in_the_order_the_file_was_written() {
     let world = World::shared();
     let (_dir, path, host, _spawned) = ready_at(TWO_SOURCES, &world).await;
-    let written = super::Pause::new();
-    host.set_pauses(super::Pauses {
+    let written = super::pauses::Pause::new();
+    host.set_pauses(super::pauses::Pauses {
         after_edit_write: Some(written.clone()),
         ..Default::default()
     });
@@ -1677,7 +1638,7 @@ async fn a_watcher_waiting_for_the_config_lock_at_shutdown_installs_nothing() {
     let watcher = tokio::spawn(host.watch_config());
     std::fs::write(&path, "[[calendar]]\nlabel = \"Team\"\n").unwrap();
     // The watcher's first look is past its timer and waits for the config lock.
-    tokio::time::sleep(super::RELOAD_INTERVAL).await;
+    tokio::time::sleep(super::config::RELOAD_INTERVAL).await;
     while Arc::strong_count(&host.inner) == 1 {
         tokio::task::yield_now().await;
     }
@@ -1714,8 +1675,8 @@ async fn an_edit_written_before_shutdown_installs_nothing_after_it() {
     std::fs::write(&path, "[[calendar]]\nlabel = \"Home\"\n").unwrap();
     let (spawner, _spawned) = spawner();
     let host = Host::start(Some(path), spawner, BadConfig::Fail).unwrap();
-    let written = super::Pause::new();
-    host.set_pauses(super::Pauses {
+    let written = super::pauses::Pause::new();
+    host.set_pauses(super::pauses::Pauses {
         after_edit_write: Some(written.clone()),
         ..Default::default()
     });
