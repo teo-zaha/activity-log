@@ -429,3 +429,32 @@ async fn every_link_header_line_is_read() {
 
     assert_eq!(server.requests().len(), 2);
 }
+
+/// An event names its project (`project_id`): a merge request's iid means something only in
+/// its project. GitLab's `null` leaves it absent, never `0`.
+#[test]
+fn an_event_names_its_project() {
+    let comment = json!({
+        "id": 5, "action_name": "commented on", "created_at": "2026-03-01T10:30:00Z",
+        "project_id": 42, "target_type": "DiffNote",
+        "note": { "body": "nit", "noteable_type": "MergeRequest", "noteable_iid": 12 }
+    });
+    let mut entry = map_gitlab_event(serde_json::from_value(comment).unwrap());
+    entry.connection.stamp(&"work".into());
+    assert_eq!((entry.project_id, entry.mr_iid), (Some(42), Some(12)));
+    assert_eq!(serde_json::to_value(&entry).unwrap()["projectId"], 42);
+
+    let without = json!({
+        "id": 6, "action_name": "opened", "created_at": "2026-03-01T10:30:00Z",
+        "project_id": null
+    });
+    let mut entry = map_gitlab_event(serde_json::from_value(without).unwrap());
+    entry.connection.stamp(&"work".into());
+    assert_eq!(entry.project_id, None);
+    assert!(
+        serde_json::to_value(&entry)
+            .unwrap()
+            .get("projectId")
+            .is_none()
+    );
+}

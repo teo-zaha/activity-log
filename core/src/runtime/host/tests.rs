@@ -1428,6 +1428,7 @@ async fn both_pushes_of_one_commit_survive_a_recheck_of_either_kind() {
             timestamp: at.into(),
             title: Some("repo".into()),
             target_type: Some("Project".into()),
+            project_id: None,
             mr_iid: None,
             issue_iid: None,
             branch: Some("main".into()),

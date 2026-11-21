@@ -30,6 +30,11 @@ pub struct GitLabEntry {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[ts(optional)]
     pub target_type: Option<String>,
+    /// The project the event is in (`project_id`): a merge request's or a comment's project is
+    /// the merge request's target project. Absent when GitLab sends none.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(type = "number", optional)]
+    pub project_id: Option<u64>,
     /// The merge request the event is about, or the one a comment is on.
     #[serde(skip_serializing_if = "Option::is_none")]
     #[ts(type = "number", optional)]
