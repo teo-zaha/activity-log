@@ -9,12 +9,18 @@ import {
   viewChild,
   viewChildren,
 } from '@angular/core'
+import { LiveAnnouncer } from '@angular/cdk/a11y'
 import { resizeObserver } from '@signality/core/observers/resize-observer'
+import { debounced } from '@signality/core/reactivity/debounced'
+import { watcher } from '@signality/core/reactivity/watcher'
 import { EmptyStateComponent } from '../empty-state/empty-state.component'
 import { ButtonComponent } from '../button/button.component'
 import { ActivityDataService } from '../../services/activity-data.service'
 import { ActivitySelection } from '../../services/activity-selection.service'
-import { ActivityViewStateService } from '../../services/activity-view-state.service'
+import {
+  ActivityViewStateService,
+  SEARCH_URL_DELAY_MS,
+} from '../../services/activity-view-state.service'
 import { SearchBarComponent } from '../search-bar/search-bar.component'
 import type { EntryUiAdapter } from '../../providers/types'
 import { dayIndexOf } from '../../utils/day-index'
@@ -64,6 +70,7 @@ export class TimelineComponent {
       status: this.data.collectionStatus(),
       hasSources: this.data.providers().length > 0,
       anyShown: this.viewState.activeConnections().size > 0,
+      coverage: this.selection.rangeCoverage(),
     })
   )
 
@@ -136,6 +143,7 @@ export class TimelineComponent {
         overflows: scroller.scrollHeight > scroller.clientHeight + 1,
       })
     }
+    this.announceSettled()
     afterNextRender(measure)
     // The content box changes size with the list, the scroller with the window.
     resizeObserver([this.scroller, this.content], measure)
@@ -161,6 +169,22 @@ export class TimelineComponent {
       for (const section of sections) observer.observe(section.nativeElement)
       onCleanup(() => observer.disconnect())
     })
+  }
+
+  /**
+   * Reads the summary out once the filter has settled, as the URL takes it, not on every key: a
+   * live region around it would be read at each keystroke.
+   */
+  private announceSettled(): void {
+    const announcer = inject(LiveAnnouncer)
+    const shown = computed(() => (this.selection.groupedByDay().length > 0 ? this.summary() : null))
+    watcher(debounced(shown, inject(SEARCH_URL_DELAY_MS)), summary => {
+      if (summary !== null) void announcer.announce(summary, 'polite')
+    })
+  }
+
+  protected collectOwnRange(): void {
+    void this.data.collectShownRange()
   }
 
   protected focusFirstEntry(day: string): void {

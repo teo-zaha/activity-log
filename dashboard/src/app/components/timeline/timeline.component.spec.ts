@@ -3,13 +3,17 @@ import type { ConnectionKey, EntryKey } from '../../providers/connection'
 import type { DayGroup } from '../../models/day-group'
 import type { EntryUiAdapter } from '../../providers/types'
 import type { CollectionStatus } from '../../services/types'
+import { LiveAnnouncer } from '@angular/cdk/a11y'
 import { render, screen } from '@testing-library/angular'
 import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createEntryAdapter } from '../../providers/provider-adapter'
 import { ActivityDataService } from '../../services/activity-data.service'
-import { ActivitySelection } from '../../services/activity-selection.service'
-import { ActivityViewStateService } from '../../services/activity-view-state.service'
+import { ActivitySelection, type RangeCoverage } from '../../services/activity-selection.service'
+import {
+  ActivityViewStateService,
+  SEARCH_URL_DELAY_MS,
+} from '../../services/activity-view-state.service'
 import { activityLog, meetingWeightOf } from '../../testing/activity-fixtures'
 import { stubLayoutObservers } from '../../testing/observers'
 import { BackendFailure } from '../../services/backend/backend-failure'
@@ -27,6 +31,8 @@ interface TimelineActivityMock {
   providers: WritableSignal<{ label: string }[]>
   activeConnections: WritableSignal<Set<ConnectionKey>>
   openEvent: ReturnType<typeof vi.fn<(key: EntryKey) => Promise<boolean>>>
+  rangeCoverage: WritableSignal<RangeCoverage>
+  collectShownRange: ReturnType<typeof vi.fn<() => Promise<void> | null>>
 }
 
 function mockActivity(overrides: { status?: CollectionStatus; query?: string } = {}): {
@@ -48,6 +54,8 @@ function mockActivity(overrides: { status?: CollectionStatus; query?: string } =
       providers: signal([{ label: 'Git' }]),
       activeConnections: signal(new Set<ConnectionKey>(['git/default'])),
       openEvent: vi.fn((_key: EntryKey) => Promise.resolve(true)),
+      rangeCoverage: signal<RangeCoverage>({ kind: 'covered' }),
+      collectShownRange: vi.fn(() => Promise.resolve()),
     },
   }
 }
@@ -55,7 +63,10 @@ function mockActivity(overrides: { status?: CollectionStatus; query?: string } =
 /** The services the timeline reads, each faked with only what it takes from it. */
 function servicesOf(activity: TimelineActivityMock): Provider[] {
   return [
-    { provide: ActivitySelection, useValue: { groupedByDay: activity.groupedByDay } },
+    {
+      provide: ActivitySelection,
+      useValue: { groupedByDay: activity.groupedByDay, rangeCoverage: activity.rangeCoverage },
+    },
     {
       provide: ActivityViewStateService,
       useValue: {
@@ -73,6 +84,7 @@ function servicesOf(activity: TimelineActivityMock): Provider[] {
         isLoading: activity.isLoading,
         collectionStatus: activity.collectionStatus,
         providers: activity.providers,
+        collectShownRange: activity.collectShownRange,
       },
     },
   ]
@@ -223,6 +235,52 @@ describe('TimelineComponent', () => {
 
     expect(screen.getByText(new RegExp(says))).toBeTruthy()
     expect(screen.queryByText(new RegExp(never))).toBeNull()
+  })
+
+  it('offers to collect this tab’s range where the collection on screen leaves it out', async () => {
+    const { activity } = mockActivity()
+    activity.groupedByDay.set([])
+    activity.rangeCoverage.set({
+      kind: 'other',
+      collected: { from: '2026-05-01', to: '2026-05-07' },
+      own: { from: '2026-05-10', to: '2026-05-17' },
+      overlaps: false,
+    })
+
+    await render(TimelineComponent, { providers: servicesOf(activity) })
+
+    expect(screen.getByRole('heading', { name: 'This range is not collected' })).toBeTruthy()
+    expect(screen.queryByText(/wider date range/)).toBeNull()
+    await userEvent.click(screen.getByRole('button', { name: 'Collect 10 May – 17 May 2026' }))
+    expect(activity.collectShownRange).toHaveBeenCalledOnce()
+  })
+
+  it('asks for a wider range where the collection covers this tab’s range', async () => {
+    const { activity } = mockActivity()
+    activity.groupedByDay.set([])
+
+    await render(TimelineComponent, { providers: servicesOf(activity) })
+
+    expect(screen.getByRole('heading', { name: 'Nothing recorded in this range' })).toBeTruthy()
+    expect(screen.queryByRole('button', { name: /^Collect/ })).toBeNull()
+  })
+
+  it('reads the summary out once the filter settles, not on every key', async () => {
+    const { activity } = mockActivity()
+    const announce = vi.fn((_message: string, _politeness?: string) => Promise.resolve())
+
+    await render(TimelineComponent, {
+      providers: [
+        ...servicesOf(activity),
+        { provide: LiveAnnouncer, useValue: { announce } },
+        { provide: SEARCH_URL_DELAY_MS, useValue: 30 },
+      ],
+    })
+    await userEvent.type(screen.getByRole('searchbox'), 'abc', { delay: null })
+    await new Promise(resolve => setTimeout(resolve, 90))
+
+    expect(announce.mock.calls).toEqual([['1 event across 1 day matching “abc”', 'polite']])
+    expect(document.querySelector('.timeline-summary')?.closest('[aria-live]')).toBeNull()
   })
 
   it('labels the field as a filter', async () => {
