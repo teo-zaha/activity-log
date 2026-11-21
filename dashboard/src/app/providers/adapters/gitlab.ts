@@ -1,4 +1,5 @@
 import type { GitLabEntry } from '../../generated/activity'
+import { changeStackVmOf } from '../change-stack'
 import { EntryUiAdapter, ProviderUiAdapterDefinition, type ProviderDetailField } from '../types'
 import { createBadge, joinParts, toDefinedStrings } from '../utils'
 
@@ -37,6 +38,7 @@ class GitLabEntryUiAdapter extends EntryUiAdapter<GitLabEntry> {
         entry.noteFile,
       ]),
       calendarDurationMinutes: null,
+      changeStack: entry.changeStack ? changeStackVmOf(entry.changeStack, '!') : null,
       detailFields: fields.filter(field => field.value),
       badge,
       badges: [badge],
