@@ -37,6 +37,11 @@
   &.is-cut {
     color: var(--text-tertiary);
     font-style: italic;
+
+    // As the cut lines above: the dark themes' weakest text falls short of 4.5:1 here.
+    :host-context(html.dark) & {
+      color: var(--text-secondary);
+    }
   }
 }
 

@@ -9,9 +9,10 @@ import { StackChangeComponent } from './stack-change.component'
 export const MAX_STACK_INDENT = 4
 
 /**
- * A level of the tree above a change: the changes that build on it, each with its own level in a
+ * A level of the tree above a change: the changes built on it, each with its own level in a
  * nested list, and a last line when the level was cut. Nothing shows for a level that is
- * complete and empty.
+ * complete and empty. The list keeps `role="list"`: WebKit presents a list without markers as
+ * no list, and VoiceOver would read the tree flat.
  */
 @Component({
   selector: 'app-stack-level',
@@ -19,8 +20,8 @@ export const MAX_STACK_INDENT = 4
   host: { '[class.is-indented]': 'level().depth <= maxIndent' },
   template: `@let current = level();
     @if (current.nodes.length) {
-      <ol class="level">
-        @for (node of current.nodes; track $index) {
+      <ol class="level" role="list">
+        @for (node of current.nodes; track node.change.reference) {
           <li class="node">
             <app-stack-change [change]="node.change" />
             <app-stack-level [level]="node.above" />
