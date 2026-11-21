@@ -12,7 +12,7 @@ use api::GitLabApi;
 
 crate::provider! {
     GitLabProvider(Source::Gitlab, &[SupportedOs::Windows, SupportedOs::Macos, SupportedOs::Linux], config: GitLabConfig, cache: crate::cache::CachePolicy::api()) {
-        async fn startup_check(&self, _current_os, _context, config) {
+        async fn startup_check(&self, _context, config) {
             let api = match GitLabApi::new(config) {
                 Ok(api) => api,
                 Err(err) => return err.check_result(GitLabApi::SERVICE),
@@ -20,7 +20,7 @@ crate::provider! {
             identity_check(GitLabApi::SERVICE, api.current_user().await)
         }
 
-        async fn collect(&self, _current_os, options, context) {
+        async fn collect(&self, options, context) {
             collect_gitlab(&options, &context)
                 .await
                 .map(|entries| entries.into_activity_entries())

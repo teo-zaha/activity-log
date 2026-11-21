@@ -14,14 +14,14 @@ crate::provider_config! {
 
 crate::provider! {
     CalendarProvider(Source::Calendar, &[SupportedOs::Windows, SupportedOs::Macos, SupportedOs::Linux], config: CalendarConfig) {
-        async fn startup_check(&self, _current_os, _context, config) {
+        async fn startup_check(&self, _context, config) {
             match check_feed(&config.ics_url).await {
                 Ok(_) => ProviderCheckResult::available(),
                 Err(err) => ProviderCheckResult::unavailable_from(&err),
             }
         }
 
-        async fn collect(&self, _current_os, options, context) {
+        async fn collect(&self, options, context) {
             let config = context.config::<CalendarConfig>()?;
             let entries = collect_calendar(&config.ics_url, &options).await?;
             Ok(entries.into_activity_entries())

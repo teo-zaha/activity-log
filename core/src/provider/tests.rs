@@ -135,11 +135,7 @@ impl ProviderAdapter for TestProvider {
         })
     }
 
-    fn startup_check(
-        &self,
-        _current_os: SupportedOs,
-        _context: ProviderContext,
-    ) -> BoxFuture<'_, ProviderCheckResult> {
+    fn startup_check(&self, _context: ProviderContext) -> BoxFuture<'_, ProviderCheckResult> {
         self.calls.fetch_add(1, Ordering::SeqCst);
         let result = self.startup_result.clone();
         Box::pin(async move { result })
@@ -147,7 +143,6 @@ impl ProviderAdapter for TestProvider {
 
     fn collect(
         &self,
-        _current_os: SupportedOs,
         _options: CollectOptions,
         _context: ProviderContext,
     ) -> BoxFuture<'_, anyhow::Result<Vec<ActivityEntry>>> {
@@ -349,11 +344,7 @@ impl ProviderAdapter for TypedTestProvider {
         Some(TypedTestConfig::binding())
     }
 
-    fn startup_check(
-        &self,
-        _current_os: SupportedOs,
-        context: ProviderContext,
-    ) -> BoxFuture<'_, ProviderCheckResult> {
+    fn startup_check(&self, context: ProviderContext) -> BoxFuture<'_, ProviderCheckResult> {
         self.calls.fetch_add(1, Ordering::SeqCst);
         Box::pin(async move {
             let config = context
@@ -366,7 +357,6 @@ impl ProviderAdapter for TypedTestProvider {
 
     fn collect(
         &self,
-        _current_os: SupportedOs,
         _options: CollectOptions,
         _context: ProviderContext,
     ) -> BoxFuture<'_, anyhow::Result<Vec<ActivityEntry>>> {
@@ -797,18 +787,13 @@ impl ProviderAdapter for CachedTestProvider {
         })
     }
 
-    fn startup_check(
-        &self,
-        _current_os: SupportedOs,
-        _context: ProviderContext,
-    ) -> BoxFuture<'_, ProviderCheckResult> {
+    fn startup_check(&self, _context: ProviderContext) -> BoxFuture<'_, ProviderCheckResult> {
         let result = ProviderCheckResult::available().with_identity(self.identity.clone());
         Box::pin(async move { result })
     }
 
     fn collect(
         &self,
-        _current_os: SupportedOs,
         options: CollectOptions,
         _context: ProviderContext,
     ) -> BoxFuture<'_, anyhow::Result<Vec<ActivityEntry>>> {
@@ -1305,10 +1290,7 @@ fn recheckable_follows_the_problem() {
 async fn a_check_without_resolved_settings_is_not_configured() {
     for source in [Source::Git, Source::Gitlab, Source::Jira, Source::Calendar] {
         let result = crate::provider::adapter(&source)
-            .startup_check(
-                crate::provider::current_os(),
-                crate::provider::provider_context::ProviderContext::default(),
-            )
+            .startup_check(crate::provider::provider_context::ProviderContext::default())
             .await;
         assert_eq!(
             result.outcome.problem(),

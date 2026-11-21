@@ -12,7 +12,7 @@ use api::JiraApi;
 
 crate::provider! {
     JiraProvider(Source::Jira, &[SupportedOs::Windows, SupportedOs::Macos, SupportedOs::Linux], config: JiraConfig, cache: crate::cache::CachePolicy::api()) {
-        async fn startup_check(&self, _current_os, _context, config) {
+        async fn startup_check(&self, _context, config) {
             let api = match JiraApi::new(config) {
                 Ok(api) => api,
                 Err(err) => return err.check_result(JiraApi::SERVICE),
@@ -20,7 +20,7 @@ crate::provider! {
             identity_check(JiraApi::SERVICE, api.myself().await)
         }
 
-        async fn collect(&self, _current_os, options, context) {
+        async fn collect(&self, options, context) {
             collect_jira(&options, &context)
                 .await
                 .map(|entries| entries.into_activity_entries())

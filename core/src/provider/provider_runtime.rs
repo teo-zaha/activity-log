@@ -127,7 +127,6 @@ impl ProviderRuntime {
         options: CollectOptions,
         state: Option<CollectionState>,
     ) -> anyhow::Result<Vec<ActivityEntry>> {
-        let current_os = current_os();
         let context = self.context.clone().with_collection_state(state);
         // Collectors know no connection: their entries are stamped here, before the day cache
         // stores them, so none is stored or sent without one. A connection's name is a slug of
@@ -136,9 +135,7 @@ impl ProviderRuntime {
             anyhow::anyhow!("{} has no name to stamp its entries with", self.id())
         })?;
         let fetch = |span| {
-            let fetched = self
-                .adapter
-                .collect(current_os.clone(), span, context.clone());
+            let fetched = self.adapter.collect(span, context.clone());
             async move {
                 let mut entries = fetched.await?;
                 for entry in &mut entries {
@@ -189,17 +186,12 @@ impl ProviderAdapter for Recorded {
         ""
     }
 
-    fn startup_check(
-        &self,
-        _current_os: SupportedOs,
-        _context: ProviderContext,
-    ) -> BoxFuture<'_, ProviderCheckResult> {
+    fn startup_check(&self, _context: ProviderContext) -> BoxFuture<'_, ProviderCheckResult> {
         Box::pin(async { ProviderCheckResult::available() })
     }
 
     fn collect(
         &self,
-        _current_os: SupportedOs,
         _options: CollectOptions,
         _context: ProviderContext,
     ) -> BoxFuture<'_, anyhow::Result<Vec<ActivityEntry>>> {
@@ -268,14 +260,14 @@ async fn build_provider_info(
             )
         } else {
             with_startup_timeout(
-                adapter.startup_check(current_os.clone(), context.clone()),
+                adapter.startup_check(context.clone()),
                 STARTUP_CHECK_TIMEOUT,
             )
             .await
         }
     } else {
         with_startup_timeout(
-            adapter.startup_check(current_os.clone(), context.clone()),
+            adapter.startup_check(context.clone()),
             STARTUP_CHECK_TIMEOUT,
         )
         .await
