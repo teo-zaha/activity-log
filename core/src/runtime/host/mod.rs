@@ -57,13 +57,9 @@ pub type HostWork = BoxFuture<'static, Option<RunEnd>>;
 /// anything that owns it.
 pub type RunSpawner = Arc<dyn Fn(HostWork) + Send + Sync>;
 
-/// Starts a connection's check: how it is listed meanwhile, and the check. `None` for a kind
-/// no provider handles.
-pub(crate) type CheckStarter = Arc<
-    dyn Fn(&Connection) -> Option<(ProviderInfo, BoxFuture<'static, ProviderRuntime>)>
-        + Send
-        + Sync,
->;
+/// Starts a connection's check: how it is listed meanwhile, and the check.
+pub(crate) type CheckStarter =
+    Arc<dyn Fn(&Connection) -> (ProviderInfo, BoxFuture<'static, ProviderRuntime>) + Send + Sync>;
 
 /// What [`Host::start`] does with a config file it cannot read or parse.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -113,7 +109,7 @@ impl Host {
     ) -> anyhow::Result<Host> {
         let host = Self::build(
             path.clone(),
-            Arc::new(|connection: &Connection| Some(start_check(connection))),
+            Arc::new(start_check),
             planned_collector(),
             spawner,
         );
@@ -141,12 +137,7 @@ impl Host {
 
     /// A host of fixed connections that never reloads, for tests.
     pub fn fixed(connections: &[Connection], spawner: RunSpawner) -> Host {
-        let host = Self::build(
-            None,
-            Arc::new(|connection: &Connection| Some(start_check(connection))),
-            planned_collector(),
-            spawner,
-        );
+        let host = Self::build(None, Arc::new(start_check), planned_collector(), spawner);
         host.install(connections.to_vec(), None);
         host
     }
@@ -157,7 +148,9 @@ impl Host {
         providers: Vec<ProviderInfo>,
         spawner: RunSpawner,
     ) -> Host {
-        let host = Self::build(None, Arc::new(|_| None), collector, spawner);
+        // Its checks are recorded and cannot be run again, and it has no file to install from,
+        // so it never starts one.
+        let host = Self::build(None, Arc::new(start_check), collector, spawner);
         host.transition(|_, state| {
             let connections = providers
                 .iter()

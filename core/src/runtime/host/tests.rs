@@ -117,7 +117,7 @@ impl World {
                 source: connection.source().clone(),
                 world: world.clone(),
             });
-            Some(start_check_with(adapter, connection))
+            start_check_with(adapter, connection)
         })
     }
 }

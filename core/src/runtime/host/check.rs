@@ -45,9 +45,7 @@ impl Host {
                 .position(|check| check.id() == id && check.recheckable)
                 .ok_or(RecheckRefused::UnknownConnection)?;
             let connection = state.checks[index].connection.clone();
-            // Not shut down, so only a kind no provider checks starts nothing.
-            let check =
-                new_check(inner, state, &connection).ok_or(RecheckRefused::UnknownConnection)?;
+            let check = new_check(inner, state, &connection);
             let old = std::mem::replace(&mut state.checks[index], check);
             state.retired.push(Box::new(old));
             state.failures.remove(id);
@@ -112,16 +110,14 @@ impl Host {
 }
 
 /// Starts the check of `connection`; it is recorded when it ends (`Host::record_check`) and
-/// only then yields to the collections that wait for it. Its work joins the transition's.
+/// only then yields to the collections that wait for it. Its work joins the transition's. Its
+/// callers return first once the host shut down.
 pub(super) fn new_check(
     inner: &Arc<HostInner>,
     state: &mut HostState,
     connection: &Connection,
-) -> Option<ConnectionCheck> {
-    if state.shut_down {
-        return None;
-    }
-    let (checking, check) = (inner.starter)(connection)?;
+) -> ConnectionCheck {
+    let (checking, check) = (inner.starter)(connection);
     state.next_check += 1;
     let generation = state.next_check;
     let id = connection.id.clone();
@@ -136,11 +132,11 @@ pub(super) fn new_check(
     .boxed()
     .shared();
     state.work.push(recorded.clone().map(|_| None).boxed());
-    Some(ConnectionCheck {
+    ConnectionCheck {
         connection: connection.clone(),
         recheckable: true,
         checking,
         generation,
         state: CheckState::Running(recorded),
-    })
+    }
 }
