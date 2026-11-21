@@ -116,55 +116,53 @@ impl OAuthRefusal {
     }
 }
 
-/// The `error` parameter of a `Bearer` challenge (`Bearer realm="x", error="invalid_token"`),
-/// as a code RFC 6750 defines.
-fn bearer_error(challenge: &str) -> Option<OAuthRefusal> {
-    let challenge = challenge.trim_start();
-    let (scheme, params) = challenge.split_at(challenge.find(' ').unwrap_or(challenge.len()));
-    if !scheme.eq_ignore_ascii_case("bearer") {
-        return None;
-    }
-    auth_params(params)
-        .into_iter()
-        .find(|(name, _)| name.eq_ignore_ascii_case("error"))
-        .and_then(|(_, value)| OAuthRefusal::of_code(&value))
-}
-
-/// `name=value` and `name="quoted \" value"` pairs separated by commas (RFC 9110 §11.2); a
-/// pair that does not fit ends the list.
-fn auth_params(text: &str) -> Vec<(String, String)> {
-    let mut params = Vec::new();
-    let mut chars = text.chars().peekable();
-    loop {
+/// The `error` parameter of the `Bearer` challenge in one `WWW-Authenticate` value, which may
+/// hold several challenges (`Basic realm="x", Bearer error="invalid_token"`, RFC 9110
+/// §11.6.1), as a code RFC 6750 defines. A value that does not parse past that point gives
+/// none.
+fn bearer_error(value: &str) -> Option<OAuthRefusal> {
+    /// Skips white space, and commas where `commas` says.
+    fn skip(chars: &mut std::iter::Peekable<std::str::Chars>, commas: bool) {
         while chars
-            .next_if(|ch| ch.is_whitespace() || *ch == ',')
+            .next_if(|ch| ch.is_whitespace() || (commas && *ch == ','))
             .is_some()
         {}
-        let name: String = std::iter::from_fn(|| {
-            chars.next_if(|ch| *ch != '=' && *ch != ',' && !ch.is_whitespace())
+    }
+    let mut chars = value.chars().peekable();
+    let mut in_bearer = false;
+    loop {
+        skip(&mut chars, true);
+        let token: String = std::iter::from_fn(|| {
+            chars.next_if(|ch| !matches!(ch, '=' | ',' | '"') && !ch.is_whitespace())
         })
         .collect();
-        while chars.next_if(|ch| ch.is_whitespace()).is_some() {}
-        if name.is_empty() || chars.next() != Some('=') {
-            return params;
+        if token.is_empty() {
+            return None;
         }
-        while chars.next_if(|ch| ch.is_whitespace()).is_some() {}
-        let mut value = String::new();
+        skip(&mut chars, false);
+        if chars.next_if_eq(&'=').is_none() {
+            // No `=`: the scheme of the next challenge.
+            in_bearer = token.eq_ignore_ascii_case("bearer");
+            continue;
+        }
+        skip(&mut chars, false);
+        let mut param = String::new();
         if chars.next_if_eq(&'"').is_some() {
             loop {
-                match chars.next() {
-                    Some('"') => break,
-                    Some('\\') => value.extend(chars.next()),
-                    Some(ch) => value.push(ch),
-                    None => return params,
+                match chars.next()? {
+                    '"' => break,
+                    '\\' => param.extend(chars.next()),
+                    ch => param.push(ch),
                 }
             }
         } else {
-            value.extend(std::iter::from_fn(|| {
+            param.extend(std::iter::from_fn(|| {
                 chars.next_if(|ch| *ch != ',' && !ch.is_whitespace())
             }));
         }
-        params.push((name, value));
+        if in_bearer && token.eq_ignore_ascii_case("error") {
+            return OAuthRefusal::of_code(&param);
+        }
     }
 }
 
