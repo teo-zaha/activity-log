@@ -28,6 +28,7 @@ import { CalendarDayColumnComponent } from '../calendar/calendar-day-column/cale
 import { CalendarHoursComponent } from '../calendar/calendar-hours/calendar-hours.component'
 import { CALENDAR_TIME_ZONE } from '../calendar/calendar-time-zone'
 import { calendarEmptyHint } from '../calendar/calendar-empty-hint'
+import { CalendarHintComponent } from '../calendar/calendar-hint/calendar-hint.component'
 import { collectedDays } from '../calendar/collected-days'
 import { injectCalendarZoom } from '../calendar-zoom'
 import { NavigationMotionService } from '../../navigation-motion'
@@ -44,6 +45,7 @@ const MAX_VISIBLE = 5
     CalendarAllDayRowComponent,
     CalendarDayColumnComponent,
     CalendarHoursComponent,
+    CalendarHintComponent,
   ],
   templateUrl: './day-view.component.html',
   styleUrl: './day-view.component.scss',
@@ -137,6 +139,10 @@ export class DayViewComponent {
           from: this.viewState.dateFrom(),
           to: this.viewState.dateTo(),
           coverage: this.selection.rangeCoverage(),
+          loading: this.data.isLoading(),
+          status: this.data.collectionStatus(),
+          hasSources: this.data.anySourceReady(),
+          anyShown: this.viewState.activeConnections().size > 0,
         })
       : null
   )

@@ -30,7 +30,7 @@ import { AutoAnimateDirective } from '../auto-animate/auto-animate.directive'
 import { DayIndexComponent } from './day-index/day-index.component'
 import { trackActiveDay } from './active-day'
 import { keepScroll } from './keep-scroll'
-import { timelineEmptyState } from './timeline-empty-state'
+import { timelineEmptyState, timelineEmptyView } from './timeline-empty-state'
 import { TimelineRows } from './timeline-rows'
 
 @Component({
@@ -65,13 +65,15 @@ export class TimelineComponent {
   })
 
   protected readonly emptyState = computed(() =>
-    timelineEmptyState({
-      query: this.viewState.searchQuery().trim(),
-      status: this.data.collectionStatus(),
-      hasSources: this.data.providers().length > 0,
-      anyShown: this.viewState.activeConnections().size > 0,
-      coverage: this.selection.rangeCoverage(),
-    })
+    timelineEmptyView(
+      timelineEmptyState({
+        query: this.viewState.searchQuery().trim(),
+        status: this.data.collectionStatus(),
+        hasSources: this.data.anySourceReady(),
+        anyShown: this.viewState.activeConnections().size > 0,
+        coverage: this.selection.rangeCoverage(),
+      })
+    )
   )
 
   private readonly clock = injectMinuteClock()

@@ -7,6 +7,8 @@ import { meetingWeightOf } from '../../testing/activity-fixtures'
 import { MIN_BLOCK_HEIGHT } from '../calendar/calendar-grid'
 import {
   fakeCalendarState,
+  hintWords,
+  shownHint,
   type CalendarStateInit,
   type FakeCalendarState,
 } from '../calendar/calendar-testing'
@@ -158,8 +160,13 @@ describe('DayViewComponent', () => {
 
   it('says an empty day was not collected when it lies outside the collection', async () => {
     await renderDay({ day: '2026-11-10', from: '2026-11-16', to: '2026-11-22' })
-    expect(screen.getByRole('status').querySelector('.hint-title')?.textContent).toBe(
-      'This day was not collected'
+    expect(shownHint()).toEqual(
+      hintWords({
+        reason: 'notCollected',
+        unit: 'day',
+        onScreen: { from: '2026-11-16', to: '2026-11-22' },
+        collect: null,
+      })
     )
   })
 
@@ -175,8 +182,13 @@ describe('DayViewComponent', () => {
         overlaps: false,
       },
     })
-    expect(screen.getByRole('status').querySelector('.hint-title')?.textContent).toBe(
-      'This day was not collected'
+    expect(shownHint()).toEqual(
+      hintWords({
+        reason: 'notCollected',
+        unit: 'day',
+        onScreen: { from: '2026-11-01', to: '2026-11-05' },
+        collect: { from: '2026-11-16', to: '2026-11-22' },
+      })
     )
 
     const collect = screen.getByRole('button', { name: 'Collect 16 Nov – 22 Nov 2026' })
@@ -188,8 +200,6 @@ describe('DayViewComponent', () => {
 
   it('says a collected day without entries had no activity', async () => {
     await renderDay({ day: '2026-11-17', from: '2026-11-16', to: '2026-11-22' })
-    expect(screen.getByRole('status').querySelector('.hint-title')?.textContent).toBe(
-      'No activity on this day'
-    )
+    expect(shownHint()).toEqual(hintWords({ reason: 'noActivity', unit: 'day', whole: true }))
   })
 })

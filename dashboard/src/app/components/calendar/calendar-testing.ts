@@ -1,14 +1,16 @@
 // Fakes of what the calendar views read, for their specs.
 
 import { computed, signal, type Provider, type WritableSignal } from '@angular/core'
-import type { EntryKey } from '../../providers/connection'
+import type { ConnectionKey, EntryKey } from '../../providers/connection'
 import type { EntryUiAdapter } from '../../providers/types'
 import { ActivityDataService } from '../../services/activity-data.service'
 import { ActivitySelection, type RangeCoverage } from '../../services/activity-selection.service'
 import { ActivityViewStateService } from '../../services/activity-view-state.service'
+import type { CollectionStatus } from '../../services/types'
 import type { ViewMode } from '../../utils/app-url'
 import { DEFAULT_HOUR_HEIGHT } from '../../utils/calendar-zoom'
 import { addDaysToKey, dateOfKey, type DayKey } from '../../utils/local-day'
+import { calendarHintText, type CalendarEmptyHint } from './calendar-empty-hint'
 import { CALENDAR_TIME_ZONE } from './calendar-time-zone'
 
 export interface CalendarStateInit {
@@ -21,6 +23,8 @@ export interface CalendarStateInit {
   readonly coverage?: RangeCoverage
   /** The zone the calendar reads clocks in; the runner's own by default. */
   readonly timeZone?: string
+  /** The collection on screen; idle by default. */
+  readonly status?: CollectionStatus
 }
 
 export interface FakeCalendarState {
@@ -29,6 +33,12 @@ export interface FakeCalendarState {
   readonly currentView: WritableSignal<ViewMode>
   readonly calendarEntries: WritableSignal<readonly EntryUiAdapter[]>
   readonly hourHeight: WritableSignal<number>
+  readonly isLoading: WritableSignal<boolean>
+  readonly collectionStatus: WritableSignal<CollectionStatus>
+  /** Whether any source is usable or still being checked; true by default. */
+  readonly anySourceReady: WritableSignal<boolean>
+  /** The connections the source filter shows; one by default. */
+  readonly activeConnections: WritableSignal<Set<ConnectionKey>>
   /** The events and groups the view opened, by key. */
   readonly opened: (EntryKey | readonly EntryKey[])[]
   /** How often the view collected the range on screen. */
@@ -44,6 +54,10 @@ export function fakeCalendarState(init: CalendarStateInit): FakeCalendarState {
   const currentView = signal<ViewMode>(init.view ?? 'week')
   const calendarEntries = signal<readonly EntryUiAdapter[]>(init.entries ?? [])
   const hourHeight = signal(DEFAULT_HOUR_HEIGHT)
+  const isLoading = signal(false)
+  const collectionStatus = signal<CollectionStatus>(init.status ?? { kind: 'idle' })
+  const anySourceReady = signal(true)
+  const activeConnections = signal(new Set<ConnectionKey>(['calendar/default']))
   const opened: (EntryKey | readonly EntryKey[])[] = []
   const weekDays = computed(() => {
     const day = selectedDay()
@@ -58,6 +72,7 @@ export function fakeCalendarState(init: CalendarStateInit): FakeCalendarState {
     dateFrom: signal(init.from ?? null),
     dateTo: signal(init.to ?? null),
     hourHeight,
+    activeConnections,
     navigateDay: (delta: number): void => selectedDay.update(day => addDaysToKey(day, delta)),
     navigateWeek: (delta: number): void => selectedDay.update(day => addDaysToKey(day, delta * 7)),
     goToToday: (): void => undefined,
@@ -76,6 +91,9 @@ export function fakeCalendarState(init: CalendarStateInit): FakeCalendarState {
   } satisfies Partial<ActivityViewStateService>
   let collects = 0
   const data = {
+    isLoading,
+    collectionStatus,
+    anySourceReady,
     collectShownRange: (): Promise<void> => {
       collects += 1
       return Promise.resolve()
@@ -96,7 +114,30 @@ export function fakeCalendarState(init: CalendarStateInit): FakeCalendarState {
     currentView,
     calendarEntries,
     hourHeight,
+    isLoading,
+    collectionStatus,
+    anySourceReady,
+    activeConnections,
     opened,
     collects: () => collects,
   }
+}
+
+/** The words of the hint on screen, in its live region; null without a hint. */
+export function shownHint(): { readonly title: string; readonly message: string | null } | null {
+  const status = document.querySelector('app-calendar-hint [role="status"]')
+  if (status === null) return null
+  return {
+    title: status.querySelector('.hint-title')?.textContent?.trim() ?? '',
+    message: status.querySelector('.hint-message')?.textContent?.trim() ?? null,
+  }
+}
+
+/** The words `hint` shows, to compare `shownHint()` with: specs name the case, not its text. */
+export function hintWords(hint: CalendarEmptyHint): {
+  readonly title: string
+  readonly message: string | null
+} {
+  const { title, message } = calendarHintText(hint)
+  return { title, message }
 }

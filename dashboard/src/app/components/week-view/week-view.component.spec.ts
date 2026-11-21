@@ -3,10 +3,13 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { BusyStatus } from '../../generated/activity'
 import { createEntryAdapter } from '../../providers/provider-adapter'
 import type { EntryUiAdapter } from '../../providers/types'
+import { failure } from '../../services/failure'
 import { meetingWeightOf } from '../../testing/activity-fixtures'
 import { MIN_BLOCK_HEIGHT } from '../calendar/calendar-grid'
 import {
   fakeCalendarState,
+  hintWords,
+  shownHint,
   type CalendarStateInit,
   type FakeCalendarState,
 } from '../calendar/calendar-testing'
@@ -214,17 +217,66 @@ describe('WeekViewComponent', () => {
 
   it('says an empty week outside the collection was not collected', async () => {
     await renderWeek({ day: '2026-11-10', from: '2026-11-16', to: '2026-11-22' })
-    expect(screen.getByRole('status').querySelector('.hint-title')?.textContent).toBe(
-      'This week was not collected'
+    expect(shownHint()).toEqual(
+      hintWords({
+        reason: 'notCollected',
+        unit: 'week',
+        onScreen: { from: '2026-11-16', to: '2026-11-22' },
+        collect: null,
+      })
     )
   })
 
   it('says a collected week without entries had no activity', async () => {
-    // Only Sunday is collected: enough to say nothing happened in it.
+    await renderWeek({ from: '2026-11-16', to: '2026-11-22' })
+    expect(shownHint()).toEqual(hintWords({ reason: 'noActivity', unit: 'week', whole: true }))
+  })
+
+  it('says only the collected days of a week had no activity', async () => {
+    // Only Sunday is collected: nothing happened in it, but the rest of the week was not read.
     await renderWeek({ from: '2026-11-22', to: '2026-11-29' })
-    expect(screen.getByRole('status').querySelector('.hint-title')?.textContent).toBe(
-      'No activity in this week'
-    )
+    expect(shownHint()).toEqual(hintWords({ reason: 'noActivity', unit: 'week', whole: false }))
+  })
+
+  it('shows no hint while a collection runs', async () => {
+    const { state, result } = await renderWeek({ from: '2026-11-16', to: '2026-11-22' })
+    expect(shownHint()).not.toBeNull()
+
+    state.isLoading.set(true)
+    await result.fixture.whenStable()
+
+    expect(shownHint()).toBeNull()
+  })
+
+  it('says a failed collection loaded nothing, and offers no Collect beside its Retry', async () => {
+    await renderWeek({
+      from: '2026-11-16',
+      to: '2026-11-22',
+      coverage: {
+        kind: 'other',
+        collected: { from: '2026-11-02', to: '2026-11-08' },
+        own: { from: '2026-11-16', to: '2026-11-22' },
+        overlaps: false,
+      },
+      status: {
+        kind: 'failed',
+        operation: 'collect',
+        origin: 'lostBackend',
+        failure: failure('The backend stopped answering'),
+      },
+    })
+
+    expect(shownHint()).toEqual(hintWords({ reason: 'failed', cause: 'unfinished' }))
+    expect(screen.queryByRole('button', { name: /^Collect / })).toBeNull()
+  })
+
+  it('says every source is hidden where the source filter shows none', async () => {
+    const { state, result } = await renderWeek({ from: '2026-11-16', to: '2026-11-22' })
+
+    state.activeConnections.set(new Set())
+    await result.fixture.whenStable()
+
+    expect(shownHint()).toEqual(hintWords({ reason: 'allHidden' }))
   })
 
   it('totals meeting time only for the days another collection on screen holds', async () => {
@@ -258,10 +310,13 @@ describe('WeekViewComponent', () => {
       },
     })
 
-    const status = screen.getByRole('status')
-    expect(status.querySelector('.hint-title')?.textContent).toBe('This week was not collected')
-    expect(status.querySelector('.hint-message')?.textContent).toBe(
-      'The activity on screen covers 2 Nov – 8 Nov 2026.'
+    expect(shownHint()).toEqual(
+      hintWords({
+        reason: 'notCollected',
+        unit: 'week',
+        onScreen: { from: '2026-11-02', to: '2026-11-08' },
+        collect: { from: '2026-11-16', to: '2026-11-22' },
+      })
     )
     const collect = screen.getByRole('button', { name: 'Collect 16 Nov – 22 Nov 2026' })
     // Only the hint's text is announced; the button is not part of the live region.

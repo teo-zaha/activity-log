@@ -1,0 +1,11 @@
+<p role="status" class="hint-text">
+  <span class="hint-title">{{ text().title }}</span>
+  @if (text().message; as message) {
+    <span class="hint-message">{{ message }}</span>
+  }
+</p>
+@if (text().action; as action) {
+  <button appButton variant="primary" size="sm" icon="sync" (click)="collect.emit()">
+    {{ action.label }}
+  </button>
+}

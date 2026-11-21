@@ -28,7 +28,7 @@ interface TimelineActivityMock {
   dateFrom: WritableSignal<string>
   dateTo: WritableSignal<string>
   collectionStatus: WritableSignal<CollectionStatus>
-  providers: WritableSignal<{ label: string }[]>
+  anySourceReady: WritableSignal<boolean>
   activeConnections: WritableSignal<Set<ConnectionKey>>
   openEvent: ReturnType<typeof vi.fn<(key: EntryKey) => Promise<boolean>>>
   rangeCoverage: WritableSignal<RangeCoverage>
@@ -51,7 +51,7 @@ function mockActivity(overrides: { status?: CollectionStatus; query?: string } =
       dateFrom: signal('2026-05-17'),
       dateTo: signal('2026-05-18'),
       collectionStatus: signal<CollectionStatus>(overrides.status ?? { kind: 'idle' }),
-      providers: signal([{ label: 'Git' }]),
+      anySourceReady: signal(true),
       activeConnections: signal(new Set<ConnectionKey>(['git/default'])),
       openEvent: vi.fn((_key: EntryKey) => Promise.resolve(true)),
       rangeCoverage: signal<RangeCoverage>({ kind: 'covered' }),
@@ -83,7 +83,7 @@ function servicesOf(activity: TimelineActivityMock): Provider[] {
       useValue: {
         isLoading: activity.isLoading,
         collectionStatus: activity.collectionStatus,
-        providers: activity.providers,
+        anySourceReady: activity.anySourceReady,
         collectShownRange: activity.collectShownRange,
       },
     },
