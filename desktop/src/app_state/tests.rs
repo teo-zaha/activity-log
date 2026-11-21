@@ -47,3 +47,18 @@ fn a_broken_config_at_startup_is_logged_without_its_text_and_starts_empty() {
             .all(|entry| !entry.message.contains("STARTUP-SECRET"))
     );
 }
+
+/// The spawner hands each run's end on, with the run's id; a check's work has none.
+#[test]
+fn each_run_end_is_handed_on() {
+    let (state, mut ends) = AppState::start_following(None);
+    state.host.start_initial_collection();
+
+    let end = tauri::async_runtime::block_on(ends.recv()).expect("the run ends");
+
+    assert_eq!(
+        end.outcome,
+        activity_log_core::model::RunOutcome::Ready { entries: 0 }
+    );
+    assert!(state.host.is_current(end.run));
+}

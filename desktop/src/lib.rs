@@ -1,6 +1,7 @@
 mod app_menu;
 mod app_state;
 mod browser_keys;
+mod collection_notice;
 mod commands;
 mod deep_link;
 mod devtools;
@@ -12,7 +13,10 @@ mod window_state;
 use std::time::{Duration, Instant};
 
 use activity_log_core::settings::ConfigFile;
-use tauri::{Emitter, Manager, RunEvent, Runtime, WebviewWindow, webview::PageLoadEvent};
+use tauri::{
+    Emitter, Manager, RunEvent, Runtime, WebviewWindow, WindowEvent, webview::PageLoadEvent,
+};
+use tauri_plugin_notification::NotificationExt;
 
 use app_state::AppState;
 
@@ -52,6 +56,8 @@ pub fn run() {
         }))
         .plugin(tauri_plugin_deep_link::init())
         .plugin(window_state::plugin())
+        // Used from Rust only (`collection_notice`), so the page gets no permission for it.
+        .plugin(tauri_plugin_notification::init())
         // Only `open_url` opens links, with its own check; the plugin's commands stay without a
         // permission and its click interception is off.
         .plugin(
@@ -61,6 +67,16 @@ pub fn run() {
         )
         .manage(app_menu::AppMenu::<tauri::Wry>::default())
         .manage(commands::ExportTurn::default())
+        .manage(collection_notice::WindowFocus::default())
+        .on_window_event(|window, event| {
+            if window.label() == deep_link::MAIN_WINDOW
+                && let WindowEvent::Focused(focused) = event
+            {
+                window
+                    .state::<collection_notice::WindowFocus>()
+                    .set(*focused);
+            }
+        })
         .on_menu_event(|app, event| app_menu::chosen(app, event.id()))
         // A page that loads again starts with the default menu and installs its own.
         .on_page_load(|webview, payload| {
@@ -82,7 +98,7 @@ pub fn run() {
             // The startup checks can take seconds (WSL starting, a large disk, a slow host), so
             // they run in the background: until its own check finishes a source is listed as
             // checking, and the first collection reads each source as soon as it is checked.
-            let state = AppState::start(ConfigFile::resolve_path(None));
+            let (state, run_ends) = AppState::start_following(ConfigFile::resolve_path(None));
             state.host.start_initial_collection();
             // Edits from the CLI apply within a few seconds.
             tauri::async_runtime::spawn(state.host.watch_config());
@@ -94,6 +110,31 @@ pub fn run() {
             tauri::async_runtime::spawn(runtime_events::forward(
                 Box::pin(feed),
                 move |event, json| window.emit_str_to(deep_link::MAIN_WINDOW, event, json),
+            ));
+            // A long collection that ends while the window is in the background says so.
+            let app_handle = app.handle().clone();
+            let host = state.host.clone();
+            tauri::async_runtime::spawn(collection_notice::follow(
+                run_ends,
+                {
+                    let app = app_handle.clone();
+                    move || app.state::<collection_notice::WindowFocus>().get()
+                },
+                move |run| host.is_current(run),
+                move |notice| {
+                    if let Err(err) = app_handle
+                        .notification()
+                        .builder()
+                        .title(notice.title)
+                        .body(notice.body)
+                        .show()
+                    {
+                        activity_log_core::diagnostics::warn(
+                            "desktop",
+                            format!("Showing a notification failed: {err}"),
+                        );
+                    }
+                },
             ));
             app.manage(state);
 
