@@ -44,6 +44,8 @@ export class ActivityService {
   readonly connectionCounts = this.data.connectionCounts
   readonly meta = this.data.meta
   readonly isLoading = this.data.isLoading
+  /** Whether there is a log to export: one is in and no collection is replacing it. */
+  readonly canExport = computed(() => this.meta() !== null && !this.isLoading())
   /** The snackbar's notice: a failure of an action that has no place of its own to show it. */
   readonly notice = signal<Notice | null>(null)
   readonly collectionStatus = this.data.collectionStatus

@@ -1,4 +1,7 @@
+import type { MenuSubmenu } from '../generated/activity'
+import type { ViewMode } from '../utils/app-url'
 import type { ChordKeys, Os } from '../utils/key-chord'
+import { VIEW_LABELS } from './nav'
 
 /**
  * Where an entry's keys work: `global` everywhere, or in the view whose route declares the
@@ -7,9 +10,6 @@ import type { ChordKeys, Os } from '../utils/key-chord'
  */
 export const SHORTCUT_SCOPES = ['global', 'timeline'] as const
 export type ShortcutScope = (typeof SHORTCUT_SCOPES)[number]
-
-/** The macOS menu's submenus an entry is listed in (the menu is built from this table). */
-export type MenuSubmenu = 'app' | 'file' | 'edit' | 'view' | 'window' | 'help'
 
 /** Where the dashboard runs: the desktop app, or a browser tab whose keys are the browser's. */
 export type Build = 'desktop' | 'browser'
@@ -35,6 +35,7 @@ export interface ShortcutEntry {
   readonly label: string
   readonly scope: ShortcutScope
   readonly chords: readonly Chord[]
+  /** The macOS menu's submenu it is listed in; the menu is built from this table. */
   readonly menu?: MenuSubmenu
 }
 
@@ -43,12 +44,38 @@ export const SHORTCUT_IDS = [
   'app.collect',
   'app.filter',
   'timeline.filter',
+  'view.list',
+  'view.day',
+  'view.workweek',
+  'view.week',
+  'app.settings',
+  'app.export-markdown',
+  'app.export-json',
+  'app.copy-link',
   'app.back',
   'layer.close',
   'app.help',
 ] as const
 
 export type ShortcutId = (typeof SHORTCUT_IDS)[number]
+
+/** The entry that shows each view; the macOS View menu lists them as the navigation groups them. */
+export const VIEW_SHORTCUTS = {
+  list: 'view.list',
+  day: 'view.day',
+  workweek: 'view.workweek',
+  week: 'view.week',
+} as const satisfies Readonly<Record<ViewMode, ShortcutId>>
+
+/** A view's entry, with ⌘1 to ⌘4 (Ctrl elsewhere) in the desktop app. */
+function viewEntry(view: ViewMode, keys: ChordKeys): Omit<ShortcutEntry, 'id'> {
+  return {
+    label: VIEW_LABELS[view],
+    scope: 'global',
+    menu: 'view',
+    chords: [{ keys, where: 'desktop', whileTyping: true, menuAccelerator: true }],
+  }
+}
 
 const ENTRIES: { readonly [Id in ShortcutId]: Omit<ShortcutEntry, 'id'> } = {
   // Ctrl+R and F5 reload a browser tab; in the desktop app they collect (WebView2's own browser
@@ -74,6 +101,22 @@ const ENTRIES: { readonly [Id in ShortcutId]: Omit<ShortcutEntry, 'id'> } = {
     scope: 'timeline',
     chords: [{ keys: '/', whileTyping: false, menuAccelerator: false }],
   },
+  // ⌘1 to ⌘4 switch a browser's tabs.
+  'view.list': viewEntry('list', 'mod+1'),
+  'view.day': viewEntry('day', 'mod+2'),
+  'view.workweek': viewEntry('workweek', 'mod+3'),
+  'view.week': viewEntry('week', 'mod+4'),
+  // ⌘, opens a browser's own settings.
+  'app.settings': {
+    label: 'Settings…',
+    scope: 'global',
+    menu: 'app',
+    chords: [{ keys: 'mod+,', where: 'desktop', whileTyping: true, menuAccelerator: true }],
+  },
+  // Menu items without a key: the header's buttons do the same.
+  'app.export-markdown': { label: 'Export Markdown…', scope: 'global', menu: 'file', chords: [] },
+  'app.export-json': { label: 'Export JSON…', scope: 'global', menu: 'file', chords: [] },
+  'app.copy-link': { label: 'Copy Link', scope: 'global', menu: 'file', chords: [] },
   // Alt+← moves by word in a text field on macOS and is never a menu accelerator.
   'app.back': {
     label: 'Back',

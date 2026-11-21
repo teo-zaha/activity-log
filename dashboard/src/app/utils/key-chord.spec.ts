@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { ariaChord, chordOf, formatChord, osOf } from './key-chord'
+import { ariaChord, chordOf, formatChord, menuKeyOf, osOf } from './key-chord'
 
 const press = (key: string, init: KeyboardEventInit = {}): KeyboardEvent =>
   new KeyboardEvent('keydown', { key, ...init })
@@ -60,5 +60,18 @@ describe('osOf', () => {
     expect(osOf('Mozilla/5.0 (iPad; CPU OS 18_0 like Mac OS X)')).toBe('mac')
     expect(osOf('Mozilla/5.0 (Windows NT 10.0; Win64; x64) Edg/131.0')).toBe('other')
     expect(osOf('Mozilla/5.0 (X11; Linux x86_64)')).toBe('other')
+  })
+})
+
+describe('menuKeyOf', () => {
+  it('gives a ⌘ chord the key of its menu accelerator, and no other chord one', () => {
+    expect(menuKeyOf('mod+r')).toBe('r')
+    expect(menuKeyOf('mod+[')).toBe('bracketLeft')
+    expect(menuKeyOf('mod+,')).toBe('comma')
+    expect(menuKeyOf('mod+3')).toBe('digit3')
+    expect(menuKeyOf('alt+arrowleft')).toBeNull()
+    expect(menuKeyOf('mod+escape')).toBeNull()
+    expect(menuKeyOf('/')).toBeNull()
+    expect(menuKeyOf('f5')).toBeNull()
   })
 })

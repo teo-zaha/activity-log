@@ -2,12 +2,10 @@ import { NgTemplateOutlet } from '@angular/common'
 import { Component, type TemplateRef, inject, input } from '@angular/core'
 import { MatIconModule } from '@angular/material/icon'
 import { MatTooltipModule } from '@angular/material/tooltip'
-import { Router } from '@angular/router'
 import { IconButtonComponent } from '../button/icon-button.component'
 import { ActivityService } from '../../services/activity.service'
-import { RuntimeEnvironmentService } from '../../services/backend/runtime-environment.service'
 import { WindowChromeService } from '../../services/window-chrome.service'
-import { appLink, injectLinkBase, injectShareLink, pageLink } from '../share/share-link'
+import { injectShareLink, injectViewLink } from '../share/share-link'
 
 /**
  * The window's top row on every page: the brand, what the layout on screen puts in the middle
@@ -25,10 +23,8 @@ export class HeaderComponent {
 
   protected readonly activity = inject(ActivityService)
   private readonly chrome = inject(WindowChromeService)
-  private readonly router = inject(Router)
   private readonly shareLink = injectShareLink()
-  private readonly linkBase = injectLinkBase()
-  private readonly desktop = inject(RuntimeEnvironmentService).isTauri()
+  private readonly viewLink = injectViewLink()
 
   protected exportMd(): void {
     void this.activity.exportMarkdown()
@@ -38,17 +34,9 @@ export class HeaderComponent {
     void this.activity.exportJson()
   }
 
-  /**
-   * Shares the link to this view, with the details open in it, if any. In the browser that is the
-   * page's own address, its whole query included; the desktop app's link keeps what the view
-   * shows.
-   */
+  /** Shares the link to this view (`injectViewLink`). */
   protected shareView(): Promise<void> {
-    return this.shareLink(
-      this.desktop
-        ? appLink(this.router, ['q', 'from', 'to', 'event', 'events'])
-        : pageLink(this.router, this.linkBase)
-    )
+    return this.shareLink(this.viewLink())
   }
 
   protected startHeaderDrag(event: MouseEvent): void {
