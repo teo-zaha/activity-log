@@ -13,9 +13,15 @@ use crate::{
         Budget, ChangeLookup, ChangeRef, FailureKind, LookupCause, LookupFailure, OpenPage,
         change_stacks,
     },
-    model::{ChangeStackAbove, ChangeStackBottom, ChangeStackEnd, StackedChange},
+    model::{
+        ActivityEntry, ChangeStackAbove, ChangeStackBottom, ChangeStackEnd, CollectOptions,
+        ConnectionId, ConnectionName, GitLabEntry, GitLabTag, GitLabType, LogLevel, Source,
+        StackedChange, SystemEntry, SystemEntryType, SystemTag,
+    },
     provider::{
-        gitlab::{GitLabConfig, api::GitLabApi},
+        ProviderRuntime,
+        connection::{Connection, ConnectionLocation, ConnectionValues},
+        gitlab::{GitLabConfig, GitLabProvider, api::GitLabApi},
         remote_api::test_server::{Reply, Request, TestServer},
         remote_error::{ApiError, OAuthRefusal},
     },
@@ -67,7 +73,8 @@ fn values(request: &Request, name: &str) -> Vec<String> {
 
 /// A GitLab that lists each project's rows as the API does: filtered by `iids[]`,
 /// `source_branch` and `target_branch`, `page_size` a page, the next page named in
-/// `x-next-page`. Rows are made once the server's address is known.
+/// `x-next-page`. Rows are made once the server's address is known. Its token belongs to
+/// `jdoe`, whose events are [`events`].
 fn gitlab(
     page_size: usize,
     rows: impl Fn(&str) -> BTreeMap<u64, Vec<Value>> + Send + 'static,
@@ -81,8 +88,11 @@ fn gitlab(
             .split_once("/api/v4/")
             .map(|(_, rest)| rest.split('/').collect())
             .unwrap_or_default();
-        let ["projects", project, "merge_requests"] = segments.as_slice() else {
-            return Reply::json(404, r#"{"message":"404 Not Found"}"#);
+        let project = match segments.as_slice() {
+            ["user"] => return Reply::json(200, r#"{"id":7,"username":"jdoe"}"#),
+            ["users", "jdoe", "events"] => return Reply::json(200, events().to_string()),
+            ["projects", project, "merge_requests"] => *project,
+            _ => return Reply::json(404, r#"{"message":"404 Not Found"}"#),
         };
         let Some(listed) = project.parse().ok().and_then(|id: u64| rows.get(&id)) else {
             return Reply::json(404, r#"{"message":"404 Project Not Found"}"#);
@@ -646,9 +656,10 @@ async fn a_project_of_several_pages_is_asked_per_branch() {
     let per_branch = change_stacks(wanted, &GitLabChanges::new(&api_paged), &budget).await;
 
     // The same but for the links, which name each server.
-    let shape = |report: &crate::collect::change_stack::StackReport<u64>, server: &TestServer| {
+    let shape = |stacks: &std::collections::HashMap<ChangeRef<u64>, crate::model::ChangeStack>,
+                 server: &TestServer| {
         serde_json::to_string(
-            &report.stacks[&ChangeRef {
+            &stacks[&ChangeRef {
                 repo: WIDGETS,
                 number: 2,
             }],
@@ -656,7 +667,275 @@ async fn a_project_of_several_pages_is_asked_per_branch() {
         .unwrap()
         .replace(&server.url, "https://gitlab.example.org")
     };
-    assert_eq!(shape(&from_page, &whole), shape(&per_branch, &paged));
+    assert_eq!(
+        shape(&from_page.stacks, &whole),
+        shape(&per_branch.stacks, &paged)
+    );
     assert_eq!(per_branch.read_in_part, 1);
     assert!(budget.spent() > 1);
+}
+
+/// `jdoe`'s events in March 2026: opening `!2`, a comment on `!4`, and a push.
+fn events() -> Value {
+    json!([
+        {
+            "id": 501, "action_name": "opened", "created_at": "2026-03-05T09:00:00Z",
+            "project_id": WIDGETS, "target_type": "MergeRequest", "target_iid": 2,
+            "target_title": "Parse step 2",
+        },
+        {
+            "id": 502, "action_name": "commented on", "created_at": "2026-03-06T09:00:00Z",
+            "project_id": WIDGETS, "target_type": "Note", "target_iid": 9001,
+            "note": { "body": "Looks good", "noteable_type": "MergeRequest", "noteable_iid": 4 },
+        },
+        {
+            "id": 503, "action_name": "pushed to", "created_at": "2026-03-07T09:00:00Z",
+            "project_id": WIDGETS,
+            "push_data": { "ref": "feature/parse-b", "commit_count": 1, "commit_to": "abc123" },
+        },
+    ])
+}
+
+fn march() -> CollectOptions {
+    use chrono::TimeZone;
+    CollectOptions {
+        start: chrono::Utc.with_ymd_and_hms(2026, 3, 1, 0, 0, 0).unwrap(),
+        end: chrono::Utc.with_ymd_and_hms(2026, 4, 1, 0, 0, 0).unwrap(),
+    }
+}
+
+/// A checked GitLab connection named `name` (its log scope is `gitlab/{name}`).
+async fn runtime(server: &TestServer, name: &str) -> ProviderRuntime {
+    let connection = Connection::new(
+        ConnectionId::new(Source::Gitlab, name),
+        name,
+        ConnectionLocation::Local,
+        ConnectionValues::new(
+            [
+                ("GITLAB_URL".to_string(), Some(server.url.clone())),
+                ("GITLAB_TOKEN".to_string(), Some(TOKEN.to_string())),
+                ("GITLAB_USER".to_string(), Some("jdoe".to_string())),
+            ]
+            .into(),
+        ),
+    );
+    let runtime = ProviderRuntime::inspect(Arc::new(GitLabProvider), &connection).await;
+    assert!(runtime.usable(), "{:?}", runtime.info().reason);
+    runtime
+}
+
+/// An event of `type` on merge request `mr` of `project`.
+fn event(id: &str, entry_type: GitLabType, project: Option<u64>, mr: Option<u64>) -> ActivityEntry {
+    ActivityEntry::GitLab(GitLabEntry {
+        source: GitLabTag,
+        connection: ConnectionName::unstamped(),
+        id: id.to_string(),
+        entry_type,
+        timestamp: "2026-03-05T09:00:00+00:00".into(),
+        title: None,
+        target_type: None,
+        project_id: project,
+        mr_iid: mr,
+        issue_iid: None,
+        branch: None,
+        commit_count: None,
+        note_body: None,
+        note_file: None,
+        note_resolved: None,
+        pushed_commit: None,
+        change_stack: None,
+    })
+}
+
+/// Each GitLab entry's stack, by id.
+fn stacks(entries: &[ActivityEntry]) -> BTreeMap<String, Option<Vec<u64>>> {
+    entries
+        .iter()
+        .filter_map(|entry| match entry {
+            ActivityEntry::GitLab(entry) => Some((
+                entry.id.clone(),
+                entry.change_stack.as_ref().map(|stack| {
+                    let mut members: Vec<u64> =
+                        stack.below().iter().map(|change| change.number).collect();
+                    members.push(stack.current().number);
+                    members
+                }),
+            )),
+            _ => None,
+        })
+        .collect()
+}
+
+/// A stack, as `stacks` shows one, that no lookup made: it must not survive an annotation.
+fn stale(entry: &mut ActivityEntry, from: &ActivityEntry) {
+    let (ActivityEntry::GitLab(entry), ActivityEntry::GitLab(from)) = (entry, from) else {
+        panic!("GitLab entries");
+    };
+    entry.change_stack = from.change_stack.clone();
+}
+
+fn lines(scope: &str) -> Vec<crate::model::LogEntry> {
+    crate::diagnostics::entries()
+        .into_iter()
+        .filter(|line| line.scope == scope)
+        .collect()
+}
+
+/// Every GitLab entry gets the stack of the merge request it is about, as GitLab has it now:
+/// a comment as its merge request does, and a push, an event about no open merge request or
+/// about none at all gets none, whatever it held before. Other kinds are left as they are.
+#[tokio::test]
+async fn every_entry_gets_its_merge_requests_stack_and_no_other() {
+    let server = gitlab(100, four);
+    let runtime = runtime(&server, "stack-annotate").await;
+    let system = ActivityEntry::System(SystemEntry {
+        source: SystemTag,
+        connection: ConnectionName::unstamped(),
+        id: "unlock".to_string(),
+        entry_type: SystemEntryType::Unlock,
+        timestamp: "2026-03-05T08:00:00+00:00".into(),
+        label: "Unlocked".to_string(),
+    });
+    let mut entries = vec![
+        event("opened", GitLabType::Opened, Some(WIDGETS), Some(2)),
+        event("comment", GitLabType::CommentedOn, Some(WIDGETS), Some(4)),
+        event("push", GitLabType::PushedTo, Some(WIDGETS), Some(2)),
+        event("closed", GitLabType::Merged, Some(WIDGETS), Some(9)),
+        event("no-project", GitLabType::Opened, None, Some(2)),
+        event("issue", GitLabType::Opened, Some(WIDGETS), None),
+        system.clone(),
+    ];
+    let requests_before = server.requests().len();
+
+    runtime.annotate(&mut entries).await;
+    // What an earlier collection would have left: every entry with the stack of `!2`.
+    let annotated = entries[0].clone();
+    for entry in &mut entries[1..6] {
+        stale(entry, &annotated);
+    }
+    runtime.annotate(&mut entries).await;
+
+    assert_eq!(
+        stacks(&entries),
+        BTreeMap::from([
+            ("opened".to_string(), Some(vec![1, 2])),
+            ("comment".to_string(), Some(vec![1, 2, 3, 4])),
+            ("push".to_string(), None),
+            ("closed".to_string(), None),
+            ("no-project".to_string(), None),
+            ("issue".to_string(), None),
+        ])
+    );
+    assert_eq!(format!("{:?}", entries[6]), format!("{system:?}"));
+    // One page for the project, each time.
+    assert_eq!(server.requests().len() - requests_before, 2);
+    let summary = lines("gitlab/stack-annotate");
+    assert!(
+        summary.iter().any(|line| line.level == LogLevel::Info),
+        "{summary:?}"
+    );
+}
+
+/// A stack that is gone (its merge requests merged) is cleared by the next annotation.
+#[tokio::test]
+async fn a_stack_no_longer_there_is_cleared() {
+    let merged = Arc::new(std::sync::atomic::AtomicBool::new(false));
+    let server = gitlab(100, {
+        let merged = merged.clone();
+        move |base| {
+            if merged.load(std::sync::atomic::Ordering::SeqCst) {
+                BTreeMap::from([(WIDGETS, Vec::new())])
+            } else {
+                four(base)
+            }
+        }
+    });
+    let runtime = runtime(&server, "stack-cleared").await;
+    let mut entries = vec![event("opened", GitLabType::Opened, Some(WIDGETS), Some(2))];
+
+    runtime.annotate(&mut entries).await;
+    assert_eq!(stacks(&entries)["opened"], Some(vec![1, 2]));
+    merged.store(true, std::sync::atomic::Ordering::SeqCst);
+    runtime.annotate(&mut entries).await;
+
+    assert_eq!(stacks(&entries)["opened"], None);
+}
+
+/// A lookup that fails keeps every entry, shows no stack and says why in the Logs.
+#[tokio::test]
+async fn a_failed_lookup_keeps_the_entries_without_stacks() {
+    let server = TestServer::start(|request| {
+        if request.path().ends_with("/user") {
+            Reply::json(200, r#"{"id":7,"username":"jdoe"}"#)
+        } else {
+            Reply::json(500, r#"{"message":"500 database is down"}"#)
+        }
+    });
+    let runtime = runtime(&server, "stack-failed").await;
+    let mut entries = vec![
+        event("opened", GitLabType::Opened, Some(WIDGETS), Some(2)),
+        event("comment", GitLabType::CommentedOn, Some(WIDGETS), Some(4)),
+    ];
+
+    runtime.annotate(&mut entries).await;
+
+    assert_eq!(
+        stacks(&entries),
+        BTreeMap::from([("opened".to_string(), None), ("comment".to_string(), None)])
+    );
+    let warnings: Vec<_> = lines("gitlab/stack-failed")
+        .into_iter()
+        .filter(|line| line.level == LogLevel::Warn)
+        .collect();
+    assert_eq!(warnings.len(), 1, "{warnings:?}");
+    assert!(
+        warnings[0].message.contains("database is down"),
+        "{warnings:?}"
+    );
+}
+
+/// Stacks are looked up after the day cache: a cache file never holds one, and days the cache
+/// serves get them all the same.
+#[tokio::test]
+async fn stacks_are_never_cached_and_cached_days_get_them() {
+    let server = gitlab(100, four);
+    let runtime = runtime(&server, "stack-cache").await;
+    let cache = tempfile::tempdir().unwrap();
+    let events_asked = || {
+        server
+            .requests()
+            .iter()
+            .filter(|request| request.path().ends_with("/events"))
+            .count()
+    };
+
+    let mut first = runtime
+        .collect_in(cache.path(), march(), None)
+        .await
+        .unwrap();
+    runtime.annotate(&mut first).await;
+    let mut cached = runtime
+        .collect_in(cache.path(), march(), None)
+        .await
+        .unwrap();
+    let file_text: String = std::fs::read_dir(cache.path())
+        .unwrap()
+        .map(|file| std::fs::read_to_string(file.unwrap().path()).unwrap_or_default())
+        .collect();
+    runtime.annotate(&mut cached).await;
+
+    assert_eq!(
+        events_asked(),
+        1,
+        "the second collection came from the cache"
+    );
+    assert!(file_text.contains("projectId"), "{file_text}");
+    assert!(!file_text.contains("changeStack"), "{file_text}");
+    let expected = BTreeMap::from([
+        ("501".to_string(), Some(vec![1, 2])),
+        ("502".to_string(), Some(vec![1, 2, 3, 4])),
+        ("503".to_string(), None),
+    ]);
+    assert_eq!(stacks(&first), expected);
+    assert_eq!(stacks(&cached), expected);
 }

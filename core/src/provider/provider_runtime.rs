@@ -168,6 +168,16 @@ impl ProviderRuntime {
         };
         diagnostics::in_connection(self.id().clone(), collect).await
     }
+
+    /// Adds what its kind looks up now to this connection's collected `entries`
+    /// ([`ProviderAdapter::annotate`]), its log lines shown under the connection.
+    pub async fn annotate(&self, entries: &mut [ActivityEntry]) {
+        diagnostics::in_connection(
+            self.id().clone(),
+            self.adapter.annotate(entries, self.context.clone()),
+        )
+        .await;
+    }
 }
 
 /// The adapter of [`ProviderRuntime::from_info`].

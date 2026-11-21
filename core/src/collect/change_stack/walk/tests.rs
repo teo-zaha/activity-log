@@ -13,11 +13,14 @@ use futures::{FutureExt, future::BoxFuture};
 use reqwest::Url;
 use tokio::{sync::Semaphore, time::Instant};
 
+use super::{Failures, STACK_DEPTH, STACK_MEMBERS, StackReport, change_stacks};
 use crate::{
     collect::change_stack::{
-        Breaker, Budget, ChangeLookup, ChangeRef, FailureKind, Failures, LookupCause,
-        LookupFailure, OpenChange, OpenPage, STACK_BUDGET, STACK_DEPTH, STACK_MEMBERS,
-        STACK_REQUESTS, StackReport, WebLink, change_stacks, web_link,
+        budget::{Breaker, Budget, STACK_BUDGET, STACK_REQUESTS},
+        lookup::{
+            ChangeLookup, ChangeRef, FailureKind, LookupCause, LookupFailure, OpenChange, OpenPage,
+        },
+        web_link::{WebLink, web_link},
     },
     model::{
         ChangeStack, ChangeStackAbove, ChangeStackBottom, ChangeStackEnd, ChangeStackNode,
@@ -310,6 +313,19 @@ where
     R: Clone + Eq + Hash + Ord + Send + Sync,
 {
     change_stacks(wanted, fake, &budget()).await
+}
+
+/// [`stacks_of`], and why lookups stopped for good, if they did.
+async fn stopped_by<R>(
+    fake: &Fake<R>,
+    wanted: Vec<(ChangeRef<R>, DateTime<Utc>)>,
+) -> (StackReport<R>, Option<Breaker>)
+where
+    R: Clone + Eq + Hash + Ord + Send + Sync,
+{
+    let budget = budget();
+    let report = change_stacks(wanted, fake, &budget).await;
+    (report, budget.breaker())
 }
 
 fn stack_of<R: Eq + Hash>(report: &StackReport<R>, repo: R, number: u64) -> Option<&ChangeStack> {
@@ -815,7 +831,7 @@ async fn a_busy_host_stops_every_later_request() {
         .paged(0)
         .failing(from(WIDGETS, "feature/parse-a"), FailureKind::Throttled);
     fake.concurrency = 1;
-    let report = stacks_of(&fake, wanted(WIDGETS, &[2, 3])).await;
+    let (report, stopped) = stopped_by(&fake, wanted(WIDGETS, &[2, 3])).await;
 
     assert_eq!(
         fake.calls(),
@@ -835,7 +851,7 @@ async fn a_busy_host_stops_every_later_request() {
     };
     assert_eq!(stack_of(&report, WIDGETS, 2), Some(&throttled(2, &[])));
     assert_eq!(stack_of(&report, WIDGETS, 3), Some(&throttled(3, &[])));
-    assert_eq!(report.stopped, Some(Breaker::Throttled));
+    assert_eq!(stopped, Some(Breaker::Throttled));
 }
 
 /// A refused token on the first page: no other repository is asked, and nothing shows a stack.
@@ -850,11 +866,11 @@ async fn a_refused_token_stops_before_any_other_request() {
             .into_iter()
             .map(|(change, _)| (change, at(0))),
     );
-    let report = stacks_of(&fake, wanted).await;
+    let (report, stopped) = stopped_by(&fake, wanted).await;
 
     assert_eq!(fake.calls(), [Call::Page(WIDGETS)]);
     assert!(report.stacks.is_empty());
-    assert_eq!(report.stopped, Some(Breaker::ScopeMissing));
+    assert_eq!(stopped, Some(Breaker::ScopeMissing));
     let failures = &report.failures[&FailureKind::ScopeMissing];
     assert_eq!((failures.repositories, failures.changes), (2, 3));
 }
@@ -866,13 +882,13 @@ async fn an_unreadable_repository_shows_no_stacks_and_is_counted() {
         .failing(Call::Page(77), FailureKind::Unreadable);
     let mut wanted = wanted(WIDGETS, &[2]);
     wanted.extend(self::wanted(77, &[2]));
-    let report = stacks_of(&fake, wanted).await;
+    let (report, stopped) = stopped_by(&fake, wanted).await;
 
     assert!(stack_of(&report, WIDGETS, 2).is_some());
     assert_eq!(stack_of(&report, 77, 2), None);
     let failures = &report.failures[&FailureKind::Unreadable];
     assert_eq!((failures.repositories, failures.changes), (1, 1));
-    assert_eq!(report.stopped, None);
+    assert_eq!(stopped, None);
 }
 
 /// When the numbers off the page cannot be asked, those changes are absent (openness unknown);
@@ -1205,9 +1221,9 @@ async fn a_tripped_breaker_logs_one_warning() {
     fake.concurrency = 1;
     let mut wanted = wanted(WIDGETS, &[1, 2]);
     wanted.extend(self::wanted(77, &[3]));
-    let report = stacks_of(&fake, wanted).await;
+    let (report, stopped) = stopped_by(&fake, wanted).await;
 
-    assert_eq!(report.stopped, Some(Breaker::TokenInvalid));
+    assert_eq!(stopped, Some(Breaker::TokenInvalid));
     let lines = log_lines(&report, "change-stack-log-breaker");
     assert_eq!(levels(&lines), [LogLevel::Info, LogLevel::Warn]);
 }

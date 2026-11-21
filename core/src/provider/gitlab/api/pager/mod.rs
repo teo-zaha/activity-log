@@ -60,13 +60,6 @@ impl<'a, B: RequestBudget> Pager<'a, B> {
 
     /// Whether GitLab named a page after the ones read: a list read only in part (a first
     /// page) tells by it whether it is the whole list.
-    #[cfg_attr(
-        not(test),
-        expect(
-            dead_code,
-            reason = "the GitLab change stack lookup reads it (plan step 16, stage 5)"
-        )
-    )]
     pub(crate) fn has_next(&self) -> bool {
         self.next.is_some()
     }

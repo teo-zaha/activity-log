@@ -159,7 +159,8 @@ fn march() -> CollectOptions {
 
 /// A source whose connections each collect one entry labelled with their name: `slow` only
 /// once `release` is notified, and `broken` never; `off` fails its startup check and `twice`
-/// collects its entry twice, as a source that repeats itself would.
+/// collects its entry twice, as a source that repeats itself would. `noted` annotates its
+/// entries (and logs that it does), `dawdles` never ends annotating them.
 struct FakeSource {
     release: Arc<Notify>,
 }
@@ -217,6 +218,34 @@ impl ProviderAdapter for FakeSource {
             });
             Ok(vec![entry; copies])
         })
+    }
+
+    fn annotate<'a>(
+        &'a self,
+        entries: &'a mut [ActivityEntry],
+        context: ProviderContext,
+    ) -> BoxFuture<'a, ()> {
+        let name = context.connection().unwrap().id.name.clone();
+        Box::pin(async move {
+            match name.as_str() {
+                "noted" => {
+                    crate::diagnostics::info("system", "Annotating");
+                    for entry in entries.iter_mut() {
+                        if let ActivityEntry::System(entry) = entry {
+                            entry.label = Self::annotated(&entry.label);
+                        }
+                    }
+                }
+                "dawdles" => std::future::pending().await,
+                _ => {}
+            }
+        })
+    }
+}
+
+impl FakeSource {
+    fn annotated(label: &str) -> String {
+        format!("{label}, annotated")
     }
 }
 
@@ -583,4 +612,59 @@ async fn a_planned_collection_keeps_what_it_does_not_collect_and_reports_what_fa
         [(fake_id("broken"), "unreachable host".to_string())]
     );
     assert!(matches!(report.slots[0].1, Slot::Kept(_)));
+}
+
+/// What a kind annotates reaches the report, after the collection's own time is logged.
+#[tokio::test]
+async fn annotations_follow_the_logged_collection() {
+    let release = Arc::new(Notify::new());
+    let runtimes = fake_runtimes(&release, &["noted", "fast"]).await;
+
+    let collected = collect_runtimes(march(), &runtimes).await.project(march());
+
+    let mut labels = labels(&collected.log);
+    labels.sort();
+    assert_eq!(labels, ["fast", FakeSource::annotated("noted").as_str()]);
+    let lines: Vec<String> = crate::diagnostics::entries()
+        .into_iter()
+        .filter(|line| line.scope == "system/noted")
+        .map(|line| line.message)
+        .collect();
+    let collected_at = lines
+        .iter()
+        .position(|line| line.starts_with("Collected 1 entries"));
+    let annotated_at = lines.iter().position(|line| line == "Annotating");
+    assert!(
+        matches!((collected_at, annotated_at), (Some(collected), Some(annotated)) if collected < annotated),
+        "{lines:?}"
+    );
+}
+
+/// An annotation that never ends is stopped; the connection keeps its entries and is not
+/// failed.
+#[tokio::test(start_paused = true)]
+async fn an_annotation_that_never_ends_costs_no_entries() {
+    let release = Arc::new(Notify::new());
+    let runtimes = fake_runtimes(&release, &["dawdles"]).await;
+    let plans = runtimes
+        .iter()
+        .map(|runtime| collect_plan(runtime, None))
+        .collect();
+    let started = tokio::time::Instant::now();
+
+    let report = collect_planned(march(), plans, |_| {}).await;
+
+    match &report.slots[0].1 {
+        Slot::Settled(Outcome::Collected(stored)) => {
+            assert_eq!(stored.entries.len(), 1);
+        }
+        other => panic!("expected the entries, got {other:?}"),
+    }
+    assert_eq!(started.elapsed(), crate::ANNOTATE_TIMEOUT);
+    assert!(crate::ANNOTATE_TIMEOUT > crate::collect::change_stack::STACK_BUDGET);
+    assert!(
+        crate::diagnostics::entries().iter().any(
+            |line| line.scope == "system/dawdles" && line.level == crate::model::LogLevel::Warn
+        )
+    );
 }

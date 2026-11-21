@@ -71,6 +71,12 @@ struct World {
     checks: AtomicUsize,
     /// What a connection's collection gives instead of its labelled entry.
     entries: Mutex<BTreeMap<ConnectionId, Vec<ActivityEntry>>>,
+    /// Connections whose collected entries are annotated (their labels marked) once this gate
+    /// lets them.
+    annotate_gates: Mutex<BTreeMap<ConnectionId, Arc<Semaphore>>>,
+    /// Each annotation that began, and those dropped before they were done.
+    annotating: tokio::sync::Notify,
+    annotations_dropped: AtomicUsize,
 }
 
 impl World {
@@ -100,6 +106,15 @@ impl World {
     fn hold_collections(&self, id: &ConnectionId) -> Arc<Semaphore> {
         let gate = Arc::new(Semaphore::new(0));
         self.collect_gates
+            .lock()
+            .unwrap()
+            .insert(id.clone(), gate.clone());
+        gate
+    }
+
+    fn hold_annotations(&self, id: &ConnectionId) -> Arc<Semaphore> {
+        let gate = Arc::new(Semaphore::new(0));
+        self.annotate_gates
             .lock()
             .unwrap()
             .insert(id.clone(), gate.clone());
@@ -202,6 +217,43 @@ impl ProviderAdapter for Fake {
             Ok(vec![entry(&format!("{} as {account}", id.name))])
         })
     }
+
+    fn annotate<'a>(
+        &'a self,
+        entries: &'a mut [ActivityEntry],
+        context: ProviderContext,
+    ) -> BoxFuture<'a, ()> {
+        let id = context.connection().unwrap().id.clone();
+        Box::pin(async move {
+            let Some(gate) = self.world.annotate_gates.lock().unwrap().get(&id).cloned() else {
+                return;
+            };
+            assert!(
+                !super::transition::state_lock_held(),
+                "annotated under the state lock"
+            );
+            /// Counts an annotation dropped before it was done.
+            struct Unfinished<'a>(&'a AtomicUsize);
+            impl Drop for Unfinished<'_> {
+                fn drop(&mut self) {
+                    self.0.fetch_add(1, Ordering::SeqCst);
+                }
+            }
+            let unfinished = Unfinished(&self.world.annotations_dropped);
+            self.world.annotating.notify_one();
+            pass(Some(gate)).await;
+            for entry in entries.iter_mut() {
+                if let ActivityEntry::System(entry) = entry {
+                    entry.label = annotated(&entry.label);
+                }
+            }
+            std::mem::forget(unfinished);
+        })
+    }
+}
+
+fn annotated(label: &str) -> String {
+    format!("{label} (annotated)")
 }
 
 fn entry(label: &str) -> ActivityEntry {
@@ -1886,4 +1938,71 @@ async fn a_feed_ends_at_shutdown_also_while_it_waits() {
 
     assert!(next.await.unwrap());
     assert!(host.feed().next().await.is_none());
+}
+
+// Annotations (plan step 16): after a connection's collection, inside the run's work.
+
+/// An annotation runs in the run's work, never under the state lock, and what it adds shows.
+#[tokio::test]
+async fn an_annotation_runs_with_no_lock_held_and_shows() {
+    let world = World::shared();
+    let (host, mut spawned) = host_of(&world, &[connection(&jira(), &[])]);
+    until(&host, checked).await;
+    world.hold_annotations(&jira()).add_permits(1);
+
+    host.collect(march());
+
+    assert!(matches!(
+        spawned.end().await.outcome,
+        RunOutcome::Ready { entries: 1 }
+    ));
+    assert_eq!(labels(&host.activity()), [annotated("work as nobody")]);
+}
+
+/// A run replaced while it annotates is dropped there, never waited for: its annotation stops
+/// and shows nothing, and the run that replaced it shows its own.
+#[tokio::test]
+async fn a_run_replaced_while_it_annotates_changes_nothing() {
+    let world = World::shared();
+    let (host, mut spawned) = host_of(&world, &[connection(&jira(), &[])]);
+    until(&host, checked).await;
+    let gate = world.hold_annotations(&jira());
+    host.collect(march());
+    world.annotating.notified().await;
+    let before = host.subscribe().borrow().revision();
+
+    host.collect(april());
+    let stopped = spawned.end().await;
+
+    assert_eq!(stopped.outcome, RunOutcome::Stopped);
+    assert_eq!(world.annotations_dropped.load(Ordering::SeqCst), 1);
+    assert!(!host.is_current(stopped.run));
+    assert!(host.subscribe().borrow().revision() > before);
+    assert!(running(&host.subscribe().borrow()));
+    gate.add_permits(1);
+    assert!(matches!(
+        spawned.end().await.outcome,
+        RunOutcome::Ready { entries: 1 }
+    ));
+    assert_eq!(running_range(&host), None);
+    assert_eq!(labels(&host.activity()), [annotated("work as nobody")]);
+    assert_eq!(world.annotations_dropped.load(Ordering::SeqCst), 1);
+}
+
+/// Shutdown stops an annotation under way: its future, and every request in it, is dropped.
+#[tokio::test]
+async fn shutdown_stops_an_annotation_under_way() {
+    let world = World::shared();
+    let (host, mut spawned) = host_of(&world, &[connection(&jira(), &[])]);
+    until(&host, checked).await;
+    world.hold_annotations(&jira());
+    host.collect(march());
+    world.annotating.notified().await;
+    let shown = host.subscribe().borrow().revision();
+
+    host.shutdown();
+
+    assert_eq!(spawned.end().await.outcome, RunOutcome::Stopped);
+    assert_eq!(world.annotations_dropped.load(Ordering::SeqCst), 1);
+    assert_eq!(host.subscribe().borrow().revision(), shown);
 }

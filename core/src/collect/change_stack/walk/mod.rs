@@ -16,7 +16,7 @@ use futures::{
 };
 
 use super::{
-    budget::{Breaker, Budget},
+    budget::Budget,
     lookup::{
         ChangeLookup, ChangeRef, FailureKind, LookupCause, LookupFailure, OpenChange, OpenPage,
     },
@@ -53,8 +53,6 @@ pub(crate) struct StackReport<R> {
     pub failures: BTreeMap<FailureKind, Failures>,
     /// Requests sent.
     pub requests: usize,
-    /// Why lookups stopped before they were done, if they did.
-    pub stopped: Option<Breaker>,
 }
 
 /// What failed for one kind of reason.
@@ -250,7 +248,6 @@ where
         read_in_part,
         failures: recorder.into_inner(),
         requests: budget.spent(),
-        stopped: budget.breaker(),
     }
 }
 

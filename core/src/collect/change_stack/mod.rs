@@ -12,9 +12,9 @@ mod lookup;
 mod walk;
 mod web_link;
 
-pub(crate) use budget::{Breaker, Budget, STACK_BUDGET, STACK_REQUESTS};
+pub(crate) use budget::{Budget, STACK_BUDGET};
 pub(crate) use lookup::{
     ChangeLookup, ChangeRef, FailureKind, LookupCause, LookupFailure, OpenChange, OpenPage,
 };
-pub(crate) use walk::{Failures, STACK_DEPTH, STACK_MEMBERS, StackReport, change_stacks};
-pub(crate) use web_link::{WebLink, web_link};
+pub(crate) use walk::change_stacks;
+pub(crate) use web_link::web_link;
