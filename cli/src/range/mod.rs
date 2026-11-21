@@ -5,7 +5,7 @@ mod preset;
 
 use activity_log_core::model::CollectOptions;
 use anyhow::{Result, anyhow};
-use chrono::{DateTime, Datelike, Days, Local, NaiveDate, TimeZone, Utc};
+use chrono::{DateTime, Datelike, Days, Duration, Local, NaiveDate, NaiveDateTime, TimeZone, Utc};
 
 pub use preset::RangePreset;
 
@@ -21,9 +21,10 @@ pub fn today() -> NaiveDate {
     Local::now().date_naive()
 }
 
-/// First and last day, inclusive, of `preset` relative to `today`.
+/// First and last day, inclusive, of `preset` relative to `today`. Weeks start on Monday, as in
+/// the dashboard.
 pub fn resolve_preset(preset: RangePreset, today: NaiveDate) -> (NaiveDate, NaiveDate) {
-    let days_since_sunday = Days::new(today.weekday().num_days_from_sunday().into());
+    let days_since_monday = Days::new(today.weekday().num_days_from_monday().into());
     let first_of_month = today.with_day(1).expect("day 1 exists");
 
     match preset {
@@ -32,9 +33,9 @@ pub fn resolve_preset(preset: RangePreset, today: NaiveDate) -> (NaiveDate, Naiv
             let day = today - Days::new(1);
             (day, day)
         }
-        RangePreset::Week => (today - days_since_sunday, today),
+        RangePreset::Week => (today - days_since_monday, today),
         RangePreset::LastWeek => {
-            let end = today - days_since_sunday - Days::new(1);
+            let end = today - days_since_monday - Days::new(1);
             (end - Days::new(6), end)
         }
         RangePreset::Month => (first_of_month, today),
@@ -65,14 +66,28 @@ pub fn day_range<Tz: TimeZone>(
     Ok(options)
 }
 
-/// A day can start inside a DST gap (some zones switch at midnight); take the first instant.
+/// The first instant of `day` in `tz`: its midnight, or where a zone skipped midnight (a DST
+/// gap, a change of offset), the first second its clocks showed on or after it. A zone that
+/// skipped the whole day starts it with the next one.
 fn start_of_day<Tz: TimeZone>(tz: &Tz, day: NaiveDate) -> Result<DateTime<Utc>> {
     let midnight = day.and_hms_opt(0, 0, 0).expect("midnight exists");
-    (0..=2)
-        .find_map(|hour| {
-            tz.from_local_datetime(&(midnight + chrono::Duration::hours(hour)))
-                .earliest()
-        })
+    let first_at = |local: NaiveDateTime| tz.from_local_datetime(&local).earliest();
+    if let Some(start) = first_at(midnight) {
+        return Ok(start.with_timezone(&Utc));
+    }
+    // Gaps end on a whole minute in every zone but a few historical ones; the seconds before
+    // the first valid minute find those.
+    let minute = (1..=MAX_GAP_MINUTES)
+        .map(|minutes| midnight + Duration::minutes(minutes))
+        .find(|local| first_at(*local).is_some())
+        .ok_or_else(|| anyhow!("{day} has no start in the local timezone"))?;
+    (1..=60)
+        .rev()
+        .map(|seconds| minute - Duration::seconds(seconds - 1))
+        .find_map(first_at)
         .map(|start| start.with_timezone(&Utc))
         .ok_or_else(|| anyhow!("{day} has no start in the local timezone"))
 }
+
+/// The longest a zone's clocks ever skipped: a whole day (Samoa, 2011-12-30), with room.
+const MAX_GAP_MINUTES: i64 = 2 * 24 * 60;
