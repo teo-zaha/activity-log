@@ -13,8 +13,8 @@
       <app-day-index
         class="day-index"
         [items]="dayIndex()"
-        [activeDay]="activeDay()"
-        (jump)="jumpTo($event)"
+        [activeDay]="activeDay.day()"
+        (jump)="activeDay.jumpTo($event)"
         (focusDay)="focusFirstEntry($event)"
       />
     }
@@ -77,7 +77,7 @@
             </header>
             <ol
               class="entries"
-              [appAutoAnimate]="attached() && nearDays().has(day.date)"
+              [appAutoAnimate]="kept.attached() && nearDays().has(day.date)"
               [appAutoAnimatePauseOn]="activity.searchQuery()"
             >
               @for (row of day.rows; track row.entry.trackKey) {
