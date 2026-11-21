@@ -66,7 +66,7 @@ export class ThemeService {
     }
 
     el.dataset['theme'] = t
-    // Keep html.dark in sync so existing :host-context(html.dark) selectors keep working
+    // html.dark marks the dark themes for styles.scss and components' :host-context(html.dark)
     el.classList.toggle('dark', isDark)
     el.style.colorScheme = colorScheme
   }
