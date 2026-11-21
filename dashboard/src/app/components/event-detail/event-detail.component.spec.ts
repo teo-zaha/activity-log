@@ -6,7 +6,9 @@ import type { EntryKey } from '../../providers/connection'
 import { SettingsDialogLauncher } from '../settings-dialog/settings-dialog-launcher.service'
 import { createEntryAdapter } from '../../providers/provider-adapter'
 import type { EntryUiAdapter } from '../../providers/types'
-import { ActivityService } from '../../services/activity.service'
+import { ActivityDataService } from '../../services/activity-data.service'
+import { ActivitySelection } from '../../services/activity-selection.service'
+import { ActivityViewStateService } from '../../services/activity-view-state.service'
 import { stubLayoutObservers } from '../../testing/observers'
 import {
   MockBackendTransport,
@@ -21,8 +23,9 @@ interface OpenDetails {
 }
 
 /**
- * The parts of `ActivityService` the drawer uses, with the URL as two signals: opening, stepping
- * and closing set them as the real navigations would.
+ * The parts of the activity services the drawer uses (the URL's state, the collection, the
+ * open entries), with the URL as two signals: opening, stepping and closing set them as the real
+ * navigations would. One object stands for all three services, each reading its own members.
  */
 interface FakeActivity {
   readonly openEventKey: WritableSignal<EntryKey | null>
@@ -97,7 +100,9 @@ async function renderDetails(
     providers: [
       provideRouter([]),
       ...providers,
-      { provide: ActivityService, useValue: activity },
+      { provide: ActivityViewStateService, useValue: activity },
+      { provide: ActivityDataService, useValue: activity },
+      { provide: ActivitySelection, useValue: activity },
       { provide: SettingsDialogLauncher, useValue: settings },
     ],
   })
