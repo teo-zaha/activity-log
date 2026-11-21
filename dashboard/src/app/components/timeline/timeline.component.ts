@@ -12,7 +12,9 @@ import {
 import { resizeObserver } from '@signality/core/observers/resize-observer'
 import { EmptyStateComponent } from '../empty-state/empty-state.component'
 import { ButtonComponent } from '../button/button.component'
-import { ActivityService } from '../../services/activity.service'
+import { ActivityDataService } from '../../services/activity-data.service'
+import { ActivitySelection } from '../../services/activity-selection.service'
+import { ActivityViewStateService } from '../../services/activity-view-state.service'
 import { SearchBarComponent } from '../search-bar/search-bar.component'
 import type { EntryUiAdapter } from '../../providers/types'
 import { dayIndexOf } from '../../utils/day-index'
@@ -38,7 +40,9 @@ import { TimelineRows } from './timeline-rows'
   styleUrl: './timeline.component.scss',
 })
 export class TimelineComponent {
-  protected readonly activity = inject(ActivityService)
+  protected readonly selection = inject(ActivitySelection)
+  protected readonly viewState = inject(ActivityViewStateService)
+  protected readonly data = inject(ActivityDataService)
 
   /** Row widths (in %) for the loading skeleton. */
   protected readonly skeletonGroups = [
@@ -47,19 +51,19 @@ export class TimelineComponent {
   ]
 
   protected readonly summary = computed(() => {
-    const groups = this.activity.groupedByDay()
+    const groups = this.selection.groupedByDay()
     const events = groups.reduce((total, group) => total + group.entries.length, 0)
-    const query = this.activity.searchQuery().trim()
+    const query = this.viewState.searchQuery().trim()
     const base = `${events} ${events === 1 ? 'event' : 'events'} across ${groups.length} ${groups.length === 1 ? 'day' : 'days'}`
     return query ? `${base} matching “${query}”` : base
   })
 
   protected readonly emptyState = computed(() =>
     timelineEmptyState({
-      query: this.activity.searchQuery().trim(),
-      status: this.activity.collectionStatus(),
-      hasSources: this.activity.providers().length > 0,
-      anyShown: this.activity.activeConnections().size > 0,
+      query: this.viewState.searchQuery().trim(),
+      status: this.data.collectionStatus(),
+      hasSources: this.data.providers().length > 0,
+      anyShown: this.viewState.activeConnections().size > 0,
     })
   )
 
@@ -70,7 +74,7 @@ export class TimelineComponent {
   private readonly rows = new TimelineRows()
   /** The list, ready to draw: the template binds plain values, not per-row function calls. */
   protected readonly days = computed(() =>
-    this.rows.days(this.activity.groupedByDay(), this.todayKey())
+    this.rows.days(this.selection.groupedByDay(), this.todayKey())
   )
 
   private readonly host = inject<ElementRef<HTMLElement>>(ElementRef).nativeElement
@@ -97,7 +101,7 @@ export class TimelineComponent {
   /** The side day index, from the oldest to the newest day the list shows. */
   protected readonly dayIndex = computed(() =>
     dayIndexOf(
-      new Map(this.activity.groupedByDay().map(group => [group.date, group.entries.length])),
+      new Map(this.selection.groupedByDay().map(group => [group.date, group.entries.length])),
       this.todayKey()
     )
   )
@@ -115,7 +119,7 @@ export class TimelineComponent {
   protected readonly activeDay = trackActiveDay({
     scroller: this.scroller,
     sections: this.sections,
-    days: computed(() => this.activity.groupedByDay().map(group => group.date)),
+    days: computed(() => this.selection.groupedByDay().map(group => group.date)),
     viewport: this.viewport,
     enabled: this.showDayIndex,
     attached: this.kept.attached,
@@ -164,6 +168,6 @@ export class TimelineComponent {
   }
 
   protected selectEntry(entry: EntryUiAdapter): void {
-    void this.activity.openEvent(entry.trackKey)
+    void this.viewState.openEvent(entry.trackKey)
   }
 }

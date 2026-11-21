@@ -6,8 +6,8 @@
       label="Filter activity"
       clearLabel="Clear filter"
       shortcut="timeline.filter"
-      [value]="activity.searchQuery()"
-      (valueChange)="activity.setSearchQuery($event)"
+      [value]="viewState.searchQuery()"
+      (valueChange)="viewState.setSearchQuery($event)"
     />
     @if (showDayIndex()) {
       <app-day-index
@@ -21,7 +21,7 @@
   </div>
 
   <div class="timeline-wrap" #content>
-    @if (activity.isLoading() && activity.groupedByDay().length === 0) {
+    @if (data.isLoading() && selection.groupedByDay().length === 0) {
       <div class="skeleton" aria-hidden="true">
         @for (group of skeletonGroups; track group) {
           <div class="skeleton-group">
@@ -41,7 +41,7 @@
           </div>
         }
       </div>
-    } @else if (activity.groupedByDay().length === 0) {
+    } @else if (selection.groupedByDay().length === 0) {
       <app-empty-state
         class="empty-state"
         [level]="2"
@@ -50,7 +50,7 @@
       >
         {{ emptyState().message }}
         @if (emptyState().action?.kind === 'clear-search') {
-          <button appButton emptyStateAction (click)="activity.setSearchQuery('')">
+          <button appButton emptyStateAction (click)="viewState.setSearchQuery('')">
             Clear filter
           </button>
         }
@@ -78,7 +78,7 @@
             <ol
               class="entries"
               [appAutoAnimate]="kept.attached() && nearDays().has(day.date)"
-              [appAutoAnimatePauseOn]="activity.searchQuery()"
+              [appAutoAnimatePauseOn]="viewState.searchQuery()"
             >
               @for (row of day.rows; track row.entry.trackKey) {
                 <li>
