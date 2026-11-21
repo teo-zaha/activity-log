@@ -3,7 +3,9 @@ import type { ConnectionKey, EntryKey } from '../../providers/connection'
 import type { DayGroup } from '../../models/day-group'
 import type { EntryUiAdapter } from '../../providers/types'
 import type { CollectionStatus } from '../../services/types'
-import { LiveAnnouncer } from '@angular/cdk/a11y'
+import type { SettingsSelection } from '../settings-dialog/settings-dialog.types'
+import type { ViewMode } from '../../utils/app-url'
+import { LiveAnnouncer, type AriaLivePoliteness } from '@angular/cdk/a11y'
 import { render, screen } from '@testing-library/angular'
 import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -18,15 +20,18 @@ import { activityLog, meetingWeightOf } from '../../testing/activity-fixtures'
 import { stubLayoutObservers } from '../../testing/observers'
 import { BackendFailure } from '../../services/backend/backend-failure'
 import { failureOf } from '../../services/failure'
+import { timelineEmptyView, type TimelineEmptyState } from './timeline-empty-state'
 import { TimelineComponent } from './timeline.component'
 
+/** What the timeline reads of its three services, faked: each member typed as the real one. */
 interface TimelineActivityMock {
   isLoading: WritableSignal<boolean>
-  groupedByDay: WritableSignal<DayGroup<EntryUiAdapter>[]>
+  groupedByDay: WritableSignal<readonly DayGroup<EntryUiAdapter>[]>
   searchQuery: WritableSignal<string>
   setSearchQuery: (query: string) => void
-  dateFrom: WritableSignal<string>
-  dateTo: WritableSignal<string>
+  currentView: WritableSignal<ViewMode>
+  settings: WritableSignal<SettingsSelection | null>
+  detailsOpen: WritableSignal<boolean>
   collectionStatus: WritableSignal<CollectionStatus>
   anySourceReady: WritableSignal<boolean>
   activeConnections: WritableSignal<Set<ConnectionKey>>
@@ -45,11 +50,14 @@ function mockActivity(overrides: { status?: CollectionStatus; query?: string } =
     entry,
     activity: {
       isLoading: signal(false),
-      groupedByDay: signal<DayGroup<EntryUiAdapter>[]>([{ date: '2026-05-18', entries: [entry] }]),
+      groupedByDay: signal<readonly DayGroup<EntryUiAdapter>[]>([
+        { date: '2026-05-18', entries: [entry] },
+      ]),
       searchQuery,
       setSearchQuery: query => searchQuery.set(query),
-      dateFrom: signal('2026-05-17'),
-      dateTo: signal('2026-05-18'),
+      currentView: signal<ViewMode>('list'),
+      settings: signal<SettingsSelection | null>(null),
+      detailsOpen: signal(false),
       collectionStatus: signal<CollectionStatus>(overrides.status ?? { kind: 'idle' }),
       anySourceReady: signal(true),
       activeConnections: signal(new Set<ConnectionKey>(['git/default'])),
@@ -62,32 +70,49 @@ function mockActivity(overrides: { status?: CollectionStatus; query?: string } =
 
 /** The services the timeline reads, each faked with only what it takes from it. */
 function servicesOf(activity: TimelineActivityMock): Provider[] {
+  const selection = {
+    groupedByDay: activity.groupedByDay,
+    rangeCoverage: activity.rangeCoverage,
+  } satisfies Partial<ActivitySelection>
+  const viewState = {
+    searchQuery: activity.searchQuery,
+    setSearchQuery: activity.setSearchQuery,
+    currentView: activity.currentView,
+    settings: activity.settings,
+    detailsOpen: activity.detailsOpen,
+    activeConnections: activity.activeConnections,
+    openEvent: activity.openEvent,
+  } satisfies Partial<ActivityViewStateService>
+  const data = {
+    isLoading: activity.isLoading,
+    collectionStatus: activity.collectionStatus,
+    anySourceReady: activity.anySourceReady,
+    collectShownRange: activity.collectShownRange,
+  } satisfies Partial<ActivityDataService>
   return [
-    {
-      provide: ActivitySelection,
-      useValue: { groupedByDay: activity.groupedByDay, rangeCoverage: activity.rangeCoverage },
-    },
-    {
-      provide: ActivityViewStateService,
-      useValue: {
-        searchQuery: activity.searchQuery,
-        setSearchQuery: activity.setSearchQuery,
-        dateFrom: activity.dateFrom,
-        dateTo: activity.dateTo,
-        activeConnections: activity.activeConnections,
-        openEvent: activity.openEvent,
-      },
-    },
-    {
-      provide: ActivityDataService,
-      useValue: {
-        isLoading: activity.isLoading,
-        collectionStatus: activity.collectionStatus,
-        anySourceReady: activity.anySourceReady,
-        collectShownRange: activity.collectShownRange,
-      },
-    },
+    { provide: ActivitySelection, useValue: selection },
+    { provide: ActivityViewStateService, useValue: viewState },
+    { provide: ActivityDataService, useValue: data },
   ]
+}
+
+/** The title and message of the empty state on screen; null without one. */
+function shownEmptyState(): { readonly title: string; readonly message: string | null } | null {
+  const state = document.querySelector('app-empty-state')
+  if (state === null) return null
+  return {
+    title: state.querySelector('.heading')?.textContent?.trim() ?? '',
+    message: state.querySelector('.message')?.textContent?.trim() ?? null,
+  }
+}
+
+/** The words `state` shows, to compare `shownEmptyState()` with: specs name the case, not its text. */
+function emptyWords(state: TimelineEmptyState): {
+  readonly title: string
+  readonly message: string | null
+} {
+  const { title, message } = timelineEmptyView(state)
+  return { title, message }
 }
 
 /** Two days with events: the Jira update on 18 May, the Git commit on 17 May. */
@@ -206,23 +231,13 @@ describe('TimelineComponent', () => {
       providers: servicesOf(activity),
     })
 
-    expect(screen.getByText('No activity loaded')).toBeTruthy()
+    expect(shownEmptyState()).toEqual(emptyWords({ reason: 'failed', cause: 'unfinished' }))
   })
 
   it.each([
-    [
-      'a collect refused as invalid asks for another range',
-      'collect',
-      'Choose another one',
-      'Retry above',
-    ],
-    [
-      'a state read refused as invalid offers no retry',
-      'refusedRead',
-      'check source status',
-      'Retry above',
-    ],
-  ] as const)('%s', async (_name, origin, says, never) => {
+    ['a collect refused as invalid asks for another range', 'collect', 'refusedRange'],
+    ['a state read refused as invalid offers no retry', 'refusedRead', 'refusedRead'],
+  ] as const)('%s', async (_name, origin, cause) => {
     const refused = failureOf(new BackendFailure('invalidRequest', 'refused'))
     const { activity } = mockActivity({
       status: { kind: 'failed', operation: 'collect', origin, failure: refused },
@@ -233,24 +248,21 @@ describe('TimelineComponent', () => {
       providers: servicesOf(activity),
     })
 
-    expect(screen.getByText(new RegExp(says))).toBeTruthy()
-    expect(screen.queryByText(new RegExp(never))).toBeNull()
+    expect(shownEmptyState()).toEqual(emptyWords({ reason: 'failed', cause }))
   })
 
   it('offers to collect this tab’s range where the collection on screen leaves it out', async () => {
     const { activity } = mockActivity()
     activity.groupedByDay.set([])
-    activity.rangeCoverage.set({
-      kind: 'other',
+    const missing = {
       collected: { from: '2026-05-01', to: '2026-05-07' },
       own: { from: '2026-05-10', to: '2026-05-17' },
-      overlaps: false,
-    })
+    } as const
+    activity.rangeCoverage.set({ kind: 'other', ...missing, overlaps: false })
 
     await render(TimelineComponent, { providers: servicesOf(activity) })
 
-    expect(screen.getByRole('heading', { name: 'This range is not collected' })).toBeTruthy()
-    expect(screen.queryByText(/wider date range/)).toBeNull()
+    expect(shownEmptyState()).toEqual(emptyWords({ reason: 'notCollected', ...missing }))
     await userEvent.click(screen.getByRole('button', { name: 'Collect 10 May – 17 May 2026' }))
     expect(activity.collectShownRange).toHaveBeenCalledOnce()
   })
@@ -261,26 +273,90 @@ describe('TimelineComponent', () => {
 
     await render(TimelineComponent, { providers: servicesOf(activity) })
 
-    expect(screen.getByRole('heading', { name: 'Nothing recorded in this range' })).toBeTruthy()
+    expect(shownEmptyState()).toEqual(emptyWords({ reason: 'nothingRecorded' }))
     expect(screen.queryByRole('button', { name: /^Collect/ })).toBeNull()
   })
 
-  it('reads the summary out once the filter settles, not on every key', async () => {
-    const { activity } = mockActivity()
-    const announce = vi.fn((_message: string, _politeness?: string) => Promise.resolve())
+  describe('the summary read out', () => {
+    const DELAY = 200
 
-    await render(TimelineComponent, {
-      providers: [
-        ...servicesOf(activity),
-        { provide: LiveAnnouncer, useValue: { announce } },
-        { provide: SEARCH_URL_DELAY_MS, useValue: 30 },
-      ],
+    /** `LiveAnnouncer.announce` as the timeline calls it. */
+    type Announce = (message: string, politeness: AriaLivePoliteness) => Promise<void>
+
+    async function renderAnnounced(activity: TimelineActivityMock): Promise<{
+      announce: ReturnType<typeof vi.fn<Announce>>
+      settle: () => Promise<void>
+    }> {
+      const announce = vi.fn<Announce>(() => Promise.resolve())
+      const { fixture } = await render(TimelineComponent, {
+        providers: [
+          ...servicesOf(activity),
+          { provide: LiveAnnouncer, useValue: { announce } },
+          { provide: SEARCH_URL_DELAY_MS, useValue: DELAY },
+        ],
+      })
+      const settle = async (): Promise<void> => {
+        fixture.detectChanges()
+        await vi.advanceTimersByTimeAsync(DELAY)
+        fixture.detectChanges()
+      }
+      await settle()
+      announce.mockClear()
+      return { announce, settle }
+    }
+
+    beforeEach(() => vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] }))
+    afterEach(() => vi.useRealTimers())
+
+    it('reads the summary out once the filter settles, not on every key', async () => {
+      const { activity } = mockActivity()
+      const { announce, settle } = await renderAnnounced(activity)
+      const user = userEvent.setup({ advanceTimers: ms => vi.advanceTimersByTime(ms), delay: 50 })
+
+      await user.type(screen.getByRole('searchbox'), 'abc')
+      expect(announce).not.toHaveBeenCalled()
+      await settle()
+
+      expect(announce.mock.calls).toEqual([['1 event across 1 day matching “abc”', 'polite']])
+      expect(document.querySelector('.timeline-summary')?.closest('[aria-live]')).toBeNull()
     })
-    await userEvent.type(screen.getByRole('searchbox'), 'abc', { delay: null })
-    await new Promise(resolve => setTimeout(resolve, 90))
 
-    expect(announce.mock.calls).toEqual([['1 event across 1 day matching “abc”', 'polite']])
-    expect(document.querySelector('.timeline-summary')?.closest('[aria-live]')).toBeNull()
+    it('reads out only the result of a collection, not what it brings on the way', async () => {
+      const { activity, entry } = mockActivity()
+      const { announce, settle } = await renderAnnounced(activity)
+
+      activity.isLoading.set(true)
+      activity.groupedByDay.set([{ date: '2026-05-18', entries: [entry, entry] }])
+      await settle()
+      expect(announce).not.toHaveBeenCalled()
+
+      activity.isLoading.set(false)
+      activity.groupedByDay.set([
+        { date: '2026-05-18', entries: [entry, entry] },
+        { date: '2026-05-17', entries: [entry] },
+      ])
+      await settle()
+
+      expect(announce.mock.calls).toEqual([['3 events across 2 days', 'polite']])
+    })
+
+    it.each<[string, (activity: TimelineActivityMock) => void]>([
+      ['another view', (activity): void => activity.currentView.set('week')],
+      ['the settings', (activity): void => activity.settings.set('general')],
+      ['the details', (activity): void => activity.detailsOpen.set(true)],
+    ])('reads nothing out with %s on screen', async (_name, hide) => {
+      const { activity, entry } = mockActivity()
+      const { announce, settle } = await renderAnnounced(activity)
+
+      hide(activity)
+      activity.groupedByDay.set([
+        { date: '2026-05-18', entries: [entry] },
+        { date: '2026-05-17', entries: [entry] },
+      ])
+      await settle()
+
+      expect(announce).not.toHaveBeenCalled()
+    })
   })
 
   it('labels the field as a filter', async () => {
@@ -301,6 +377,8 @@ describe('TimelineComponent', () => {
     await render(TimelineComponent, {
       providers: servicesOf(activity),
     })
+
+    expect(shownEmptyState()).toEqual(emptyWords({ reason: 'noMatches', query: 'nope' }))
 
     // The filter field's own clear button shares the label; use the empty-state action.
     const [, emptyStateAction] = screen.getAllByRole('button', { name: 'Clear filter' })
@@ -352,9 +430,8 @@ describe('TimelineComponent', () => {
   it('spans the day index over the days the list shows, not the whole range', async () => {
     stubOverflow()
     const { activity } = mockActivity()
+    // The collected range reaches far past them; the rail is drawn from the days alone.
     twoDays(activity)
-    activity.dateFrom.set('2026-04-01')
-    activity.dateTo.set('2026-05-31')
 
     const { fixture } = await render(TimelineComponent, {
       providers: servicesOf(activity),
