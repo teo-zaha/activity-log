@@ -78,12 +78,14 @@ pub fn run() {
             }
         })
         .on_menu_event(|app, event| app_menu::chosen(app, event.id()))
-        // A page that loads again starts with the default menu and installs its own.
+        // A page that loads again starts with the default menu and installs its own, and asks
+        // for the links that came meanwhile.
         .on_page_load(|webview, payload| {
             if webview.label() == deep_link::MAIN_WINDOW
                 && payload.event() == PageLoadEvent::Started
             {
                 app_menu::page_loading(webview.app_handle());
+                deep_link::page_loading(webview.app_handle());
             }
         })
         .invoke_handler(app_commands!())

@@ -62,6 +62,13 @@ impl DeepLinkInbox {
         }
     }
 
+    /// The page is loading again (a reload): it listens for nothing until it asks again, so
+    /// links are held for it meanwhile. A link sent just before the page started loading again
+    /// can still reach the page that leaves.
+    pub(crate) fn page_loading(&self) {
+        self.lock().ready = false;
+    }
+
     /// The link held so far, once; from now on links are forwarded.
     pub(crate) fn take(&self) -> Option<String> {
         let mut state = self.lock();
@@ -117,6 +124,13 @@ fn receive<R: Runtime>(app: &AppHandle<R>, urls: Vec<Url>) {
         show_main_window(app);
     } else {
         focus_main_window_if_visible(app);
+    }
+}
+
+/// The main window's page started loading again: hold links until it asks.
+pub(crate) fn page_loading<R: Runtime>(app: &AppHandle<R>) {
+    if let Some(inbox) = app.try_state::<DeepLinkInbox>() {
+        inbox.page_loading();
     }
 }
 

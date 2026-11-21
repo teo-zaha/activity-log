@@ -60,3 +60,26 @@ fn only_forwarded_links_show_the_window() {
     assert!(!Delivery::Held.shows_window());
     assert!(Delivery::Forward("activity-log://timeline".to_string()).shows_window());
 }
+
+/// B58: a page that loads again listens for nothing until it asks, so a link meanwhile is held
+/// for it instead of sent to no listener.
+#[test]
+fn a_reloading_page_gets_the_links_that_came_meanwhile() {
+    let inbox = DeepLinkInbox::default();
+    assert_eq!(inbox.take(), None);
+
+    inbox.page_loading();
+
+    assert_eq!(
+        inbox.receive("activity-log://week/2026-11-16".to_string()),
+        Delivery::Held
+    );
+    assert_eq!(
+        inbox.take(),
+        Some("activity-log://week/2026-11-16".to_string())
+    );
+    assert_eq!(
+        inbox.receive("activity-log://timeline".to_string()),
+        Delivery::Forward("activity-log://timeline".to_string())
+    );
+}
