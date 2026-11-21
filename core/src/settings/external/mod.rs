@@ -126,36 +126,13 @@ pub fn edit_externally(
         if current != original {
             return Err(EditError::FileChanged { name: name.clone() });
         }
-        let mut file = ConfigFile::parse(&copy_path, &edited).map_err(EditError::Invalid)?;
+        let file = ConfigFile::parse(&copy_path, &edited).map_err(EditError::Invalid)?;
         // A file that did not parse is being repaired: every table of the copy is new.
         let original = original
             .as_deref()
             .and_then(|bytes| ConfigFile::parse(&locked.path, bytes).ok());
         let fresh = fresh_instances(original.as_ref(), &file);
-        let content = if fresh.is_empty() {
-            edited
-        } else {
-            // Each planned instance must read back for its own table, however the text was
-            // changed; the user's text is kept where it can be.
-            let spliced = splice(&edited, &fresh).filter(|content| reads_back(content, &fresh));
-            let content = spliced.or_else(|| {
-                for (kind, index, instance) in &fresh {
-                    let table = file
-                        .doc
-                        .get_mut(kind)
-                        .and_then(Item::as_array_of_tables_mut)
-                        .and_then(|tables| tables.get_mut(*index))?;
-                    set_instance(table, instance);
-                }
-                let content = write::with_line_endings_of(file.to_string(), Some(&edited));
-                reads_back(&content, &fresh).then_some(content)
-            });
-            content.ok_or_else(|| {
-                EditError::Internal(anyhow!(
-                    "Activity Log could not give the connections their `instance` ids"
-                ))
-            })?
-        };
+        let content = with_fresh_instances(edited, file, &fresh)?;
         let written = locked.write_checked(current.as_deref(), content)?;
         Ok(written.warnings)
     })();
@@ -163,6 +140,37 @@ pub fn edit_externally(
         Ok(warnings) => Ok(ExternalEdit::Saved { warnings }),
         Err(err) => Err(keep(err)),
     }
+}
+
+/// The user's version `edited` (read as `file`) with the `fresh` instance ids written in. Each
+/// must read back for its own table, however the text was changed; the user's text is kept
+/// where it can be, and otherwise the document is written out again.
+fn with_fresh_instances(
+    edited: Vec<u8>,
+    mut file: ConfigFile,
+    fresh: &[(String, usize, String)],
+) -> Result<Vec<u8>, EditError> {
+    if fresh.is_empty() {
+        return Ok(edited);
+    }
+    let spliced = splice(&edited, fresh).filter(|content| reads_back(content, fresh));
+    let content = spliced.or_else(|| {
+        for (kind, index, instance) in fresh {
+            let table = file
+                .doc
+                .get_mut(kind)
+                .and_then(Item::as_array_of_tables_mut)
+                .and_then(|tables| tables.get_mut(*index))?;
+            set_instance(table, instance);
+        }
+        let content = write::with_line_endings_of(file.to_string(), Some(&edited));
+        reads_back(&content, fresh).then_some(content)
+    });
+    content.ok_or_else(|| {
+        EditError::Internal(anyhow!(
+            "Activity Log could not give the connections their `instance` ids"
+        ))
+    })
 }
 
 /// The tables of the edited document that need a fresh instance, as `(kind, index, instance)`,

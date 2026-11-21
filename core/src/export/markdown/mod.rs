@@ -3,8 +3,8 @@
 use chrono::{DateTime, TimeZone};
 
 use crate::model::{
-    ActivityEntry, ActivityLog, CalendarEntry, GitEntry, GitLabEntry, JiraEntry, OutlookEntry,
-    SystemEntry,
+    ActivityEntry, ActivityLog, CalendarEntry, GitEntry, GitLabEntry, JiraEntry, MeetingBody,
+    OutlookEntry, SystemEntry,
 };
 
 #[cfg(test)]
@@ -43,76 +43,84 @@ pub fn to_markdown<Tz: TimeZone>(log: &ActivityLog, tz: &Tz) -> String {
         markdown.push_str(&format!("## {label}\n\n"));
 
         for (instant, entry) in entries {
-            let time = instant.format("%H:%M");
-            match entry {
-                ActivityEntry::Git(GitEntry { repo, message, .. }) => {
-                    markdown.push_str(&format!(
-                        "- **[git]** {} {} ({time})\n",
-                        code(repo),
-                        text(message)
-                    ));
-                }
-                ActivityEntry::GitLab(GitLabEntry {
-                    entry_type, title, ..
-                }) => {
-                    let title = title
-                        .as_deref()
-                        .map(|title| format!(": {}", text(title)))
-                        .unwrap_or_default();
-                    markdown.push_str(&format!("- **[gitlab]** {entry_type}{title} ({time})\n"));
-                }
-                ActivityEntry::Jira(JiraEntry {
-                    key, title, status, ..
-                }) => {
-                    markdown.push_str(&format!(
-                        "- **[jira]** {}: {} [{}] ({time})\n",
-                        text(key),
-                        text(title),
-                        text(status)
-                    ));
-                }
-                ActivityEntry::Outlook(OutlookEntry {
-                    title,
-                    location,
-                    meeting,
-                    ..
-                }) => {
-                    markdown.push_str(&format!(
-                        "- **[outlook]** {}{} ({time}, {})\n",
-                        text(title.as_deref().unwrap_or(NO_TITLE)),
-                        location
-                            .as_ref()
-                            .map(|location| format!(" @ {}", text(location)))
-                            .unwrap_or_default(),
-                        format_duration(meeting.duration_minutes),
-                    ));
-                }
-                ActivityEntry::System(SystemEntry { label, .. }) => {
-                    markdown.push_str(&format!("- **[system]** {} ({time})\n", text(label)));
-                }
-                ActivityEntry::Calendar(CalendarEntry {
-                    title,
-                    location,
-                    meeting,
-                    ..
-                }) => {
-                    markdown.push_str(&format!(
-                        "- **[calendar]** {}{} ({time}, {})\n",
-                        text(title.as_deref().unwrap_or(NO_TITLE)),
-                        location
-                            .as_ref()
-                            .map(|location| format!(" @ {}", text(location)))
-                            .unwrap_or_default(),
-                        format_duration(meeting.duration_minutes),
-                    ));
-                }
-            }
+            markdown.push_str(&entry_line(entry, instant.format("%H:%M")));
         }
 
         markdown.push('\n');
     }
 
     markdown
+}
+
+/// The list item of one entry, at `time` of its day.
+fn entry_line(entry: &ActivityEntry, time: impl std::fmt::Display) -> String {
+    match entry {
+        ActivityEntry::Git(GitEntry { repo, message, .. }) => {
+            format!("- **[git]** {} {} ({time})\n", code(repo), text(message))
+        }
+        ActivityEntry::GitLab(GitLabEntry {
+            entry_type, title, ..
+        }) => {
+            let title = title
+                .as_deref()
+                .map(|title| format!(": {}", text(title)))
+                .unwrap_or_default();
+            format!("- **[gitlab]** {entry_type}{title} ({time})\n")
+        }
+        ActivityEntry::Jira(JiraEntry {
+            key, title, status, ..
+        }) => format!(
+            "- **[jira]** {}: {} [{}] ({time})\n",
+            text(key),
+            text(title),
+            text(status)
+        ),
+        ActivityEntry::Outlook(OutlookEntry {
+            title,
+            location,
+            meeting,
+            ..
+        }) => meeting_line(
+            "outlook",
+            title.as_deref(),
+            location.as_deref(),
+            meeting,
+            time,
+        ),
+        ActivityEntry::System(SystemEntry { label, .. }) => {
+            format!("- **[system]** {} ({time})\n", text(label))
+        }
+        ActivityEntry::Calendar(CalendarEntry {
+            title,
+            location,
+            meeting,
+            ..
+        }) => meeting_line(
+            "calendar",
+            title.as_deref(),
+            location.as_deref(),
+            meeting,
+            time,
+        ),
+    }
+}
+
+/// A meeting's list item, whichever source it came from.
+fn meeting_line(
+    source: &str,
+    title: Option<&str>,
+    location: Option<&str>,
+    meeting: &MeetingBody,
+    time: impl std::fmt::Display,
+) -> String {
+    format!(
+        "- **[{source}]** {}{} ({time}, {})\n",
+        text(title.unwrap_or(NO_TITLE)),
+        location
+            .map(|location| format!(" @ {}", text(location)))
+            .unwrap_or_default(),
+        format_duration(meeting.duration_minutes),
+    )
 }
 
 /// Text from a source on one line, with the characters that would start Markdown inline
