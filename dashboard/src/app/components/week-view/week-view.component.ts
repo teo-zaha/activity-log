@@ -2,7 +2,8 @@ import { Component, ElementRef, afterNextRender, computed, inject, viewChild } f
 import { MatIconModule } from '@angular/material/icon'
 import { IconButtonComponent } from '../button/icon-button.component'
 import { ButtonComponent } from '../button/button.component'
-import { ActivityService } from '../../services/activity.service'
+import { ActivitySelection } from '../../services/activity-selection.service'
+import { ActivityViewStateService } from '../../services/activity-view-state.service'
 import type { EntryKey } from '../../providers/connection'
 import type { EntryUiAdapter } from '../../providers/types'
 import {
@@ -18,8 +19,9 @@ import { CalendarAllDayRowComponent } from '../calendar/calendar-all-day-row/cal
 import { CalendarDayColumnComponent } from '../calendar/calendar-day-column/calendar-day-column.component'
 import { CalendarHoursComponent } from '../calendar/calendar-hours/calendar-hours.component'
 import { CALENDAR_TIME_ZONE } from '../calendar/calendar-time-zone'
+import { collectedDays } from '../calendar/collected-days'
 import { injectMinuteClock } from '../../utils/clock'
-import { dateOfKey, keysWithin, wallClock, type DayKey } from '../../utils/local-day'
+import { dateOfKey, wallClock, type DayKey } from '../../utils/local-day'
 import {
   NO_MEETING_TIME,
   meetingTimeByDay,
@@ -63,7 +65,8 @@ interface WeekDay {
   },
 })
 export class WeekViewComponent {
-  protected readonly activity = inject(ActivityService)
+  protected readonly viewState = inject(ActivityViewStateService)
+  private readonly selection = inject(ActivitySelection)
   protected readonly motion = inject(NavigationMotionService)
   private readonly timeZone = inject(CALENDAR_TIME_ZONE)
 
@@ -76,18 +79,18 @@ export class WeekViewComponent {
   constructor() {
     afterNextRender({
       write: () => {
-        this.scrollEl().nativeElement.scrollTop = DEFAULT_SCROLL_HOUR * this.activity.hourHeight()
+        this.scrollEl().nativeElement.scrollTop = DEFAULT_SCROLL_HOUR * this.viewState.hourHeight()
       },
     })
   }
 
   protected readonly days = computed<DayKey[]>(() =>
-    this.activity.currentView() === 'workweek'
-      ? this.activity.workWeekDays()
-      : this.activity.weekDays()
+    this.viewState.currentView() === 'workweek'
+      ? this.viewState.workWeekDays()
+      : this.viewState.weekDays()
   )
 
-  protected readonly gridHeight = computed(() => gridHeight(this.activity.hourHeight()))
+  protected readonly gridHeight = computed(() => gridHeight(this.viewState.hourHeight()))
 
   /** `November 2026`, or `Oct – Nov 2026` for a week across two months. */
   protected readonly title = computed(() => {
@@ -101,12 +104,12 @@ export class WeekViewComponent {
 
   /** The current-time line, while today is one of the shown days. */
   protected readonly nowLine = computed(() => {
-    const marker = nowMarker(this.clock(), this.activity.hourHeight(), this.timeZone)
+    const marker = nowMarker(this.clock(), this.viewState.hourHeight(), this.timeZone)
     return this.days().includes(marker.day) ? marker : null
   })
 
   private readonly plan = computed(() =>
-    planCalendar(this.days(), this.activity.calendarEntries(), this.timeZone)
+    planCalendar(this.days(), this.selection.calendarEntries(), this.timeZone)
   )
 
   protected readonly allDay = computed(() => layoutAllDay(this.plan()))
@@ -114,22 +117,34 @@ export class WeekViewComponent {
   protected readonly columns = computed<DayColumn<EntryUiAdapter>[]>(() =>
     layoutDays(
       this.plan(),
-      this.activity.hourHeight(),
-      this.activity.currentView() === 'workweek' ? 4 : 3
+      this.viewState.hourHeight(),
+      this.viewState.currentView() === 'workweek' ? 4 : 3
     )
   )
 
-  protected readonly isEmpty = computed(
-    () =>
+  /** The shown days whose entries were read, see `collectedDays`. */
+  private readonly collectedDays = computed(() =>
+    collectedDays(
+      this.days(),
+      this.viewState.dateFrom(),
+      this.viewState.dateTo(),
+      this.selection.rangeCoverage()
+    )
+  )
+
+  /** What an empty week says: that nothing happened, or that none of it was collected. */
+  protected readonly emptyHint = computed(() => {
+    const empty =
       this.allDay().bars.length === 0 && this.columns().every(column => column.items.length === 0)
-  )
+    if (!empty) return null
+    return this.collectedDays().length === 0
+      ? 'This week was not collected'
+      : 'No activity in this week'
+  })
 
-  /** Only for the collected days: a day outside the range has meetings that were not read. */
+  /** Only for the collected days: a day outside them has meetings that were not read. */
   private readonly meetingTimes = computed(() =>
-    meetingTimeByDay(
-      this.activity.calendarEntries(),
-      keysWithin(this.days(), this.activity.dateFrom(), this.activity.dateTo())
-    )
+    meetingTimeByDay(this.selection.calendarEntries(), this.collectedDays())
   )
 
   private readonly weekMeetingTime = computed(() => sumMeetingTime(this.meetingTimes().values()))
@@ -141,7 +156,7 @@ export class WeekViewComponent {
   protected readonly weekDays = computed<WeekDay[]>(() => {
     const [today, selected, covered] = [
       this.today(),
-      this.activity.selectedDay(),
+      this.viewState.selectedDay(),
       this.allDay().days,
     ]
     return this.days().map(day => {
@@ -164,14 +179,14 @@ export class WeekViewComponent {
   })
 
   protected openDay(day: DayKey): void {
-    void this.activity.openDay(day)
+    void this.viewState.openDay(day)
   }
 
   protected openEvent(key: EntryKey): void {
-    void this.activity.openEvent(key)
+    void this.viewState.openEvent(key)
   }
 
   protected openGroup(keys: readonly EntryKey[]): void {
-    void this.activity.openGroup(keys)
+    void this.viewState.openGroup(keys)
   }
 }

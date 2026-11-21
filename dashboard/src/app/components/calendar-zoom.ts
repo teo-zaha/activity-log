@@ -7,7 +7,7 @@ import {
   type Signal,
 } from '@angular/core'
 import { listener } from '@signality/core/browser/listener'
-import { ActivityService } from '../services/activity.service'
+import { ActivityViewStateService } from '../services/activity-view-state.service'
 import {
   DEFAULT_HOUR_HEIGHT,
   MAX_HOUR_HEIGHT,
@@ -50,7 +50,7 @@ export function injectCalendarZoom(
   scroller: Signal<ElementRef<HTMLElement>>,
   grid: Signal<ElementRef<HTMLElement>>
 ): CalendarZoom {
-  const hourHeight = inject(ActivityService).hourHeight
+  const hourHeight = inject(ActivityViewStateService).hourHeight
   const injector = inject(Injector)
   /** The scroll position waiting for the next render; wheel events can come faster. */
   let pendingScrollTop: number | null = null

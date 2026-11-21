@@ -4,7 +4,9 @@ import { screen } from '@testing-library/angular'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { ActivityLog, OutlookEntry, ProvidersResponse } from '../generated/activity'
 import { provideAppRouter } from '../app.routes'
-import { ActivityService } from '../services/activity.service'
+import { ActivityDataService } from '../services/activity-data.service'
+import { ActivitySelection } from '../services/activity-selection.service'
+import { ActivityViewStateService } from '../services/activity-view-state.service'
 import { MockBackendTransport, provideMockBackend } from '../testing/activity-fixtures'
 import { DayViewComponent } from './day-view/day-view.component'
 import { WeekViewComponent } from './week-view/week-view.component'
@@ -80,15 +82,20 @@ const log: ActivityLog = {
   ],
 }
 
-async function load(): Promise<ActivityService> {
+interface Loaded {
+  readonly viewState: ActivityViewStateService
+  readonly selection: ActivitySelection
+}
+
+async function load(): Promise<Loaded> {
   const backend = new MockBackendTransport()
   backend.providersResponse = providers
   backend.activityResponses = [log]
   TestBed.configureTestingModule({ providers: [provideMockBackend(backend), provideAppRouter()] })
-  const activity = TestBed.inject(ActivityService)
-  await activity.initLoad()
-  await activity.openDay('2026-11-17')
-  return activity
+  const viewState = TestBed.inject(ActivityViewStateService)
+  await TestBed.inject(ActivityDataService).initLoad()
+  await viewState.openDay('2026-11-17')
+  return { viewState, selection: TestBed.inject(ActivitySelection) }
 }
 
 async function show(component: Type<unknown>): Promise<void> {
@@ -104,8 +111,8 @@ describe('calendar views over a loaded log', () => {
   afterEach(() => vi.useRealTimers())
 
   it('counts and draws a meeting that starts before the collected range', async () => {
-    const activity = await load()
-    expect(activity.dateFrom()).toBe('2026-11-17')
+    const { viewState } = await load()
+    expect(viewState.dateFrom()).toBe('2026-11-17')
 
     await show(DayViewComponent)
 
@@ -114,8 +121,8 @@ describe('calendar views over a loaded log', () => {
   })
 
   it('leaves out what the source filter hides', async () => {
-    const activity = await load()
-    activity.toggleConnection('calendar/team')
+    const { selection } = await load()
+    selection.toggleConnection('calendar/team')
 
     await show(DayViewComponent)
 
@@ -133,5 +140,14 @@ describe('calendar views over a loaded log', () => {
     expect(screen.getByRole('button', { name: /Mon 16$/ })).toBeTruthy()
     expect(screen.getByLabelText('Meetings this week: 2h 30m')).toBeTruthy()
     expect(screen.getByRole('button', { name: 'Open event: Late handover' })).toBeTruthy()
+  })
+
+  it('says a week outside the collected range was not collected', async () => {
+    const { viewState } = await load()
+    await viewState.openDay('2026-11-09')
+
+    await show(WeekViewComponent)
+
+    expect(screen.getByRole('status').textContent?.trim()).toBe('This week was not collected')
   })
 })

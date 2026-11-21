@@ -1,14 +1,15 @@
-import { computed, signal, type Signal, type WritableSignal } from '@angular/core'
-import { render, screen } from '@testing-library/angular'
+import { render, screen, type RenderResult } from '@testing-library/angular'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import type { EntryKey } from '../../providers/connection'
 import type { BusyStatus } from '../../generated/activity'
 import { createEntryAdapter } from '../../providers/provider-adapter'
 import type { EntryUiAdapter } from '../../providers/types'
-import { ActivityService } from '../../services/activity.service'
 import { meetingWeightOf } from '../../testing/activity-fixtures'
 import { MIN_BLOCK_HEIGHT } from '../calendar/calendar-grid'
-import { CALENDAR_TIME_ZONE } from '../calendar/calendar-time-zone'
+import {
+  fakeCalendarState,
+  type CalendarStateInit,
+  type FakeCalendarState,
+} from '../calendar/calendar-testing'
 import { DayViewComponent } from './day-view.component'
 
 function meeting(
@@ -29,30 +30,12 @@ function meeting(
   })
 }
 
-interface DayActivityMock {
-  selectedDay: WritableSignal<string>
-  calendarEntries: WritableSignal<EntryUiAdapter[]>
-  dateFrom: WritableSignal<string>
-  dateTo: WritableSignal<string>
-  dayEntries: Signal<EntryUiAdapter[]>
-  hourHeight: WritableSignal<number>
-  openEvent: (key: EntryKey) => Promise<boolean>
-  openGroup: (keys: readonly EntryKey[]) => Promise<boolean>
-}
-
-function mockActivity(entries: EntryUiAdapter[], day: string): DayActivityMock {
-  const selectedDay = signal(day)
-  const calendarEntries = signal(entries)
-  return {
-    selectedDay,
-    calendarEntries,
-    dateFrom: signal(''),
-    dateTo: signal(''),
-    dayEntries: computed(() => calendarEntries().filter(entry => entry.dayKey === selectedDay())),
-    hourHeight: signal(64),
-    openEvent: () => Promise.resolve(true),
-    openGroup: () => Promise.resolve(true),
-  }
+async function renderDay(init: CalendarStateInit): Promise<{
+  state: FakeCalendarState
+  result: RenderResult<DayViewComponent>
+}> {
+  const state = fakeCalendarState({ view: 'day', ...init })
+  return { state, result: await render(DayViewComponent, { providers: state.providers }) }
 }
 
 describe('DayViewComponent', () => {
@@ -63,17 +46,12 @@ describe('DayViewComponent', () => {
   afterEach(() => vi.useRealTimers())
 
   it('shows meeting time and the current-time line on today', async () => {
-    const { container, fixture } = await render(DayViewComponent, {
-      providers: [
-        {
-          provide: ActivityService,
-          useValue: mockActivity(
-            [meeting('Planning', 9, 90), meeting('Maybe', 10, 60, 'tentative')],
-            '2026-11-17'
-          ),
-        },
-      ],
-    })
+    const { container, fixture } = (
+      await renderDay({
+        entries: [meeting('Planning', 9, 90), meeting('Maybe', 10, 60, 'tentative')],
+        day: '2026-11-17',
+      })
+    ).result
 
     expect(screen.getByLabelText('Meetings: 1h 30m · +30m tentative')).toBeTruthy()
     expect(
@@ -92,17 +70,12 @@ describe('DayViewComponent', () => {
   })
 
   it('draws a meeting ending at midnight as a block, one past midnight as a bar', async () => {
-    const { container } = await render(DayViewComponent, {
-      providers: [
-        {
-          provide: ActivityService,
-          useValue: mockActivity(
-            [meeting('Until midnight', 23, 60), meeting('Past midnight', 23, 90)],
-            '2026-11-17'
-          ),
-        },
-      ],
-    })
+    const { container } = (
+      await renderDay({
+        entries: [meeting('Until midnight', 23, 60), meeting('Past midnight', 23, 90)],
+        day: '2026-11-17',
+      })
+    ).result
 
     const button = (name: string): HTMLElement =>
       screen.getByRole('button', { name: `Open event: ${name}` })
@@ -112,19 +85,17 @@ describe('DayViewComponent', () => {
   })
 
   it('has no line and no meeting time on another day without meetings', async () => {
-    const { container } = await render(DayViewComponent, {
-      providers: [{ provide: ActivityService, useValue: mockActivity([], '2026-11-16') }],
-    })
+    const { container } = (await renderDay({ day: '2026-11-16' })).result
 
     expect(container.querySelector('.now-line')).toBeNull()
     expect(container.querySelector('.cal-meeting-time')).toBeNull()
   })
 
   it('zooms in steps, shows the scale and stops at the ends', async () => {
-    const activity = mockActivity([], '2026-11-16')
-    const { fixture } = await render(DayViewComponent, {
-      providers: [{ provide: ActivityService, useValue: activity }],
-    })
+    const {
+      state,
+      result: { fixture },
+    } = await renderDay({ day: '2026-11-16' })
     const zoomIn = screen.getByRole('button', { name: 'Zoom in' })
     const zoomOut = screen.getByRole('button', { name: 'Zoom out' })
     const readout = (): HTMLButtonElement =>
@@ -135,17 +106,17 @@ describe('DayViewComponent', () => {
 
     zoomIn.click()
     fixture.detectChanges()
-    expect(activity.hourHeight()).toBe(80)
+    expect(state.hourHeight()).toBe(80)
     expect(readout().textContent?.trim()).toBe('125%')
     expect(readout().disabled).toBe(false)
 
     readout().click()
     fixture.detectChanges()
-    expect(activity.hourHeight()).toBe(64)
+    expect(state.hourHeight()).toBe(64)
 
     for (let press = 0; press < 5; press++) zoomOut.click()
     fixture.detectChanges()
-    expect(activity.hourHeight()).toBe(32)
+    expect(state.hourHeight()).toBe(32)
     expect(zoomOut.hasAttribute('disabled')).toBe(true)
   })
 
@@ -160,12 +131,7 @@ describe('DayViewComponent', () => {
       durationMinutes: 60,
       meetingWeight: 'busy',
     })
-    await render(DayViewComponent, {
-      providers: [
-        { provide: ActivityService, useValue: mockActivity([night], '2027-03-28') },
-        { provide: CALENDAR_TIME_ZONE, useValue: 'Europe/Berlin' },
-      ],
-    })
+    await renderDay({ entries: [night], day: '2027-03-28', timeZone: 'Europe/Berlin' })
 
     const block = screen.getByRole('button', { name: 'Open event: Night deploy' })
     expect(block.style.top).toBe(`${1.5 * 64}px`)
@@ -173,16 +139,45 @@ describe('DayViewComponent', () => {
   })
 
   it('draws short meetings at the calendar’s minimum height', async () => {
-    await render(DayViewComponent, {
-      providers: [
-        {
-          provide: ActivityService,
-          useValue: mockActivity([meeting('Check-in', 9, 5)], '2026-11-17'),
-        },
-      ],
-    })
+    await renderDay({ entries: [meeting('Check-in', 9, 5)], day: '2026-11-17' })
 
     const block = screen.getByRole('button', { name: 'Open event: Check-in' })
     expect(block.style.height).toBe(`${MIN_BLOCK_HEIGHT}px`)
+  })
+
+  it('opens the event of a block and the bar of a meeting past midnight', async () => {
+    const block = meeting('Planning', 9, 60)
+    const bar = meeting('Past midnight', 23, 90)
+    const { state } = await renderDay({ entries: [block, bar], day: '2026-11-17' })
+
+    screen.getByRole('button', { name: 'Open event: Planning' }).click()
+    screen.getByRole('button', { name: 'Open event: Past midnight' }).click()
+
+    expect(state.opened).toEqual([block.trackKey, bar.trackKey])
+  })
+
+  it('says an empty day was not collected when it lies outside the collection', async () => {
+    await renderDay({ day: '2026-11-10', from: '2026-11-16', to: '2026-11-22' })
+    expect(screen.getByRole('status').textContent?.trim()).toBe('This day was not collected')
+  })
+
+  it('says an empty day of another collection on screen was not collected', async () => {
+    await renderDay({
+      day: '2026-11-17',
+      from: '2026-11-16',
+      to: '2026-11-22',
+      coverage: {
+        kind: 'other',
+        collected: { from: '2026-11-01', to: '2026-11-05' },
+        own: { from: '2026-11-16', to: '2026-11-22' },
+        overlaps: false,
+      },
+    })
+    expect(screen.getByRole('status').textContent?.trim()).toBe('This day was not collected')
+  })
+
+  it('says a collected day without entries had no activity', async () => {
+    await renderDay({ day: '2026-11-17', from: '2026-11-16', to: '2026-11-22' })
+    expect(screen.getByRole('status').textContent?.trim()).toBe('No activity on this day')
   })
 })
