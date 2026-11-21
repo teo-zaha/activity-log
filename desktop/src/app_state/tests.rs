@@ -10,6 +10,7 @@ fn logged(needle: &str) -> bool {
 
 #[test]
 fn config_problems_at_startup_reach_the_logs() {
+    let _log = crate::tests::DIAGNOSTICS.blocking_lock();
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("config.toml");
     std::fs::write(&path, "[[gitlab]]\nlabel = \"Startup\"\ntokn = \"x\"\n").unwrap();
@@ -23,6 +24,7 @@ fn config_problems_at_startup_reach_the_logs() {
 /// B2: the error names the line and column, never the text on it.
 #[test]
 fn a_broken_config_at_startup_is_logged_without_its_text_and_starts_empty() {
+    let _log = crate::tests::DIAGNOSTICS.blocking_lock();
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("config.toml");
     std::fs::write(&path, "[[gitlab]]\ntoken = \"glpat-STARTUP-SECRET\n").unwrap();

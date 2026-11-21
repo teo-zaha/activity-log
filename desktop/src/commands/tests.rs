@@ -298,6 +298,7 @@ async fn a_busy_settings_file_is_reported_and_left_alone() {
 
 #[tokio::test]
 async fn config_problems_after_an_edit_reach_the_logs() {
+    let _log = crate::tests::DIAGNOSTICS.lock().await;
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("config.toml");
     std::fs::write(&path, "[[gitlab]]\nlabel = \"Edited\"\nurll = \"x\"\n").unwrap();

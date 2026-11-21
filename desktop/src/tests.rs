@@ -5,12 +5,23 @@ use activity_log_core::{
     menu::{INSTALL_MENU_COMMAND, UPDATE_MENU_COMMAND},
 };
 use tauri::{
+    Manager, WindowEvent,
     ipc::{CallbackFn, InvokeBody},
     test::{INVOKE_KEY, MockRuntime, get_ipc_response, mock_builder, mock_context, noop_assets},
     webview::InvokeRequest,
 };
 
-use crate::{app_menu, commands, deep_link, window_chrome};
+use crate::{
+    app_menu,
+    collection_notice::WindowFocus,
+    commands, deep_link,
+    deep_link::{DeepLinkInbox, Delivery},
+    page_started, window_chrome, window_event,
+};
+
+/// Held by every test that logs, reads or clears the process-wide diagnostics log, which tests
+/// on other threads share: the registration test below runs `clear_logs` for real.
+pub(crate) static DIAGNOSTICS: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
 
 /// The app's own handler, on the mock runtime.
 fn handler() -> impl Fn(tauri::ipc::Invoke<MockRuntime>) -> bool + Send + Sync + 'static {
@@ -37,6 +48,7 @@ fn call(webview: &tauri::WebviewWindow<MockRuntime>, name: &str) {
 /// names Tauri registered them under: the app's own handler takes each one.
 #[test]
 fn every_command_the_dashboard_names_is_registered() {
+    let _log = DIAGNOSTICS.blocking_lock();
     let taken = Arc::new(Mutex::new(Vec::new()));
     let handler = handler();
     let record = taken.clone();
@@ -92,4 +104,47 @@ fn a_name_the_app_does_not_register_is_not_taken() {
             .unwrap();
     call(&webview, "get_runtime_stat");
     assert_eq!(*taken.lock().unwrap(), Some(false));
+}
+
+/// B58: a page that starts loading again in the main window holds the links that come until
+/// it asks; another window's page does not.
+#[test]
+fn a_reloading_main_page_gets_the_links_that_come_meanwhile() {
+    let app = mock_builder()
+        .manage(DeepLinkInbox::default())
+        .build(mock_context(noop_assets()))
+        .unwrap();
+    let inbox = app.state::<DeepLinkInbox>();
+    let link = || "activity-log://timeline".to_string();
+    inbox.take();
+
+    page_started("other", app.handle());
+    assert_eq!(inbox.receive(link()), Delivery::Forward(link()));
+
+    page_started(deep_link::MAIN_WINDOW, app.handle());
+    assert_eq!(inbox.receive(link()), Delivery::Held);
+    assert_eq!(inbox.take(), Some(link()));
+}
+
+/// The main window's focus events reach `WindowFocus`; another window's do not.
+#[test]
+fn the_main_window_s_focus_is_followed() {
+    let app = mock_builder()
+        .manage(WindowFocus::default())
+        .build(mock_context(noop_assets()))
+        .unwrap();
+    let window = |label: &str| {
+        tauri::WebviewWindowBuilder::<MockRuntime, _>::new(&app, label, Default::default())
+            .build()
+            .unwrap()
+    };
+    let (main, other) = (window(deep_link::MAIN_WINDOW), window("other"));
+    let focus = app.state::<WindowFocus>();
+
+    window_event(&main.as_ref().window(), &WindowEvent::Focused(true));
+    assert!(focus.get());
+    window_event(&other.as_ref().window(), &WindowEvent::Focused(false));
+    assert!(focus.get(), "another window's focus says nothing");
+    window_event(&main.as_ref().window(), &WindowEvent::Focused(false));
+    assert!(!focus.get());
 }

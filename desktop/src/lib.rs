@@ -14,7 +14,8 @@ use std::time::{Duration, Instant};
 
 use activity_log_core::settings::ConfigFile;
 use tauri::{
-    Emitter, Manager, RunEvent, Runtime, WebviewWindow, WindowEvent, webview::PageLoadEvent,
+    AppHandle, Emitter, Manager, RunEvent, Runtime, WebviewWindow, Window, WindowEvent,
+    webview::PageLoadEvent,
 };
 use tauri_plugin_notification::NotificationExt;
 
@@ -68,24 +69,11 @@ pub fn run() {
         .manage(app_menu::AppMenu::<tauri::Wry>::default())
         .manage(commands::ExportTurn::default())
         .manage(collection_notice::WindowFocus::default())
-        .on_window_event(|window, event| {
-            if window.label() == deep_link::MAIN_WINDOW
-                && let WindowEvent::Focused(focused) = event
-            {
-                window
-                    .state::<collection_notice::WindowFocus>()
-                    .set(*focused);
-            }
-        })
+        .on_window_event(window_event)
         .on_menu_event(|app, event| app_menu::chosen(app, event.id()))
-        // A page that loads again starts with the default menu and installs its own, and asks
-        // for the links that came meanwhile.
         .on_page_load(|webview, payload| {
-            if webview.label() == deep_link::MAIN_WINDOW
-                && payload.event() == PageLoadEvent::Started
-            {
-                app_menu::page_loading(webview.app_handle());
-                deep_link::page_loading(webview.app_handle());
+            if payload.event() == PageLoadEvent::Started {
+                page_started(webview.label(), webview.app_handle());
             }
         })
         .invoke_handler(app_commands!())
@@ -151,6 +139,26 @@ pub fn run() {
                 state.host.shutdown();
             }
         });
+}
+
+/// A page that loads again (a reload) in the main window starts with the default menu and
+/// installs its own, and asks for the links that came meanwhile.
+fn page_started<R: Runtime>(label: &str, app: &AppHandle<R>) {
+    if label == deep_link::MAIN_WINDOW {
+        app_menu::page_loading(app);
+        deep_link::page_loading(app);
+    }
+}
+
+/// The main window's focus, for `collection_notice`.
+fn window_event<R: Runtime>(window: &Window<R>, event: &WindowEvent) {
+    if window.label() == deep_link::MAIN_WINDOW
+        && let WindowEvent::Focused(focused) = event
+    {
+        window
+            .state::<collection_notice::WindowFocus>()
+            .set(*focused);
+    }
 }
 
 /// How long the hidden window waits for the dashboard to show it.
