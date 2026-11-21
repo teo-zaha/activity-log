@@ -120,10 +120,12 @@ export class TauriBackendTransport implements BackendTransport {
 
   /**
    * Listens first, so no link falls between the launch link and the first event, and holds the
-   * links that arrive until the launch link is in: it is older, so it opens first. Every held
-   * link opens in order, whatever `take_launch_deep_link` answered. Unlike the runtime stream,
-   * which keeps only each event's latest message, every link is a navigation of its own, so
-   * none is dropped.
+   * links that arrive until the launch link is in: it is older, so it opens first. The held
+   * links open in order after it, whatever `take_launch_deep_link` answered. The desktop keeps
+   * only the latest link while no page asks (`desktop/src/deep_link`), and the last navigation
+   * wins either way. The runtime stream's early buffer is not shared: it keeps each event's
+   * latest message for the epoch of its handshake pair, and links have no epoch; their order
+   * against the launch link is what matters here.
    */
   async listenForDeepLinks(open: (link: string) => void): Promise<void> {
     let held: string[] | null = []

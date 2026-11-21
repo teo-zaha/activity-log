@@ -63,8 +63,9 @@ impl DeepLinkInbox {
     }
 
     /// The page is loading again (a reload): it listens for nothing until it asks again, so
-    /// links are held for it meanwhile. A link sent just before the page started loading again
-    /// can still reach the page that leaves.
+    /// links are held for it meanwhile, the latest only, as at launch (the dashboard then opens
+    /// it before any link that comes while it asks). A link sent just before the page started
+    /// loading again can still reach the page that leaves.
     pub(crate) fn page_loading(&self) {
         self.lock().ready = false;
     }
