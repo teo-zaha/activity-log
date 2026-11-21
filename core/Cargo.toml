@@ -22,6 +22,7 @@ strum.workspace = true
 tokio.workspace = true
 ts-rs.workspace = true
 toml_edit = "0.25"
+url = "2.5"
 
 [target.'cfg(target_os = "macos")'.dependencies]
 libc = "0.2"

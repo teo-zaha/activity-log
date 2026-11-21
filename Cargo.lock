@@ -862,6 +862,7 @@ dependencies = [
  "tokio",
  "toml_edit 0.25.17+spec-1.1.0",
  "ts-rs",
+ "url",
  "urlencoding",
  "windows 0.62.2",
 ]
