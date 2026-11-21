@@ -95,6 +95,31 @@ describe('Shortcuts in the app', APP_RENDER_TEST, () => {
       expect(filter()).toHaveProperty('value', '')
     })
 
+    it('counts the keys typed before the filter has focus as typing: they run nothing', async () => {
+      const { router, settle } = await openApp('/day/2026-05-18?from=2026-05-17&to=2026-05-18', {
+        platform: BROWSER,
+      })
+      await vi.waitFor(() => expect(TestBed.inject(ActivityDataService).meta()).not.toBeNull())
+      await settle()
+      const collect = vi.spyOn(TestBed.inject(ActivityDataService), 'collect')
+
+      // `/`, then the filter's text at once, while the Timeline is still on its way.
+      expect(press('/', { code: 'Slash' }).defaultPrevented).toBe(true)
+      for (const [key, code] of [
+        ['r', 'KeyR'],
+        ['2', 'Digit2'],
+        ['t', 'KeyT'],
+        [',', 'Comma'],
+      ]) {
+        expect(press(key, { code }).defaultPrevented, key).toBe(false)
+      }
+
+      await vi.waitFor(() => expect(router.url).toBe('/timeline?from=2026-05-17&to=2026-05-18'))
+      await settle()
+      await vi.waitFor(() => expect(document.activeElement).toBe(filter()), SLOW)
+      expect(collect).not.toHaveBeenCalled()
+    })
+
     it('does nothing under the phone’s Settings tab', async () => {
       phone = mockPhone(true)
       await openApp('/timeline?settings=home', { platform: BROWSER })

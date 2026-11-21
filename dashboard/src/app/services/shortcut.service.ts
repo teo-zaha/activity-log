@@ -77,6 +77,17 @@ export type ShortcutLayer =
 
 type PageLayer = Extract<ShortcutLayer, { kind: 'page' }>
 
+/**
+ * How long a command may take to hand on to a field (`expectHandOff`) before the keys are the
+ * app's again: a view's code may have to load first.
+ */
+export const HAND_OFF_LIMIT_MS = 3000
+
+/** A command on its way to a field: what is typed meanwhile is meant for the field. */
+type HandOff =
+  | { readonly kind: 'none' }
+  | { readonly kind: 'pending'; readonly id: ShortcutId; readonly until: number }
+
 interface Binding {
   readonly run: () => void | false
   readonly enabled: () => boolean
@@ -201,6 +212,9 @@ export class ShortcutService {
    */
   private held = false
 
+  /** A hand-off to a field under way (`expectHandOff`), until `handOff` makes it. */
+  private handOffState: HandOff = { kind: 'none' }
+
   private readonly routeScope = computed(() => {
     this.router.lastSuccessfulNavigation()
     return routeScopeOf(this.router.routerState.snapshot.root)
@@ -281,7 +295,8 @@ export class ShortcutService {
     // A held accelerator runs once, as a held key does.
     if (this.held) return false
     const match = this.match(keys)
-    if (match === null || (this.typing() && !firesWhileTyping(match.chord))) return false
+    const typing = this.typingAt(this.document.activeElement)
+    if (match === null || (typing && !firesWhileTyping(match.chord))) return false
     return this.run(match.entry.id)
   }
 
@@ -298,7 +313,23 @@ export class ShortcutService {
    * dialogs decide; the typing rule does not, since the first command's key passed it already.
    */
   handOff(id: ShortcutId): boolean {
+    if (this.handOffState.kind === 'pending' && this.handOffState.id === id) {
+      this.handOffState = { kind: 'none' }
+    }
     return this.run(id)
+  }
+
+  /**
+   * Says a command is on its way to the field `id` stands for (`/` from a calendar view switches
+   * to the Timeline first): until `handOff(id)`, the returned function or `HAND_OFF_LIMIT_MS`,
+   * keys count as typing, so the filter's first letters run no shortcut.
+   */
+  expectHandOff(id: ShortcutId): () => void {
+    const pending: HandOff = { kind: 'pending', id, until: performance.now() + HAND_OFF_LIMIT_MS }
+    this.handOffState = pending
+    return () => {
+      if (this.handOffState === pending) this.handOffState = { kind: 'none' }
+    }
   }
 
   /** The entry a press of `keys` runs here, following the scope on screen (a menu item's title). */
@@ -321,8 +352,17 @@ export class ShortcutService {
     return resolveChord(this.table, { ...this.here(), scope: this.activeScope() }, keys)
   }
 
-  private typing(): boolean {
-    return isEditable(this.document.activeElement)
+  /** Whether a key at `target` types: in an editable place, or on its way to a field. */
+  private typingAt(target: EventTarget | null): boolean {
+    return isEditable(target) || this.handingOff()
+  }
+
+  private handingOff(): boolean {
+    const state = this.handOffState
+    if (state.kind === 'none') return false
+    if (performance.now() < state.until) return true
+    this.handOffState = { kind: 'none' }
+    return false
   }
 
   /** Whether single-key shortcuts are on (the help says so when they are not). */
@@ -364,7 +404,7 @@ export class ShortcutService {
     const keys = chordOf(event, this.platform.os)
     const match = keys === null ? null : this.match(keys)
     if (match === null || this.menuTakes(match.chord)) return
-    if (isEditable(target) && !firesWhileTyping(match.chord)) return
+    if (this.typingAt(target) && !firesWhileTyping(match.chord)) return
     if (this.run(match.entry.id)) event.preventDefault()
   }
 

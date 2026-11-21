@@ -7,6 +7,7 @@ import { ShortcutHelpDialogComponent } from '../components/shortcut/shortcut-hel
 import { SHORTCUTS, type ShortcutEntry } from '../models/shortcuts'
 import { ShortcutPreferences } from './shortcut-preferences.service'
 import {
+  HAND_OFF_LIMIT_MS,
   SHORTCUT_HELP_DIALOG_ID,
   SHORTCUT_PLATFORM,
   SHORTCUT_SCOPE,
@@ -338,6 +339,43 @@ describe('ShortcutService', () => {
     // The key that types r elsewhere (Dvorak's O) is not R.
     expect(press('r', { code: 'KeyO' }).defaultPrevented).toBe(false)
     expect(collect).toHaveBeenCalledOnce()
+  })
+
+  it('counts keys as typing while a command hands on to a field, until it has', async () => {
+    const shortcuts = await setup(BROWSER)
+    const collect = vi.fn()
+    const close = vi.fn()
+    const filter = vi.fn()
+    shortcuts.bind('app.collect', collect)
+    shortcuts.bind('layer.close', close)
+    shortcuts.bind('timeline.filter', filter)
+
+    shortcuts.expectHandOff('timeline.filter')
+    expect(press('r', { code: 'KeyR' }).defaultPrevented).toBe(false)
+    // Escape works while typing, so it works here too.
+    expect(press('Escape').defaultPrevented).toBe(true)
+    expect(shortcuts.handOff('timeline.filter')).toBe(true)
+    expect(press('r', { code: 'KeyR' }).defaultPrevented).toBe(true)
+
+    // Called off (the view did not change): the keys are the app's again.
+    const cancel = shortcuts.expectHandOff('timeline.filter')
+    expect(press('r', { code: 'KeyR' }).defaultPrevented).toBe(false)
+    cancel()
+    expect(press('r', { code: 'KeyR' }).defaultPrevented).toBe(true)
+
+    // A hand-off that never comes ends at the limit.
+    const now = vi.spyOn(performance, 'now')
+    now.mockReturnValue(1_000)
+    shortcuts.expectHandOff('timeline.filter')
+    now.mockReturnValue(1_000 + HAND_OFF_LIMIT_MS - 1)
+    expect(press('r', { code: 'KeyR' }).defaultPrevented).toBe(false)
+    now.mockReturnValue(1_000 + HAND_OFF_LIMIT_MS)
+    expect(press('r', { code: 'KeyR' }).defaultPrevented).toBe(true)
+    now.mockRestore()
+
+    expect(collect).toHaveBeenCalledTimes(3)
+    expect(close).toHaveBeenCalledOnce()
+    expect(filter).toHaveBeenCalledOnce()
   })
 
   it('counts a typeahead widget as typing: a select’s letters pick its options', async () => {

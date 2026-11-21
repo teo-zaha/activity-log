@@ -40,9 +40,15 @@ export function bindShellShortcuts(): void {
     if (viewState.currentView() === 'list') {
       return shortcuts.handOff('timeline.filter') ? undefined : false
     }
-    void viewState.setView('list').then(shown => {
-      if (shown) afterNextRender(() => shortcuts.handOff('timeline.filter'), { injector })
-    })
+    // What is typed until the filter has focus is the filter's, not a shortcut.
+    const cancel = shortcuts.expectHandOff('timeline.filter')
+    void viewState.setView('list').then(
+      shown => {
+        if (shown) afterNextRender(() => shortcuts.handOff('timeline.filter'), { injector })
+        else cancel()
+      },
+      () => cancel()
+    )
   }
 
   const unbind = [
