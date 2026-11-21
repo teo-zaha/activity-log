@@ -242,7 +242,7 @@ pub(crate) async fn save_export(
     let _turn = exports.take()?;
     let format = request.format;
     let file =
-        blocking(move || render_export_request(&request).map_err(BackendError::from)).await??;
+        blocking(move || render_export_request(request).map_err(BackendError::from)).await??;
     let name = file.file_name.clone();
     let chosen = blocking(move || {
         FileDialog::new()

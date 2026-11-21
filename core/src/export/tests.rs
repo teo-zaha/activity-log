@@ -54,7 +54,7 @@ fn request(format: OutputFormat, start: &str, end: &str, time_zone: &str) -> Exp
 fn names_the_file_after_the_local_days_of_the_range_across_a_clock_change() {
     // Berlin's Saturday 24 to Sunday 25 October 2026: summer time ends on Sunday, so the range
     // starts at UTC+2 and ends at UTC+1.
-    let file = render_export_request(&request(
+    let file = render_export_request(request(
         OutputFormat::Markdown,
         "2026-10-23T22:00:00Z",
         "2026-10-25T23:00:00Z",
@@ -67,7 +67,7 @@ fn names_the_file_after_the_local_days_of_the_range_across_a_clock_change() {
 
 #[test]
 fn renders_markdown_by_day_in_the_requested_zone() {
-    let file = render_export_request(&request(
+    let file = render_export_request(request(
         OutputFormat::Markdown,
         "2026-10-23T22:00:00Z",
         "2026-10-25T23:00:00Z",
@@ -88,7 +88,7 @@ fn renders_markdown_by_day_in_the_requested_zone() {
 
 #[test]
 fn renders_json_as_the_activity_log_with_a_summary() {
-    let file = render_export_request(&request(
+    let file = render_export_request(request(
         OutputFormat::Json,
         "2026-10-23T22:00:00Z",
         "2026-10-25T23:00:00Z",
@@ -112,7 +112,7 @@ fn renders_json_as_the_activity_log_with_a_summary() {
 
 #[test]
 fn rejects_an_unknown_zone_and_a_bad_range() {
-    let zone = render_export_request(&request(
+    let zone = render_export_request(request(
         OutputFormat::Json,
         "2026-10-23T22:00:00Z",
         "2026-10-25T23:00:00Z",
@@ -121,7 +121,7 @@ fn rejects_an_unknown_zone_and_a_bad_range() {
     .unwrap_err();
     assert_eq!(zone, ExportError::UnknownZone("Mars/Olympus".to_string()));
 
-    let backwards = render_export_request(&request(
+    let backwards = render_export_request(request(
         OutputFormat::Json,
         "2026-10-25T23:00:00Z",
         "2026-10-23T22:00:00Z",
