@@ -49,14 +49,26 @@
         [heading]="emptyState().title"
       >
         {{ emptyState().message }}
-        @if (emptyState().action?.kind === 'clear-search') {
+        @let action = emptyState().action;
+        @if (action?.kind === 'clear-search') {
           <button appButton emptyStateAction (click)="viewState.setSearchQuery('')">
             Clear filter
+          </button>
+        } @else if (action?.kind === 'collect-own-range') {
+          <button
+            appButton
+            emptyStateAction
+            variant="primary"
+            icon="sync"
+            (click)="collectOwnRange()"
+          >
+            {{ action.label }}
           </button>
         }
       </app-empty-state>
     } @else {
-      <p class="timeline-summary" aria-live="polite">{{ summary() }}</p>
+      <!-- Announced once the filter settles (`announceSettled`), not on every key. -->
+      <p class="timeline-summary">{{ summary() }}</p>
       <div class="timeline">
         @for (day of days(); track day.date) {
           <section
