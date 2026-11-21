@@ -19,6 +19,7 @@ import { ActivitySelection } from '../../services/activity-selection.service'
 import { ActivityViewStateService } from '../../services/activity-view-state.service'
 import { BreakpointState } from '../../services/breakpoint-state.service'
 import { ButtonComponent } from '../button/button.component'
+import { ChangeStackComponent } from '../change-stack/change-stack.component'
 import { EmptyStateComponent } from '../empty-state/empty-state.component'
 import { IconButtonComponent } from '../button/icon-button.component'
 import { ExternalLinkDirective } from '../external-link/external-link.directive'
@@ -42,6 +43,7 @@ import { ShortcutService, ariaKeysOf } from '../../services/shortcut.service'
     AutoAnimateDirective,
     A11yModule,
     ButtonComponent,
+    ChangeStackComponent,
     EmptyStateComponent,
     ExternalLinkDirective,
     IconButtonComponent,

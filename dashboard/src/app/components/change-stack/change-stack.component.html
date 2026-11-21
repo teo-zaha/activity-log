@@ -1,0 +1,24 @@
+@let vm = stack();
+<section class="stack" [attr.aria-labelledby]="headingId">
+  <div class="stack-header">
+    <h3 class="stack-title" [id]="headingId">Stack</h3>
+    <p class="stack-caption">As of the last collection</p>
+  </div>
+  @if (vm.base.kind === 'branch') {
+    <p class="stack-base">
+      on <code class="stack-branch">{{ vm.base.branch }}</code>
+    </p>
+  } @else {
+    <p class="stack-base is-cut">{{ vm.base.text }}</p>
+  }
+  <ol class="stack-chain">
+    @for (row of vm.chain; track $index) {
+      <li class="stack-item" [attr.aria-current]="row.kind === 'current' ? 'true' : null">
+        <app-stack-change [change]="row" />
+        @if (row.kind === 'current') {
+          <app-stack-level [level]="vm.above" />
+        }
+      </li>
+    }
+  </ol>
+</section>
