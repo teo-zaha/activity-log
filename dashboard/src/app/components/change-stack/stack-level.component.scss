@@ -29,3 +29,9 @@
   line-height: 1.4;
   overflow-wrap: anywhere;
 }
+
+// Why part of the stack is missing, in the stronger of the muted texts where the dark themes'
+// weakest one falls short of 4.5:1 on the section.
+:host-context(html.dark) .cut {
+  color: var(--text-secondary);
+}

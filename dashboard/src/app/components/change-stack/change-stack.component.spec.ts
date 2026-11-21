@@ -8,7 +8,7 @@ import type {
 } from '../../generated/activity'
 import { changeStackVmOf, type ChangeStackVm } from '../../providers/change-stack'
 import { MockBackendTransport, provideMockBackend } from '../../testing/activity-fixtures'
-import { ChangeStackComponent } from './change-stack.component'
+import { ChangeStackComponent, type StackHeadingLevel } from './change-stack.component'
 import { MAX_STACK_INDENT } from './stack-level.component'
 
 const url = (number: number): string =>
@@ -34,10 +34,13 @@ const stack: ChangeStack = {
   },
 }
 
-async function renderStack(vm: ChangeStackVm): Promise<MockBackendTransport> {
+async function renderStack(
+  vm: ChangeStackVm,
+  inputs: { caption?: string; headingLevel?: StackHeadingLevel } = {}
+): Promise<MockBackendTransport> {
   const backend = new MockBackendTransport()
   await render(ChangeStackComponent, {
-    inputs: { stack: vm },
+    inputs: { stack: vm, ...inputs },
     providers: [provideMockBackend(backend)],
   })
   return backend
@@ -55,7 +58,29 @@ describe('ChangeStackComponent', () => {
 
     const section = screen.getByRole('region', { name: 'Stack' })
     expect(within(section).getByRole('heading', { name: 'Stack' })).toBeTruthy()
+    expect(within(section).getByRole('heading', { level: 3 })).toBeTruthy()
     expect(section.textContent).toContain('As of the last collection')
+  })
+
+  it('takes how fresh the stack is and its heading’s level from where it shows', async () => {
+    await renderStack(changeStackVmOf(stack, '!'), {
+      caption: 'Looked up as it opened',
+      headingLevel: 4,
+    })
+
+    const section = screen.getByRole('region', { name: 'Stack' })
+    expect(within(section).getByRole('heading', { name: 'Stack', level: 4 })).toBeTruthy()
+    expect(section.textContent).toContain('Looked up as it opened')
+    expect(section.textContent).not.toContain('As of the last collection')
+  })
+
+  // WebKit presents a list without markers as no list: VoiceOver would read the tree flat.
+  it('keeps every list a list, also without its markers', async () => {
+    await renderStack(changeStackVmOf(stack, '!'))
+
+    const lists = [...document.querySelectorAll('ol')]
+    expect(lists).toHaveLength(3)
+    expect(lists.map(list => list.getAttribute('role'))).toEqual(['list', 'list', 'list'])
   })
 
   it('lists the chain from the branch it stands on up, the entry’s own change marked', async () => {
@@ -63,7 +88,8 @@ describe('ChangeStackComponent', () => {
 
     const section = screen.getByRole('region', { name: 'Stack' })
     const base = section.querySelector('.stack-base')
-    expect(base?.textContent?.replace(/\s+/g, ' ').trim()).toBe('on main')
+    expect(base?.textContent?.replace(/\s+/g, ' ').trim()).toBe('Builds on main')
+    expect(base?.querySelector('code')?.textContent).toBe('main')
     const chain = within(section).getAllByRole('list')[0]!
     const rows = itemsOf(chain)
     expect(rows.map(row => row.querySelector('app-stack-change')?.textContent)).toEqual([
@@ -71,36 +97,48 @@ describe('ChangeStackComponent', () => {
       '!11 Change 11',
       '!12 Change 12 This change',
     ])
-    expect(rows.map(row => row.getAttribute('aria-current'))).toEqual([null, null, 'true'])
+    // The row itself is current, not the item that also holds the changes built on it.
+    expect(rows.map(row => row.getAttribute('aria-current'))).toEqual([null, null, null])
+    expect(
+      rows.map(row => row.querySelector('.change')?.getAttribute('aria-current') ?? null)
+    ).toEqual([null, null, 'true'])
   })
 
-  it('links the other changes outside the app, never the entry’s own or one without a page', async () => {
+  it('links every change to its page outside the app, the entry’s own too, but one without a page', async () => {
     const backend = await renderStack(changeStackVmOf(stack, '!'))
 
     const links = screen.getAllByRole('link')
     expect(links.map(link => link.textContent)).toEqual([
       '!10 Change 10',
+      '!12 Change 12 This change',
       '!13 Change 13',
       '!15 Change 15',
       '!14 Change 14',
     ])
     expect(links.every(link => link.getAttribute('target') === '_blank')).toBe(true)
+    expect(links.map(link => link.getAttribute('aria-current'))).toEqual([
+      null,
+      'true',
+      null,
+      null,
+      null,
+    ])
     fireEvent.click(links[1]!)
-    expect(backend.openedUrls).toEqual([url(13)])
+    fireEvent.click(links[2]!)
+    expect(backend.openedUrls).toEqual([url(12), url(13)])
   })
 
   it('nests the tree above inside the entry’s own change, each level ending in its cut', async () => {
     const vm = changeStackVmOf(stack, '!')
     await renderStack(vm)
 
-    const current = screen
-      .getAllByRole('listitem')
-      .find(item => item.getAttribute('aria-current') === 'true')!
+    const current = document.querySelector('[aria-current="true"]')!.closest('li')!
     const [above] = within(current).getAllByRole('list')
     const levelOne = itemsOf(above!)
-    expect(levelOne.map(item => within(item).getAllByRole('link')[0]?.textContent?.trim())).toEqual(
-      [expect.stringContaining('!13'), expect.stringContaining('!14')]
-    )
+    expect(levelOne.map(item => within(item).getAllByRole('link')[0]?.textContent)).toEqual([
+      '!13 Change 13',
+      '!14 Change 14',
+    ])
     const levelTwo = within(levelOne[0]!).getByRole('list')
     expect(itemsOf(levelTwo)).toHaveLength(1)
 

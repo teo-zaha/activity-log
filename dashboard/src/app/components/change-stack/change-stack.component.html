@@ -1,19 +1,29 @@
 @let vm = stack();
 <section class="stack" [attr.aria-labelledby]="headingId">
   <div class="stack-header">
-    <h3 class="stack-title" [id]="headingId">Stack</h3>
-    <p class="stack-caption">As of the last collection</p>
+    @switch (headingLevel()) {
+      @case (2) {
+        <h2 class="stack-title" [id]="headingId">Stack</h2>
+      }
+      @case (3) {
+        <h3 class="stack-title" [id]="headingId">Stack</h3>
+      }
+      @case (4) {
+        <h4 class="stack-title" [id]="headingId">Stack</h4>
+      }
+    }
+    <p class="stack-caption">{{ caption() }}</p>
   </div>
   @if (vm.base.kind === 'branch') {
     <p class="stack-base">
-      on <code class="stack-branch">{{ vm.base.branch }}</code>
+      {{ vm.base.lead }} <code class="stack-branch">{{ vm.base.branch }}</code>
     </p>
   } @else {
     <p class="stack-base is-cut">{{ vm.base.text }}</p>
   }
-  <ol class="stack-chain">
-    @for (row of vm.chain; track $index) {
-      <li class="stack-item" [attr.aria-current]="row.kind === 'current' ? 'true' : null">
+  <ol class="stack-chain" role="list">
+    @for (row of vm.chain; track row.reference) {
+      <li class="stack-item">
         <app-stack-change [change]="row" />
         @if (row.kind === 'current') {
           <app-stack-level [level]="vm.above" />

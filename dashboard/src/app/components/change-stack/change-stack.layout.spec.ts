@@ -53,16 +53,25 @@ const mergeRequest: GitLabEntry = {
   },
 }
 
+/** The same stack with what it builds on cut: its first line is a cut line too. */
+const cutBelow: GitLabEntry = {
+  ...mergeRequest,
+  id: 'opened-13',
+  mrIid: 13,
+  timestamp: '2026-05-18T12:00:00Z',
+  changeStack: { ...mergeRequest.changeStack!, bottom: { kind: 'cut', reason: 'unreadable' } },
+}
+
 const log: ActivityLog = {
   ...activityLog,
   summary: {
     ...activityLog.summary,
     connections: [
       ...activityLog.summary.connections,
-      { connection: { source: 'gitlab', name: 'default' }, count: 1 },
+      { connection: { source: 'gitlab', name: 'default' }, count: 2 },
     ],
   },
-  entries: [...activityLog.entries, mergeRequest],
+  entries: [...activityLog.entries, mergeRequest, cutBelow],
 }
 
 /** Two frames: what a change lays out and what observes it has run. */
@@ -75,12 +84,42 @@ async function touch(enabled: boolean): Promise<void> {
   await cdp().send('Emulation.setTouchEmulationEnabled', { enabled, maxTouchPoints: 5 })
 }
 
-async function openStack(width: number): Promise<HTMLElement> {
+/** A colour as the screen shows it, `[r, g, b]` from 0 to 255, whatever syntax it is written in. */
+function rgbOf(color: string): [number, number, number] {
+  const canvas = document.createElement('canvas')
+  canvas.width = canvas.height = 1
+  const context = canvas.getContext('2d', { willReadFrequently: true })!
+  context.fillStyle = color
+  context.fillRect(0, 0, 1, 1)
+  const [r, g, b] = context.getImageData(0, 0, 1, 1).data
+  return [r!, g!, b!]
+}
+
+/** WCAG's contrast ratio of two opaque colours. */
+function contrast(a: string, b: string): number {
+  const luminance = (color: string): number => {
+    const [r, g, b] = rgbOf(color).map(channel => {
+      const c = channel / 255
+      return c <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4
+    })
+    return 0.2126 * r! + 0.7152 * g! + 0.0722 * b!
+  }
+  const [light, dark] = [luminance(a), luminance(b)].sort((x, y) => y - x)
+  return (light! + 0.05) / (dark! + 0.05)
+}
+
+/**
+ * The themes `ThemeService` marks dark (`html.dark`), but `dim`: its `--text-secondary`, the
+ * next stronger text, is 3.7:1 on a section everywhere in the app, a gap of the theme's own.
+ */
+const DARK_THEMES = ['dark', 'midnight', 'mocha'] as const
+
+async function openStack(width: number, id = mergeRequest.id): Promise<HTMLElement> {
   await page.viewport(width, 800)
   const backend = new MockBackendTransport()
   backend.activityResponses = [log]
   backend.activityResponse = log
-  const event = encodeURIComponent(`gitlab/default/${mergeRequest.id}`)
+  const event = encodeURIComponent(`gitlab/default/${id}`)
   await openApp(`/timeline?${RANGE}&event=${event}`, { backend })
   await expect.poll(() => document.querySelector('app-change-stack')).not.toBeNull()
   await frames()
@@ -94,6 +133,8 @@ const SIZES = [
 
 describe('the Stack section in a browser', () => {
   afterEach(async () => {
+    document.documentElement.classList.remove('dark')
+    delete document.documentElement.dataset['theme']
     await touch(false)
     await frames()
   })
@@ -145,4 +186,21 @@ describe('the Stack section in a browser', () => {
       expect(row.getBoundingClientRect().height).toBeGreaterThanOrEqual(44)
     }
   })
+
+  // Why part of the stack is missing must read as well as the rest: at least 4.5:1.
+  for (const theme of DARK_THEMES) {
+    it(`gives the cut lines AA contrast in the ${theme} theme`, async () => {
+      const section = await openStack(1280, cutBelow.id)
+      document.documentElement.dataset['theme'] = theme
+      document.documentElement.classList.add('dark')
+      await frames()
+
+      const background = getComputedStyle(section).backgroundColor
+      const lines = [...section.querySelectorAll<HTMLElement>('.cut, .stack-base.is-cut')]
+      expect(lines.length).toBeGreaterThanOrEqual(2)
+      for (const line of lines) {
+        expect(contrast(getComputedStyle(line).color, background)).toBeGreaterThanOrEqual(4.5)
+      }
+    })
+  }
 })

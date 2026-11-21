@@ -57,12 +57,28 @@
   }
 }
 
+// The entry's own change: marked by its background, its title in the text colour even as a link.
 .is-current {
   background: var(--accent-soft);
   font-weight: 600;
 
   .reference {
     color: var(--text-secondary);
+  }
+
+  &.is-link {
+    .title {
+      color: var(--text-primary);
+      text-decoration-color: color-mix(in srgb, var(--text-primary) 35%, transparent);
+    }
+
+    @include ui.hover {
+      background: color-mix(in srgb, var(--accent) 20%, transparent);
+
+      .title {
+        color: var(--text-primary);
+      }
+    }
   }
 }
 
