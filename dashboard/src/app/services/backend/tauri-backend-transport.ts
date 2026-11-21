@@ -118,15 +118,34 @@ export class TauriBackendTransport implements BackendTransport {
     return { close }
   }
 
-  /** Listens first, so no link falls between the launch link and the first event. */
+  /**
+   * Listens first, so no link falls between the launch link and the first event, and holds the
+   * links that arrive until the launch link is in: it is older, so it opens first. Every held
+   * link opens in order, whatever `take_launch_deep_link` answered. Unlike the runtime stream,
+   * which keeps only each event's latest message, every link is a navigation of its own, so
+   * none is dropped.
+   */
   async listenForDeepLinks(open: (link: string) => void): Promise<void> {
-    await listen<string>(DESKTOP_EVENTS.deepLink, event => open(event.payload)).catch(
+    let held: string[] | null = []
+    await listen<string>(DESKTOP_EVENTS.deepLink, event => {
+      if (held === null) open(event.payload)
+      else held.push(event.payload)
+    }).catch((error: unknown) => {
+      throw tauriFailureOf(error)
+    })
+    const release = (): void => {
+      const links = held ?? []
+      held = null
+      for (const link of links) open(link)
+    }
+    const launch = await this.call(BackendOperations.takeLaunchDeepLink, undefined).catch(
       (error: unknown) => {
-        throw tauriFailureOf(error)
+        release()
+        throw error
       }
     )
-    const launch = await this.call(BackendOperations.takeLaunchDeepLink, undefined)
     if (launch !== null) open(launch)
+    release()
   }
 }
 

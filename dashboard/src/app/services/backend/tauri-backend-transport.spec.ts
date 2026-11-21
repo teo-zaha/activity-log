@@ -107,6 +107,43 @@ describe('TauriBackendTransport', () => {
     expect(opened).toEqual(['activity-log://timeline', 'activity-log://day/2026-11-17?q=standup'])
   })
 
+  it('opens the retained link before a live link received while the answer is in flight', async () => {
+    const launch = 'activity-log://timeline'
+    const live = 'activity-log://day/2026-11-17'
+    mockIPC(
+      async command => {
+        if (command !== 'take_launch_deep_link') return null
+        await emit('deep-link', live)
+        return launch
+      },
+      { shouldMockEvents: true }
+    )
+    const opened: string[] = []
+
+    await setup().listenForDeepLinks(link => opened.push(link))
+
+    expect(opened).toEqual([launch, live])
+  })
+
+  it('opens the links that arrived meanwhile even when the launch link cannot be read', async () => {
+    const live = 'activity-log://day/2026-11-17'
+    mockIPC(
+      async command => {
+        if (command !== 'take_launch_deep_link') return null
+        await emit('deep-link', live)
+        throw { kind: 'internal', error: 'no inbox' }
+      },
+      { shouldMockEvents: true }
+    )
+    const opened: string[] = []
+
+    await expect(setup().listenForDeepLinks(link => opened.push(link))).rejects.toMatchObject({
+      kind: 'internal',
+    })
+
+    expect(opened).toEqual([live])
+  })
+
   it('opens nothing at launch without a launch link', async () => {
     mockIPC(() => null, { shouldMockEvents: true })
     const opened: string[] = []
