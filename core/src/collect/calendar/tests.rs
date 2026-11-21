@@ -3,7 +3,7 @@ use std::{collections::BTreeSet, str::FromStr, sync::atomic::AtomicBool};
 use calcard::common::timezone::Tz;
 use chrono::{TimeZone, Utc};
 
-use super::{FeedLocation, check_feed, feed_location, parse_events, read_feed};
+use super::parse_events;
 use crate::model::{BusyStatus, CollectOptions, MeetingWeight};
 
 /// 2–8 March 2026, UTC.
@@ -15,7 +15,7 @@ fn week() -> CollectOptions {
 }
 
 /// The shape Outlook publishes: Windows zone names with their own VTIMEZONE.
-const OUTLOOK_FEED: &str = "BEGIN:VCALENDAR\r
+pub(super) const OUTLOOK_FEED: &str = "BEGIN:VCALENDAR\r
 PRODID:Microsoft Exchange Server 2010\r
 VERSION:2.0\r
 BEGIN:VTIMEZONE\r
@@ -150,48 +150,6 @@ END:VCALENDAR\r
 #[test]
 fn rejects_text_that_is_not_a_calendar() {
     assert!(parse_events("<html>Sign in</html>", &week(), Tz::UTC).is_err());
-}
-
-#[test]
-fn accepts_https_webcal_and_files_but_not_http() {
-    assert_eq!(
-        feed_location(" webcal://calendar.example.com/a.ics ").unwrap(),
-        FeedLocation::Url("https://calendar.example.com/a.ics".parse().unwrap())
-    );
-    assert!(matches!(
-        feed_location("https://outlook.office365.com/owa/calendar/x/calendar.ics").unwrap(),
-        FeedLocation::Url(_)
-    ));
-    let file = std::env::temp_dir().join("calendar.ics");
-    assert_eq!(
-        feed_location(&file.display().to_string()).unwrap(),
-        FeedLocation::File(file)
-    );
-    assert!(feed_location("http://calendar.example.com/a.ics").is_err());
-    assert!(feed_location("calendar.ics").is_err());
-}
-
-#[tokio::test]
-async fn errors_never_contain_the_link() {
-    // Nothing listens on port 9 (discard), so the request fails fast.
-    let err = read_feed("https://127.0.0.1:9/secret-token/calendar.ics")
-        .await
-        .unwrap_err();
-
-    let message = format!("{err:#}");
-    assert!(!message.contains("secret-token"), "{message}");
-    assert!(message.contains("127.0.0.1"), "{message}");
-}
-
-#[tokio::test]
-async fn reads_a_local_file() {
-    let dir = tempfile::tempdir().unwrap();
-    let path = dir.path().join("export.ics");
-    std::fs::write(&path, OUTLOOK_FEED).unwrap();
-
-    let text = read_feed(&path.display().to_string()).await.unwrap();
-
-    assert!(text.starts_with("BEGIN:VCALENDAR"));
 }
 
 fn feed(events: &str) -> String {
@@ -846,57 +804,6 @@ END:VEVENT
             .iter()
             .any(|log| log.message.contains("UID standup") && log.message.contains("Stopped"))
     );
-}
-
-/// The startup check only sees whether the feed can be read; the collection reads it.
-#[tokio::test]
-async fn the_check_opens_the_feed_without_reading_it() {
-    let dir = tempfile::tempdir().unwrap();
-    let path = dir.path().join("export.ics");
-    std::fs::write(&path, OUTLOOK_FEED).unwrap();
-
-    check_feed(&path.display().to_string()).await.unwrap();
-    let missing = check_feed(&dir.path().join("gone.ics").display().to_string())
-        .await
-        .unwrap_err();
-    assert!(format!("{missing:#}").contains("gone.ics"));
-    assert!(
-        check_feed(&dir.path().display().to_string()).await.is_err(),
-        "a folder is no feed"
-    );
-
-    let unreachable = check_feed("https://127.0.0.1:9/secret-token/calendar.ics")
-        .await
-        .unwrap_err();
-    let message = format!("{unreachable:#}");
-    assert!(!message.contains("secret-token"), "{message}");
-    assert!(message.contains("127.0.0.1"), "{message}");
-    assert_eq!(
-        crate::provider::source_failure::problem_of(&unreachable),
-        Some(crate::model::ProviderProblem::Unreachable)
-    );
-}
-
-/// A feed link the host refuses or no longer serves keeps its status as a typed cause.
-#[tokio::test]
-async fn a_feed_the_host_refuses_names_its_problem() {
-    use crate::provider::remote_api::test_server::{Reply, TestServer};
-    for (status, problem) in [
-        (401, Some(crate::model::ProviderProblem::Refused)),
-        (404, None),
-    ] {
-        let server = TestServer::start(move |_| Reply::json(status, "{}"));
-        // The test server speaks plain HTTP, which `feed_location` refuses: ask it directly.
-        let error = super::request_feed(server.url.parse().unwrap())
-            .await
-            .err()
-            .unwrap();
-        let failure = error
-            .downcast_ref::<crate::provider::remote_error::RemoteFailure>()
-            .unwrap();
-        assert_eq!(failure.error.problem(), problem, "{status}");
-        assert_eq!(failure.service, "127.0.0.1");
-    }
 }
 
 /// `X-ALT-DESC` says what it is: HTML when it is declared `text/html`, whatever tags it holds,
