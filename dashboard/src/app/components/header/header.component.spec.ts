@@ -8,6 +8,7 @@ import type { ActivityLog } from '../../generated/activity'
 import { ActivityExportService } from '../../services/activity-export.service'
 import { RuntimeEnvironmentService } from '../../services/backend/runtime-environment.service'
 import { ToastService } from '../../services/toast.service'
+import { WindowChromeService } from '../../services/window-chrome.service'
 import { activityLog } from '../../testing/activity-fixtures'
 import { HeaderComponent } from './header.component'
 
@@ -83,6 +84,8 @@ describe('HeaderComponent share', () => {
           provide: RuntimeEnvironmentService,
           useValue: { isTauri: (): boolean => options.desktop ?? true },
         },
+        // The desktop app's links without its window, which the chrome would follow.
+        { provide: WindowChromeService, useValue: {} },
       ],
     })
     await TestBed.inject(Router).navigateByUrl(url)
