@@ -1,12 +1,15 @@
 import { describe, expect, it } from 'vitest'
-import type { Os } from '../utils/key-chord'
+import { type Os, menuKeyOf } from '../utils/key-chord'
+import { NAV_GROUPS } from './nav'
 import {
   type Build,
   SHORTCUT_IDS,
   SHORTCUT_SCOPES,
   SHORTCUTS,
   type ShortcutEntry,
+  VIEW_SHORTCUTS,
   chordsIn,
+  shortcut,
   resolveChord,
 } from './shortcuts'
 
@@ -103,6 +106,26 @@ describe('the shortcut registry', () => {
     }
     const menuLabels = SHORTCUTS.filter(entry => entry.menu).map(e => `${e.menu} ${e.label}`)
     expect(new Set(menuLabels).size).toBe(menuLabels.length)
+  })
+
+  it('gives each menu accelerator a menu item and a key the menu has', () => {
+    for (const entry of SHORTCUTS) {
+      for (const chord of entry.chords.filter(c => c.menuAccelerator)) {
+        expect(entry.menu, `${entry.id} ${chord.keys}`).toBeDefined()
+        expect(menuKeyOf(chord.keys), `${entry.id} ${chord.keys}`).not.toBeNull()
+      }
+    }
+  })
+
+  it('shows each view of the navigation with ⌘1 to ⌘4 in the desktop app, listed in View', () => {
+    const views = NAV_GROUPS.flatMap(group => group.items).map(item => VIEW_SHORTCUTS[item.id])
+    expect(views.map(id => chordsIn(shortcut(id), 'mac', 'desktop')[0]?.keys)).toEqual([
+      'mod+1',
+      'mod+2',
+      'mod+3',
+      'mod+4',
+    ])
+    for (const id of views) expect(shortcut(id).menu).toBe('view')
   })
 
   it('leaves the browser only `/` and `?`, and the layers their Escape', () => {

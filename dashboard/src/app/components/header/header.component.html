@@ -29,7 +29,7 @@
         size="lg"
         class="btn-action"
         (click)="exportMd()"
-        [disabled]="!activity.meta() || activity.isLoading()"
+        [disabled]="!activity.canExport()"
         matTooltip="Export Markdown"
       ></button>
       <button
@@ -39,7 +39,7 @@
         size="lg"
         class="btn-action"
         (click)="exportJson()"
-        [disabled]="!activity.meta() || activity.isLoading()"
+        [disabled]="!activity.canExport()"
         matTooltip="Export JSON"
       ></button>
       <button

@@ -43,6 +43,18 @@ export function appLink(
   return linkTo(router, tree, base)
 }
 
+/**
+ * The link to the view on screen, with the details open in it, if any: in the browser the page's
+ * own address, its whole query included; the desktop app's link keeps what the view shows.
+ */
+export function injectViewLink(): () => string {
+  const router = inject(Router)
+  const base = injectLinkBase()
+  const desktop = inject(RuntimeEnvironmentService).isTauri()
+  return () =>
+    desktop ? appLink(router, ['q', 'from', 'to', 'event', 'events']) : pageLink(router, base)
+}
+
 /** The page's own address in the browser: its path and its whole query, settings included. */
 export function pageLink(router: Router, base: string): string {
   return linkTo(router, router.parseUrl(router.url), base)
@@ -54,18 +66,10 @@ function linkTo(router: Router, tree: UrlTree, base: string): string {
   return `${base}${router.serializeUrl(tree).replace(/^\//, '')}`
 }
 
-/**
- * Opens the system share sheet with a link, else copies it and says whether that worked, and if
- * not, why. A web link goes in `url`; a deep link goes in `text`, since WebKit's Web Share
- * refuses a custom-scheme `url` such as `activity-log://`.
- */
-export function injectShareLink(): (link: string) => Promise<void> {
-  const share = webShare()
+/** Copies a link; null once it is on the clipboard, else why not. */
+function injectCopy(): (link: string) => Promise<Failure | null> {
   const copier = clipboard()
-  const toast = inject(ToastService)
-
-  /** Copies `link`; null once it is on the clipboard, else why not. */
-  async function copy(link: string): Promise<Failure | null> {
+  return async link => {
     // Without the Clipboard API `copy` would do nothing.
     if (!copier.isSupported()) {
       return failure('Copying the link failed: this browser gives the page no clipboard')
@@ -77,6 +81,30 @@ export function injectShareLink(): (link: string) => Promise<void> {
       return failureWhile('Copying the link', error)
     }
   }
+}
+
+/** Says that a link was copied, or why not: first why the share sheet refused it, if it did. */
+function reportCopy(toast: ToastService, copied: Failure | null, refused: Failure | null): void {
+  if (copied === null) toast.success('Link copied')
+  else toast.failure(refused === null ? copied : failureThen(refused, copied))
+}
+
+/** Copies a link and says whether that worked, and if not, why (the menu's Copy Link). */
+export function injectCopyLink(): (link: string) => Promise<void> {
+  const copy = injectCopy()
+  const toast = inject(ToastService)
+  return async link => reportCopy(toast, await copy(link), null)
+}
+
+/**
+ * Opens the system share sheet with a link, else copies it and says whether that worked, and if
+ * not, why. A web link goes in `url`; a deep link goes in `text`, since WebKit's Web Share
+ * refuses a custom-scheme `url` such as `activity-log://`.
+ */
+export function injectShareLink(): (link: string) => Promise<void> {
+  const share = webShare()
+  const copy = injectCopy()
+  const toast = inject(ToastService)
 
   return async link => {
     const data: ShareData = isWebLink(link)
@@ -93,8 +121,6 @@ export function injectShareLink(): (link: string) => Promise<void> {
         refused = failureWhile('Sharing the link', error)
       }
     }
-    const copied = await copy(link)
-    if (copied === null) toast.success('Link copied')
-    else toast.failure(refused === null ? copied : failureThen(refused, copied))
+    reportCopy(toast, await copy(link), refused)
   }
 }

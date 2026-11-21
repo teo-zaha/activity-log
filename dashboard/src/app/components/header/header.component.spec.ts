@@ -18,8 +18,7 @@ async function setup(state: { loading?: boolean; meta?: ActivityLog['meta'] } = 
       {
         provide: ActivityService,
         useValue: {
-          isLoading: signal(state.loading ?? false),
-          meta: signal(state.meta ?? null),
+          canExport: signal(state.meta !== undefined && !state.loading),
         },
       },
     ],
@@ -77,10 +76,7 @@ describe('HeaderComponent share', () => {
         provideRouter([{ path: '**', children: [] }]),
         {
           provide: ActivityService,
-          useValue: {
-            isLoading: signal(false),
-            meta: signal(null),
-          },
+          useValue: { canExport: signal(false) },
         },
         { provide: ToastService, useValue: { success, failure } },
         {

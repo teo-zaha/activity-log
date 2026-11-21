@@ -4,11 +4,14 @@
  * macOS and Ctrl elsewhere.
  */
 
+import type { MenuKey } from '../generated/activity'
+
 /** Which keys the platform's shortcuts use: ⌘ on macOS (the browser there too), Ctrl elsewhere. */
 export type Os = 'mac' | 'other'
 
 /** The keys the registry names, as `KeyboardEvent.key` reads them, in lower case. */
-export type ChordKey = 'escape' | 'f5' | 'arrowleft' | '/' | '?' | '[' | 'f' | 'r'
+export type ChordKey =
+  'escape' | 'f5' | 'arrowleft' | '/' | '?' | '[' | ',' | '1' | '2' | '3' | '4' | 'f' | 'r'
 
 /** A chord the registry names: at most one modifier, then the key. */
 export type ChordKeys = ChordKey | `${'mod' | 'alt'}+${ChordKey}`
@@ -65,6 +68,11 @@ const KEY_LABELS: Readonly<Record<ChordKey, string>> = {
   '/': '/',
   '?': '?',
   '[': '[',
+  ',': ',',
+  '1': '1',
+  '2': '2',
+  '3': '3',
+  '4': '4',
   f: 'F',
   r: 'R',
 }
@@ -85,6 +93,11 @@ const ARIA_KEYS: Readonly<Record<ChordKey, string>> = {
   '/': '/',
   '?': '?',
   '[': '[',
+  ',': ',',
+  '1': '1',
+  '2': '2',
+  '3': '3',
+  '4': '4',
   f: 'F',
   r: 'R',
 }
@@ -96,4 +109,30 @@ export function ariaChord(keys: ChordKeys, os: Os): string {
   if (modifier === null) return name
   const prefix = modifier === 'alt' ? 'Alt' : os === 'mac' ? 'Meta' : 'Control'
   return `${prefix}+${name}`
+}
+
+/** The key a menu accelerator of each key is, where the menu can have one (with ⌘). */
+const MENU_KEYS: Readonly<Record<ChordKey, MenuKey | null>> = {
+  escape: null,
+  f5: null,
+  arrowleft: null,
+  '/': null,
+  '?': null,
+  '[': 'bracketLeft',
+  ',': 'comma',
+  '1': 'digit1',
+  '2': 'digit2',
+  '3': 'digit3',
+  '4': 'digit4',
+  f: 'f',
+  r: 'r',
+}
+
+/**
+ * The native menu's accelerator for a chord, ⌘ and its key: only a `mod` chord has one, and only
+ * of a key the menu knows.
+ */
+export function menuKeyOf(keys: ChordKeys): MenuKey | null {
+  const { modifier, key } = split(keys)
+  return modifier === 'mod' ? MENU_KEYS[key] : null
 }

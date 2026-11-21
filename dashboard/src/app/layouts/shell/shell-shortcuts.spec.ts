@@ -169,6 +169,25 @@ describe('Shortcuts in the app', () => {
     })
   })
 
+  describe('The views: ⌘1 to ⌘4', () => {
+    it('switches the view, keeping the range', async () => {
+      const { router } = await openApp('/day/2026-05-18', { platform: MAC_DESKTOP })
+
+      expect(press('4', { metaKey: true }).defaultPrevented).toBe(true)
+      await vi.waitFor(() => expect(router.url).toBe('/week/2026-05-18'))
+    })
+
+    it('does not switch the view behind open details, as ⌘F does not', async () => {
+      const { router } = await openApp(`/day/2026-05-18?event=${key(git)}`, {
+        platform: MAC_DESKTOP,
+      })
+      await screen.findByRole('heading', { name: git?.title }, SLOW)
+
+      expect(press('4', { metaKey: true }).defaultPrevented).toBe(false)
+      expect(router.url).toBe(`/day/2026-05-18?event=${key(git)}`)
+    })
+  })
+
   describe('Collect: ⌘R, Ctrl+R and F5', () => {
     it('collects the range on screen with ⌘R on macOS, also while typing, and shows ⌘R', async () => {
       await ready('/timeline', MAC_DESKTOP)
@@ -400,6 +419,11 @@ describe('Shortcuts in the app', () => {
       expect(keys).toEqual([
         'Collect: ⌘R',
         'Filter Activity…: ⌘F',
+        'Timeline: ⌘1',
+        'Day: ⌘2',
+        'Work week: ⌘3',
+        'Week: ⌘4',
+        'Settings…: ⌘,',
         'Back: ⌘[',
         'Close details or settings: Esc',
         'Keyboard Shortcuts: ?',
