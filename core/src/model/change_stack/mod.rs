@@ -9,9 +9,11 @@ pub mod change_stack_node;
 pub mod stack_cut;
 pub mod stacked_change;
 
-use reqwest::Url;
+use std::collections::HashSet;
+
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
+use url::Url;
 
 use self::{
     change_stack_above::ChangeStackAbove, change_stack_bottom::ChangeStackBottom,
@@ -72,8 +74,10 @@ impl TryFrom<RawChangeStack> for ChangeStack {
 
 impl ChangeStack {
     /// The stack, or `None` for one that holds nothing but its change (nothing below, the
-    /// base reached, nothing above and that complete), a blank title or branch, or a link that
-    /// is not http(s) with a host and without user info.
+    /// base reached, nothing above and that complete), a blank title or branch, a link that
+    /// is not http(s) with a host and without user info, or a change twice on one path: on the
+    /// way down (`current` and `below`), or above a change on its way down or its own path
+    /// up. One change may show above two others (they come from the same branch).
     pub fn new(
         current: StackedChange,
         below: Vec<StackedChange>,
@@ -88,11 +92,14 @@ impl ChangeStack {
             ChangeStackBottom::Reached { branch } => !branch.trim().is_empty(),
             ChangeStackBottom::Ambiguous | ChangeStackBottom::Cut { .. } => true,
         };
+        let mut down = HashSet::from([current.number]);
+        let distinct = below.iter().all(|change| down.insert(change.number));
         let valid = !lonely
             && bottom_valid
+            && distinct
             && valid_change(&current)
             && below.iter().all(valid_change)
-            && valid_above(&above);
+            && valid_above(&above, &mut down);
         valid.then_some(Self {
             current,
             below,
@@ -118,11 +125,17 @@ impl ChangeStack {
     }
 }
 
-fn valid_above(above: &ChangeStackAbove) -> bool {
-    above
-        .changes
-        .iter()
-        .all(|node| valid_change(&node.change) && valid_above(&node.above))
+/// Every change above is valid and not on `path`, the numbers from the base up to its level.
+fn valid_above(above: &ChangeStackAbove, path: &mut HashSet<u64>) -> bool {
+    above.changes.iter().all(|node| {
+        let number = node.change.number;
+        if !valid_change(&node.change) || !path.insert(number) {
+            return false;
+        }
+        let valid = valid_above(&node.above, path);
+        path.remove(&number);
+        valid
+    })
 }
 
 fn valid_change(change: &StackedChange) -> bool {
