@@ -1,6 +1,6 @@
 # Provider actions: search, read, write and time tracking
 
-Status: draft, revised after an independent review, with the user's decisions recorded in section 10 (Jira Data Center only, plain Jira worklogs, Odoo latest version on any hosting). Nothing here is built. The first step, the generic read part for Jira and GitLab together (phase 0, 1a, and the agent policy of 1b), is planned slice by slice in [generic-read-step.md](generic-read-step.md); where the two differ, that plan is newer. It fits next to the provider connections (`docs/adr/0005-provider-connections.md`) and the progressive collection, and does not depend on how the collection pipeline works internally.
+Status: draft, revised after an independent review, with the user's decisions recorded in section 10 (Jira Data Center only, plain Jira worklogs, Odoo latest version on any hosting). Phase 0 is partly built: the shared Jira and GitLab clients and the error cleanup (generic read step slice 1, 33cf813); `allow` is not yet (slice 2). The keyboard shortcut registry the UI in section 7 relies on is built too (slice 8). Everything else is planned. The runtime this draft names was reworked by the merged review plan: one `Host` per process (`core/src/runtime/host/`) installs config edits instead of shells swapping a `CollectionRuntime`, the dashboard follows it by push instead of polling, and every command fails with a typed `BackendError`; notes below say where that changes a section. The first step, the generic read part for Jira and GitLab together (phase 0, 1a, and the agent policy of 1b), is planned slice by slice in [generic-read-step.md](generic-read-step.md); where the two differ, that plan is newer. It fits next to the provider connections (`docs/adr/0005-provider-connections.md`) and the progressive collection, and does not depend on how the collection pipeline works internally.
 
 ## Goal
 
@@ -81,7 +81,7 @@ Following the repo rules (one model struct per file, `mod.rs` + `tests.rs`):
 - `core/src/model/time/`: `time_entry.rs`, `day_range.rs`.
 - `core/src/actions/`: the executor (`mod.rs`), `policy.rs` (allow list), `pending.rs` (prepared writes), `limits.rs` (per-connection concurrency), `audit.rs` (the durable audit file), `keys.rs` (strict key parsing helpers).
 - Per-provider action code next to the collectors: `core/src/actions/jira/`, `core/src/actions/gitlab/`, later `core/src/actions/odoo/`.
-- Per-provider API clients shared by the startup check, the collector and the actions: `core/src/provider/jira/api.rs` (`JiraApi`: base URL, flavour, auth, HTTP client, path building) and `core/src/provider/gitlab/api.rs`. Today the client is built in two places (`provider/jira/mod.rs` and `collect/jira/mod.rs`, and the same for GitLab).
+- Per-provider API clients shared by the startup check, the collector and the actions: built as `core/src/provider/jira/api/` (`JiraApi`) and `core/src/provider/gitlab/api/` (`GitLabApi`) over the shared `core/src/provider/remote_api/` client, with `core/src/provider/remote_error/` as the error boundary (slice 1, 33cf813).
 
 ### The adapter side
 
@@ -137,8 +137,8 @@ shell (Tauri command / CLI / the desktop's agent socket)
                   → apply → audit → Done { created item or time entry }
 ```
 
-- **The runtime hands the executor a `&ProviderRuntime`** for the one connection in the call. The progressive collection keeps a shared check future per connection (`Providers::Checking`), so the executor awaits it instead of failing while the connection is still being checked.
-- **The CLI inspects only the connection it targets.** Today it inspects every connection before collecting (`inspect_provider_runtimes_with`); for actions that would mean slow, unrelated checks.
+- **The host hands the executor an `ActionTarget`** for the one connection in the call: `Host::action_target(id)` awaits the connection's recorded check (instead of failing while it is still being checked) and reads the checked provider, the policy and the `AccessContext` together, so the executor's signature is `run(caller, &ActionTarget, request)` (shared-contracts.md §2 and §9; the first draft passed a `&ProviderRuntime`).
+- **The CLI inspects only the connection it targets.** It inspects every connection before collecting; for actions that would mean slow, unrelated checks, so it builds the target from that one connection's runtime.
 - Actions never wait for or block a collection.
 - **After a write, nothing is collected again.** There is no per-connection re-collect in the runtime, and a whole collection is the wrong tool. The result carries the created `WorkItem` or `TimeEntry`, and the client inserts it into what it shows. The next collection brings the remote truth.
 
@@ -164,6 +164,7 @@ Confirming a prepared write is its own command, `confirm_action(id)`, carrying o
 ### Pending plans
 
 - **Plans live in the runtime that the shells already replace.** `PendingActions` is part of `CollectionRuntime`, and both shells replace that runtime when the config changes: the desktop in `update_config_at` after a settings save, the API server in `reload` when the file changes. When it is replaced, every pending plan disappears and a later confirm gets `Expired`. `take_over` hands over the running collection only, not the plans.
+  - _Note (2026-11-21): that swap no longer exists. One `Host` per process installs each edit and reload in place (shared-contracts.md §2), and an `allow`/`agent_allow` edit changes only that connection's access token (§4). Where pending plans live, and that an install which changes their connection's access token drops them, is designed with the first write (phase 1c); the fingerprint check below stays the guard._
 - **Confirm checks the plan against the current settings again.** Each plan stores a fingerprint of the connection's config, `allow` and `agent_allow`. Confirm compares it and re-runs the allow-list and channel checks, so a change that slipped past a runtime swap still can't confirm an old plan.
 - **Plans expire after 5 minutes and confirm only once.** Confirming moves a plan to `running` and then `done(result)`. A second confirm with the same id gets the stored result, which covers double clicks and a dropped response in the desktop app.
 - **The confirm id** is 128 random bits (base64url) and is never logged. Logs and the audit use a separate short correlation id (8 hex characters).
@@ -419,10 +420,10 @@ Structured filters build JQL with every literal quoted and escaped (`"` and `\`)
 
 ### Tauri
 
-- `run_action(request: ActionCall) -> ActionResponse`, with the transport's `{ request }` envelope. The shell builds `Caller { origin: Desktop }`; the webview cannot choose the origin. It clones the runtime under a short read guard and awaits outside it, so a settings save is never blocked by a read.
+- `run_action(request: ActionCall) -> HostActionResponseDto`, with the transport's `{ request }` envelope. The shell builds `Caller { origin: Desktop }`; the webview cannot choose the origin. It awaits `Host::action_target` and answers `{ context?: AccessContext, response: ActionResponse }`, holding no lock across the read, so a settings save is never blocked by a read (shared-contracts.md §9; generic read step slice 6).
 - `open_work_item(request: WorkItemRef)` opens a core-built URL; `confirm_action(request: id)` comes with the first write.
-- Settings saves already rebuild the runtime, so allow-list changes apply like other settings and drop pending plans.
-- The dashboard's `backend-contract.ts` gets one operation, `runAction`, marked desktop-only (`http: null`) like the settings operations.
+- A settings save installs the edit in the host, so allow-list changes apply like other settings; the dashboard drops an answer whose `context` no longer matches the connection's pushed `access`.
+- The dashboard's `backend-contract.ts` gets the operations `runAction` and `openWorkItem`, marked desktop-only (`http: null`) like the settings operations. A refused call rejects with a `BackendFailure`; an action's own failure is `ActionResponse::Failed`.
 
 ### API (Rocket)
 
@@ -739,11 +740,11 @@ Writing is a security boundary: Activity Log starts acting **as you** in shared 
 
 Each phase ends green on `pnpm verify` (and `pnpm win:check` where Windows code changes) and updates the README and docs.
 
-**Phase 0: groundwork, no new features**
+**Phase 0: groundwork, no new features** (partly built)
 
-- `JiraApi` and `GitLabApi`, shared by the check and the collector, with path building through `path_segments_mut`.
-- The error cleanup function, used by the collectors.
-- `allow` reserved and parsed into `Connection` (fails closed, unused yet).
+- `JiraApi` and `GitLabApi`, shared by the check and the collector, with path building through `path_segments_mut`. Built (slice 1, 33cf813).
+- The error cleanup function, used by the collectors. Built (`remote_error`, slice 1).
+- `allow` reserved and parsed into `Connection` (fails closed, unused yet). Not built (slice 2).
 - Tests:
   - Error cleanup: no body leaks.
   - Path building with odd user names.
@@ -861,11 +862,11 @@ Each later phase adds its new actions to the MCP tools under the same rules.
 
 ### Refactor this needs, and why
 
-- **One API client per remote provider** (`JiraApi`, `GitLabApi`, later `OdooApi`). The check, the collector and the actions would otherwise build clients, auth, paths and error handling three times.
+- **One API client per remote provider** (`JiraApi`, `GitLabApi`, later `OdooApi`). The check, the collector and the actions would otherwise build clients, auth, paths and error handling three times. Built for Jira and GitLab (slice 1).
 - **`Connection` gains `allow`**, and `core::settings` reserves and reads it. Permissions must be part of the connection that core resolves, not a UI setting, or the CLI would skip them.
-- **`CollectionRuntime` gains `PendingActions`, and hands out a `&ProviderRuntime` per connection** (awaiting its check), so plans die with the runtime they were made in.
+- **`CollectionRuntime` gains `PendingActions`, and hands out a `&ProviderRuntime` per connection** (awaiting its check), so plans die with the runtime they were made in. Now: `Host::action_target` hands out the target (built with slice 3); where pending plans live is decided with phase 1c (see "Pending plans").
 - **`ActivityLog.timeEntries`, `CollectRequest.days` and `collect_time`**, the time model that keeps core free of date↔instant conversion.
-- **Error cleanup in the collectors**, which today echo response bodies.
+- **Error cleanup in the collectors**, which echoed response bodies. Built (slice 1).
 - **The desktop CSP**, before any remote text is shown (phase 1a). The Host-check fairing is dropped by decision.
 - **A `Choice` config value type** (single and list) for Odoo's `time_target` and `read`.
 - **The agent surface:** the desktop's agent socket and inbox, a thin MCP subcommand in `cli`, `agent_allow` in settings, and agent response types with their projection.
@@ -920,4 +921,4 @@ Public documentation could not be fetched from this environment (the doc hosts w
 - **MCP:** the `rmcp` release to pin (the reviewer saw 3.10.0 with `transport-io` in its docs) and its minimal features.
 - **Desktop agent socket:** the tokio named-pipe options (`first_pipe_instance`, `reject_remote_clients`, an owner-only DACL through raw security attributes), peer-credential calls per OS, `tauri-plugin-single-instance` for Tauri 2, and `std::fs::File::lock` (needs Rust 1.89 or later).
 
-These were checked in the code: the runtime is replaced on save (`desktop/src/commands/mod.rs`, `update_config_at`) and on reload (`api/src/reload`); the dev proxy has no `changeOrigin`; `api/src/main.rs` configures Rocket from `Config::default()`; there is no CSP or opener plugin; there is no per-connection re-collect; `entry_values` warns on unknown fields; and the GitLab collector builds paths with `format!`.
+These were checked in the code when this was drafted; as of 2026-11-21 the first two no longer hold (one `Host` installs edits and reloads in place; the API reloads by content id), the opener plugin exists (for `open_url`), and the GitLab collector builds paths from segments through `GitLabApi`. As checked then: the runtime is replaced on save (`desktop/src/commands/mod.rs`, `update_config_at`) and on reload (`api/src/reload`); the dev proxy has no `changeOrigin`; `api/src/main.rs` configures Rocket from `Config::default()`; there is no CSP or opener plugin; there is no per-connection re-collect; `entry_values` warns on unknown fields; and the GitLab collector builds paths with `format!`.
