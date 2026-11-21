@@ -179,14 +179,14 @@ describe('WindowChromeService in the desktop window', () => {
 
     startChrome(true)
     await vi.waitFor(() => expect(answers).toHaveLength(1))
-    // The window leaves fullscreen while the first read is out.
-    await emit('tauri://resize', { width: 1280, height: 800 })
+    // The window enters fullscreen while the first read is out.
+    await emit('tauri://resize', { width: 1920, height: 1080 })
     await vi.waitFor(() => expect(answers).toHaveLength(2))
-    answers[1](false)
-    answers[0](true)
+    answers[1](true)
+    answers[0](false)
 
     await new Promise(resolve => setTimeout(resolve))
-    expect(root.classList.contains('fullscreen')).toBe(false)
+    expect(root.classList.contains('fullscreen')).toBe(true)
   })
 
   it('follows a fullscreen restore that lands right after the first read', async () => {
