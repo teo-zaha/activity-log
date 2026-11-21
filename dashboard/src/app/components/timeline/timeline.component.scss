@@ -432,6 +432,68 @@
   margin-top: 8px;
 }
 
+// ── Pull to refresh ──────────────────────────────────────────────────────────
+
+// The strip under the filter the indicator comes out of, over the list's column (the day index
+// keeps its strip). It takes no touches: they go to the list, which listens for the pull.
+.pull {
+  position: absolute;
+  top: var(--day-header-top);
+  left: 0;
+  right: calc(var(--day-index-width) + var(--day-index-gap));
+  // As far as the indicator ever comes (`PULL_LIMIT_PX`), with room for its shadow.
+  height: 184px;
+  overflow: clip;
+  pointer-events: none;
+  z-index: 5;
+}
+
+// Follows the finger while it pulls (`--pull-distance`), and otherwise eases to where it rests:
+// back out of sight, or down while the collection runs. Reduced motion jumps there.
+.pull-indicator {
+  display: flex;
+  width: fit-content;
+  margin-inline: auto;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 14px 6px 10px;
+  border: 1px solid var(--hairline);
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--text-secondary);
+  box-shadow: var(--panel-shadow-strong);
+  font-size: 12.5px;
+  font-weight: 600;
+  transform: translateY(calc(var(--pull-distance, 0px) - 100% - 12px));
+  transition: transform 0.28s var(--ease-out);
+
+  [data-pull='pulling'] &,
+  [data-pull='armed'] & {
+    transition: none;
+  }
+
+  [data-pull='armed'] &,
+  [data-pull='refreshing'] & {
+    color: var(--text-primary);
+  }
+}
+
+// Points down while pulling, up once releasing collects, and turns while collecting.
+.pull-icon {
+  --icon-size: 18px;
+
+  font-size: var(--icon-size);
+  transition: transform 0.18s var(--ease-out);
+
+  [data-pull='armed'] & {
+    transform: rotate(180deg);
+  }
+
+  [data-pull='refreshing'] & {
+    color: var(--accent);
+  }
+}
+
 // ── Responsive ───────────────────────────────────────────────────────────────
 
 @include ui.down('tablet') {

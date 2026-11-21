@@ -1,9 +1,14 @@
 /// <reference types="@vitest/browser-playwright" />
 // The timeline in a real browser (`ng test --configuration layout`, Chromium): where the list is
-// scrolled to and which day is active, which only a layout engine can tell.
+// scrolled to, which day is active and what a finger pulling it does, which only a layout engine
+// and its input pipeline can tell.
+import { LiveAnnouncer } from '@angular/cdk/a11y'
+import { TestBed } from '@angular/core/testing'
 import type { ActivityLog, GitEntry } from '../../generated/activity'
-import { afterEach, describe, expect, it } from 'vitest'
-import { page, userEvent } from 'vitest/browser'
+import { afterEach, describe, expect, it, vi } from 'vitest'
+import { cdp, page, userEvent } from 'vitest/browser'
+import { ActivityDataService } from '../../services/activity-data.service'
+import { ActivityViewStateService } from '../../services/activity-view-state.service'
 import { MockBackendTransport } from '../../testing/activity-fixtures'
 import { openApp, type OpenApp } from '../../testing/app'
 import { addDaysToKey, longDayLabel, type DayKey } from '../../utils/local-day'
@@ -82,12 +87,16 @@ async function scrollTo(top: number): Promise<void> {
   await frames()
 }
 
-async function openTimeline(): Promise<OpenApp> {
-  await page.viewport(1280, 800)
-  const backend = new MockBackendTransport()
+async function openTimeline(
+  width = 1280,
+  backend = new MockBackendTransport(),
+  query = ''
+): Promise<OpenApp> {
+  await page.viewport(width, 800)
   backend.activityResponses = [log]
   backend.activityResponse = log
-  const app = await openApp(`/timeline?${RANGE}`, { backend })
+  backend.collectResponse = log
+  const app = await openApp(`/timeline?${RANGE}${query}`, { backend })
   await expect.poll(() => document.querySelectorAll('app-timeline .day-group').length).toBe(DAYS)
   await expect.poll(activeDay).toBe(labelOf(0))
   return app
@@ -169,5 +178,302 @@ describe('the timeline in a browser', () => {
     expect(order.slice(-SHORT_DAYS)).toEqual(
       Array.from({ length: SHORT_DAYS }, (_, i) => labelOf(DAYS - SHORT_DAYS + i))
     )
+  })
+})
+
+/** A touch screen, as the browser's own input pipeline sees one. */
+async function touchScreen(enabled: boolean): Promise<void> {
+  await cdp().send('Emulation.setTouchEmulationEnabled', { enabled, maxTouchPoints: 5 })
+}
+
+interface Point {
+  readonly x: number
+  readonly y: number
+}
+
+/** What the pull indicator shows: `idle`, `pulling`, `armed`, `refreshing`. */
+function pullShown(): string | null {
+  return document.querySelector('app-timeline .pull')?.getAttribute('data-pull') ?? null
+}
+
+/** Where things are that must not move while a finger pulls: the page, the shell, the list. */
+function positions(): (number | null)[] {
+  return [
+    document.scrollingElement?.scrollTop ?? 0,
+    document.querySelector('app-shell-layout')!.getBoundingClientRect().top,
+    scroller().scrollTop,
+    document.querySelector('app-timeline .day-group')?.getBoundingClientRect().top ?? null,
+  ]
+}
+
+/** Until the list has come to rest: it rises a little as it comes in. */
+async function stillList(): Promise<void> {
+  let before = ''
+  await expect
+    .poll(async () => {
+      await frames()
+      const now = JSON.stringify(positions())
+      const still = now === before
+      before = now
+      return still
+    })
+    .toBe(true)
+}
+
+/**
+ * Drags from `from` down by `down` pixels in steps, through the browser's input pipeline: as a
+ * finger, or as a mouse with its button held. Returns where things were at each step, and what
+ * the indicator showed just before the finger lifted.
+ */
+async function drag(
+  input: 'touch' | 'mouse',
+  from: Point,
+  down: number
+): Promise<{ seen: (number | null)[][]; beforeRelease: string | null }> {
+  const at = (y: number): Point => ({ x: from.x, y: from.y + y })
+  const send = async (type: 'start' | 'move' | 'end', point: Point): Promise<void> => {
+    if (input === 'touch') {
+      await cdp().send('Input.dispatchTouchEvent', {
+        type: type === 'start' ? 'touchStart' : type === 'move' ? 'touchMove' : 'touchEnd',
+        touchPoints: type === 'end' ? [] : [{ ...point, id: 1 }],
+      })
+    } else {
+      await cdp().send('Input.dispatchMouseEvent', {
+        type: type === 'start' ? 'mousePressed' : type === 'move' ? 'mouseMoved' : 'mouseReleased',
+        ...point,
+        button: 'left',
+        buttons: type === 'end' ? 0 : 1,
+        clickCount: 1,
+      })
+    }
+  }
+  const seen: (number | null)[][] = []
+  await send('start', at(0))
+  const steps = 12
+  for (let step = 1; step <= steps; step++) {
+    await send('move', at((down * step) / steps))
+    await frames()
+    seen.push(positions())
+  }
+  const beforeRelease = pullShown()
+  await send('end', at(down))
+  await frames()
+  return { seen, beforeRelease }
+}
+
+/** The middle of the screen, whatever is over the list there. */
+function onScreenCentre(): Point {
+  return { x: innerWidth / 2, y: innerHeight / 2 }
+}
+
+/** A point on an entry of the list on screen, below the filter, clear of the screen's edges. */
+function onEntry(): Point {
+  const list = scroller().getBoundingClientRect()
+  const point = { x: list.left + list.width / 2, y: list.top + 200 }
+  expect(document.elementFromPoint(point.x, point.y)?.closest('.entry')).not.toBeNull()
+  return point
+}
+
+describe('pulling the timeline to collect again', () => {
+  afterEach(async () => {
+    await touchScreen(false)
+    await frames()
+  })
+
+  async function openPullable(
+    options: { width?: number; backend?: MockBackendTransport; query?: string } = {}
+  ): Promise<{ collect: ReturnType<typeof vi.spyOn>; app: OpenApp }> {
+    await touchScreen(true)
+    const app = await openTimeline(options.width ?? 402, options.backend, options.query)
+    await app.settle()
+    await expect.poll(() => TestBed.inject(ActivityDataService).isLoading()).toBe(false)
+    await stillList()
+    const data = TestBed.inject(ActivityDataService)
+    return { collect: vi.spyOn(data, 'collect'), app }
+  }
+
+  it('collects once when a finger pulls past the threshold, and the page stays put', async () => {
+    const backend = new MockBackendTransport()
+    let answer = (): void => undefined
+    const { collect } = await openPullable({ backend })
+    backend.collectGate = new Promise(resolve => (answer = resolve))
+    const announce = vi.spyOn(TestBed.inject(LiveAnnouncer), 'announce')
+    const start = positions()
+
+    const { seen, beforeRelease } = await drag('touch', onEntry(), 220)
+
+    expect(beforeRelease).toBe('armed')
+    // Said once, as the pull passed the threshold, not at every move past it.
+    expect(announce.mock.calls.filter(([message]) => message === 'Release to collect')).toEqual([
+      ['Release to collect', 'polite'],
+    ])
+    // Neither the page, the shell nor the list moved under the finger.
+    for (const step of seen) expect(step).toEqual(start)
+    expect(collect).toHaveBeenCalledOnce()
+    // The finger lifted on an entry: its details stay closed.
+    expect(TestBed.inject(ActivityViewStateService).detailsOpen()).toBe(false)
+    // The indicator stays while the collection runs, and another pull meanwhile starts none.
+    expect(pullShown()).toBe('refreshing')
+    await drag('touch', onEntry(), 220)
+    expect(pullShown()).toBe('refreshing')
+    answer()
+    await expect.poll(pullShown).toBe('idle')
+    expect(collect).toHaveBeenCalledOnce()
+  })
+
+  it('collects nothing for a short pull', async () => {
+    const { collect } = await openPullable()
+
+    const { beforeRelease } = await drag('touch', onEntry(), 40)
+
+    expect(beforeRelease).toBe('pulling')
+    await expect.poll(pullShown).toBe('idle')
+    expect(collect).not.toHaveBeenCalled()
+  })
+
+  it('never pulls for a mouse dragging or a wheel turning at the top of the list', async () => {
+    const { collect } = await openPullable()
+    await touchScreen(false)
+    const start = positions()
+
+    const { seen } = await drag('mouse', onEntry(), 220)
+    const { x, y } = onEntry()
+    await cdp().send('Input.dispatchMouseEvent', {
+      type: 'mouseWheel',
+      x,
+      y,
+      deltaX: 0,
+      deltaY: -400,
+    })
+    await frames()
+
+    for (const step of seen) expect(step).toEqual(start)
+    expect(pullShown()).toBe('idle')
+    expect(collect).not.toHaveBeenCalled()
+  })
+
+  it('scrolls the list instead once it is scrolled down', async () => {
+    const { collect } = await openPullable()
+    await scrollTo(600)
+
+    await drag('touch', onEntry(), 220)
+
+    expect(scroller().scrollTop).toBeLessThan(600)
+    expect(pullShown()).toBe('idle')
+    expect(collect).not.toHaveBeenCalled()
+  })
+
+  it('leaves a finger on the day index to the index', async () => {
+    // A touch screen wide enough for the index to show beside the list.
+    const { collect } = await openPullable({ width: 1024 })
+    const rail = document.querySelector('app-day-index')!.getBoundingClientRect()
+
+    const { beforeRelease } = await drag(
+      'touch',
+      { x: rail.left + rail.width / 2, y: rail.top + 20 },
+      220
+    )
+
+    expect(beforeRelease).toBe('idle')
+    expect(collect).not.toHaveBeenCalled()
+  })
+
+  it('does not pull under the details', async () => {
+    const event = `git/default/${entries[0]!.id}`
+    const { collect, app } = await openPullable({ query: `&event=${encodeURIComponent(event)}` })
+    expect(TestBed.inject(ActivityViewStateService).detailsOpen()).toBe(true)
+
+    const { beforeRelease } = await drag('touch', onScreenCentre(), 220)
+
+    expect(beforeRelease).toBe('idle')
+    expect(collect).not.toHaveBeenCalled()
+    await app.router.navigateByUrl(`/timeline?${RANGE}`)
+    await stillList()
+    expect((await drag('touch', onEntry(), 220)).beforeRelease).toBe('armed')
+  })
+
+  /** Pulls past the threshold and holds; the returned function lifts the finger. */
+  async function holdPull(): Promise<() => Promise<void>> {
+    const from = onEntry()
+    await cdp().send('Input.dispatchTouchEvent', {
+      type: 'touchStart',
+      touchPoints: [{ ...from, id: 1 }],
+    })
+    for (const down of [20, 120, 220]) {
+      await cdp().send('Input.dispatchTouchEvent', {
+        type: 'touchMove',
+        touchPoints: [{ x: from.x, y: from.y + down, id: 1 }],
+      })
+      await frames()
+    }
+    expect(pullShown()).toBe('armed')
+    return async () => {
+      await cdp().send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] })
+      await frames()
+    }
+  }
+
+  it('drops a pull when the details open over it meanwhile, as from a link', async () => {
+    const { collect, app } = await openPullable()
+    const event = `git/default/${entries[0]!.id}`
+    const lift = await holdPull()
+
+    await app.router.navigateByUrl(`/timeline?${RANGE}&event=${encodeURIComponent(event)}`)
+    await frames()
+    await lift()
+
+    expect(pullShown()).toBe('idle')
+    expect(collect).not.toHaveBeenCalled()
+  })
+
+  it('drops a pull when another view takes its place meanwhile, and pulls again after', async () => {
+    const { collect, app } = await openPullable()
+    const lift = await holdPull()
+
+    await app.router.navigateByUrl(`/week/${NEWEST}?${RANGE}`)
+    await frames()
+    await lift()
+    await app.router.navigateByUrl(`/timeline?${RANGE}`)
+    await stillList()
+
+    expect(pullShown()).toBe('idle')
+    expect(collect).not.toHaveBeenCalled()
+    expect((await drag('touch', onEntry(), 220)).beforeRelease).toBe('armed')
+    await vi.waitFor(() => expect(collect).toHaveBeenCalledOnce())
+  })
+
+  it('does not pull while a collection runs', async () => {
+    const backend = new MockBackendTransport()
+    const { collect } = await openPullable({ backend })
+    let answer = (): void => undefined
+    backend.collectGate = new Promise(resolve => (answer = resolve))
+    void TestBed.inject(ActivityDataService).collectShownRange()
+    collect.mockClear()
+
+    expect((await drag('touch', onEntry(), 220)).beforeRelease).toBe('idle')
+    expect(collect).not.toHaveBeenCalled()
+    answer()
+  })
+
+  it('does not pull without a source to collect', async () => {
+    const backend = new MockBackendTransport()
+    const { collect } = await openPullable({ backend })
+    backend.providersResponse = {
+      ...backend.providersResponse,
+      providers: backend.providersResponse.providers.map(provider => ({
+        ...provider,
+        status: 'unavailable',
+        usable: false,
+        problem: 'unreachable',
+        reason: 'The server does not answer',
+        recheckable: true,
+      })),
+    }
+    backend.publish()
+    await expect.poll(() => TestBed.inject(ActivityDataService).anySourceReady()).toBe(false)
+    await frames()
+
+    expect((await drag('touch', onScreenCentre(), 220)).beforeRelease).toBe('idle')
+    expect(collect).not.toHaveBeenCalled()
   })
 })
