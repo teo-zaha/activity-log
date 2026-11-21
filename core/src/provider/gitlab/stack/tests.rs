@@ -271,13 +271,11 @@ fn answering(row: Value) -> TestServer {
     TestServer::start(move |_| Reply::json(200, json!([row]).to_string()))
 }
 
-/// A row the request did not ask for (another state, project, number or branch) means the
-/// server ignored a filter: the list fails, and no further page is read.
+/// A row the request did not ask for (another project, number or branch) means the server
+/// ignored a filter: the list fails, and no further page is read.
 #[tokio::test]
 async fn a_row_that_was_not_asked_for_fails_the_list() {
     let base = "https://gitlab.example.org";
-    let mut closed = mr(base, 2, "feature/parse-b", "feature/parse-a");
-    closed["state"] = json!("merged");
     let mut elsewhere = mr(base, 2, "feature/parse-b", "feature/parse-a");
     elsewhere["target_project_id"] = json!(FORK);
     let unasked = mr(base, 3, "feature/parse-b", "feature/parse-a");
@@ -286,7 +284,6 @@ async fn a_row_that_was_not_asked_for_fails_the_list() {
     // Whether each question fails: its numbers (`!2`), its source branch (`feature/parse-b`)
     // and its target branch (`feature/parse-a`).
     for (name, row, fails) in [
-        ("closed", closed, [true, true, true]),
         ("elsewhere", elsewhere, [true, true, true]),
         ("unasked", unasked, [true, false, false]),
         ("other branch", other_branch, [false, true, true]),
@@ -310,6 +307,43 @@ async fn a_row_that_was_not_asked_for_fails_the_list() {
         let failed = answers.map(|answer| answer.is_some_and(|failure| failure == ignored));
         assert_eq!(failed, fails, "{name}");
     }
+}
+
+/// A row asked for that is no longer open (being merged, `locked`, or merged since) is left out
+/// and counted; the rest of the list stands.
+#[tokio::test]
+async fn a_row_no_longer_open_is_left_out() {
+    let server = gitlab(100, |base| {
+        let mut locked = mr(base, 2, "feature/parse-b", "feature/parse-a");
+        locked["state"] = json!("locked");
+        let mut merged = mr(base, 3, "feature/parse-c", "feature/parse-a");
+        merged["state"] = json!("merged");
+        BTreeMap::from([(
+            WIDGETS,
+            vec![
+                mr(base, 4, "feature/parse-d", "feature/parse-a"),
+                locked,
+                merged,
+            ],
+        )])
+    });
+    let api = api(&server.url);
+    let lookup = GitLabChanges::new(&api);
+    let budget = budget();
+
+    let into = lookup
+        .open_into(&WIDGETS, "feature/parse-a", &budget)
+        .await
+        .unwrap();
+    let numbers_open = lookup
+        .open_numbers(&WIDGETS, &[2, 3, 4], &budget)
+        .await
+        .unwrap();
+
+    assert_eq!(numbers(&into), [4]);
+    assert_eq!(numbers(&numbers_open), [4]);
+    assert_eq!(lookup.not_open(), 4);
+    assert_eq!(lookup.skipped(), 0);
 }
 
 /// A row that is no merge request, or one with a blank title or branch, is skipped and
@@ -377,11 +411,9 @@ async fn links_lead_only_to_this_gitlab() {
         )])
     });
     let api = api(&format!("{}/gitlab", server.url));
+    let lookup = GitLabChanges::new(&api);
 
-    let found = GitLabChanges::new(&api)
-        .open_into(&WIDGETS, "main", &budget())
-        .await
-        .unwrap();
+    let found = lookup.open_into(&WIDGETS, "main", &budget()).await.unwrap();
 
     let links: Vec<Option<String>> = found
         .iter()
@@ -396,6 +428,51 @@ async fn links_lead_only_to_this_gitlab() {
             None,
             None,
         ]
+    );
+    // Only the web page of another origin is counted, by that origin.
+    assert_eq!(
+        lookup.elsewhere(),
+        (
+            1,
+            Some(
+                reqwest::Url::parse("https://gitlab.example.org")
+                    .unwrap()
+                    .origin()
+            )
+        )
+    );
+}
+
+/// Links dropped for leading to another origin are one warning per collection, which names
+/// that origin and how many.
+#[tokio::test]
+async fn links_to_another_origin_are_one_warning() {
+    let server = gitlab(100, |base| {
+        let mut rows = four(base);
+        for row in rows.get_mut(&WIDGETS).unwrap() {
+            let iid = row["iid"].clone();
+            row["web_url"] = json!(format!(
+                "https://gitlab.internal:8443/acme/widgets/-/merge_requests/{iid}"
+            ));
+        }
+        rows
+    });
+    let runtime = runtime(&server, "stack-elsewhere").await;
+    let mut entries = vec![event("opened", GitLabType::Opened, Some(WIDGETS), Some(2))];
+
+    runtime.annotate(&mut entries).await;
+
+    assert_eq!(stacks(&entries)["opened"], Some(vec![1, 2]));
+    let warnings: Vec<String> = lines("gitlab/stack-elsewhere")
+        .into_iter()
+        .filter(|line| line.level == LogLevel::Warn)
+        .map(|line| line.message)
+        .collect();
+    assert_eq!(warnings.len(), 1, "{warnings:?}");
+    // The origin is the data the line carries.
+    assert!(
+        warnings[0].contains("https://gitlab.internal:8443"),
+        "{warnings:?}"
     );
 }
 

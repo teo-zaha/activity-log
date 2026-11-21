@@ -17,4 +17,4 @@ pub(crate) use lookup::{
     ChangeLookup, ChangeRef, FailureKind, LookupCause, LookupFailure, OpenChange, OpenPage,
 };
 pub(crate) use walk::change_stacks;
-pub(crate) use web_link::web_link;
+pub(crate) use web_link::{Unshown, web_link};
