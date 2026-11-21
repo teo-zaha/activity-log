@@ -27,7 +27,13 @@ export type MeetingFields = Pick<
 >
 
 /** The user's part in a meeting, where the source says it. */
-export type MeetingRole = 'Organizer' | 'Attendee'
+export type MeetingRole = 'organizer' | 'attendee'
+
+/** A role as the details name it; the meta line has it in lower case. */
+const ROLE_LABEL: Readonly<Record<MeetingRole, string>> = {
+  organizer: 'Organizer',
+  attendee: 'Attendee',
+}
 
 const MEETING_ICON = 'event'
 
@@ -48,8 +54,8 @@ export function meetingInit(
     meta: joinParts([
       duration,
       entry.location,
-      role?.toLowerCase(),
-      entry.organizer && role !== 'Organizer' ? `org: ${entry.organizer}` : null,
+      role === null ? null : ROLE_LABEL[role].toLowerCase(),
+      entry.organizer && role !== 'organizer' ? `org: ${entry.organizer}` : null,
     ]),
     entryIcon: MEETING_ICON,
     searchTerms: toDefinedStrings([
@@ -70,7 +76,7 @@ export function meetingInit(
       { label: 'Status', value: entry.busyStatus ? busyStatusLabel(entry.busyStatus) : '' },
       { label: 'Location', value: entry.location ?? '' },
       { label: 'Organizer', value: entry.organizer ?? '' },
-      { label: 'Role', value: role ?? '' },
+      { label: 'Role', value: role === null ? '' : ROLE_LABEL[role] },
     ].filter(field => field.value),
     badge,
     badges: [badge],
