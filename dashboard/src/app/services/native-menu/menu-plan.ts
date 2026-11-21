@@ -12,7 +12,7 @@ import {
   type ShortcutId,
   VIEW_SHORTCUTS,
   chordsIn,
-  isCharacterChord,
+  isMenuAccelerator,
 } from '../../models/shortcuts'
 import type { ViewMode } from '../../utils/app-url'
 import { type CommandChordKeys, type Os, menuKeyOf } from '../../utils/key-chord'
@@ -62,9 +62,7 @@ export function menuPlanOf(entries: readonly ShortcutEntry[], os: Os): readonly 
   const here = { os, build: 'desktop', characterKeys: 'on' } as const
   for (const entry of entries) {
     if (entry.menu === undefined) continue
-    const chord = chordsIn(entry, here)
-      .filter(c => !isCharacterChord(c))
-      .find(c => c.menuAccelerator)
+    const chord = chordsIn(entry, here).find(isMenuAccelerator)
     if (chord === undefined) {
       drafts.push({ accelerator: null, action: { kind: 'entry', id: entry.id }, entries: [entry] })
       continue

@@ -65,9 +65,15 @@ export function firesWhileTyping(chord: Chord): boolean {
   return isCharacterChord(chord) ? false : chord.whileTyping
 }
 
-/** Whether `chord` is the macOS menu's accelerator: never a character key. */
-export function isMenuAccelerator(chord: Chord): boolean {
-  return isCharacterChord(chord) ? false : chord.menuAccelerator
+/** A chord the macOS menu takes as its accelerator. */
+export type MenuAcceleratorChord = CommandChord & { readonly menuAccelerator: true }
+
+/**
+ * Whether `chord` is the macOS menu's accelerator: never a character key. Narrows to the command
+ * chords that are one, so a chord it refuses keeps its type.
+ */
+export function isMenuAccelerator(chord: Chord): chord is MenuAcceleratorChord {
+  return !isCharacterChord(chord) && chord.menuAccelerator
 }
 
 export interface ShortcutEntry {
