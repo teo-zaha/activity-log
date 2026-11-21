@@ -51,7 +51,7 @@ impl Host {
             let changed = state.keys.install(&connections);
             let checks = connections
                 .iter()
-                .filter_map(|connection| new_check(inner, state, connection))
+                .map(|connection| new_check(inner, state, connection))
                 .collect::<Vec<_>>();
             let old = std::mem::replace(&mut state.checks, checks);
             state.retired.push(Box::new(old));
