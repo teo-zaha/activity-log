@@ -19,10 +19,10 @@ const stack: ChangeStack = {
 }
 
 describe('changeStackVmOf', () => {
-  it('lists the chain from the base up, the entry’s own change last and unlinked', () => {
+  it('lists the chain from the base up, the entry’s own change last and marked', () => {
     const vm = changeStackVmOf(stack, '!')
 
-    expect(vm.base).toEqual({ kind: 'branch', branch: 'main' })
+    expect(vm.base).toMatchObject({ kind: 'branch', branch: 'main' })
     expect(vm.chain).toEqual([
       {
         kind: 'member',
@@ -31,7 +31,12 @@ describe('changeStackVmOf', () => {
         href: 'https://gitlab.example.org/group/app/-/merge_requests/10',
       },
       { kind: 'member', reference: '!11', title: 'Change 11', href: null },
-      { kind: 'current', reference: '!12', title: 'Change 12' },
+      {
+        kind: 'current',
+        reference: '!12',
+        title: 'Change 12',
+        href: 'https://gitlab.example.org/group/app/-/merge_requests/12',
+      },
     ])
     expect(vm.above).toEqual({ depth: 1, nodes: [], end: { kind: 'complete' } })
   })
@@ -45,7 +50,7 @@ describe('changeStackVmOf', () => {
   it('shows the base change alone in the chain', () => {
     const vm = changeStackVmOf({ ...stack, below: [], bottom: { kind: 'ambiguous' } }, '!')
 
-    expect(vm.chain).toEqual([{ kind: 'current', reference: '!12', title: 'Change 12' }])
+    expect(vm.chain.map(row => [row.kind, row.reference])).toEqual([['current', '!12']])
   })
 
   it('tells several changes below apart from a cut', () => {
@@ -54,19 +59,39 @@ describe('changeStackVmOf', () => {
     expect(vm.base.kind).toBe('ambiguous')
   })
 
-  it.each(CUTS)('words a bottom cut for %s by its reason', reason => {
+  it.each(CUTS)('keeps the reason of a bottom cut for %s', reason => {
     const vm = changeStackVmOf({ ...stack, bottom: { kind: 'cut', reason } }, '!')
 
     expect(vm.base).toMatchObject({ kind: 'cut', reason })
   })
 
-  it.each(CUTS)('words a level cut for %s by its reason', reason => {
+  it.each(CUTS)('keeps the reason of a level cut for %s', reason => {
     const vm = changeStackVmOf(
       { ...stack, above: { changes: [], end: { kind: 'cut', reason } } },
       '!'
     )
 
     expect(vm.above.end).toMatchObject({ kind: 'cut', reason })
+  })
+
+  // The wording is the product: one text of each table pins which table words which line.
+  it('words a cut below as what the change builds on', () => {
+    const vm = changeStackVmOf({ ...stack, bottom: { kind: 'cut', reason: 'failed' } }, '!')
+
+    expect(vm.base).toMatchObject({
+      text: 'Not all of what this builds on was read: a request failed',
+    })
+  })
+
+  it('words a cut above as more changes built on it', () => {
+    const vm = changeStackVmOf(
+      { ...stack, above: { changes: [], end: { kind: 'cut', reason: 'failed' } } },
+      '!'
+    )
+
+    expect(vm.above.end).toMatchObject({
+      text: 'More changes built on it were not read: a request failed',
+    })
   })
 
   it('gives every cut its own words, below and above apart', () => {

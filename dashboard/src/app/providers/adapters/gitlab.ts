@@ -1,7 +1,10 @@
 import type { GitLabEntry } from '../../generated/activity'
-import { changeStackVmOf } from '../change-stack'
+import { type ChangeReferencePrefix, changeReference, changeStackVmOf } from '../change-stack'
 import { EntryUiAdapter, ProviderUiAdapterDefinition, type ProviderDetailField } from '../types'
 import { createBadge, joinParts, toDefinedStrings } from '../utils'
+
+/** How GitLab writes a merge request's number: `!12`. */
+const MERGE_REQUEST: ChangeReferencePrefix = '!'
 
 class GitLabEntryUiAdapter extends EntryUiAdapter<GitLabEntry> {
   constructor(provider: GitLabProviderAdapter, entry: GitLabEntry) {
@@ -10,7 +13,8 @@ class GitLabEntryUiAdapter extends EntryUiAdapter<GitLabEntry> {
       { label: 'Title', value: entry.title ?? '' },
       { label: 'Target type', value: entry.targetType ?? '' },
     ]
-    if (entry.mrIid != null) fields.push({ label: 'MR', value: `!${entry.mrIid}` })
+    if (entry.mrIid != null)
+      fields.push({ label: 'MR', value: changeReference(MERGE_REQUEST, entry.mrIid) })
     if (entry.issueIid != null) fields.push({ label: 'Issue', value: `#${entry.issueIid}` })
     if (entry.branch) fields.push({ label: 'Branch', value: entry.branch })
     if (entry.commitCount != null) {
@@ -38,7 +42,7 @@ class GitLabEntryUiAdapter extends EntryUiAdapter<GitLabEntry> {
         entry.noteFile,
       ]),
       calendarDurationMinutes: null,
-      changeStack: entry.changeStack ? changeStackVmOf(entry.changeStack, '!') : null,
+      changeStack: entry.changeStack ? changeStackVmOf(entry.changeStack, MERGE_REQUEST) : null,
       detailFields: fields.filter(field => field.value),
       badge,
       badges: [badge],
