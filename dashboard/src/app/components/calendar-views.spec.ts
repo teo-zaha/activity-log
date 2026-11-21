@@ -8,6 +8,8 @@ import { ActivityDataService } from '../services/activity-data.service'
 import { ActivitySelection } from '../services/activity-selection.service'
 import { ActivityViewStateService } from '../services/activity-view-state.service'
 import { MockBackendTransport, provideMockBackend } from '../testing/activity-fixtures'
+import { calendarHintText } from './calendar/calendar-empty-hint'
+import { shownHint } from './calendar/calendar-testing'
 import { DayViewComponent } from './day-view/day-view.component'
 import { WeekViewComponent } from './week-view/week-view.component'
 
@@ -148,8 +150,9 @@ describe('calendar views over a loaded log', () => {
 
     await show(WeekViewComponent)
 
-    expect(screen.getByRole('status').querySelector('.hint-title')?.textContent).toBe(
-      'This week was not collected'
+    expect(shownHint()?.title).toBe(
+      calendarHintText({ reason: 'notCollected', unit: 'week', onScreen: null, collect: null })
+        .title
     )
   })
 })

@@ -278,6 +278,8 @@ export class ActivityDataService {
   readonly providers = computed(() =>
     this.providerViewModels().filter(p => p.info.usable || isChecking(p.info))
   )
+  /** Whether any source is usable or still being checked: whether a view can show activity. */
+  readonly anySourceReady = computed(() => this.providers().length > 0)
   readonly unusableProviders = computed(() =>
     this.providerViewModels().filter(p => !p.info.usable && !isChecking(p.info))
   )
