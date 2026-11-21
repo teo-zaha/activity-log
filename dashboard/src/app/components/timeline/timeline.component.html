@@ -158,7 +158,8 @@
   </div>
 </div>
 
-<!-- Pull to refresh: comes out from under the filter. Screen readers hear the collection itself. -->
+<!-- Pull to refresh: comes out from under the filter while a finger pulls, and goes back up once
+     it lifts. The collection shows, and screen readers hear it, as every collection does. -->
 @let pullState = pull();
 <div
   class="pull"
@@ -167,23 +168,12 @@
   [style.--pull-distance]="pullDistance() + 'px'"
 >
   <div class="pull-indicator">
-    <span
-      class="u-glyph pull-icon"
-      [class.u-spin]="pullState.kind === 'refreshing'"
-      translate="no"
-      >{{ pullState.kind === 'refreshing' ? 'sync' : 'arrow_downward' }}</span
-    >
+    <span class="u-glyph pull-icon" translate="no">arrow_downward</span>
     <span class="pull-label">
-      @switch (pullState.kind) {
-        @case ('armed') {
-          Release to collect
-        }
-        @case ('refreshing') {
-          Collecting…
-        }
-        @default {
-          Pull to collect
-        }
+      @if (pullState.kind === 'armed') {
+        Release to collect
+      } @else {
+        Pull to collect
       }
     </span>
   </div>
