@@ -84,6 +84,11 @@ export class EventDetailComponent {
       this.shortcuts.ariaKeys('app.back'),
     ]),
   }
+  /** The stepper's keys, single keys that the setting may turn off while the details show. */
+  protected readonly stepKeys = computed(() => ({
+    previous: this.shortcuts.ariaKeys('details.previous'),
+    next: this.shortcuts.ariaKeys('details.next'),
+  }))
   private readonly title = viewChild<ElementRef<HTMLElement>>('detailTitle')
   private readonly listTitle = viewChild<ElementRef<HTMLElement>>('listTitle')
   private readonly body = viewChild<ElementRef<HTMLElement>>('body')
@@ -156,16 +161,20 @@ export class EventDetailComponent {
     // The settings dialog closed over the details: they take the focus it had.
     this.layers.whenExposed('details', () => this.focusIfOutside())
 
-    // While open, the details are a layer: Escape and Back are theirs while they are on top (the
-    // settings dialog opens over them, the phone's Settings tab lies under them). A field or
-    // dialog that handles Escape first keeps it. On a phone they hide the view under them.
+    // While open, the details are a layer: Escape, Back and the group's stepper are theirs while
+    // they are on top (the settings dialog opens over them, the phone's Settings tab lies under
+    // them), and their scope replaces the view's, which is out of reach under them. A field or
+    // dialog that handles Escape first keeps it. The stepper declines at either end and in the
+    // group's list.
     effect(onCleanup => {
       if (!this.isOpen()) return
       const onTop = (): boolean => this.layers.top() === 'details'
       const off = [
-        this.shortcuts.openLayer({ kind: 'page', hidesRoute: this.isPhone() }),
+        this.shortcuts.openLayer({ kind: 'page', scope: 'details', onTop }),
         this.shortcuts.bind('layer.close', () => this.close(), onTop),
         this.shortcuts.bind('app.back', () => this.back(), onTop),
+        this.shortcuts.bind('details.previous', () => (this.step(-1) ? undefined : false), onTop),
+        this.shortcuts.bind('details.next', () => (this.step(1) ? undefined : false), onTop),
       ]
       onCleanup(() => off.forEach(close => close()))
     })

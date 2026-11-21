@@ -74,7 +74,13 @@ function dayTitle(view: CalendarView): ResolveFn<string> {
 function calendarRoutes(view: CalendarView, loadComponent: () => Promise<Type<unknown>>): Routes {
   const path = VIEW_PATHS[view]
   return [
-    { path: `${path}/:date`, canMatch: [isDayParam], loadComponent, title: dayTitle(view) },
+    {
+      path: `${path}/:date`,
+      canMatch: [isDayParam],
+      loadComponent,
+      title: dayTitle(view),
+      data: { [SHORTCUT_SCOPE]: 'calendar' satisfies ShortcutScope },
+    },
     // A missing or invalid day shows today.
     { path, redirectTo: redirectKeepingQuery(() => viewCommands(view, todayKey())) },
   ]

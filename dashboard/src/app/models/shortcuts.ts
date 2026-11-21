@@ -1,32 +1,73 @@
 import type { MenuSubmenu } from '../generated/activity'
 import type { ViewMode } from '../utils/app-url'
-import type { ChordKeys, Os } from '../utils/key-chord'
+import {
+  type CharacterChordKeys,
+  type CommandChordKeys,
+  type Os,
+  isCharacterKeys,
+} from '../utils/key-chord'
 import { VIEW_LABELS } from './nav'
 
 /**
  * Where an entry's keys work: `global` everywhere, or in the view whose route declares the
- * scope (`data.shortcutScope`). A view the router keeps while another shows, or that the phone's
- * Settings tab hides, holds no keys then (`ShortcutService`).
+ * scope (`data.shortcutScope`), or on the page over the views that puts it on screen (the
+ * details). A view the router keeps while another shows, or a page hides, holds no keys then
+ * (`ShortcutService`).
  */
-export const SHORTCUT_SCOPES = ['global', 'timeline'] as const
+export const SHORTCUT_SCOPES = ['global', 'timeline', 'calendar', 'details'] as const
 export type ShortcutScope = (typeof SHORTCUT_SCOPES)[number]
 
 /** Where the dashboard runs: the desktop app, or a browser tab whose keys are the browser's. */
 export type Build = 'desktop' | 'browser'
 
-export interface Chord {
-  readonly keys: ChordKeys
+/**
+ * Whether single-key shortcuts work (WCAG 2.1.4's way to turn them off): every chord that is a
+ * character key alone, `/` and `?` included. Kept on the device (`ShortcutPreferences`).
+ */
+export type CharacterKeys = 'on' | 'off'
+
+interface ChordPlace {
   /** Absent: every platform. */
   readonly os?: Os
   /** Absent: wherever the entry is. `desktop`: not in the browser, whose own key it is. */
   readonly where?: 'desktop'
-  /** Fires while focus is in an editable field. Never for a chord that types a character. */
+}
+
+/**
+ * A character key alone (`R`, `/`): it types, so it never fires while typing, is never a menu
+ * accelerator, and the single-key setting turns it off.
+ */
+export interface CharacterChord extends ChordPlace {
+  readonly keys: CharacterChordKeys
+}
+
+/** A modified chord (⌘R) or a named key (Escape, F5). */
+export interface CommandChord extends ChordPlace {
+  readonly keys: CommandChordKeys
+  /** Fires while focus is in an editable field. */
   readonly whileTyping: boolean
   /**
    * On macOS the menu's accelerator, once the menu is built from this table: only a modified
    * chord with no text-editing meaning there, since the menu takes the key before the page.
    */
   readonly menuAccelerator: boolean
+}
+
+/** A chord of an entry; its keys tell the two kinds apart. */
+export type Chord = CharacterChord | CommandChord
+
+export function isCharacterChord(chord: Chord): chord is CharacterChord {
+  return isCharacterKeys(chord.keys)
+}
+
+/** Whether `chord` fires while focus is in a field: never for a character key. */
+export function firesWhileTyping(chord: Chord): boolean {
+  return isCharacterChord(chord) ? false : chord.whileTyping
+}
+
+/** Whether `chord` is the macOS menu's accelerator: never a character key. */
+export function isMenuAccelerator(chord: Chord): boolean {
+  return isCharacterChord(chord) ? false : chord.menuAccelerator
 }
 
 export interface ShortcutEntry {
@@ -55,6 +96,11 @@ export const SHORTCUT_IDS = [
   'app.back',
   'layer.close',
   'app.help',
+  'calendar.previous',
+  'calendar.next',
+  'calendar.today',
+  'details.previous',
+  'details.next',
 ] as const
 
 export type ShortcutId = (typeof SHORTCUT_IDS)[number]
@@ -67,16 +113,25 @@ export const VIEW_SHORTCUTS = {
   week: 'view.week',
 } as const satisfies Readonly<Record<ViewMode, ShortcutId>>
 
-/** A view's entry, with ⌘1 to ⌘4 (Ctrl elsewhere) in the desktop app. */
-function viewEntry(view: ViewMode, keys: ChordKeys): Omit<ShortcutEntry, 'id'> {
+/** A view's entry: ⌘1 to ⌘4 (Ctrl elsewhere) in the desktop app, and the digit alone. */
+function viewEntry(
+  view: ViewMode,
+  keys: CommandChordKeys,
+  digit: CharacterChordKeys
+): Omit<ShortcutEntry, 'id'> {
   return {
     label: VIEW_LABELS[view],
     scope: 'global',
     menu: 'view',
-    chords: [{ keys, where: 'desktop', whileTyping: true, menuAccelerator: true }],
+    chords: [{ keys, where: 'desktop', whileTyping: true, menuAccelerator: true }, { keys: digit }],
   }
 }
 
+/*
+ * A command's modified chords come before its character key, so the key tag shows ⌘R in the
+ * desktop app and R in the browser. The character keys are the desktop chord without ⌘, and work
+ * in every build.
+ */
 const ENTRIES: { readonly [Id in ShortcutId]: Omit<ShortcutEntry, 'id'> } = {
   // Ctrl+R and F5 reload a browser tab; in the desktop app they collect (WebView2's own browser
   // keys are off, `desktop/src/browser_keys/`).
@@ -87,31 +142,38 @@ const ENTRIES: { readonly [Id in ShortcutId]: Omit<ShortcutEntry, 'id'> } = {
     chords: [
       { keys: 'mod+r', where: 'desktop', whileTyping: true, menuAccelerator: true },
       { keys: 'f5', os: 'other', where: 'desktop', whileTyping: true, menuAccelerator: false },
+      { keys: 'r' },
     ],
   },
-  // A browser keeps its own find.
+  // A browser keeps its own find; `/` is the web's filter key.
   'app.filter': {
     label: 'Filter Activity…',
     scope: 'global',
     menu: 'edit',
-    chords: [{ keys: 'mod+f', where: 'desktop', whileTyping: true, menuAccelerator: true }],
+    chords: [
+      { keys: 'mod+f', where: 'desktop', whileTyping: true, menuAccelerator: true },
+      { keys: '/' },
+    ],
   },
   'timeline.filter': {
     label: 'Filter activity',
     scope: 'timeline',
-    chords: [{ keys: '/', whileTyping: false, menuAccelerator: false }],
+    chords: [{ keys: '/' }],
   },
   // ⌘1 to ⌘4 switch a browser's tabs.
-  'view.list': viewEntry('list', 'mod+1'),
-  'view.day': viewEntry('day', 'mod+2'),
-  'view.workweek': viewEntry('workweek', 'mod+3'),
-  'view.week': viewEntry('week', 'mod+4'),
+  'view.list': viewEntry('list', 'mod+1', '1'),
+  'view.day': viewEntry('day', 'mod+2', '2'),
+  'view.workweek': viewEntry('workweek', 'mod+3', '3'),
+  'view.week': viewEntry('week', 'mod+4', '4'),
   // ⌘, opens a browser's own settings.
   'app.settings': {
     label: 'Settings…',
     scope: 'global',
     menu: 'app',
-    chords: [{ keys: 'mod+,', where: 'desktop', whileTyping: true, menuAccelerator: true }],
+    chords: [
+      { keys: 'mod+,', where: 'desktop', whileTyping: true, menuAccelerator: true },
+      { keys: ',' },
+    ],
   },
   // Menu items without a key: the header's buttons do the same.
   'app.export-markdown': { label: 'Export Markdown…', scope: 'global', menu: 'file', chords: [] },
@@ -143,8 +205,19 @@ const ENTRIES: { readonly [Id in ShortcutId]: Omit<ShortcutEntry, 'id'> } = {
     label: 'Keyboard Shortcuts',
     scope: 'global',
     menu: 'help',
-    chords: [{ keys: '?', whileTyping: false, menuAccelerator: false }],
+    chords: [{ keys: '?' }],
   },
+  // The Day, Work week and Week views' buttons: a day in Day, a week in the others.
+  'calendar.previous': {
+    label: 'Previous day or week',
+    scope: 'calendar',
+    chords: [{ keys: 'p' }],
+  },
+  'calendar.next': { label: 'Next day or week', scope: 'calendar', chords: [{ keys: 'n' }] },
+  'calendar.today': { label: 'Today', scope: 'calendar', chords: [{ keys: 't' }] },
+  // The stepper through a group of overlapping events.
+  'details.previous': { label: 'Previous event', scope: 'details', chords: [{ keys: 'p' }] },
+  'details.next': { label: 'Next event', scope: 'details', chords: [{ keys: 'n' }] },
 }
 
 export const SHORTCUTS: readonly ShortcutEntry[] = SHORTCUT_IDS.map(id => shortcut(id))
@@ -153,19 +226,28 @@ export function shortcut(id: ShortcutId): ShortcutEntry {
   return { id, ...ENTRIES[id] }
 }
 
-/** The chords of `entry` that work on `os` in `build`, first the one a key tag shows. */
-export function chordsIn(entry: ShortcutEntry, os: Os, build: Build): readonly Chord[] {
+/** Which chords work: the platform, the build and whether single keys are on. */
+export interface ChordsHere {
+  readonly os: Os
+  readonly build: Build
+  readonly characterKeys: CharacterKeys
+}
+
+/**
+ * The chords of `entry` that work `here`, first the one a key tag shows: of its platform, of its
+ * build, and character keys only while single-key shortcuts are on.
+ */
+export function chordsIn(entry: ShortcutEntry, here: ChordsHere): readonly Chord[] {
   return entry.chords.filter(
     chord =>
-      (chord.os === undefined || chord.os === os) &&
-      (chord.where === undefined || build === 'desktop')
+      (chord.os === undefined || chord.os === here.os) &&
+      (chord.where === undefined || here.build === 'desktop') &&
+      (here.characterKeys === 'on' || !isCharacterChord(chord))
   )
 }
 
-/** Where a key is pressed: the platform, the build and the scope on screen besides `global`. */
-export interface ShortcutContext {
-  readonly os: Os
-  readonly build: Build
+/** Where a key is pressed: which chords work, and the scope on screen besides `global`. */
+export interface ShortcutContext extends ChordsHere {
   readonly scope: ShortcutScope
 }
 
@@ -181,7 +263,7 @@ export function resolveChord(
 ): { readonly entry: ShortcutEntry; readonly chord: Chord } | null {
   const matches = entries.flatMap(entry =>
     entry.scope === 'global' || entry.scope === context.scope
-      ? chordsIn(entry, context.os, context.build)
+      ? chordsIn(entry, context)
           .filter(chord => chord.keys === keys)
           .map(chord => ({ entry, chord }))
       : []

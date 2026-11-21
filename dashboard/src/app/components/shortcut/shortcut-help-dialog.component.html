@@ -1,23 +1,29 @@
 <div class="help">
   <div class="help-body">
     <h2 mat-dialog-title id="shortcut-help-title" class="help-title">Keyboard shortcuts</h2>
-    @for (section of sections; track section.title) {
-      <section class="help-section" [attr.aria-labelledby]="'shortcut-help-' + $index">
-        <h3 class="help-section-title" [id]="'shortcut-help-' + $index">{{ section.title }}</h3>
-        <dl class="help-list">
-          @for (row of section.rows; track row.label) {
-            <div class="help-row">
-              <dt class="help-label">{{ row.label }}</dt>
-              <dd class="help-keys">
-                @for (key of row.keys; track key) {
-                  <kbd class="help-key">{{ key }}</kbd>
-                }
-              </dd>
-            </div>
-          }
-        </dl>
-      </section>
-    }
+    <div class="help-sections">
+      @for (section of sections(); track section.title) {
+        <section class="help-section" [attr.aria-labelledby]="'shortcut-help-' + $index">
+          <h3 class="help-section-title" [id]="'shortcut-help-' + $index">{{ section.title }}</h3>
+          <dl class="help-list">
+            @for (row of section.rows; track row.label) {
+              <div class="help-row">
+                <dt class="help-label">{{ row.label }}</dt>
+                <dd class="help-keys">
+                  @for (key of row.keys; track key) {
+                    @if (!$first) {
+                      <!-- Spaced as text, so it reads "⌘R or R". -->
+                      <span class="help-or"> or </span>
+                    }
+                    <kbd class="help-key">{{ key }}</kbd>
+                  }
+                </dd>
+              </div>
+            }
+          </dl>
+        </section>
+      }
+    </div>
   </div>
   <div mat-dialog-actions class="help-actions">
     <button appButton variant="ghost" mat-dialog-close>Close</button>

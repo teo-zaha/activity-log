@@ -35,6 +35,8 @@ import {
 } from '../../utils/meeting-time'
 import { injectCalendarZoom } from '../calendar-zoom'
 import { NavigationMotionService } from '../../navigation-motion'
+import { KeyTagComponent } from '../shortcut/key-tag.component'
+import { ShortcutDirective } from '../shortcut/shortcut.directive'
 
 /** A day of the week as its header and its column show it. */
 interface WeekDay {
@@ -59,6 +61,8 @@ interface WeekDay {
     CalendarDayColumnComponent,
     CalendarHoursComponent,
     CalendarHintComponent,
+    KeyTagComponent,
+    ShortcutDirective,
   ],
   templateUrl: './week-view.component.html',
   styleUrl: './week-view.component.scss',

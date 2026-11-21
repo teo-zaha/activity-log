@@ -4,10 +4,13 @@ import { MatDialog } from '@angular/material/dialog'
 import { Router, provideRouter } from '@angular/router'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { ShortcutHelpDialogComponent } from '../components/shortcut/shortcut-help-dialog.component'
+import { SHORTCUTS, type ShortcutEntry } from '../models/shortcuts'
+import { ShortcutPreferences } from './shortcut-preferences.service'
 import {
   SHORTCUT_HELP_DIALOG_ID,
   SHORTCUT_PLATFORM,
   SHORTCUT_SCOPE,
+  SHORTCUT_TABLE,
   ShortcutService,
 } from './shortcut.service'
 import type { ShortcutPlatform } from './shortcut.service'
@@ -17,15 +20,18 @@ class BlankComponent {}
 
 async function setup(
   platform: ShortcutPlatform = { os: 'mac', build: 'desktop' },
-  url = '/timeline'
+  url = '/timeline',
+  table: readonly ShortcutEntry[] = SHORTCUTS
 ): Promise<ShortcutService> {
   TestBed.configureTestingModule({
     providers: [
       provideRouter([
         { path: 'timeline', component: BlankComponent, data: { [SHORTCUT_SCOPE]: 'timeline' } },
-        { path: 'day', component: BlankComponent },
+        { path: 'day', component: BlankComponent, data: { [SHORTCUT_SCOPE]: 'calendar' } },
+        { path: 'settings', component: BlankComponent },
       ]),
       { provide: SHORTCUT_PLATFORM, useValue: platform },
+      { provide: SHORTCUT_TABLE, useValue: table },
     ],
   })
   const shortcuts = TestBed.inject(ShortcutService)
@@ -51,9 +57,20 @@ function field(type = 'text'): HTMLInputElement {
   return input
 }
 
+const BROWSER: ShortcutPlatform = { os: 'mac', build: 'browser' }
+
+/** A page over the route (the details, the phone's Settings tab), on top while `top` says. */
+function page(
+  scope: 'global' | 'details',
+  top: () => boolean = () => true
+): { kind: 'page'; scope: 'global' | 'details'; onTop: () => boolean } {
+  return { kind: 'page', scope, onTop: top }
+}
+
 describe('ShortcutService', () => {
   afterEach(() => {
     document.body.replaceChildren()
+    localStorage.clear()
   })
 
   it('runs the binding of a pressed chord and marks the key handled', async () => {
@@ -227,16 +244,122 @@ describe('ShortcutService', () => {
     await TestBed.inject(Router).navigateByUrl('/day')
     expect(press('/').defaultPrevented).toBe(false)
     await TestBed.inject(Router).navigateByUrl('/timeline')
-    const close = shortcuts.openLayer({ kind: 'page', hidesRoute: true })
+    const close = shortcuts.openLayer(page('global'))
     expect(press('/').defaultPrevented).toBe(false)
     expect(shortcuts.choose('timeline.filter')).toBe(false)
     close()
     expect(press('/').defaultPrevented).toBe(true)
     expect(run).toHaveBeenCalledOnce()
+  })
 
-    // A layer that leaves the view in sight (the details beside it) keeps its keys.
-    shortcuts.openLayer({ kind: 'page', hidesRoute: false })
-    expect(shortcuts.activeScope()).toBe('timeline')
+  it('puts the scope of the page on top on screen, in place of the route’s', async () => {
+    const shortcuts = await setup(BROWSER, '/day')
+    expect(shortcuts.activeScope()).toBe('calendar')
+
+    // The details over the week, then the phone's Settings tab opened under them.
+    const detailsOnTop = signal(true)
+    const closeDetails = shortcuts.openLayer(page('details', detailsOnTop))
+    expect(shortcuts.activeScope()).toBe('details')
+    const closeSettings = shortcuts.openLayer(page('global', () => !detailsOnTop()))
+    expect(shortcuts.activeScope()).toBe('details')
+
+    detailsOnTop.set(false)
+    expect(shortcuts.activeScope()).toBe('global')
+    closeSettings()
+    closeDetails()
+    expect(shortcuts.activeScope()).toBe('calendar')
+
+    // No page on top (a dialog over both): the latest page's scope, under which keys wait.
+    shortcuts.openLayer(page('details', () => false))
+    expect(shortcuts.activeScope()).toBe('details')
+  })
+
+  it('steps the open details with P and N, not the calendar behind them, and Today does nothing', async () => {
+    const shortcuts = await setup(BROWSER, '/day')
+    const calendar = { previous: vi.fn(), next: vi.fn(), today: vi.fn() }
+    const details = { previous: vi.fn(), next: vi.fn() }
+    shortcuts.bind('calendar.previous', calendar.previous)
+    shortcuts.bind('calendar.next', calendar.next)
+    shortcuts.bind('calendar.today', calendar.today)
+
+    expect(press('n', { code: 'KeyN' }).defaultPrevented).toBe(true)
+    expect(calendar.next).toHaveBeenCalledOnce()
+
+    const detailsOnTop = signal(true)
+    shortcuts.openLayer(page('details', detailsOnTop))
+    shortcuts.bind('details.previous', details.previous, detailsOnTop)
+    shortcuts.bind('details.next', details.next, detailsOnTop)
+    expect(press('n', { code: 'KeyN' }).defaultPrevented).toBe(true)
+    expect(press('p', { code: 'KeyP' }).defaultPrevented).toBe(true)
+    expect(press('t', { code: 'KeyT' }).defaultPrevented).toBe(false)
+    expect(details.next).toHaveBeenCalledOnce()
+    expect(details.previous).toHaveBeenCalledOnce()
+    expect(calendar.next).toHaveBeenCalledOnce()
+    expect(calendar.previous).not.toHaveBeenCalled()
+    expect(calendar.today).not.toHaveBeenCalled()
+
+    // The phone's Settings tab opened while the details show: they stay on top, and theirs.
+    shortcuts.openLayer(page('global', () => !detailsOnTop()))
+    expect(press('n', { code: 'KeyN' }).defaultPrevented).toBe(true)
+    expect(details.next).toHaveBeenCalledTimes(2)
+  })
+
+  it('holds the calendar’s keys only on a calendar view', async () => {
+    const shortcuts = await setup(BROWSER, '/timeline')
+    const today = vi.fn()
+    shortcuts.bind('calendar.today', today)
+
+    expect(press('t', { code: 'KeyT' }).defaultPrevented).toBe(false)
+    await TestBed.inject(Router).navigateByUrl('/day')
+    expect(press('t', { code: 'KeyT' }).defaultPrevented).toBe(true)
+    await TestBed.inject(Router).navigateByUrl('/settings')
+    expect(press('t', { code: 'KeyT' }).defaultPrevented).toBe(false)
+    expect(today).toHaveBeenCalledOnce()
+  })
+
+  it('steps once for a held key', async () => {
+    const shortcuts = await setup(BROWSER, '/day')
+    const next = vi.fn()
+    shortcuts.bind('calendar.next', next)
+
+    press('n', { code: 'KeyN' })
+    press('n', { code: 'KeyN', repeat: true })
+    press('n', { code: 'KeyN', repeat: true })
+
+    expect(next).toHaveBeenCalledOnce()
+  })
+
+  it('reads a letter by its physical key: R collects on a Cyrillic layout', async () => {
+    const shortcuts = await setup(BROWSER)
+    const collect = vi.fn()
+    shortcuts.bind('app.collect', collect)
+
+    expect(press('к', { code: 'KeyR' }).defaultPrevented).toBe(true)
+    // The key that types r elsewhere (Dvorak's O) is not R.
+    expect(press('r', { code: 'KeyO' }).defaultPrevented).toBe(false)
+    expect(collect).toHaveBeenCalledOnce()
+  })
+
+  it('counts a typeahead widget as typing: a select’s letters pick its options', async () => {
+    const shortcuts = await setup(BROWSER)
+    const collect = vi.fn()
+    shortcuts.bind('app.collect', collect)
+    // A Material select: its host is a combobox that keeps focus, its open list a listbox.
+    const select = document.createElement('div')
+    select.setAttribute('role', 'combobox')
+    select.tabIndex = 0
+    const list = document.createElement('div')
+    list.setAttribute('role', 'listbox')
+    const option = document.createElement('div')
+    option.setAttribute('role', 'option')
+    list.append(option)
+    document.body.append(select, list)
+
+    expect(press('r', { code: 'KeyR' }, select).defaultPrevented).toBe(false)
+    expect(press('r', { code: 'KeyR' }, option).defaultPrevented).toBe(false)
+    expect(collect).not.toHaveBeenCalled()
+    expect(press('r', { code: 'KeyR' }).defaultPrevented).toBe(true)
+    expect(collect).toHaveBeenCalledOnce()
   })
 
   it('tries the latest binding first, then the ones before, then the fallback', async () => {
@@ -322,12 +445,14 @@ describe('ShortcutService', () => {
     expect(help).toHaveBeenCalledOnce()
   })
 
-  it('leaves the browser its own keys: only `/`, `?` and a layer’s Escape are the app’s', async () => {
+  it('leaves the browser its modified keys: ⌘R, ⌘F, ⌘1, ⌘, and Alt+← are not the app’s in a tab', async () => {
     const shortcuts = await setup({ os: 'other', build: 'browser' })
     for (const id of [
       'app.collect',
       'app.filter',
       'app.back',
+      'app.settings',
+      'view.day',
       'timeline.filter',
       'app.help',
       'layer.close',
@@ -338,28 +463,117 @@ describe('ShortcutService', () => {
     expect(press('r', { ctrlKey: true }).defaultPrevented).toBe(false)
     expect(press('F5').defaultPrevented).toBe(false)
     expect(press('f', { ctrlKey: true }).defaultPrevented).toBe(false)
+    expect(press('2', { ctrlKey: true }).defaultPrevented).toBe(false)
+    expect(press(',', { ctrlKey: true }).defaultPrevented).toBe(false)
     expect(press('ArrowLeft', { altKey: true }).defaultPrevented).toBe(false)
     expect(press('/').defaultPrevented).toBe(true)
     expect(press('?', { shiftKey: true }).defaultPrevented).toBe(true)
     expect(press('Escape').defaultPrevented).toBe(true)
   })
 
+  it.each([
+    { os: 'mac', build: 'browser' },
+    { os: 'other', build: 'browser' },
+    { os: 'mac', build: 'desktop' },
+    { os: 'other', build: 'desktop' },
+  ] as const)('takes R, 2 and , as Collect, Day and Settings: $os $build', async platform => {
+    const shortcuts = await setup(platform)
+    const collect = vi.fn()
+    const day = vi.fn()
+    const settings = vi.fn()
+    shortcuts.bind('app.collect', collect)
+    shortcuts.bind('view.day', day)
+    shortcuts.bind('app.settings', settings)
+
+    expect(press('r', { code: 'KeyR' }).defaultPrevented).toBe(true)
+    expect(press('2', { code: 'Digit2' }).defaultPrevented).toBe(true)
+    expect(press(',', { code: 'Comma' }).defaultPrevented).toBe(true)
+    // Not from a field: they type there.
+    expect(press('r', { code: 'KeyR' }, field()).defaultPrevented).toBe(false)
+
+    expect(collect).toHaveBeenCalledOnce()
+    expect(day).toHaveBeenCalledOnce()
+    expect(settings).toHaveBeenCalledOnce()
+  })
+
+  it('turns every single key off with the setting, and keeps the modified ones and Escape', async () => {
+    const shortcuts = await setup({ os: 'mac', build: 'desktop' })
+    const runs = {
+      collect: vi.fn(),
+      day: vi.fn(),
+      filter: vi.fn(),
+      help: vi.fn(),
+      close: vi.fn(),
+    }
+    shortcuts.bind('app.collect', runs.collect)
+    shortcuts.bind('view.day', runs.day)
+    shortcuts.bind('timeline.filter', runs.filter)
+    shortcuts.bind('app.help', runs.help)
+    shortcuts.bind('layer.close', runs.close)
+    expect(shortcuts.hint('timeline.filter')).toBe('/')
+
+    // Turned off elsewhere (the settings), read at the next key.
+    TestBed.inject(ShortcutPreferences).setCharacterKeys('off')
+
+    for (const [key, code] of [
+      ['r', 'KeyR'],
+      ['2', 'Digit2'],
+      ['/', 'Slash'],
+      ['?', 'Slash'],
+    ]) {
+      expect(press(key, { code }).defaultPrevented, key).toBe(false)
+    }
+    expect(press('r', { metaKey: true, code: 'KeyR' }).defaultPrevented).toBe(true)
+    expect(press('Escape').defaultPrevented).toBe(true)
+    expect(runs.collect).toHaveBeenCalledOnce()
+    expect(runs.close).toHaveBeenCalledOnce()
+    expect(runs.day).not.toHaveBeenCalled()
+    expect(runs.filter).not.toHaveBeenCalled()
+    expect(runs.help).not.toHaveBeenCalled()
+
+    // What names the keys drops them too.
+    expect(shortcuts.hint('app.collect')).toBe('⌘R')
+    expect(shortcuts.ariaKeys('app.collect')).toBe('Meta+R')
+    expect(shortcuts.hint('timeline.filter')).toBeNull()
+    expect(shortcuts.ariaKeys('app.help')).toBeNull()
+  })
+
+  it('keeps the setting on the device, for the next start and other tabs', async () => {
+    TestBed.inject(ShortcutPreferences).setCharacterKeys('off')
+    expect(localStorage.getItem('character-shortcuts')).toBe('off')
+    TestBed.resetTestingModule()
+
+    const shortcuts = await setup(BROWSER)
+    expect(shortcuts.hint('app.collect')).toBeNull()
+    TestBed.resetTestingModule()
+
+    // Anything else stored reads as on.
+    localStorage.setItem('character-shortcuts', 'sometimes')
+    expect((await setup(BROWSER)).hint('app.collect')).toBe('R')
+  })
+
   it('names the keys with ⌘ on macOS and Ctrl elsewhere, and none the build does not have', async () => {
     const mac = await setup({ os: 'mac', build: 'desktop' })
     expect(mac.hint('app.collect')).toBe('⌘R')
-    expect(mac.ariaKeys('app.collect')).toBe('Meta+R')
+    expect(mac.ariaKeys('app.collect')).toBe('Meta+R R')
     expect(mac.ariaKeys('app.back')).toBe('Meta+[')
     TestBed.resetTestingModule()
 
     const windows = await setup({ os: 'other', build: 'desktop' })
     expect(windows.hint('app.collect')).toBe('Ctrl+R')
-    expect(windows.ariaKeys('app.collect')).toBe('Control+R F5')
+    expect(windows.ariaKeys('app.collect')).toBe('Control+R F5 R')
     expect(windows.ariaKeys('app.back')).toBe('Alt+ArrowLeft')
-    TestBed.resetTestingModule()
 
+    // The app's tag shows its modified chord; the browser has only the key alone.
+    expect(windows.hint('view.day')).toBe('Ctrl+2')
+    expect(windows.ariaKeys('view.day')).toBe('Control+2 2')
+
+    TestBed.resetTestingModule()
     const browser = await setup({ os: 'mac', build: 'browser' })
-    expect(browser.hint('app.collect')).toBeNull()
-    expect(browser.ariaKeys('app.collect')).toBeNull()
+    expect(browser.hint('app.collect')).toBe('R')
+    expect(browser.ariaKeys('app.collect')).toBe('R')
+    expect(browser.hint('app.back')).toBeNull()
+    expect(browser.ariaKeys('app.back')).toBeNull()
     expect(browser.hint('timeline.filter')).toBe('/')
   })
 
@@ -434,27 +648,27 @@ describe('ShortcutService', () => {
     expect(shortcuts.triggerChord('mod+[')).toBe(true)
     expect(back).toHaveBeenCalledOnce()
     expect(collect).toHaveBeenCalledOnce()
-
-    // `/` is the Timeline's: from the menu it does nothing on another view.
-    const filter = vi.fn()
-    shortcuts.bind('timeline.filter', filter)
-    await TestBed.inject(Router).navigateByUrl('/day')
-    expect(shortcuts.triggerChord('/')).toBe(false)
-    expect(filter).not.toHaveBeenCalled()
   })
 
   it('resolves a chord to the entry of the scope on screen as the route changes', async () => {
-    const shortcuts = await setup()
-    const slash = shortcuts.resolve('/')
+    // The Timeline's own ⌘F beside the global one, as Work items' search will have.
+    const timelineFind: ShortcutEntry = {
+      id: 'timeline.filter',
+      label: 'Find in the Timeline',
+      scope: 'timeline',
+      chords: [{ keys: 'mod+f', whileTyping: true, menuAccelerator: true }],
+    }
+    const shortcuts = await setup(undefined, '/timeline', [...SHORTCUTS, timelineFind])
+    const find = shortcuts.resolve('mod+f')
     const collect = shortcuts.resolve('mod+r')
 
-    expect(slash()?.id).toBe('timeline.filter')
+    expect(find()?.label).toBe('Find in the Timeline')
     expect(collect()?.id).toBe('app.collect')
     await TestBed.inject(Router).navigateByUrl('/day')
-    expect(slash()).toBeNull()
-    shortcuts.openLayer({ kind: 'page', hidesRoute: true })
+    expect(find()?.id).toBe('app.filter')
+    shortcuts.openLayer(page('global'))
     await TestBed.inject(Router).navigateByUrl('/timeline')
-    expect(slash()).toBeNull()
+    expect(find()?.id).toBe('app.filter')
   })
 
   it('says, as signals change, whether an entry would run', async () => {

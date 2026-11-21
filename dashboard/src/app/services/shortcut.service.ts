@@ -8,17 +8,28 @@ import { concat, map, mergeMap, of, scan } from 'rxjs'
 import {
   type Build,
   type Chord,
+  type ChordsHere,
   SHORTCUT_SCOPES,
   SHORTCUTS,
   type ShortcutEntry,
   type ShortcutId,
   type ShortcutScope,
   chordsIn,
+  firesWhileTyping,
+  isMenuAccelerator,
   resolveChord,
   shortcut,
 } from '../models/shortcuts'
-import { type ChordKeys, type Os, ariaChord, chordOf, formatChord, osOf } from '../utils/key-chord'
+import {
+  type CommandChordKeys,
+  type Os,
+  ariaChord,
+  chordOf,
+  formatChord,
+  osOf,
+} from '../utils/key-chord'
 import { RuntimeEnvironmentService } from './backend/runtime-environment.service'
+import { ShortcutPreferences } from './shortcut-preferences.service'
 
 export interface ShortcutPlatform {
   readonly os: Os
@@ -50,12 +61,21 @@ export const SHORTCUT_SCOPE = 'shortcutScope'
 export const SHORTCUT_HELP_DIALOG_ID = 'shortcut-help'
 
 /**
- * What lies over the route: a `page` (a detail page or panel, the phone's Settings tab), which
- * binds its own Escape and Back and, when `hidesRoute`, leaves only `global` entries; or a
- * `modal` that owns the keyboard while it is open, as a dialog does (an open date picker).
+ * What lies over the route: a `page` (the details, the phone's Settings tab), which binds its own
+ * Escape and Back and, while it is on top, puts its `scope` on screen in place of the route's
+ * (`global`: none besides the global entries); or a `modal` that owns the keyboard while it is
+ * open, as a dialog does (an open date picker).
  */
 export type ShortcutLayer =
-  { readonly kind: 'page'; readonly hidesRoute: boolean } | { readonly kind: 'modal' }
+  | {
+      readonly kind: 'page'
+      readonly scope: ShortcutScope
+      /** Whether the page is the top one now (`TopLayer`), read as a signal. */
+      readonly onTop: () => boolean
+    }
+  | { readonly kind: 'modal' }
+
+type PageLayer = Extract<ShortcutLayer, { kind: 'page' }>
 
 interface Binding {
   readonly run: () => void | false
@@ -87,10 +107,18 @@ function isContentEditable(element: HTMLElement): boolean {
   return boundary !== null && boundary.getAttribute('contenteditable') !== 'false'
 }
 
-/** Where a key types: a text field, a select or editable content. */
+/**
+ * Widgets whose letters pick an item (typeahead): a Material select's host is a `combobox`, and
+ * its open list a `listbox`. They let the key through, so a letter there is typing.
+ */
+const TYPEAHEAD =
+  '[role="combobox"], [role="listbox"], [role="menu"], [role="menubar"], [role="tree"], [role="treegrid"], [role="grid"]'
+
+/** Where a key types: a text field, a select, a typeahead widget or editable content. */
 function isEditable(target: EventTarget | null): boolean {
   if (!(target instanceof HTMLElement)) return false
   if (isContentEditable(target)) return true
+  if (target.closest(TYPEAHEAD) !== null) return true
   if (target instanceof HTMLTextAreaElement || target instanceof HTMLSelectElement) return true
   return target instanceof HTMLInputElement && TEXT_INPUT_TYPES.has(target.type)
 }
@@ -125,6 +153,12 @@ function routeScopeOf(root: ActivatedRouteSnapshot): ShortcutScope {
 @Service()
 export class ShortcutService {
   private readonly platform = inject(SHORTCUT_PLATFORM)
+  private readonly preferences = inject(ShortcutPreferences)
+  /** Which chords work here: the platform's, and character keys while the setting has them on. */
+  private readonly here = computed<ChordsHere>(() => ({
+    ...this.platform,
+    characterKeys: this.preferences.characterKeys(),
+  }))
   private readonly table = inject(SHORTCUT_TABLE)
   private readonly router = inject(Router)
   private readonly dialogs = inject(MatDialog)
@@ -172,12 +206,16 @@ export class ShortcutService {
     return routeScopeOf(this.router.routerState.snapshot.root)
   })
 
-  /** The scope whose entries apply besides the global ones. */
-  readonly activeScope: Signal<ShortcutScope> = computed(() =>
-    this.layers().some(layer => layer.kind === 'page' && layer.hidesRoute)
-      ? 'global'
-      : this.routeScope()
-  )
+  /**
+   * The scope whose entries apply besides the global ones: the page's on top, else the latest
+   * page's (under a dialog), else the route's. `TopLayer` decides which page is on top, not the
+   * order they opened in: the phone's Settings tab may open under open details.
+   */
+  readonly activeScope: Signal<ShortcutScope> = computed(() => {
+    const pages = this.layers().filter((layer): layer is PageLayer => layer.kind === 'page')
+    const page = pages.find(layer => layer.onTop()) ?? pages.at(-1)
+    return page?.scope ?? this.routeScope()
+  })
 
   constructor() {
     // Bubbling, so a field or widget that handles a key first marks it handled. At once: a key
@@ -239,11 +277,11 @@ export class ShortcutService {
    * the typing rule of the chord it matches decide as for a key, and nothing runs while a key is
    * held (`held`).
    */
-  triggerChord(keys: ChordKeys): boolean {
+  triggerChord(keys: CommandChordKeys): boolean {
     // A held accelerator runs once, as a held key does.
     if (this.held) return false
     const match = this.match(keys)
-    if (match === null || (this.typing() && !match.chord.whileTyping)) return false
+    if (match === null || (this.typing() && !firesWhileTyping(match.chord))) return false
     return this.run(match.entry.id)
   }
 
@@ -264,7 +302,7 @@ export class ShortcutService {
   }
 
   /** The entry a press of `keys` runs here, following the scope on screen (a menu item's title). */
-  resolve(keys: ChordKeys): Signal<ShortcutEntry | null> {
+  resolve(keys: CommandChordKeys): Signal<ShortcutEntry | null> {
     return computed(() => this.match(keys)?.entry ?? null)
   }
 
@@ -280,16 +318,16 @@ export class ShortcutService {
 
   /** The entry a key press of `keys` would run here and now, with the chord it matched. */
   private match(keys: string): { readonly entry: ShortcutEntry; readonly chord: Chord } | null {
-    return resolveChord(this.table, { ...this.platform, scope: this.activeScope() }, keys)
+    return resolveChord(this.table, { ...this.here(), scope: this.activeScope() }, keys)
   }
 
   private typing(): boolean {
     return isEditable(this.document.activeElement)
   }
 
-  /** The chords of an entry here: on this platform, and in this build. */
+  /** The chords of an entry here: on this platform, in this build, with the single-key setting. */
   chords(entry: ShortcutEntry): readonly Chord[] {
-    return chordsIn(entry, this.platform.os, this.platform.build)
+    return chordsIn(entry, this.here())
   }
 
   /** The key tag of `id`, as its first chord here reads (`⌘R`); null where it has none. */
@@ -323,14 +361,14 @@ export class ShortcutService {
     const keys = chordOf(event, this.platform.os)
     const match = keys === null ? null : this.match(keys)
     if (match === null || this.menuTakes(match.chord)) return
-    if (isEditable(target) && !match.chord.whileTyping) return
+    if (isEditable(target) && !firesWhileTyping(match.chord)) return
     if (this.run(match.entry.id)) event.preventDefault()
   }
 
   /** Whether the installed macOS menu takes `chord` before the page (`menuOwnsAccelerators`). */
   private menuTakes(chord: Chord): boolean {
     return (
-      chord.menuAccelerator &&
+      isMenuAccelerator(chord) &&
       this.platform.os === 'mac' &&
       this.platform.build === 'desktop' &&
       this.menuOwnsAccelerators()

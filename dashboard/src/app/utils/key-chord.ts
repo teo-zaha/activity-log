@@ -9,12 +9,44 @@ import type { MenuKey } from '../generated/activity'
 /** Which keys the platform's shortcuts use: ⌘ on macOS (the browser there too), Ctrl elsewhere. */
 export type Os = 'mac' | 'other'
 
-/** The keys the registry names, as `KeyboardEvent.key` reads them, in lower case. */
-export type ChordKey =
-  'escape' | 'f5' | 'arrowleft' | '/' | '?' | '[' | ',' | '1' | '2' | '3' | '4' | 'f' | 'r'
+/**
+ * A key that types a character, WCAG 2.1.4's "letter, punctuation, number or symbol": a letter
+ * as the physical key it is on (`KeyboardEvent.code`), anything else as the character typed.
+ */
+export const CHARACTER_KEYS = [
+  '/',
+  '?',
+  '[',
+  ',',
+  '1',
+  '2',
+  '3',
+  '4',
+  'f',
+  'n',
+  'p',
+  'r',
+  't',
+] as const
+export type CharacterKey = (typeof CHARACTER_KEYS)[number]
+
+/** A key that types nothing, as `KeyboardEvent.key` names it, in lower case. */
+export type NamedKey = 'escape' | 'f5' | 'arrowleft'
+
+/** The keys the registry names. */
+export type ChordKey = CharacterKey | NamedKey
+
+/**
+ * A character key alone: it types, so it never fires while typing, is never a menu accelerator,
+ * and the single-key setting turns it off.
+ */
+export type CharacterChordKeys = CharacterKey
+
+/** A modifier and a key, or a named key alone. */
+export type CommandChordKeys = NamedKey | `${'mod' | 'alt'}+${ChordKey}`
 
 /** A chord the registry names: at most one modifier, then the key. */
-export type ChordKeys = ChordKey | `${'mod' | 'alt'}+${ChordKey}`
+export type ChordKeys = CharacterChordKeys | CommandChordKeys
 
 const MODIFIER_KEYS = new Set(['Alt', 'AltGraph', 'Control', 'Meta', 'Shift', 'OS'])
 
@@ -26,17 +58,24 @@ export function osOf(userAgent: string): Os {
   return /Mac|iPhone|iPad|iPod/.test(userAgent) ? 'mac' : 'other'
 }
 
+/** The Latin letter of a letter key's physical place (`KeyR`), whatever the layout types there. */
+const PHYSICAL_LETTER = /^Key([A-Z])$/
+
 /**
  * The chord a key press is, written as the registry writes chords: modifiers in a fixed order,
- * then the key. Shift counts only where it does not make the character (`?` is Shift+/ on many
- * layouts, and the registry names `?`); Ctrl on macOS and the Windows key elsewhere are named as
- * themselves, so no chord matches them. Null for a modifier alone or a key still being composed.
+ * then the key. A letter is read by its physical key, so `R` and ⌘R are where a Latin keyboard
+ * has them on a Cyrillic or Greek layout too; punctuation and digits by the character typed (`/`
+ * is Shift+7 on a German layout). Shift counts only where it does not make the character (`?` is
+ * Shift+/ on many layouts, and the registry names `?`); Ctrl on macOS and the Windows key
+ * elsewhere are named as themselves, so no chord matches them. Null for a modifier alone or a key
+ * still being composed.
  */
 export function chordOf(event: KeyboardEvent, os: Os): string | null {
   const key = event.key
   if (key === '' || MODIFIER_KEYS.has(key) || NO_KEY.has(key)) return null
   const character = key.length === 1
   const letter = character && key.toLowerCase() !== key.toUpperCase()
+  const physical = letter ? PHYSICAL_LETTER.exec(event.code)?.[1] : undefined
   const mod = os === 'mac' ? event.metaKey : event.ctrlKey
   const unused = os === 'mac' ? event.ctrlKey : event.metaKey
   const parts = [
@@ -44,13 +83,18 @@ export function chordOf(event: KeyboardEvent, os: Os): string | null {
     unused ? (os === 'mac' ? 'ctrl' : 'meta') : null,
     event.altKey ? 'alt' : null,
     event.shiftKey && (!character || letter) ? 'shift' : null,
-    key.toLowerCase(),
+    (physical ?? key).toLowerCase(),
   ]
   return parts.filter(part => part !== null).join('+')
 }
 
 function isChordKey(value: string): value is ChordKey {
   return Object.hasOwn(KEY_LABELS, value)
+}
+
+/** Whether `keys` is a character key alone, the chord kind that types. */
+export function isCharacterKeys(keys: ChordKeys): keys is CharacterChordKeys {
+  return CHARACTER_KEYS.some(key => key === keys)
 }
 
 /** A chord's modifier and key; the registry's keys hold no `+`, so the first one splits. */
@@ -74,7 +118,10 @@ const KEY_LABELS: Readonly<Record<ChordKey, string>> = {
   '3': '3',
   '4': '4',
   f: 'F',
+  n: 'N',
+  p: 'P',
   r: 'R',
+  t: 'T',
 }
 
 /** How a chord reads on a key tag and in the help: `⌘R` on macOS, `Ctrl+R` elsewhere. */
@@ -99,7 +146,10 @@ const ARIA_KEYS: Readonly<Record<ChordKey, string>> = {
   '3': '3',
   '4': '4',
   f: 'F',
+  n: 'N',
+  p: 'P',
   r: 'R',
+  t: 'T',
 }
 
 /** A chord as `aria-keyshortcuts` writes it: `Meta+R` on macOS, `Control+R` elsewhere. */
@@ -125,7 +175,10 @@ const MENU_KEYS: Readonly<Record<ChordKey, MenuKey | null>> = {
   '3': 'digit3',
   '4': 'digit4',
   f: 'f',
+  n: null,
+  p: null,
   r: 'r',
+  t: null,
 }
 
 /**
