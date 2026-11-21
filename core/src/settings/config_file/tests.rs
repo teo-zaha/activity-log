@@ -1,6 +1,5 @@
 use std::path::Path;
 
-use super::{ConfigEditError, ConfigError, ConfigFile};
 use crate::{
     model::{ConnectionId, Source},
     provider::{
@@ -10,6 +9,7 @@ use crate::{
         jira::JIRA_INSECURE,
         provider_config::ConfigSource,
     },
+    settings::{ConfigEditError, ConfigError, ConfigFile},
 };
 
 fn file(text: &str) -> ConfigFile {

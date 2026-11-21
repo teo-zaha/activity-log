@@ -13,10 +13,12 @@ use anyhow::anyhow;
 use toml_edit::{Item, Table, Value};
 
 use super::{
-    ConfigFile, INSTANCE, fresh_instance, provider_registry, set_instance, valid_instance,
+    ConfigFile, INSTANCE,
+    config_file::instances::{InstanceRead, fresh_instance, set_instance, valid_instance},
     warn_if_shared,
     write::{self, EditError},
 };
+use crate::provider::provider_registry;
 
 mod editor;
 #[cfg(test)]
@@ -257,8 +259,7 @@ fn reads_back(content: &[u8], fresh: &[(String, usize, String)]) -> bool {
     };
     let instances = file.instances();
     fresh.iter().all(|(kind, index, instance)| {
-        instances.get(&(kind.clone(), *index))
-            == Some(&super::InstanceRead::Valid(instance.clone()))
+        instances.get(&(kind.clone(), *index)) == Some(&InstanceRead::Valid(instance.clone()))
     })
 }
 
