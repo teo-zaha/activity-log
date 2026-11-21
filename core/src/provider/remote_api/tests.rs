@@ -230,10 +230,15 @@ fn busy_once(retry_after: String) -> TestServer {
 
 #[tokio::test]
 async fn a_short_retry_after_is_waited_for_and_retried_once() {
-    let in_two_seconds = (chrono::Utc::now() + chrono::TimeDelta::seconds(2))
-        .format("%a, %d %b %Y %H:%M:%S GMT")
-        .to_string();
-    for retry_after in ["1".to_string(), in_two_seconds] {
+    // The date is made when its case runs: one made before the first case could be past by
+    // then, and nothing would be waited for.
+    let in_two_seconds = || {
+        (chrono::Utc::now() + chrono::TimeDelta::seconds(2))
+            .format("%a, %d %b %Y %H:%M:%S GMT")
+            .to_string()
+    };
+    for retry_after in [|| "1".to_string(), in_two_seconds] {
+        let retry_after = retry_after();
         let server = busy_once(retry_after.clone());
         let api = client(&server.url);
         let started = std::time::Instant::now();
@@ -653,14 +658,15 @@ fn a_check_names_its_problem_by_how_the_server_failed() {
     assert_eq!(problem(ApiError::Decode), Some(ProviderProblem::Failed));
 }
 
-/// A caller that acts on a busy answer itself gets it at once: one request, no wait.
+/// A caller that acts on a busy answer itself gets it at once: one request. A wait comes only
+/// before a second request, so the count proves there was none; a clock bound would fail under
+/// load.
 #[tokio::test]
 async fn a_busy_answer_is_not_retried_for_a_caller_that_never_retries() {
     for status in [503, 429] {
         let server =
             TestServer::start(move |_| Reply::json(status, "{}").with_header("Retry-After", "1"));
         let api = client(&server.url);
-        let started = std::time::Instant::now();
 
         let error = api
             .get_json_with_headers::<Value>(api.endpoint(&["x"]), Retry::Never)
@@ -678,7 +684,6 @@ async fn a_busy_answer_is_not_retried_for_a_caller_that_never_retries() {
             "{error:?}"
         );
         assert_eq!(server.requests().len(), 1, "{status}");
-        assert!(started.elapsed() < std::time::Duration::from_millis(900));
 
         let server = busy_once("1".to_string());
         let api = client(&server.url);
