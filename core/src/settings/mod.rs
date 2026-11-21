@@ -45,7 +45,7 @@ pub mod view;
 mod write;
 
 pub use config_edit_error::{ConfigEditError, LoadError};
-pub use external::{ExternalEdit, ExternalEditError, edit_externally, editor_command};
+pub use external::{Editor, ExternalEdit, ExternalEditError, edit_externally};
 pub use precondition::{
     Conflict, ConflictKind, EditBase, FieldId, Precondition, check as check_precondition,
 };

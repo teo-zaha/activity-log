@@ -18,8 +18,11 @@ use super::{
     write::{self, EditError},
 };
 
+mod editor;
 #[cfg(test)]
 mod tests;
+
+pub use editor::Editor;
 
 #[derive(Debug)]
 pub enum ExternalEdit {
@@ -59,12 +62,6 @@ impl std::error::Error for ExternalEditError {
             Self::Failed(cause) | Self::Kept { cause, .. } => Some(cause),
         }
     }
-}
-
-/// The command to run the user's editor with: whatever it creates in the session folder
-/// (backups, swap files) is owner-only too.
-pub fn editor_command(program: &str) -> std::process::Command {
-    crate::platform::private_file::private_command(std::ffi::OsStr::new(program))
 }
 
 /// Copies the config file at `path` into a private session folder beside it, runs `editor` on

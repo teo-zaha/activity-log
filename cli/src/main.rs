@@ -10,7 +10,7 @@ use activity_log_core::{
     provider::{connection::ConnectionLocation, inspect_provider_runtimes_with},
     settings::{
         ConfigEditError, ConfigFile, EditError, ExternalEdit, FieldId, NO_LOCATION, Precondition,
-        edit_config, edit_externally, editor_command, load_connections,
+        Editor, edit_config, edit_externally, load_connections,
     },
 };
 use anyhow::{Result, anyhow};
@@ -274,22 +274,15 @@ fn edit_failure(err: EditError, label: impl Fn(&ConnectionId) -> Option<String>)
 
 fn edit_in_editor(config: Option<&Path>) -> Result<()> {
     let path = config_path(config)?;
-    let editor = std::env::var("VISUAL")
-        .or_else(|_| std::env::var("EDITOR"))
-        .unwrap_or_else(|_| {
-            if cfg!(target_os = "windows") {
-                "notepad".to_string()
-            } else {
-                "vi".to_string()
-            }
-        });
+    let editor = Editor::from_env();
     let outcome = edit_externally(&path, |copy| {
-        let status = editor_command(&editor)
+        let status = editor
+            .command()
             .arg(copy)
             .status()
-            .map_err(|err| anyhow!("Could not start {editor}: {err}"))?;
+            .map_err(|err| anyhow!("Could not start {}: {err}", editor.name()))?;
         if !status.success() {
-            anyhow::bail!("{editor} exited with {status}");
+            anyhow::bail!("{} exited with {status}", editor.name());
         }
         Ok(())
     })?;
