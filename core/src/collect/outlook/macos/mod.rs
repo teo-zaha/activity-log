@@ -7,7 +7,7 @@ use crate::{
     platform::macos::run_apple_script,
 };
 
-use super::{normalize_outlook_events, parse_outlook_columns};
+use super::{normalize::normalize_outlook_events, parse_outlook_columns};
 
 #[cfg(test)]
 mod tests;

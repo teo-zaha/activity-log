@@ -6,7 +6,7 @@ use crate::model::{
 
 use super::{
     OutlookFallback, busy_status_from_com, busy_status_from_mac, is_organizer_from_com,
-    normalize_outlook_events, parse_outlook_columns,
+    normalize::normalize_outlook_events, parse_outlook_columns,
 };
 
 /// Whole UTC days `since..=until`.

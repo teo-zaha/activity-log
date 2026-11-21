@@ -15,7 +15,8 @@ use crate::{
 use crate::provider::source_failure::SourceFailure;
 
 use super::{
-    OutlookFallback, busy_status_from_com, is_organizer_from_com, normalize_outlook_events,
+    OutlookFallback, busy_status_from_com, is_organizer_from_com,
+    normalize::normalize_outlook_events,
 };
 
 /// Guards against a collection that never ends, such as an unbounded recurrence.
