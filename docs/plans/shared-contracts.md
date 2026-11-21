@@ -1393,7 +1393,7 @@ One table of app shortcuts, one document listener and one resolution rule decide
 
 ```ts
 /** `global`, or the scope a route declares in `data.shortcutScope`. Slice 9 adds 'work-items'. */
-export const SHORTCUT_SCOPES = ['global', 'timeline'] as const // no 'calendar': the calendar views have no field
+export const SHORTCUT_SCOPES = ['global', 'timeline'] as const // the browser keys add 'calendar' and 'details' (UI decisions of 2026-11-21, Q4)
 export type ShortcutScope = (typeof SHORTCUT_SCOPES)[number]
 // `MenuSubmenu` ('app' | 'file' | 'edit' | 'view' | 'window' | 'help') is generated from Rust
 // (`core/src/model/menu/`), with `MENU_SUBMENUS`; see "As built (step 10a)" below.
@@ -1494,7 +1494,7 @@ The slice 8 and R-F14 tests, plus: a detached Timeline's `/` does not fire on a 
 
 ## 9. Not covered here; requirements on generic slices
 
-- **`detail-panel`** (R-F13, step 11): a component API from the layout design (CHANGE 3 and 4). Its shared parts are here: the URL and history rules (§7) and Escape as a stacked `layer.close` binding with `openLayer` (§8).
+- **`detail-panel`** (R-F13, generic slice 9, moved there from step 11 on 2026-11-21): a component API from the layout design (CHANGE 3 and 4). Its shared parts are here: the URL and history rules (§7) and Escape as a stacked `layer.close` binding with `openLayer` (§8).
 - **Slices 3 and 6** keep their own design review in `generic-read-step.md`; they must meet this document at these points (R2):
   - **Where the context is bound**: the desktop's `run_action` calls `Host::action_target(id)`, which first awaits the connection's **recorded** check and then reads the checked provider, the access policy and the `AccessContext` together under one state lock (§2). The read runs only against that `ActionTarget`, and the answer is tagged with that `context`. The context therefore always names the principal and policy the read actually used: a read started under A that waits for a check recording B runs as B and is tagged B.
   - **One executor, one refusal order** (D5): slice 3's `actions::run` takes the target instead of a bare runtime, `run(caller, &ActionTarget, ActionRequest) -> ActionResponse`, and keeps its refusal order for every caller: (1) the kind implements the capability → `Unsupported`; (2) `allow` → `NotAllowed`; (3) the origin's policy → `NotAllowed`; (4) the recorded check left it usable → `Unavailable` with the check's reason; (5) limits, then the provider. Because `action_target` returns a target for every known connection, usable or not, a known Jira connection with search off and an unusable check answers `NotAllowed` on the desktop and in the CLI alike, and an unsupported action on an unusable kind answers `Unsupported` in both.
