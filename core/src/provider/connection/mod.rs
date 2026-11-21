@@ -21,6 +21,16 @@ pub enum ConnectionLocation {
     Wsl(String),
 }
 
+impl ConnectionLocation {
+    /// The WSL distribution the connection reads, if it reads one.
+    pub fn wsl_distro(&self) -> Option<&str> {
+        match self {
+            Self::Wsl(distro) => Some(distro),
+            Self::Local => None,
+        }
+    }
+}
+
 /// How many connections a kind can have.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Instances {

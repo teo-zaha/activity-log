@@ -309,10 +309,7 @@ fn provider_info(adapter: &dyn ProviderAdapter, connection: &Connection) -> Prov
     ProviderInfo {
         connection: connection.id.clone(),
         label: connection.label.clone(),
-        wsl_distro: match &connection.location {
-            ConnectionLocation::Wsl(distro) => Some(distro.clone()),
-            ConnectionLocation::Local => None,
-        },
+        wsl_distro: connection.location.wsl_distro().map(str::to_string),
         status: ProviderStatus::Checking,
         usable: false,
         supported_os: adapter.supported_os().to_vec(),

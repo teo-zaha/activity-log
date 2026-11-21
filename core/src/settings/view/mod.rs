@@ -303,10 +303,7 @@ pub fn build_snapshot(
             Some(ProviderConfigConnectionStateDto {
                 connection: connection.id.clone(),
                 label: connection.label.clone(),
-                wsl_distro: match &connection.location {
-                    ConnectionLocation::Wsl(distro) => Some(distro.clone()),
-                    ConnectionLocation::Local => None,
-                },
+                wsl_distro: connection.location.wsl_distro().map(str::to_string),
                 fields: adapter
                     .config_requirements()
                     .iter()
