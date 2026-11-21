@@ -43,7 +43,9 @@ pub(super) fn adopt(child: &Child) -> std::io::Result<Tree> {
 }
 
 fn into_job(child: &Child) -> std::io::Result<Tree> {
-    let failed = |err: windows::core::Error| std::io::Error::other(err.to_string());
+    // The HRESULT as the error's OS code, not its text: `raw_os_error` reads it, and the message
+    // comes from Windows.
+    let failed = std::io::Error::from;
     unsafe {
         let tree = Tree(CreateJobObjectW(None, PCWSTR::null()).map_err(failed)?);
         let mut limits = JOBOBJECT_EXTENDED_LIMIT_INFORMATION::default();
@@ -63,7 +65,7 @@ fn into_job(child: &Child) -> std::io::Result<Tree> {
 /// Resumes the only thread of the suspended process `pid`, found in a snapshot of the threads.
 /// A failure leaves the process suspended, and `run_cancellable` kills it.
 fn resume(pid: u32) -> std::io::Result<()> {
-    let failed = |err: windows::core::Error| std::io::Error::other(err.to_string());
+    let failed = std::io::Error::from;
     unsafe {
         let snapshot = CreateToolhelp32Snapshot(TH32CS_SNAPTHREAD, 0).map_err(failed)?;
         let mut entry = THREADENTRY32 {

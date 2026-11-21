@@ -176,11 +176,19 @@ fn after_show<R: Runtime>(window: WebviewWindow<R>) {
         let deadline = Instant::now() + SHOW_WINDOW_FALLBACK;
         while !window.is_visible().unwrap_or(false) {
             if Instant::now() >= deadline {
-                let _ = window.show();
+                warn_if_failed("Showing the window", window.show());
                 break;
             }
             std::thread::sleep(SHOW_POLL);
         }
         window_state::restore_fullscreen(&window);
     });
+}
+
+/// Logs what a window or plugin call that failed was for: the app goes on without it, and the
+/// Logs pane says so.
+pub(crate) fn warn_if_failed<T, E: std::fmt::Display>(action: &str, result: Result<T, E>) {
+    if let Err(err) = result {
+        activity_log_core::diagnostics::warn("desktop", format!("{action} failed: {err}"));
+    }
 }

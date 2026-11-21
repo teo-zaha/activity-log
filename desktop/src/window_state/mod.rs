@@ -31,11 +31,17 @@ pub fn plugin<R: Runtime>() -> TauriPlugin<R> {
 
 /// Size, position and maximized, before the page shows the window.
 pub fn restore_before_show<R: Runtime>(window: &WebviewWindow<R>) {
-    let _ = window.restore_state(BEFORE_SHOW);
+    crate::warn_if_failed(
+        "Restoring the window's size and position",
+        window.restore_state(BEFORE_SHOW),
+    );
 }
 
 /// Fullscreen waits until the window is on screen: on macOS entering it needs the window's screen
 /// and can bring a hidden window up before its splash.
 pub fn restore_fullscreen<R: Runtime>(window: &WebviewWindow<R>) {
-    let _ = window.restore_state(StateFlags::FULLSCREEN);
+    crate::warn_if_failed(
+        "Restoring full screen",
+        window.restore_state(StateFlags::FULLSCREEN),
+    );
 }
