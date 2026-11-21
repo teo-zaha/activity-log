@@ -228,6 +228,37 @@ async fn refetches_days_a_version_5_writer_stored_unstamped() {
     );
 }
 
+/// Version-6 files hold GitLab entries without their project (`projectId`): their days are
+/// fetched again and the file is replaced, without a warning that it is unreadable.
+#[tokio::test]
+async fn refetches_days_a_version_6_writer_stored_without_projects() {
+    let (_dir, path) = cache_path();
+    let calls = RefCell::new(Vec::new());
+    collect(&path, range(10, 10), at(20, 9), &calls).await;
+    let mut older: serde_json::Value =
+        serde_json::from_str(&fs::read_to_string(&path).unwrap()).unwrap();
+    older["version"] = serde_json::json!(6);
+    fs::write(&path, older.to_string()).unwrap();
+
+    let entries = collect(&path, range(10, 10), at(20, 9), &calls).await;
+
+    assert_eq!(labels(&entries), ["day 10"]);
+    assert_eq!(
+        calls.borrow().len(),
+        2,
+        "the version-6 file must not be served"
+    );
+    let rewritten: serde_json::Value =
+        serde_json::from_str(&fs::read_to_string(&path).unwrap()).unwrap();
+    assert_eq!(rewritten["version"], serde_json::json!(super::FILE_VERSION));
+    let scope = ConnectionId::new(Source::Jira, "default").to_string();
+    assert!(
+        !crate::diagnostics::entries().iter().any(
+            |entry| entry.scope == scope && entry.message.contains(&path.display().to_string())
+        )
+    );
+}
+
 #[tokio::test]
 async fn refetches_days_from_a_file_of_an_older_version() {
     let (_dir, path) = cache_path();

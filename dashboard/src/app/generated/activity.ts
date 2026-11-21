@@ -172,6 +172,11 @@ title?: string,
  */
 targetType?: string, 
 /**
+ * The project the event is in (`project_id`): a merge request's or a comment's project is
+ * the merge request's target project. Absent when GitLab sends none.
+ */
+projectId?: number, 
+/**
  * The merge request the event is about, or the one a comment is on.
  */
 mrIid?: number, 
