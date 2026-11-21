@@ -1,5 +1,10 @@
 import { Service, computed, inject, type Signal } from '@angular/core'
-import type { ActivityEntry, ExportOutcome, OutputFormat } from '../generated/activity'
+import type {
+  ActivityEntry,
+  ExportOutcome,
+  ExportRequest,
+  OutputFormat,
+} from '../generated/activity'
 import { localDayRange } from '../utils/local-day'
 import { ActivityDataService } from './activity-data.service'
 import { ActivitySelection } from './activity-selection.service'
@@ -9,11 +14,8 @@ import { failure, failureWhile } from './failure'
 import { NoticeService } from './notice.service'
 import { ToastService } from './toast.service'
 
-/** The range `[start, end)` an export covers, as RFC 3339 instants. */
-interface ExportRange {
-  readonly start: string
-  readonly end: string
-}
+/** The range `[start, end)` an export covers, as the request carries it. */
+type ExportRange = Pick<ExportRequest, 'start' | 'end'>
 
 /**
  * Export of what the view on screen shows: the backend renders the file in the browser's time
