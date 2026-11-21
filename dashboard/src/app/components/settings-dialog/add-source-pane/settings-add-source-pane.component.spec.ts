@@ -8,9 +8,10 @@ import type {
   ProviderKindDto,
 } from '../../../generated/activity'
 import type { ReceiptStanding } from '../../../services/types'
-import { ActivityService } from '../../../services/activity.service'
+import { ActivityDataService } from '../../../services/activity-data.service'
 import { BackendFailure } from '../../../services/backend/backend-failure'
 import { RuntimeEnvironmentService } from '../../../services/backend/runtime-environment.service'
+import { ConnectionSettings } from '../../../services/connection-settings.service'
 import { providerInfo } from '../../../testing/activity-fixtures'
 import { SettingsAddSourcePaneComponent } from './settings-add-source-pane.component'
 
@@ -77,13 +78,10 @@ async function setup(
     on: { opened },
     providers: [
       {
-        provide: ActivityService,
-        useValue: {
-          loadProviderConfig,
-          addConnection,
-          receiptStanding,
-        },
+        provide: ConnectionSettings,
+        useValue: { loadProviderConfig, addConnection },
       },
+      { provide: ActivityDataService, useValue: { receiptStanding } },
       { provide: RuntimeEnvironmentService, useValue: { isTauri: (): boolean => desktop } },
     ],
   })
@@ -168,9 +166,10 @@ describe('SettingsAddSourcePaneComponent', () => {
     await render(SettingsAddSourcePaneComponent, {
       providers: [
         {
-          provide: ActivityService,
+          provide: ConnectionSettings,
           useValue: { loadProviderConfig, addConnection: vi.fn().mockRejectedValue(refused) },
         },
+        { provide: ActivityDataService, useValue: {} },
         { provide: RuntimeEnvironmentService, useValue: { isTauri: (): boolean => true } },
       ],
     })
@@ -190,9 +189,10 @@ describe('SettingsAddSourcePaneComponent', () => {
     await render(SettingsAddSourcePaneComponent, {
       providers: [
         {
-          provide: ActivityService,
+          provide: ConnectionSettings,
           useValue: { loadProviderConfig, addConnection: vi.fn().mockRejectedValue(refused) },
         },
+        { provide: ActivityDataService, useValue: {} },
         { provide: RuntimeEnvironmentService, useValue: { isTauri: (): boolean => true } },
       ],
     })

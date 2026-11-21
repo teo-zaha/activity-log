@@ -7,8 +7,8 @@ import { Router } from '@angular/router'
 import { Subject } from 'rxjs'
 import { describe, expect, it, vi } from 'vitest'
 import { provideAppRouter } from '../../app.routes'
-import { ActivityService } from '../../services/activity.service'
 import type { Notice } from '../../services/failure'
+import { NoticeService } from '../../services/notice.service'
 import { mockPhone } from '../../testing/media'
 import { SettingsDialogLauncher } from './settings-dialog-launcher.service'
 import type { SettingsDialogOpener } from './settings-dialog-opener.service'
@@ -34,7 +34,7 @@ async function setup(
       provideLocationMocks(),
       { provide: SettingsDialogLauncher, useClass: launcherClass },
       { provide: MatDialog, useValue: { open } },
-      { provide: ActivityService, useValue: { notice } },
+      { provide: NoticeService, useValue: { show: (shown: Notice): void => notice.set(shown) } },
     ],
   })
   const router = TestBed.inject(Router)

@@ -5,7 +5,8 @@ import { ButtonComponent } from '../../button/button.component'
 import type { AddConnectionRequestDto, ProviderKindDto } from '../../../generated/activity'
 import { type ConnectionKey, connectionKey } from '../../../providers/connection'
 import { UPCOMING_SOURCES, onlyOnLabel } from '../../../providers/source-catalog'
-import { ActivityService } from '../../../services/activity.service'
+import { ActivityDataService } from '../../../services/activity-data.service'
+import { ConnectionSettings } from '../../../services/connection-settings.service'
 import { type Failure, failureOf, refusedAs } from '../../../services/failure'
 import { RuntimeEnvironmentService } from '../../../services/backend/runtime-environment.service'
 import { ProviderIconComponent } from '../../provider-icon/provider-icon.component'
@@ -38,7 +39,8 @@ interface GitLocation {
   styleUrl: './settings-add-source-pane.component.scss',
 })
 export class SettingsAddSourcePaneComponent {
-  private readonly activity = inject(ActivityService)
+  private readonly data = inject(ActivityDataService)
+  private readonly settings = inject(ConnectionSettings)
   private readonly runtime = inject(RuntimeEnvironmentService)
 
   /** Emitted with the connection to open: the one just added, or the one a tile stands for. */
@@ -49,7 +51,7 @@ export class SettingsAddSourcePaneComponent {
 
   private readonly config = resource({
     params: () => (this.isDesktop ? true : undefined),
-    loader: () => this.activity.loadProviderConfig(),
+    loader: () => this.settings.loadProviderConfig(),
   })
   protected readonly loading = this.config.isLoading
   protected readonly loadError = computed(() => {
@@ -163,8 +165,8 @@ export class SettingsAddSourcePaneComponent {
     this.adding.set(tileId)
     this.error.set(null)
     try {
-      const response = await this.activity.addConnection(request)
-      const standing = this.activity.receiptStanding(response.installed)
+      const response = await this.settings.addConnection(request)
+      const standing = this.data.receiptStanding(response.installed)
       // The answer's snapshot shows only while nothing later is on screen; otherwise it is read
       // again. The new source opens only if the host on screen installed it: one that another
       // host answered, or that was written but never installed, would open as not found.

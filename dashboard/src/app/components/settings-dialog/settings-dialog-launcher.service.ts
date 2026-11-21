@@ -11,11 +11,10 @@ import {
   untracked,
 } from '@angular/core'
 import type { MatDialogRef } from '@angular/material/dialog'
-import { mediaQuery } from '@signality/core/browser/media-query'
-import { ActivityService } from '../../services/activity.service'
 import { ActivityViewStateService } from '../../services/activity-view-state.service'
+import { BreakpointState } from '../../services/breakpoint-state.service'
 import { failureWhile } from '../../services/failure'
-import { downQuery } from '../../utils/breakpoints'
+import { NoticeService } from '../../services/notice.service'
 import type { SettingsDialogOpener } from './settings-dialog-opener.service'
 import { type SettingsSelection, type SettingsTarget } from './settings-dialog.types'
 
@@ -31,10 +30,10 @@ import { type SettingsSelection, type SettingsTarget } from './settings-dialog.t
 @Service()
 export class SettingsDialogLauncher {
   private readonly injector = inject(Injector)
-  private readonly activity = inject(ActivityService)
+  private readonly notices = inject(NoticeService)
   private readonly viewState = inject(ActivityViewStateService)
   private readonly requested = computed(() => this.viewState.settings() !== null)
-  private readonly phone = mediaQuery(downQuery('phone'))
+  private readonly phone = inject(BreakpointState).phone
   private readonly host = signal<'dialog' | 'page' | null>(null)
   /** Whether the settings show as the phone's Settings tab rather than in the dialog. */
   readonly pageOpen = computed(() => this.host() === 'page')
@@ -98,7 +97,7 @@ export class SettingsDialogLauncher {
       // Only a dialog still wanted failed: the phone page shows without this code, and settings
       // the URL left meanwhile are closed already.
       if (this.host() !== 'dialog' || !this.requested()) return
-      this.activity.notice.set({
+      this.notices.show({
         origin: 'settings',
         failure: failureWhile('Loading the settings', error),
       })
