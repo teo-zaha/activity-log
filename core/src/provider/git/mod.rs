@@ -1,6 +1,6 @@
 mod config;
 #[cfg(any(target_os = "windows", test))]
-pub mod windows;
+mod windows;
 
 pub use config::*;
 
@@ -23,11 +23,18 @@ use crate::{
 /// The label of the Git connection for this computer's own repositories.
 pub const LOCAL_LABEL: &str = "This computer";
 
-#[cfg(target_os = "windows")]
-use self::windows as windows_impl;
 #[cfg(not(target_os = "windows"))]
-mod windows_impl {
+use self::fallback as imp;
+#[cfg(target_os = "windows")]
+use self::windows as imp;
+
+#[cfg(not(target_os = "windows"))]
+mod fallback {
     use crate::provider::{git::GitConfig, provider_check_result::ProviderCheckResult};
+
+    pub(super) fn default_wsl_distros() -> Vec<String> {
+        Vec::new()
+    }
 
     pub(super) fn check_wsl_ready(
         distro: &str,
@@ -36,6 +43,11 @@ mod windows_impl {
     ) -> ProviderCheckResult {
         ProviderCheckResult::unavailable(format!("WSL {distro} needs Windows"))
     }
+}
+
+/// The user's WSL distributions, offered for a new WSL connection; none off Windows.
+pub fn default_wsl_distros() -> Vec<String> {
+    imp::default_wsl_distros()
 }
 
 crate::provider! {
@@ -55,7 +67,7 @@ crate::provider! {
                 match location {
                     ConnectionLocation::Local => local_check_result(&config),
                     ConnectionLocation::Wsl(distro) => {
-                        windows_impl::check_wsl_ready(&distro, &config, cancelled)
+                        imp::check_wsl_ready(&distro, &config, cancelled)
                     }
                 }
             })
