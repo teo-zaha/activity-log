@@ -461,7 +461,7 @@ Run collections and manage `config.toml` without building the dashboard.
 | `--output <path>`   | Output file path (default: `logs/activity_log.json` or `.md`)             |
 | `--config <path>`   | Config file path (overrides `ACTIVITY_LOG_CONFIG` and default location)   |
 
-Dates are whole local days. In the current CLI, `--range week` and `--range lastweek` start on Sunday.
+Dates are whole local days. `--range week` and `--range lastweek` start on Monday, as in the dashboard.
 
 ```bash
 pnpm cli:collect --range week

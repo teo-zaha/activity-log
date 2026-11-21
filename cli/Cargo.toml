@@ -24,4 +24,5 @@ strum.workspace = true
 tokio.workspace = true
 
 [dev-dependencies]
+chrono-tz.workspace = true
 tempfile = "3.27"
