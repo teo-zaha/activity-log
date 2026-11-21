@@ -53,17 +53,21 @@ impl std::fmt::Display for ExportError {
 
 impl std::error::Error for ExportError {}
 
-/// The entries of `request` as a file: the range must be valid and the zone an IANA name.
-pub fn render_export_request(request: &ExportRequest) -> Result<ExportFile, ExportError> {
-    let tz = request
-        .time_zone
+/// The entries of `request` as a file: the range must be valid and the zone an IANA name. The
+/// request is taken whole, so its entries (up to 64 MiB of them) become the log without a copy.
+pub fn render_export_request(request: ExportRequest) -> Result<ExportFile, ExportError> {
+    let ExportRequest {
+        format,
+        start,
+        end,
+        time_zone,
+        entries,
+    } = request;
+    let tz = time_zone
         .parse::<Tz>()
-        .map_err(|_| ExportError::UnknownZone(request.time_zone.clone()))?;
-    let options = resolve_collect_options(&CollectRequest {
-        start: request.start.clone(),
-        end: request.end.clone(),
-    })
-    .map_err(ExportError::Range)?;
+        .map_err(|_| ExportError::UnknownZone(time_zone))?;
+    let options =
+        resolve_collect_options(&CollectRequest { start, end }).map_err(ExportError::Range)?;
     let log = ActivityLog {
         meta: ActivityLogMeta {
             generated: now_iso(),
@@ -71,10 +75,10 @@ pub fn render_export_request(request: &ExportRequest) -> Result<ExportFile, Expo
             end: options.end.to_rfc3339(),
             pending: Vec::new(),
         },
-        summary: summary_of(&request.entries),
-        entries: request.entries.clone(),
+        summary: summary_of(&entries),
+        entries,
     };
-    Ok(render_export(&log, request.format, &tz))
+    Ok(render_export(&log, format, &tz))
 }
 
 /// `activity-2026-11-16-2026-11-22.md`: the first and last local day of `[start, end)`.

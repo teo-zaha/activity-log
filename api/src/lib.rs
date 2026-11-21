@@ -210,7 +210,7 @@ async fn post_export(body: Data<'_>) -> Answer<ExportFile> {
     };
     answer(
         Status::Ok,
-        render_export_request(&request).map_err(BackendError::from),
+        render_export_request(request).map_err(BackendError::from),
     )
 }
 
