@@ -1,5 +1,3 @@
-use std::collections::HashSet;
-
 use anyhow::{Result, anyhow, bail};
 use chrono::Days;
 use serde::Deserialize;
@@ -8,9 +6,12 @@ use crate::{
     diagnostics,
     model::{CollectOptions, GitLabEntry, GitLabTag, GitLabType, Timestamp},
     provider::{
-        gitlab::{GitLabConfig, api::GitLabApi},
+        gitlab::{
+            GitLabConfig,
+            api::{GitLabApi, PageError, PagedRow, Pager},
+        },
         provider_context::ProviderContext,
-        remote_api::is_path_segment,
+        remote_api::{Retry, Unmetered, is_path_segment},
         remote_error::RemoteFailure,
     },
 };
@@ -55,45 +56,25 @@ pub async fn collect_gitlab(
         .append_pair("before", &before)
         .append_pair("per_page", &PAGE_SIZE.to_string())
         .append_pair("page", "1");
-    let mut next = Some(url);
-    let mut asked = HashSet::new();
-    let mut collected = HashSet::new();
-
-    // Pages follow GitLab's pagination headers, not the number of rows a page holds.
-    while let Some(url) = next.take() {
-        if !asked.insert(url.to_string()) {
-            bail!(PagesRepeated);
-        }
-        // A page that is no JSON list fails the collection; a row that is no event is skipped.
-        let (rows, following) =
-            api.get_page::<Vec<serde_json::Value>>(url)
-                .await
-                .map_err(|error| RemoteFailure {
-                    service: GitLabApi::SERVICE.into(),
-                    error,
-                })?;
-        // An event already collected is not read twice (a new event can shift GitLab's offsets
-        // by one); a page that brings nothing new would repeat without end.
-        let (mut events, mut new) = (0, 0);
-        for row in rows {
-            let Ok(event) = serde_json::from_value::<GitLabEvent>(row) else {
-                skipped += 1;
-                continue;
-            };
-            events += 1;
-            if !collected.insert(event.id) {
-                continue;
-            }
-            new += 1;
+    // Pages follow GitLab's pagination headers, not the number of rows a page holds. A page
+    // that is no JSON list fails the collection; a row that is no event is skipped.
+    let mut pager = Pager::new(&api, url, Retry::OnceShort, &Unmetered);
+    while let Some(page) = pager.next_page::<GitLabEvent>().await {
+        let page = page.map_err(|error| match error {
+            PageError::Request(error) => anyhow::Error::new(RemoteFailure {
+                service: GitLabApi::SERVICE.into(),
+                error,
+            }),
+            PageError::Repeated => anyhow::Error::new(PagesRepeated),
+            PageError::Refused(never) => match never {},
+        })?;
+        skipped += page.skipped;
+        for event in page.rows {
             let entry = map_gitlab_event(event);
             if options.contains(entry.timestamp.utc()) {
                 entries.push(entry);
             }
         }
-        if events > 0 && new == 0 {
-            bail!(PagesRepeated);
-        }
-        next = following;
     }
 
     if skipped > 0 {
@@ -119,6 +100,12 @@ pub(crate) struct GitLabEvent {
     target_iid: Option<u64>,
     push_data: Option<PushData>,
     note: Option<Note>,
+}
+
+impl PagedRow for GitLabEvent {
+    fn row_id(&self) -> u64 {
+        self.id
+    }
 }
 
 #[derive(Debug, Deserialize)]

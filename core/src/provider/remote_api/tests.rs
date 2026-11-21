@@ -2,12 +2,15 @@ use reqwest::{StatusCode, Url, header::HeaderName};
 use serde_json::Value;
 
 use super::{
-    RemoteClient, SetupError, follows, identity_check, identity_from,
+    RemoteClient, Retry, SetupError, follows, identity_check, identity_from,
     test_server::{Reply, TestServer, closed_port},
 };
 use crate::{
     model::{IdentityEvidence, ProviderProblem, ProviderStatus, RemoteIdentity},
-    provider::{http_client_builder, remote_error::ApiError},
+    provider::{
+        http_client_builder,
+        remote_error::{ApiError, OAuthRefusal},
+    },
 };
 
 const TOKEN: &str = "example-token";
@@ -303,6 +306,7 @@ async fn a_long_retry_after_is_returned_not_waited_for() {
             status: StatusCode::TOO_MANY_REQUESTS,
             message: String::new(),
             retry_after: Some(30),
+            refusal: None,
         }
     );
     assert_eq!(server.requests().len(), 1);
@@ -322,6 +326,7 @@ async fn a_second_busy_answer_is_not_retried_again() {
         error,
         ApiError::Status {
             retry_after: Some(1),
+            refusal: None,
             ..
         }
     ));
@@ -554,6 +559,7 @@ fn checks_map_identity_answers() {
             status,
             message: message.to_string(),
             retry_after: None,
+            refusal: None,
         })
     };
     let denied = identity_check(
@@ -624,6 +630,7 @@ fn a_check_names_its_problem_by_how_the_server_failed() {
         status,
         message: String::new(),
         retry_after: None,
+        refusal: None,
     };
     let problem = |answer: ApiError| identity_check("Jira", Err(answer)).outcome.problem();
     assert_eq!(
@@ -644,4 +651,72 @@ fn a_check_names_its_problem_by_how_the_server_failed() {
         Some(ProviderProblem::Failed)
     );
     assert_eq!(problem(ApiError::Decode), Some(ProviderProblem::Failed));
+}
+
+/// A caller that acts on a busy answer itself gets it at once: one request, no wait.
+#[tokio::test]
+async fn a_busy_answer_is_not_retried_for_a_caller_that_never_retries() {
+    for status in [503, 429] {
+        let server =
+            TestServer::start(move |_| Reply::json(status, "{}").with_header("Retry-After", "1"));
+        let api = client(&server.url);
+        let started = std::time::Instant::now();
+
+        let error = api
+            .get_json_with_headers::<Value>(api.endpoint(&["x"]), Retry::Never)
+            .await
+            .unwrap_err();
+
+        assert!(
+            matches!(
+                error,
+                ApiError::Status {
+                    retry_after: Some(1),
+                    ..
+                }
+            ),
+            "{error:?}"
+        );
+        assert_eq!(server.requests().len(), 1, "{status}");
+        assert!(started.elapsed() < std::time::Duration::from_millis(900));
+
+        let server = busy_once("1".to_string());
+        let api = client(&server.url);
+        let answer = api
+            .get_json_with_headers::<Value>(api.endpoint(&["x"]), Retry::OnceShort)
+            .await
+            .unwrap();
+        assert_eq!(answer.0["ok"], true);
+        assert_eq!(server.requests().len(), 2);
+    }
+}
+
+/// A refusal keeps the OAuth error code its answer named, from the challenge or the body.
+#[tokio::test]
+async fn a_refusal_keeps_its_oauth_code() {
+    let server = TestServer::start(|request| match request.path() {
+        "/body" => Reply::json(
+            403,
+            r#"{"error":"insufficient_scope","error_description":"x"}"#,
+        ),
+        "/challenge" => Reply::json(401, r#"{"message":"401 Unauthorized"}"#).with_header(
+            "WWW-Authenticate",
+            r#"Bearer realm="GitLab", error="invalid_token""#,
+        ),
+        _ => Reply::json(403, r#"{"message":"403 Forbidden"}"#),
+    });
+    let api = client(&server.url);
+    let refusal = |path: &'static str| {
+        let api = &api;
+        async move {
+            match api.get_json::<Value>(api.endpoint(&[path])).await {
+                Err(ApiError::Status { refusal, .. }) => refusal,
+                other => panic!("{other:?}"),
+            }
+        }
+    };
+
+    assert_eq!(refusal("body").await, Some(OAuthRefusal::InsufficientScope));
+    assert_eq!(refusal("challenge").await, Some(OAuthRefusal::InvalidToken));
+    assert_eq!(refusal("plain").await, None);
 }

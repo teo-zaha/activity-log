@@ -114,6 +114,7 @@ async fn request_feed(url: Url) -> Result<(String, reqwest::Response)> {
             status,
             message: String::new(),
             retry_after: None,
+            refusal: None,
         })
         .into());
     }

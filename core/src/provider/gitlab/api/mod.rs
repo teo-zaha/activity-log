@@ -1,5 +1,9 @@
 //! The GitLab REST client used by the startup check and the collector.
 
+mod pager;
+
+pub(crate) use pager::{PageError, PagedRow, Pager};
+
 use reqwest::{Url, header::HeaderName};
 use serde::de::DeserializeOwned;
 
@@ -7,7 +11,7 @@ use crate::{
     model::RemoteIdentity,
     provider::{
         gitlab::GitLabConfig,
-        remote_api::{IdField, RemoteClient, SetupError, identity_from},
+        remote_api::{IdField, RemoteClient, Retry, SetupError, identity_from},
         remote_error::ApiError,
     },
 };
@@ -43,11 +47,16 @@ impl GitLabApi {
 
     /// One page of a paged list, and the URL of the next as GitLab names it: `x-next-page`
     /// (empty on the last page), else a `Link` header's `rel="next"`; `None` when there is none.
-    pub(crate) async fn get_page<T: DeserializeOwned>(
+    /// Lists are read through [`Pager`].
+    async fn get_page<T: DeserializeOwned>(
         &self,
         url: Url,
+        retry: Retry,
     ) -> Result<(T, Option<Url>), ApiError> {
-        let (page, headers) = self.remote.get_json_with_headers(url.clone()).await?;
+        let (page, headers) = self
+            .remote
+            .get_json_with_headers(url.clone(), retry)
+            .await?;
         Ok((page, next_page(&url, &headers)))
     }
 

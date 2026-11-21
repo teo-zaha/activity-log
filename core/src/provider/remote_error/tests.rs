@@ -1,6 +1,9 @@
-use reqwest::StatusCode;
+use reqwest::{
+    StatusCode,
+    header::{HeaderMap, HeaderValue, WWW_AUTHENTICATE},
+};
 
-use super::{ApiError, remote_message};
+use super::{ApiError, OAuthRefusal, remote_message};
 
 const TOKEN: &str = "glpat-example-secret";
 
@@ -99,6 +102,7 @@ fn messages_name_the_service_and_never_a_url() {
         status,
         message: message.to_string(),
         retry_after: None,
+        refusal: None,
     };
     assert_eq!(
         status(StatusCode::BAD_GATEWAY, "").message("Jira"),
@@ -123,5 +127,94 @@ fn messages_name_the_service_and_never_a_url() {
     assert_eq!(
         ApiError::Decode.message("Jira"),
         "Jira sent an answer Activity Log could not read"
+    );
+}
+
+fn challenges(values: &[&str]) -> HeaderMap {
+    let mut headers = HeaderMap::new();
+    for value in values {
+        headers.append(WWW_AUTHENTICATE, HeaderValue::from_str(value).unwrap());
+    }
+    headers
+}
+
+/// The OAuth error code is read from the body's `error` field as the protocol code it is; a
+/// code RFC 6750 does not define, or none, names no refusal.
+#[test]
+fn an_oauth_refusal_is_read_from_the_body() {
+    let none = HeaderMap::new();
+    for (body, refusal) in [
+        (
+            r#"{"error":"insufficient_scope","error_description":"The request requires higher privileges.","scope":"api read_api"}"#,
+            Some(OAuthRefusal::InsufficientScope),
+        ),
+        (
+            r#"{"error":"invalid_token"}"#,
+            Some(OAuthRefusal::InvalidToken),
+        ),
+        (
+            r#"{"error":"invalid_request"}"#,
+            Some(OAuthRefusal::InvalidRequest),
+        ),
+        (r#"{"error":"Insufficient_Scope"}"#, None),
+        (r#"{"error":"insufficient_scope "}"#, None),
+        (r#"{"error":"server_error"}"#, None),
+        (r#"{"error":{"code":"insufficient_scope"}}"#, None),
+        (r#"{"message":"insufficient_scope"}"#, None),
+        (r#"{"error_description":"insufficient_scope"}"#, None),
+        ("<html>insufficient_scope</html>", None),
+        ("", None),
+    ] {
+        assert_eq!(OAuthRefusal::of_answer(&none, body), refusal, "{body}");
+    }
+}
+
+#[test]
+fn an_oauth_refusal_is_read_from_the_bearer_challenge() {
+    for (values, refusal) in [
+        (
+            &[
+                r#"Bearer realm="GitLab", error="insufficient_scope", error_description="The request requires higher privileges than provided by the access token.""#,
+            ][..],
+            Some(OAuthRefusal::InsufficientScope),
+        ),
+        (
+            &[r#"bearer error=invalid_token"#][..],
+            Some(OAuthRefusal::InvalidToken),
+        ),
+        (
+            &[r#"Bearer error_description="error=\"invalid_token\"", error="insufficient_scope""#]
+                [..],
+            Some(OAuthRefusal::InsufficientScope),
+        ),
+        (
+            &[
+                r#"Basic realm="x", error="invalid_token""#,
+                r#"Bearer error="insufficient_scope""#,
+            ][..],
+            Some(OAuthRefusal::InsufficientScope),
+        ),
+        (&[r#"Basic error="invalid_token""#][..], None),
+        (&[r#"Bearer realm="GitLab""#][..], None),
+        (&[r#"Bearer error="unknown_code""#][..], None),
+        (&[r#"Bearer error="insufficient_scope"#][..], None),
+    ] {
+        assert_eq!(
+            OAuthRefusal::of_answer(&challenges(values), ""),
+            refusal,
+            "{values:?}"
+        );
+    }
+}
+
+/// The challenge is the header the RFC defines; the body only stands in for it.
+#[test]
+fn the_challenge_comes_before_the_body() {
+    assert_eq!(
+        OAuthRefusal::of_answer(
+            &challenges(&[r#"Bearer error="invalid_token""#]),
+            r#"{"error":"insufficient_scope"}"#
+        ),
+        Some(OAuthRefusal::InvalidToken)
     );
 }
