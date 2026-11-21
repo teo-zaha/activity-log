@@ -150,6 +150,19 @@ svg.i.sm{width:15px;height:15px}svg.i.xs{width:13px;height:13px}
 .qs{display:flex;align-items:center;gap:8px;height:40px;padding:0 12px;border:1px solid var(--border);border-radius:13px;background:var(--surface);font-size:13px;color:var(--text-tertiary)}
 .srcl{display:flex;flex-direction:column;gap:5px}
 .srcl div{display:flex;align-items:center;gap:7px;font-size:12px;padding:6px 8px;border:1px solid var(--hairline);border-radius:10px;background:var(--surface)}
+
+/* Decided layer (2026-11-21), added beside the original content */
+.layer-banner{display:flex;gap:14px;align-items:flex-start;margin:0 0 22px;padding:14px 18px;border-radius:16px;background:#fff;border:2px solid #0d9488;box-shadow:0 2px 10px rgba(13,148,136,.12);font-size:13.5px;line-height:1.45;color:#3d4756;max-width:1280px}
+.layer-banner .stamp{flex-shrink:0;padding:5px 10px;border-radius:999px;background:#0d9488;color:#fff;font:800 11px/1.2 Inter,system-ui,sans-serif;letter-spacing:.06em;text-transform:uppercase}
+.layer-banner b{color:#0f1623}.layer-banner h3{margin:0 0 4px;font-size:15px;color:#0f1623}
+.layer-banner ul{margin:6px 0 0;padding-left:18px}.layer-banner li{margin:3px 0}
+.layer-banner a{color:#2563eb;font-weight:600}
+.layer-banner .src{display:inline-flex;align-items:center;height:18px;padding:0 7px;border-radius:6px;font:800 10px/1 Inter,system-ui,sans-serif;letter-spacing:.05em;text-transform:uppercase;vertical-align:1px}
+.layer-banner .src.a{background:#dbeafe;color:#1e40af}.layer-banner .src.b{background:#fef3c7;color:#92400e}.layer-banner .src.c{background:#f3e8ff;color:#6b21a8}.layer-banner .src.l{background:#ccfbf1;color:#115e59}
+.layer-banner .stt{display:inline-flex;align-items:center;height:18px;padding:0 7px;border-radius:999px;font:700 10px/1 Inter,system-ui,sans-serif;letter-spacing:.04em;text-transform:uppercase;border:1px solid currentColor;vertical-align:1px}
+.layer-banner .stt.ok{color:#15803d}.layer-banner .stt.ch{color:#1d4ed8}.layer-banner .stt.def{color:#b45309}.layer-banner .stt.rej{color:#b91c1c}
+.layer-banner .grid2{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:4px 26px}
+@media (max-width:760px){.layer-banner{flex-direction:column}.layer-banner .grid2{grid-template-columns:1fr}}
 </style></head>
 <body><svg width="0" height="0" style="position:absolute" aria-hidden="true">
 <symbol id="brand" viewBox="0 0 24 24"><path d="M3 16l5-6 4 4 8-9"/></symbol>
@@ -194,6 +207,19 @@ svg.i.sm{width:15px;height:15px}svg.i.xs{width:13px;height:13px}
 <div class="page">
 <header class="doc"><h1>C · Workspace with agent</h1><nav><a href="index.html">← Overview</a><a href="a-views-grow.html">A</a><a href="b-command.html">B</a><a href="shared-write-flow.html">Shared: access &amp; confirm</a></nav></header>
 <p class="lede">The calendar becomes the place for time: each day column shows what happened (solid), what was booked (hatched) and what is proposed (dashed). A docked <b>tray</b> on the right holds three tabs. <b>Inbox</b> has drafts from the agent and from you, waiting for review. <b>Items</b> is Jira search and the item detail. <b>Time</b> has totals, attendance and timers. While the tray is open the sidebar folds to the rail, so the week keeps its width.</p>
+<section class="layer-banner" aria-label="Decided layer, 2026-11-21"><span class="stamp">Decided 2026-11-21</span><div><h3>This page is kept as drawn. C gives the direction mix its calendar look, review screens and several agent pieces.</h3><p style="margin:0">Added beside the original; nothing below changed. See <a href="decided-2026-11-21.html">Decided (2026-11-21): the direction mix</a>.</p>
+<div class="grid2"><ul>
+<li><span class="stt ok">Adopted</span> solid, hatched and dashed for done, booked and drafted time, with new marks for tentative (lighter fill and a label) and free (faint outline) meetings (Q2).</li>
+<li><span class="stt ok">Adopted</span> the day header: logged of present with its bar; meeting time as a second line (Q3).</li>
+<li><span class="stt ok">Adopted</span> lanes in Week and Work week once Time exists; the Day view keeps one column (Q11).</li>
+<li><span class="stt ok">Adopted</span> the review cards and the draft-opening screen (pins 4, 7–10), inside A's Review view (Q1); Edit, an audited Discard and a typed “no longer valid” card (Q10).</li>
+<li><span class="stt ok">Adopted</span> the legend, “No agent connected · Set up” and a “from agent” badge (Q13).</li>
+</ul><ul>
+<li><span class="stt def">Deferred</span> the docked tray (Inbox, Items, Time) with the agent activity feed, the status line and Pause.</li>
+<li><span class="stt rej">Rejected</span> the sidebar folding to the rail while the tray is open (pin 6), and the tray's tabs as phone tabs (Inbox, Items, More).</li>
+<li><span class="stt ch">Changed</span> “Inbox” is named <b>Review</b> everywhere (Q18); Review on a phone is a page, not a sheet (Q8).</li>
+<li><span class="stt ch">Changed</span> drafts come from the agent and from you (“Save for later”), each marked by origin (Q7).</li>
+</ul></div></div></section>
 
 <div class="caption"><span class="tag">Screen 1</span>Work week with logged time per day, and the agent's drafts waiting in the tray</div>
 <div class="screen">
