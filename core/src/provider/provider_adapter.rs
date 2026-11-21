@@ -72,4 +72,19 @@ pub trait ProviderAdapter: Send + Sync {
         options: CollectOptions,
         context: ProviderContext,
     ) -> BoxFuture<'_, anyhow::Result<Vec<ActivityEntry>>>;
+
+    /// Adds what is true now, not on the entries' days, to one connection's collected entries,
+    /// such as change stacks. Runs after the day cache on every collection, so nothing it adds
+    /// is cached. It keeps its own deadline and cannot fail: what it cannot find stays absent
+    /// and is logged. It may change entries' fields but cannot add, drop or reorder them, and
+    /// it writes them only once it is done looking (no await in between), so a caller that
+    /// stops it leaves each entry as it was or as written. Runs inside the caller's future:
+    /// it spawns nothing, so dropping it stops every request it sent.
+    fn annotate<'a>(
+        &'a self,
+        _entries: &'a mut [ActivityEntry],
+        _context: ProviderContext,
+    ) -> BoxFuture<'a, ()> {
+        Box::pin(async {})
+    }
 }

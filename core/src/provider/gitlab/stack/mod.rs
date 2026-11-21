@@ -1,7 +1,11 @@
 //! GitLab's side of change stacks: a project's open merge requests, read through `GitLabApi`
-//! and handed to the host-neutral walk as [`OpenChange`]s.
+//! and handed to the host-neutral walk as [`OpenChange`]s, and each merge request event's
+//! stack written on its entry ([`annotate`]).
 
-use std::sync::atomic::{AtomicUsize, Ordering};
+use std::{
+    collections::HashMap,
+    sync::atomic::{AtomicUsize, Ordering},
+};
 
 use futures::{FutureExt, future::BoxFuture};
 use reqwest::StatusCode;
@@ -9,15 +13,101 @@ use url::Origin;
 
 use crate::{
     collect::change_stack::{
-        Budget, ChangeLookup, FailureKind, LookupCause, LookupFailure, OpenChange, OpenPage,
-        web_link,
+        Budget, ChangeLookup, ChangeRef, FailureKind, LookupCause, LookupFailure, OpenChange,
+        OpenPage, change_stacks, web_link,
     },
+    diagnostics,
+    model::{ActivityEntry, ChangeStack, GitLabEntry},
     provider::{
-        gitlab::api::{GitLabApi, MergeRequestFilter, MergeRequestRow, PageError, Pager},
+        gitlab::{
+            GitLabConfig,
+            api::{GitLabApi, MergeRequestFilter, MergeRequestRow, PageError, Pager},
+        },
+        provider_context::ProviderContext,
         remote_api::Retry,
         remote_error::{ApiError, OAuthRefusal},
     },
 };
+
+/// Writes on every GitLab entry the stack of the merge request it is about, as GitLab has it
+/// now, and clears it where there is none: on a push (which folds into a commit), on an event
+/// about no open merge request, and on one whose stack could not be read. Every stack is looked
+/// up first and then written in one pass without an await, so stopping it leaves each entry as
+/// it was or as written.
+pub(crate) async fn annotate(entries: &mut [ActivityEntry], context: ProviderContext) {
+    let wanted: Vec<_> = entries
+        .iter()
+        .filter_map(|entry| match entry {
+            ActivityEntry::GitLab(entry) => Some((change_of(entry)?, entry.timestamp.utc())),
+            _ => None,
+        })
+        .collect();
+    let stacks = if wanted.is_empty() {
+        HashMap::new()
+    } else {
+        look_up(wanted, &context).await
+    };
+    for entry in entries.iter_mut() {
+        if let ActivityEntry::GitLab(entry) = entry {
+            entry.change_stack = change_of(entry).and_then(|change| stacks.get(&change).cloned());
+        }
+    }
+}
+
+/// The merge request an entry is about, in its project; none for a push.
+fn change_of(entry: &GitLabEntry) -> Option<ChangeRef<u64>> {
+    if entry.entry_type.is_push() {
+        return None;
+    }
+    Some(ChangeRef {
+        repo: entry.project_id?,
+        number: entry.mr_iid?,
+    })
+}
+
+/// The stacks of `wanted`'s merge requests, within one collection's budget, with what was not
+/// found logged.
+async fn look_up(
+    wanted: Vec<(ChangeRef<u64>, chrono::DateTime<chrono::Utc>)>,
+    context: &ProviderContext,
+) -> HashMap<ChangeRef<u64>, ChangeStack> {
+    let config = match context.config::<GitLabConfig>() {
+        Ok(config) => config,
+        Err(err) => {
+            diagnostics::warn("gitlab", format!("Change stacks skipped: {err:#}"));
+            return HashMap::new();
+        }
+    };
+    let api = match GitLabApi::new(config) {
+        Ok(api) => api,
+        Err(err) => {
+            diagnostics::warn(
+                "gitlab",
+                format!("Change stacks skipped: {}", err.reason(GitLabApi::SERVICE)),
+            );
+            return HashMap::new();
+        }
+    };
+    let lookup = GitLabChanges::new(&api);
+    let budget = Budget::for_collection();
+    let report = change_stacks(wanted, &lookup, &budget).await;
+    report.log("gitlab", GitLabApi::SERVICE);
+    let skipped = lookup.skipped();
+    if skipped > 0 {
+        diagnostics::warn(
+            "gitlab",
+            format!(
+                "Change stacks: skipped {skipped} {} GitLab sent that could not be read",
+                if skipped == 1 {
+                    "merge request"
+                } else {
+                    "merge requests"
+                }
+            ),
+        );
+    }
+    report.stacks
+}
 
 /// Requests in flight at once for one connection.
 const CONCURRENCY: usize = 4;

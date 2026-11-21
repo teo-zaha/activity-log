@@ -41,13 +41,6 @@ pub(crate) enum Retry {
     OnceShort,
     /// Never: the busy answer is the caller's to act on at once (a change stack lookup stops
     /// all its requests on the first).
-    #[cfg_attr(
-        not(test),
-        expect(
-            dead_code,
-            reason = "the GitLab change stack lookup sends it (plan step 16, stage 5)"
-        )
-    )]
     Never,
 }
 

@@ -1,12 +1,5 @@
 pub(crate) mod api;
 mod config;
-#[cfg_attr(
-    not(test),
-    expect(
-        dead_code,
-        reason = "GitLab's `annotate` uses it (plan step 16, stage 6)"
-    )
-)]
 mod stack;
 
 pub use config::*;
@@ -40,6 +33,14 @@ crate::provider! {
 
         fn instances(&self) -> crate::provider::connection::Instances {
             crate::provider::connection::Instances::Multiple
+        }
+
+        fn annotate<'a>(
+            &'a self,
+            entries: &'a mut [crate::model::ActivityEntry],
+            context: crate::provider::provider_context::ProviderContext,
+        ) -> futures::future::BoxFuture<'a, ()> {
+            Box::pin(stack::annotate(entries, context))
         }
     }
 }

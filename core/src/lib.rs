@@ -33,6 +33,11 @@ use runtime::report::{
 
 // Keeps one stuck provider from leaving the whole app in the collecting state.
 const COLLECT_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(120);
+/// How long a connection's `annotate` may take: its own deadline is `STACK_BUDGET` (change
+/// stacks), so this only stops an adapter that overruns it. Entries are only lent to it, so
+/// none is lost when it is stopped.
+const ANNOTATE_TIMEOUT: std::time::Duration =
+    collect::change_stack::STACK_BUDGET.saturating_add(std::time::Duration::from_secs(2));
 
 /// Collects connections whose startup checks are done, such as the CLI's: the report says how
 /// each one ended, `RunReport::project` makes the log.
@@ -220,7 +225,32 @@ async fn collect_connection(
             ),
         ),
     }
+    // After the day cache and outside the collection's own timeout: what it adds is true now,
+    // never cached, and a slow or failed lookup costs the connection none of its entries.
+    let result = match result {
+        Ok(mut entries) => {
+            annotate(&runtime, &mut entries).await;
+            Ok(entries)
+        }
+        Err(failure) => Err(failure),
+    };
     Step::Collected(index, result)
+}
+
+/// `runtime.annotate(entries)`, stopped once it overruns [`ANNOTATE_TIMEOUT`].
+async fn annotate(runtime: &ProviderRuntime, entries: &mut [ActivityEntry]) {
+    if tokio::time::timeout(ANNOTATE_TIMEOUT, runtime.annotate(entries))
+        .await
+        .is_err()
+    {
+        diagnostics::warn(
+            runtime.id().to_string(),
+            format!(
+                "Stopped looking up what is current (such as change stacks) after {} s; the entries show without it",
+                ANNOTATE_TIMEOUT.as_secs()
+            ),
+        );
+    }
 }
 
 /// Hands the finished connections of `source` to their kind's `finish_kind` step, in connection
