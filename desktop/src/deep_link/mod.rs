@@ -96,8 +96,13 @@ pub(crate) fn setup<R: Runtime>(app: &AppHandle<R>) {
             format!("Registering {SCHEME}: links failed: {err}"),
         );
     }
-    if let Ok(Some(urls)) = deep_link.get_current() {
-        receive(app, urls);
+    match deep_link.get_current() {
+        Ok(Some(urls)) => receive(app, urls),
+        Ok(None) => {}
+        Err(err) => diagnostics::warn(
+            "desktop",
+            format!("Reading the link that launched the app failed: {err}"),
+        ),
     }
     let handle = app.clone();
     deep_link.on_open_url(move |event| receive(&handle, event.urls()));
@@ -140,9 +145,9 @@ pub(crate) fn show_main_window<R: Runtime>(app: &AppHandle<R>) {
     let Some(window) = app.get_webview_window(MAIN_WINDOW) else {
         return;
     };
-    let _ = window.show();
-    let _ = window.unminimize();
-    let _ = window.set_focus();
+    crate::warn_if_failed("Showing the window", window.show());
+    crate::warn_if_failed("Restoring the minimized window", window.unminimize());
+    crate::warn_if_failed("Focusing the window", window.set_focus());
 }
 
 /// Brings the window to the front only if it is already on screen.
@@ -150,7 +155,7 @@ fn focus_main_window_if_visible<R: Runtime>(app: &AppHandle<R>) {
     if let Some(window) = app.get_webview_window(MAIN_WINDOW)
         && window.is_visible().unwrap_or(false)
     {
-        let _ = window.set_focus();
+        crate::warn_if_failed("Focusing the window", window.set_focus());
     }
 }
 
