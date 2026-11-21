@@ -14,8 +14,9 @@ use serde::de::DeserializeOwned;
 use crate::{
     model::{IdentityEvidence, ProviderProblem, RemoteIdentity},
     provider::{
-        provider_check_result::ProviderCheckResult, provider_runtime::check_time_left,
-        remote_error::ApiError,
+        provider_check_result::ProviderCheckResult,
+        provider_runtime::check_time_left,
+        remote_error::{ApiError, OAuthRefusal},
     },
 };
 
@@ -31,6 +32,42 @@ const ERROR_BODY_LIMIT: usize = 16 * 1024;
 const ERROR_BODY_WAIT: Duration = Duration::from_secs(3);
 /// Time a startup check keeps for answering once its error body is given up.
 const CHECK_MARGIN: Duration = Duration::from_millis(100);
+
+/// Whether a busy answer (429, 503) is sent again.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum Retry {
+    /// Once, when the server asks to wait at most `MAX_RETRY_WAIT_SECONDS`: a collection's own
+    /// requests and the startup checks.
+    OnceShort,
+    /// Never: the busy answer is the caller's to act on at once (a change stack lookup stops
+    /// all its requests on the first).
+    #[cfg_attr(
+        not(test),
+        expect(
+            dead_code,
+            reason = "the GitLab change stack lookup sends it (plan step 16, stage 5)"
+        )
+    )]
+    Never,
+}
+
+/// What a paged read spends before each request it sends.
+pub(crate) trait RequestBudget {
+    /// Why no further request may be sent.
+    type Refusal;
+    fn try_spend(&self) -> Result<(), Self::Refusal>;
+}
+
+/// No limit on requests: a collection reads every page of its own list.
+pub(crate) struct Unmetered;
+
+impl RequestBudget for Unmetered {
+    type Refusal = std::convert::Infallible;
+
+    fn try_spend(&self) -> Result<(), Self::Refusal> {
+        Ok(())
+    }
+}
 
 /// Why a client could not be set up from a connection's values.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -129,18 +166,21 @@ impl RemoteClient {
 
     /// GETs `url` (from `endpoint`) and reads its JSON answer. `Decode` means the whole answer
     /// arrived and is not the expected JSON; a body that breaks off is a transfer failure.
+    /// A busy answer is retried once ([`Retry::OnceShort`]).
     pub(crate) async fn get_json<T: DeserializeOwned>(&self, url: Url) -> Result<T, ApiError> {
-        self.get_json_with_headers(url)
+        self.get_json_with_headers(url, Retry::OnceShort)
             .await
             .map(|(value, _)| value)
     }
 
-    /// [`Self::get_json`], with the answer's headers (a paged API names its next page there).
+    /// [`Self::get_json`], with the answer's headers (a paged API names its next page there),
+    /// retrying a busy answer as `retry` says.
     pub(crate) async fn get_json_with_headers<T: DeserializeOwned>(
         &self,
         url: Url,
+        retry: Retry,
     ) -> Result<(T, reqwest::header::HeaderMap), ApiError> {
-        let response = self.get(url).await?;
+        let response = self.get(url, retry).await?;
         let headers = response.headers().clone();
         let body = response
             .bytes()
@@ -150,7 +190,7 @@ impl RemoteClient {
         Ok((value, headers))
     }
 
-    async fn get(&self, url: Url) -> Result<Response, ApiError> {
+    async fn get(&self, url: Url, retry: Retry) -> Result<Response, ApiError> {
         // Only `endpoint` builds URLs, so this holds; it keeps the credentials at home if a
         // caller ever changes that.
         if url.origin() != self.base.origin() {
@@ -170,16 +210,21 @@ impl RemoteClient {
                 return Ok(response);
             }
             let retry_after = retry_after(response.headers(), Utc::now());
-            if !retried && let Some(wait) = retry_wait(status, retry_after) {
+            if retry == Retry::OnceShort
+                && !retried
+                && let Some(wait) = retry_wait(status, retry_after)
+            {
                 retried = true;
                 tokio::time::sleep(Duration::from_secs(wait)).await;
                 continue;
             }
+            let headers = response.headers().clone();
             let body = error_body(response).await;
             return Err(ApiError::Status {
                 status,
                 message: crate::provider::remote_error::remote_message(&body, &[&self.secret]),
                 retry_after,
+                refusal: OAuthRefusal::of_answer(&headers, &body),
             });
         }
     }

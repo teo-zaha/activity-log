@@ -193,6 +193,7 @@ impl ProviderAdapter for Fake {
                         status: reqwest::StatusCode::UNAUTHORIZED,
                         message: String::new(),
                         retry_after: None,
+                        refusal: None,
                     },
                 });
             }

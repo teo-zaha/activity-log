@@ -1,7 +1,10 @@
 //! The one boundary remote failures pass on their way to the Logs pane, the settings and the
 //! CLI: short messages, never a URL, a secret or raw control text.
 
-use reqwest::{StatusCode, Url};
+use reqwest::{
+    StatusCode, Url,
+    header::{HeaderMap, WWW_AUTHENTICATE},
+};
 use serde_json::Value;
 
 use crate::model::ProviderProblem;
@@ -13,12 +16,13 @@ const REDACTED: &str = "[redacted]";
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ApiError {
     /// The server answered, but not with success. `message` is the server's own explanation,
-    /// already cleaned by `remote_message` (empty when it gave none); `retry_after` is its
-    /// `Retry-After` in seconds.
+    /// already cleaned by `remote_message` (empty when it gave none), for people only;
+    /// `retry_after` is its `Retry-After` in seconds; `refusal` the OAuth error code it named.
     Status {
         status: StatusCode,
         message: String,
         retry_after: Option<u64>,
+        refusal: Option<OAuthRefusal>,
     },
     Timeout,
     Unreachable,
@@ -68,6 +72,99 @@ impl ApiError {
             Self::Unreachable => format!("Could not reach {service}"),
             Self::Decode => format!("{service} sent an answer Activity Log could not read"),
         }
+    }
+}
+
+/// The error code of an OAuth 2.0 bearer token refusal (RFC 6750 §3.1), a protocol code like a
+/// status: GitLab names it in the body's `error` field and in
+/// `WWW-Authenticate: Bearer error="…"`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum OAuthRefusal {
+    /// The request was malformed.
+    InvalidRequest,
+    /// The token is expired, revoked or otherwise not valid.
+    InvalidToken,
+    /// The token lacks the scope the request needs (a GitLab token with `read_user` only).
+    InsufficientScope,
+}
+
+impl OAuthRefusal {
+    /// The code an error answer names: in its `WWW-Authenticate` bearer challenge, else in its
+    /// body's `error` field. A code RFC 6750 does not define names none.
+    pub(crate) fn of_answer(headers: &HeaderMap, body: &str) -> Option<Self> {
+        headers
+            .get_all(WWW_AUTHENTICATE)
+            .iter()
+            .filter_map(|value| value.to_str().ok())
+            .find_map(bearer_error)
+            .or_else(|| {
+                serde_json::from_str::<Value>(body)
+                    .ok()?
+                    .get("error")?
+                    .as_str()
+                    .and_then(Self::of_code)
+            })
+    }
+
+    fn of_code(code: &str) -> Option<Self> {
+        match code {
+            "invalid_request" => Some(Self::InvalidRequest),
+            "invalid_token" => Some(Self::InvalidToken),
+            "insufficient_scope" => Some(Self::InsufficientScope),
+            _ => None,
+        }
+    }
+}
+
+/// The `error` parameter of a `Bearer` challenge (`Bearer realm="x", error="invalid_token"`),
+/// as a code RFC 6750 defines.
+fn bearer_error(challenge: &str) -> Option<OAuthRefusal> {
+    let challenge = challenge.trim_start();
+    let (scheme, params) = challenge.split_at(challenge.find(' ').unwrap_or(challenge.len()));
+    if !scheme.eq_ignore_ascii_case("bearer") {
+        return None;
+    }
+    auth_params(params)
+        .into_iter()
+        .find(|(name, _)| name.eq_ignore_ascii_case("error"))
+        .and_then(|(_, value)| OAuthRefusal::of_code(&value))
+}
+
+/// `name=value` and `name="quoted \" value"` pairs separated by commas (RFC 9110 §11.2); a
+/// pair that does not fit ends the list.
+fn auth_params(text: &str) -> Vec<(String, String)> {
+    let mut params = Vec::new();
+    let mut chars = text.chars().peekable();
+    loop {
+        while chars
+            .next_if(|ch| ch.is_whitespace() || *ch == ',')
+            .is_some()
+        {}
+        let name: String = std::iter::from_fn(|| {
+            chars.next_if(|ch| *ch != '=' && *ch != ',' && !ch.is_whitespace())
+        })
+        .collect();
+        while chars.next_if(|ch| ch.is_whitespace()).is_some() {}
+        if name.is_empty() || chars.next() != Some('=') {
+            return params;
+        }
+        while chars.next_if(|ch| ch.is_whitespace()).is_some() {}
+        let mut value = String::new();
+        if chars.next_if_eq(&'"').is_some() {
+            loop {
+                match chars.next() {
+                    Some('"') => break,
+                    Some('\\') => value.extend(chars.next()),
+                    Some(ch) => value.push(ch),
+                    None => return params,
+                }
+            }
+        } else {
+            value.extend(std::iter::from_fn(|| {
+                chars.next_if(|ch| *ch != ',' && !ch.is_whitespace())
+            }));
+        }
+        params.push((name, value));
     }
 }
 
