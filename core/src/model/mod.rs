@@ -1,5 +1,6 @@
 pub mod activity;
 pub mod calendar;
+pub mod change_stack;
 pub mod common;
 pub mod diagnostics;
 pub mod git;
@@ -27,6 +28,11 @@ pub use calendar::{
     busy_status::BusyStatus, calendar_entry::CalendarEntry, description_block::DescriptionBlock,
     list_item::ListItem, meeting_body::MeetingBody, meeting_weight::MeetingWeight,
     text_segment::TextSegment,
+};
+pub use change_stack::{
+    ChangeStack, change_stack_above::ChangeStackAbove, change_stack_bottom::ChangeStackBottom,
+    change_stack_end::ChangeStackEnd, change_stack_node::ChangeStackNode, stack_cut::StackCut,
+    stacked_change::StackedChange,
 };
 pub use common::{
     add_connection_request_dto::AddConnectionRequestDto,

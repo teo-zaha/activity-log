@@ -30,6 +30,7 @@ fn push_at(commit_to: &str, timestamp: &str) -> ActivityEntry {
         note_file: None,
         note_resolved: None,
         pushed_commit: Some(commit_to.to_string()),
+        change_stack: None,
     })
 }
 
@@ -326,6 +327,7 @@ fn gitlab_push(commit_to: &str) -> GitLabEntry {
         note_file: None,
         note_resolved: None,
         pushed_commit: Some(commit_to.to_string()),
+        change_stack: None,
     }
 }
 
