@@ -11,6 +11,7 @@ import {
   longDayLabel,
   monthLabel,
   relativeDayLabel,
+  wallClock,
 } from './local-day'
 
 // Expectations are built with local `Date` constructors, so they hold in any time zone.
@@ -75,5 +76,28 @@ describe('labels', () => {
     expect(keysWithin(keys, '2026-11-17', '2026-11-17')).toEqual(['2026-11-17'])
     expect(keysWithin(keys, '2026-11-17', null)).toEqual(['2026-11-17', '2026-11-18'])
     expect(keysWithin(keys, null, null)).toEqual(keys)
+  })
+})
+
+describe('wallClock', () => {
+  it('reads the local clock without a zone', () => {
+    expect(wallClock(new Date(2026, 10, 17, 14, 5, 40).getTime())).toEqual({
+      day: '2026-11-17',
+      minutes: 14 * 60 + 5,
+    })
+  })
+
+  it('reads the clock of a zone across both daylight saving changes', () => {
+    const berlin = (iso: string): ReturnType<typeof wallClock> =>
+      wallClock(Date.parse(iso), 'Europe/Berlin')
+
+    // Spring forward: 02:00 CET is 03:00 CEST.
+    expect(berlin('2027-03-28T00:30:00Z')).toEqual({ day: '2027-03-28', minutes: 90 })
+    expect(berlin('2027-03-28T01:30:00Z')).toEqual({ day: '2027-03-28', minutes: 210 })
+    // Fall back: 02:30 shows twice, an hour apart.
+    expect(berlin('2026-10-25T00:30:00Z')).toEqual({ day: '2026-10-25', minutes: 150 })
+    expect(berlin('2026-10-25T01:30:00Z')).toEqual({ day: '2026-10-25', minutes: 150 })
+    // Midnight starts the next day.
+    expect(berlin('2026-11-16T23:00:00Z')).toEqual({ day: '2026-11-17', minutes: 0 })
   })
 })
