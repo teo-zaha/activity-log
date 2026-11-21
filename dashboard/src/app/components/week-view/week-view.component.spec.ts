@@ -9,6 +9,8 @@ import { ActivityService } from '../../services/activity.service'
 import { meetingWeightOf } from '../../testing/activity-fixtures'
 import type { ViewMode } from '../../utils/app-url'
 import { addDaysToKey, type DayKey } from '../../utils/local-day'
+import { MIN_BLOCK_HEIGHT } from '../calendar/calendar-grid'
+import { CALENDAR_TIME_ZONE } from '../calendar/calendar-time-zone'
 import { WeekViewComponent } from './week-view.component'
 
 // Tuesday 17 November 2026, 09:41 local time; the week runs Mon 16 to Sun 22.
@@ -78,9 +80,15 @@ function mockActivity(
   }
 }
 
-async function renderWeek(activity: WeekActivityMock): Promise<RenderResult<WeekViewComponent>> {
+async function renderWeek(
+  activity: WeekActivityMock,
+  timeZone?: string
+): Promise<RenderResult<WeekViewComponent>> {
   return render(WeekViewComponent, {
-    providers: [{ provide: ActivityService, useValue: activity }],
+    providers: [
+      { provide: ActivityService, useValue: activity },
+      { provide: CALENDAR_TIME_ZONE, useValue: timeZone },
+    ],
   })
 }
 
@@ -190,5 +198,30 @@ describe('WeekViewComponent', () => {
     expect(new Set(bars.map(bar => bar.style.top)).size).toBe(2)
     expect(rowOf('Mon night')).toBe(rowOf('Wed night'))
     expect(rowOf('Tue night')).not.toBe(rowOf('Mon night'))
+  })
+
+  it('ends a block on the row of its end time on a daylight saving day', async () => {
+    // 28 March 2027 in Berlin: 01:30 CET to 03:30 CEST is one real hour, two on the clock.
+    const night = createEntryAdapter({
+      source: 'calendar',
+      connection: 'work',
+      id: 'night',
+      timestamp: '2027-03-28T00:30:00Z',
+      title: 'Night deploy',
+      durationMinutes: 60,
+      meetingWeight: 'busy',
+    })
+    await renderWeek(mockActivity([night], '2027-03-28'), 'Europe/Berlin')
+
+    const block = screen.getByRole('button', { name: 'Open event: Night deploy' })
+    expect(block.style.top).toBe(`${1.5 * 64}px`)
+    expect(block.style.height).toBe(`${2 * 64}px`)
+  })
+
+  it('draws short meetings at the calendar’s minimum height', async () => {
+    await renderWeek(mockActivity([meeting('Check-in', 16, 9, 5)]))
+
+    const block = screen.getByRole('button', { name: 'Open event: Check-in' })
+    expect(block.style.height).toBe(`${MIN_BLOCK_HEIGHT}px`)
   })
 })
