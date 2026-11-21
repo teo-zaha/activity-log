@@ -5,7 +5,7 @@ import { EntryUiAdapter, ProviderUiAdapterDefinition } from '../types'
 /** The user's role in the event; none when Outlook did not say. */
 function roleOf(entry: OutlookEntry): MeetingRole | null {
   if (entry.isOrganizer === undefined) return null
-  return entry.isOrganizer ? 'Organizer' : 'Attendee'
+  return entry.isOrganizer ? 'organizer' : 'attendee'
 }
 
 class OutlookEntryUiAdapter extends EntryUiAdapter<OutlookEntry> {
