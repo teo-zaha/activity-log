@@ -509,7 +509,7 @@ fn a_walk_ends_once_it_is_cancelled() {
     let cancelled = AtomicBool::new(false);
     let mut visited = 0;
 
-    let walked = super::visit_git_dir_input(root.path(), &cancelled, &mut |_| {
+    let walked = super::visit_git_dir_input(root.path(), None, &cancelled, &mut |_| {
         visited += 1;
         // The run is stopped while the walk is at its second repository.
         if visited == 2 {
