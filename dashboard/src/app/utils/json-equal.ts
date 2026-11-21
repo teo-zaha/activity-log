@@ -14,12 +14,11 @@ export function jsonEqual(a: unknown, b: unknown): boolean {
     return true
   }
   if (Array.isArray(b)) return false
-  const left = a as Record<string, unknown>
-  const right = b as Record<string, unknown>
-  const keys = Object.keys(left)
-  if (keys.length !== Object.keys(right).length) return false
-  for (const key of keys) {
-    if (!(key in right) || !jsonEqual(left[key], right[key])) return false
+  const left: [string, unknown][] = Object.entries(a)
+  const right = new Map<string, unknown>(Object.entries(b))
+  if (left.length !== right.size) return false
+  for (const [key, value] of left) {
+    if (!right.has(key) || !jsonEqual(value, right.get(key))) return false
   }
   return true
 }
