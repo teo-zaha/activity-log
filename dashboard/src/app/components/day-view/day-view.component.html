@@ -2,8 +2,8 @@
   <!-- Navigation -->
   <div class="cal-nav">
     <div class="cal-heading">
-      <h2 class="cal-title" [class.is-today]="isToday(activity.selectedDay())">
-        {{ formatDayHeader(activity.selectedDay()) }}
+      <h2 class="cal-title" [class.is-today]="isToday()">
+        {{ title() }}
       </h2>
       @if (meetingTimeParts(); as parts) {
         <p
@@ -79,93 +79,33 @@
   <!-- Grid -->
   <div class="cal-scroll" #scrollEl>
     <!-- All-day banner row for multi-day events -->
-    @if (multiDayEntries().length) {
+    @if (allDay().bars.length) {
       <div class="cal-sticky-header">
-        <div class="cal-allday-row" [style.height.px]="allDayRowHeight()">
-          <div class="time-gutter-allday"></div>
-          <div class="allday-bars">
-            @for (item of allDayEntries(); track item.key) {
-              <button
-                type="button"
-                [class]="eventClass('cal-allday-bar', item.entry)"
-                [attr.data-src]="item.entry.styleKey"
-                [style.left]="item.left"
-                [style.right]="item.right"
-                [style.width]="item.width"
-                [style.top.px]="item.top"
-                [style.height.px]="item.height"
-                (click)="selectEntry(item.entry)"
-                [attr.aria-label]="eventAriaLabel(item.entry)"
-              >
-                <mat-icon class="cal-event-icon">event</mat-icon>
-                <span class="cal-event-title">{{ item.entry.title }}</span>
-              </button>
-            }
-          </div>
-        </div>
+        <app-calendar-all-day-row [row]="allDay()" (openEvent)="openEvent($event)" />
       </div>
     }
 
-    @if (dayLayout().length === 0 && multiDayEntries().length === 0) {
+    @if (isEmpty()) {
       <div class="u-floating-hint" role="status"><span>No activity on this day</span></div>
     }
 
     <div class="cal-grid" #gridEl [style.height.px]="gridHeight()">
-      <!-- Hour labels + lines -->
-      @for (hour of hours; track hour) {
-        <div
-          class="hour-slot"
-          [style.top.px]="hour * activity.hourHeight()"
-          [style.height.px]="activity.hourHeight()"
-        >
-          <span class="hour-label" [class.is-covered]="nowLine()?.coveredHour === hour">{{
-            formatHour(hour)
-          }}</span>
-          <div class="hour-line"></div>
-        </div>
-      }
+      <app-calendar-hours
+        [hourHeight]="activity.hourHeight()"
+        [coveredHour]="nowLine()?.coveredHour ?? null"
+      />
 
-      <!-- Events column -->
       <div class="events-col">
         @if (nowLine(); as now) {
-          <div class="now-line" [style.top.px]="now.top" aria-hidden="true">
-            <span class="now-label">{{ now.label }}</span>
-          </div>
+          <span class="now-label" [style.top.px]="now.top" aria-hidden="true">{{ now.label }}</span>
         }
-        @for (item of dayLayout(); track item.key) {
-          @if (item.kind === 'overflow') {
-            <button
-              type="button"
-              class="cal-overflow"
-              [style.top.px]="item.top"
-              [style.height.px]="item.height"
-              [style.left]="item.style.left"
-              [style.width]="item.style.width"
-              [style.right]="item.style.right"
-              (click)="selectOverflow(item.entries)"
-              [attr.aria-label]="overflowAriaLabel(item.entries)"
-            >
-              <mat-icon class="cal-event-icon">more_horiz</mat-icon>
-              <span class="cal-event-title">+{{ item.entries.length }}</span>
-            </button>
-          } @else {
-            <button
-              type="button"
-              [class]="eventClass('cal-event', item.entry)"
-              [attr.data-src]="item.entry.styleKey"
-              [style.top.px]="item.top"
-              [style.height.px]="item.height"
-              [style.left]="item.style.left"
-              [style.width]="item.style.width"
-              [style.right]="item.style.right"
-              (click)="selectEntry(item.entry)"
-              [attr.aria-label]="eventAriaLabel(item.entry)"
-            >
-              <mat-icon class="cal-event-icon">{{ item.entry.entryIcon }}</mat-icon
-              ><span class="cal-event-title">{{ item.entry.title }}</span>
-            </button>
-          }
-        }
+        <app-calendar-day-column
+          class="day-col"
+          [column]="column()"
+          [now]="nowLine()"
+          (openEvent)="openEvent($event)"
+          (openGroup)="openGroup($event)"
+        />
       </div>
     </div>
   </div>

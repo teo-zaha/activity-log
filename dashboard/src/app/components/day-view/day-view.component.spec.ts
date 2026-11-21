@@ -7,6 +7,8 @@ import { createEntryAdapter } from '../../providers/provider-adapter'
 import type { EntryUiAdapter } from '../../providers/types'
 import { ActivityService } from '../../services/activity.service'
 import { meetingWeightOf } from '../../testing/activity-fixtures'
+import { MIN_BLOCK_HEIGHT } from '../calendar/calendar-grid'
+import { CALENDAR_TIME_ZONE } from '../calendar/calendar-time-zone'
 import { DayViewComponent } from './day-view.component'
 
 function meeting(
@@ -145,5 +147,42 @@ describe('DayViewComponent', () => {
     fixture.detectChanges()
     expect(activity.hourHeight()).toBe(32)
     expect(zoomOut.hasAttribute('disabled')).toBe(true)
+  })
+
+  it('ends a block on the row of its end time on a daylight saving day', async () => {
+    // 28 March 2027 in Berlin: 01:30 CET to 03:30 CEST is one real hour, two on the clock.
+    const night = createEntryAdapter({
+      source: 'calendar',
+      connection: 'work',
+      id: 'night',
+      timestamp: '2027-03-28T00:30:00Z',
+      title: 'Night deploy',
+      durationMinutes: 60,
+      meetingWeight: 'busy',
+    })
+    await render(DayViewComponent, {
+      providers: [
+        { provide: ActivityService, useValue: mockActivity([night], '2027-03-28') },
+        { provide: CALENDAR_TIME_ZONE, useValue: 'Europe/Berlin' },
+      ],
+    })
+
+    const block = screen.getByRole('button', { name: 'Open event: Night deploy' })
+    expect(block.style.top).toBe(`${1.5 * 64}px`)
+    expect(block.style.height).toBe(`${2 * 64}px`)
+  })
+
+  it('draws short meetings at the calendar’s minimum height', async () => {
+    await render(DayViewComponent, {
+      providers: [
+        {
+          provide: ActivityService,
+          useValue: mockActivity([meeting('Check-in', 9, 5)], '2026-11-17'),
+        },
+      ],
+    })
+
+    const block = screen.getByRole('button', { name: 'Open event: Check-in' })
+    expect(block.style.height).toBe(`${MIN_BLOCK_HEIGHT}px`)
   })
 })
