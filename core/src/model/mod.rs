@@ -5,6 +5,7 @@ pub mod diagnostics;
 pub mod git;
 pub mod gitlab;
 pub mod jira;
+pub mod menu;
 pub mod outlook;
 pub mod runtime;
 pub mod system;
@@ -57,6 +58,11 @@ pub use diagnostics::{log_entry::LogEntry, log_level::LogLevel, logs_response::L
 pub use git::git_entry::GitEntry;
 pub use gitlab::{gitlab_entry::GitLabEntry, gitlab_entry_type::GitLabType};
 pub use jira::{jira_entry::JiraEntry, jira_entry_type::JiraEntryType};
+pub use menu::{
+    menu_command::MenuCommand, menu_install::MenuInstall, menu_item_key::MenuItemKey,
+    menu_item_spec::MenuItemSpec, menu_item_state::MenuItemState, menu_item_update::MenuItemUpdate,
+    menu_key::MenuKey, menu_section::MenuSection, menu_spec::MenuSpec, menu_submenu::MenuSubmenu,
+};
 pub use outlook::outlook_entry::OutlookEntry;
 pub use runtime::{
     activity_state::ActivityState, activity_update::ActivityUpdate, collect_answer::CollectAnswer,

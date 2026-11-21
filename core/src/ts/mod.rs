@@ -2,6 +2,7 @@ use strum::IntoEnumIterator;
 use ts_rs::{Config, TS};
 
 use crate::{
+    menu::{INSTALL_MENU_COMMAND, MENU_COMMAND_EVENT, UPDATE_MENU_COMMAND},
     model::{
         ActivityEntry, ActivityLog, ActivityLogMeta, ActivityState, ActivityUpdate,
         AddConnectionRequestDto, AddConnectionResponseDto, BackendError, BackendErrorKind,
@@ -9,14 +10,16 @@ use crate::{
         CollectedActivitySummary, CollectionFailedResponse, ConnectionCount, ConnectionId,
         DescriptionBlock, ExportFile, ExportOutcome, ExportRequest, GitEntry, GitLabEntry,
         GitLabType, InstallReceipt, JiraEntry, JiraEntryType, ListItem, LogEntry, LogLevel,
-        LogsResponse, MaximizeButtonState, MeetingWeight, OutlookEntry, OutputFormat, PartStamp,
-        ProviderConfigConnectionStateDto, ProviderConfigFieldIssueDto, ProviderConfigFieldRefDto,
-        ProviderConfigFieldStateDto, ProviderConfigFieldValueDto, ProviderConfigIssueKindDto,
-        ProviderConfigSaveRequestDto, ProviderConfigSaveResponseDto, ProviderConfigSaveValueDto,
-        ProviderConfigSnapshotDto, ProviderConfigValueDto, ProviderConfigValueTypeDto,
-        ProviderInfo, ProviderKindDto, ProviderProblem, ProviderStatus, ProvidersResponse,
-        ProvidersUpdate, RecheckAnswer, RemoveConnectionRequestDto, RuntimePing, RuntimeState,
-        ShownActivity, Source, SupportedOs, SystemEntry, SystemEntryType, TextSegment,
+        LogsResponse, MaximizeButtonState, MeetingWeight, MenuCommand, MenuInstall, MenuItemKey,
+        MenuItemSpec, MenuItemState, MenuItemUpdate, MenuKey, MenuSection, MenuSpec, MenuSubmenu,
+        OutlookEntry, OutputFormat, PartStamp, ProviderConfigConnectionStateDto,
+        ProviderConfigFieldIssueDto, ProviderConfigFieldRefDto, ProviderConfigFieldStateDto,
+        ProviderConfigFieldValueDto, ProviderConfigIssueKindDto, ProviderConfigSaveRequestDto,
+        ProviderConfigSaveResponseDto, ProviderConfigSaveValueDto, ProviderConfigSnapshotDto,
+        ProviderConfigValueDto, ProviderConfigValueTypeDto, ProviderInfo, ProviderKindDto,
+        ProviderProblem, ProviderStatus, ProvidersResponse, ProvidersUpdate, RecheckAnswer,
+        RemoveConnectionRequestDto, RuntimePing, RuntimeState, ShownActivity, Source, SupportedOs,
+        SystemEntry, SystemEntryType, TextSegment,
     },
     runtime::PING_INTERVAL,
 };
@@ -88,6 +91,16 @@ pub fn activity_typescript() -> String {
         export_decl::<CollectAnswer>(&cfg),
         export_decl::<RecheckAnswer>(&cfg),
         export_decl::<MaximizeButtonState>(&cfg),
+        export_decl::<MenuSubmenu>(&cfg),
+        export_decl::<MenuKey>(&cfg),
+        export_decl::<MenuItemKey>(&cfg),
+        export_decl::<MenuItemState>(&cfg),
+        export_decl::<MenuItemSpec>(&cfg),
+        export_decl::<MenuSection>(&cfg),
+        export_decl::<MenuSpec>(&cfg),
+        export_decl::<MenuItemUpdate>(&cfg),
+        export_decl::<MenuInstall>(&cfg),
+        export_decl::<MenuCommand>(&cfg),
     ];
 
     let mut output =
@@ -102,6 +115,7 @@ pub fn activity_typescript() -> String {
 fn constants() -> String {
     let kinds = wire_names(BackendErrorKind::iter());
     let sources = wire_names(Source::iter());
+    let submenus = wire_names(MenuSubmenu::iter());
     format!(
         "/** The longest range the backend collects or exports, in days (`CollectOptions::MAX_DAYS`). */\n\
          export const COLLECT_MAX_DAYS = {}\n\n\
@@ -110,10 +124,23 @@ fn constants() -> String {
          /** Every source kind, in the backend's order. */\n\
          export const SOURCES = [{sources}] as const satisfies readonly Source[]\n\n\
          /** How often `GET /api/events` sends its `ping` event, in seconds (`runtime::PING_INTERVAL`). */\n\
-         export const RUNTIME_PING_SECONDS = {}\n",
+         export const RUNTIME_PING_SECONDS = {}\n\n\
+         /** The desktop's event for a chosen menu item, a `MenuCommand`. */\n\
+         export const MENU_COMMAND_EVENT = {}\n\n\
+         /** Every submenu of the macOS menu bar, in the bar's order. */\n\
+         export const MENU_SUBMENUS = [{submenus}] as const satisfies readonly MenuSubmenu[]\n\n\
+         /** The desktop commands that install the macOS menu and change what its items show. */\n\
+         export const MENU_COMMANDS = {{ install: {}, update: {} }} as const\n",
         CollectOptions::MAX_DAYS,
-        PING_INTERVAL.as_secs()
+        PING_INTERVAL.as_secs(),
+        json(MENU_COMMAND_EVENT),
+        json(INSTALL_MENU_COMMAND),
+        json(UPDATE_MENU_COMMAND),
     )
+}
+
+fn json(text: &str) -> String {
+    serde_json::to_string(text).expect("a string serializes")
 }
 
 /// The values as they are sent, comma-separated.

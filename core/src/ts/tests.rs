@@ -48,3 +48,43 @@ fn the_maximize_button_payload_keeps_its_shape() {
             .contains("export type MaximizeButtonState = { hovered: boolean, pressed: boolean, };")
     );
 }
+
+/// The desktop's menu commands and event, by the names and shapes the dashboard reads.
+#[test]
+fn names_the_menu_commands_and_event_and_keeps_their_shapes() {
+    use crate::model::{MenuCommand, MenuInstall, MenuItemKey, MenuItemState};
+
+    let output = activity_typescript();
+    assert!(output.contains("export const MENU_COMMAND_EVENT = \"menu-command\"\n"));
+    assert!(output.contains(
+        "export const MENU_SUBMENUS = [\"app\", \"file\", \"edit\", \"view\", \"window\", \"help\"] as const satisfies readonly MenuSubmenu[]\n"
+    ));
+    assert!(output.contains(
+        "export const MENU_COMMANDS = { install: \"install_menu\", update: \"update_menu\" } as const\n"
+    ));
+    assert_eq!(
+        serde_json::to_value(MenuCommand {
+            generation: 3,
+            key: MenuItemKey(7)
+        })
+        .unwrap(),
+        serde_json::json!({ "generation": 3, "key": 7 })
+    );
+    assert_eq!(
+        serde_json::to_value(MenuInstall::Installed { generation: 1 }).unwrap(),
+        serde_json::json!({ "kind": "installed", "generation": 1 })
+    );
+    assert_eq!(
+        serde_json::to_value(MenuInstall::NotOffered).unwrap(),
+        serde_json::json!({ "kind": "notOffered" })
+    );
+    assert_eq!(
+        serde_json::to_value(MenuItemState::Check {
+            title: "Day".into(),
+            enabled: true,
+            checked: false
+        })
+        .unwrap(),
+        serde_json::json!({ "kind": "check", "title": "Day", "enabled": true, "checked": false })
+    );
+}

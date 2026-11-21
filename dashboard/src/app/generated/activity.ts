@@ -373,6 +373,26 @@ export type RecheckAnswer = { stamp: PartStamp, currentOs: SupportedOs, provider
 
 export type MaximizeButtonState = { hovered: boolean, pressed: boolean, };
 
+export type MenuSubmenu = "app" | "file" | "edit" | "view" | "window" | "help";
+
+export type MenuKey = "r" | "f" | "bracketLeft" | "comma" | "digit1" | "digit2" | "digit3" | "digit4";
+
+export type MenuItemKey = number;
+
+export type MenuItemState = { "kind": "command", title: string, enabled: boolean, } | { "kind": "check", title: string, enabled: boolean, checked: boolean, };
+
+export type MenuItemSpec = { key: MenuItemKey, accelerator?: MenuKey, state: MenuItemState, };
+
+export type MenuSection = { submenu: MenuSubmenu, items: Array<MenuItemSpec>, };
+
+export type MenuSpec = { sections: Array<MenuSection>, };
+
+export type MenuItemUpdate = { key: MenuItemKey, state: MenuItemState, };
+
+export type MenuInstall = { "kind": "installed", generation: number, } | { "kind": "notOffered" };
+
+export type MenuCommand = { generation: number, key: MenuItemKey, };
+
 /** The longest range the backend collects or exports, in days (`CollectOptions::MAX_DAYS`). */
 export const COLLECT_MAX_DAYS = 3653
 
@@ -384,3 +404,12 @@ export const SOURCES = ["git", "gitlab", "jira", "outlook", "system", "calendar"
 
 /** How often `GET /api/events` sends its `ping` event, in seconds (`runtime::PING_INTERVAL`). */
 export const RUNTIME_PING_SECONDS = 15
+
+/** The desktop's event for a chosen menu item, a `MenuCommand`. */
+export const MENU_COMMAND_EVENT = "menu-command"
+
+/** Every submenu of the macOS menu bar, in the bar's order. */
+export const MENU_SUBMENUS = ["app", "file", "edit", "view", "window", "help"] as const satisfies readonly MenuSubmenu[]
+
+/** The desktop commands that install the macOS menu and change what its items show. */
+export const MENU_COMMANDS = { install: "install_menu", update: "update_menu" } as const

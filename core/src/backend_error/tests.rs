@@ -140,3 +140,27 @@ fn the_wire_form_keeps_the_error_field() {
     let body = serde_json::to_value(BackendError::new(BackendErrorKind::Busy, "busy")).unwrap();
     assert_eq!(body, serde_json::json!({ "kind": "busy", "error": "busy" }));
 }
+
+#[test]
+fn a_menu_that_does_not_fit_is_invalid_a_replaced_one_a_conflict() {
+    use crate::{
+        menu::MenuError,
+        model::{MenuItemKey, MenuKey},
+    };
+    for refused in [
+        MenuError::DuplicateKey(MenuItemKey(1)),
+        MenuError::DuplicateAccelerator(MenuKey::R),
+        MenuError::UnknownItem(MenuItemKey(2)),
+        MenuError::KindChanged(MenuItemKey(3)),
+    ] {
+        assert_eq!(kind(refused), BackendErrorKind::InvalidRequest);
+    }
+    assert_eq!(
+        kind(MenuError::Stale { generation: 4 }),
+        BackendErrorKind::Conflict
+    );
+    assert_eq!(
+        kind(MenuError::Native(anyhow::anyhow!("no main thread"))),
+        BackendErrorKind::Internal
+    );
+}
