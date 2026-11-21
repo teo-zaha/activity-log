@@ -263,7 +263,10 @@ describe('WeekViewComponent', () => {
     expect(status.querySelector('.hint-message')?.textContent).toBe(
       'The activity on screen covers 2 Nov – 8 Nov 2026.'
     )
-    screen.getByRole('button', { name: 'Collect 16 Nov – 22 Nov 2026' }).click()
+    const collect = screen.getByRole('button', { name: 'Collect 16 Nov – 22 Nov 2026' })
+    // Only the hint's text is announced; the button is not part of the live region.
+    expect(screen.getByRole('status').contains(collect)).toBe(false)
+    collect.click()
     expect(state.collects()).toBe(1)
   })
 
