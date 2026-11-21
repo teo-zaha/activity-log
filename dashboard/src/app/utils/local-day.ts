@@ -27,6 +27,48 @@ export function todayKey(): DayKey {
   return localDateKey(new Date())
 }
 
+/** Where an instant shows on a wall clock: its day and the minutes since that day's midnight. */
+export interface WallClock {
+  readonly day: DayKey
+  /** `hours * 60 + minutes` as the clock reads, seconds dropped: 23 or 25 real hours fit in 24. */
+  readonly minutes: number
+}
+
+const ZONED_CLOCKS = new Map<string, Intl.DateTimeFormat>()
+
+function zonedClock(timeZone: string): Intl.DateTimeFormat {
+  let format = ZONED_CLOCKS.get(timeZone)
+  if (!format) {
+    format = new Intl.DateTimeFormat('en-GB', {
+      timeZone,
+      hourCycle: 'h23',
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+    })
+    ZONED_CLOCKS.set(timeZone, format)
+  }
+  return format
+}
+
+/**
+ * The wall clock at an instant (epoch milliseconds), in `timeZone` (an IANA name) or, without
+ * one, in the browser's zone as every other local day is read.
+ */
+export function wallClock(instant: number, timeZone?: string): WallClock {
+  if (timeZone === undefined) {
+    const date = new Date(instant)
+    return { day: localDateKey(date), minutes: date.getHours() * 60 + date.getMinutes() }
+  }
+  const part = (parts: Intl.DateTimeFormatPart[], type: Intl.DateTimeFormatPartTypes): number =>
+    Number(parts.find(p => p.type === type)?.value)
+  const parts = zonedClock(timeZone).formatToParts(instant)
+  const date = new Date(part(parts, 'year'), part(parts, 'month') - 1, part(parts, 'day'), 12)
+  return { day: localDateKey(date), minutes: part(parts, 'hour') * 60 + part(parts, 'minute') }
+}
+
 /** Whether `value` is a `YYYY-MM-DD` key of a real calendar day, such as one read from a URL. */
 export function isDayKey(value: string): value is DayKey {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return false
