@@ -274,8 +274,10 @@ export class EventDetailComponent {
     }
   }
 
-  /** Shares the link to this one event in the range on screen, without its group or filter. */
-  /** The link names the range shown, the URL's or the collected one, so it opens with the event in it. */
+  /**
+   * Shares the link to this one event, without its group or filter. It names the range shown, the
+   * URL's or the collected one, so it opens with the event in it.
+   */
   protected shareEntry(entry: EntryUiAdapter): Promise<void> {
     const [from, to] = [this.viewState.dateFrom(), this.viewState.dateTo()]
     const range = from && to ? { from, to } : {}

@@ -16,7 +16,7 @@ pub enum ProviderConfigValueType {
 pub enum ProviderConfigShape {
     Single(ProviderConfigValueType),
     /// Several values, such as folders. Stored as a JSON array of strings; a plain value is read
-    /// as a comma-separated list, so `GIT_DIRS=a,b` works from the environment.
+    /// as a comma-separated list, so a list typed as text (`~/a, ~/b`) is read as two.
     List(ProviderConfigValueType),
 }
 
@@ -40,7 +40,8 @@ impl std::fmt::Display for ProviderConfigShape {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ProviderConfigKey {
-    /// The wire name, as `config.toml` and the settings save spell it: `GITLAB_URL`.
+    /// The wire name, as the settings save spells it: `GITLAB_URL` (`config.toml` drops the
+    /// kind prefix: `url`, `settings::field_name`).
     pub name: &'static str,
     /// The field's name for people, as the settings show it: `GitLab URL`.
     pub label: &'static str,
