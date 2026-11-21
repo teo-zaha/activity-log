@@ -40,6 +40,7 @@ mod windows;
 use self::fallback as imp;
 #[cfg(target_os = "windows")]
 use self::windows as imp;
+
 /// Whether a WSL distribution has a repository under the target's folders, for the provider's
 /// check.
 #[cfg(target_os = "windows")]
@@ -52,7 +53,7 @@ mod fallback {
     use super::{RepoCommits, WslTarget};
     use crate::model::CollectOptions;
 
-    pub(crate) fn collect_wsl(
+    pub(super) fn collect_wsl(
         target: &WslTarget,
         _options: &CollectOptions,
         _cancelled: &std::sync::atomic::AtomicBool,
