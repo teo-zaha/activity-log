@@ -1,6 +1,6 @@
 import { Component, computed, inject } from '@angular/core'
 import { MatDialog, MatDialogModule } from '@angular/material/dialog'
-import { SHORTCUT_SCOPES, SHORTCUTS, type ShortcutScope } from '../../models/shortcuts'
+import { SHORTCUT_SCOPES, SHORTCUTS, type ShortcutScope, shortcut } from '../../models/shortcuts'
 import { SHORTCUT_HELP_DIALOG_ID, ShortcutService } from '../../services/shortcut.service'
 import { ButtonComponent } from '../button/button.component'
 
@@ -67,7 +67,13 @@ export class ShortcutHelpDialogComponent {
     SHORTCUT_SCOPES.map(scope => ({
       title: SCOPE_TITLES[scope],
       rows: SHORTCUTS.filter(entry => entry.scope === scope).flatMap(entry => {
-        const keys = this.shortcuts.chords(entry).map(chord => this.shortcuts.format(chord))
+        const chords = this.shortcuts.chords(entry)
+        if (entry.standsFor !== undefined) {
+          // The same command as the global one it stands for: its row shows these keys already.
+          const shown = this.shortcuts.chords(shortcut(entry.standsFor)).map(chord => chord.keys)
+          if (chords.every(chord => shown.includes(chord.keys))) return []
+        }
+        const keys = chords.map(chord => this.shortcuts.format(chord))
         return keys.length > 0 ? [{ label: entry.label, keys }] : []
       }),
     })).filter(section => section.rows.length > 0)

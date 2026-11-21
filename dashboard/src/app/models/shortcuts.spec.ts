@@ -58,8 +58,6 @@ const TEXT_EDITING: Readonly<Record<Os, ReadonlySet<string>>> = {
 const BROWSER_DOES_ITSELF = new Set<ShortcutId>(['app.back'])
 /** Only the menu and the header's buttons: a single key would write a file or the clipboard. */
 const MENU_ONLY = new Set<ShortcutId>(['app.export-markdown', 'app.export-json', 'app.copy-link'])
-/** A scope's entry that may share a chord with a global one, which it wins over on its view. */
-const SHADOWS: readonly (readonly [ShortcutId, ShortcutId])[] = [['timeline.filter', 'app.filter']]
 /**
  * Keys every common layout types without AltGr or ⌥: letters by their physical key, and these
  * characters, with Shift where the layout needs it (`/` is Shift+7 on a German layout). `[` is not
@@ -102,18 +100,25 @@ describe('the shortcut registry', () => {
     }
   })
 
-  it('lets a scope’s entry share a global entry’s chord only where that is declared', () => {
-    const shadows = new Set(SHADOWS.map(([scoped, global]) => `${scoped} ${global}`))
+  it('lets a scope’s entry share a global entry’s chord only where it stands for it', () => {
     for (const here of EVERYWHERE) {
       const global = SHORTCUTS.filter(entry => entry.scope === 'global')
       for (const scoped of SHORTCUTS.filter(entry => entry.scope !== 'global')) {
         for (const other of global) {
           const shared = keysOf(scoped, here).filter(keys => keysOf(other, here).includes(keys))
-          if (shared.length > 0)
-            expect(shadows, `${scoped.id} ${other.id}`).toContain(`${scoped.id} ${other.id}`)
+          if (shared.length > 0) expect(scoped.standsFor, `${scoped.id} ${other.id}`).toBe(other.id)
         }
       }
     }
+  })
+
+  it('lets only a scope’s entry stand for another, and only for a global one', () => {
+    for (const entry of SHORTCUTS) {
+      if (entry.standsFor === undefined) continue
+      expect(entry.scope, entry.id).not.toBe('global')
+      expect(shortcut(entry.standsFor).scope, entry.id).toBe('global')
+    }
+    expect(shortcut('timeline.filter').standsFor).toBe('app.filter')
   })
 
   it('reads a key alone as a character key exactly when it types a character', () => {
