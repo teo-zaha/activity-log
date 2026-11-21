@@ -1,7 +1,8 @@
 import { Component, inject, input, output, signal } from '@angular/core'
 import type { ConnectionId } from '../../../generated/activity'
 import { type ConnectionKey, connectionKey } from '../../../providers/connection'
-import { ActivityService } from '../../../services/activity.service'
+import { ActivityDataService } from '../../../services/activity-data.service'
+import { ConnectionSettings } from '../../../services/connection-settings.service'
 import { type Failure, failure, failureOf } from '../../../services/failure'
 import { ButtonComponent } from '../../button/button.component'
 import { FeedbackComponent } from '../../feedback/feedback.component'
@@ -18,7 +19,8 @@ import { SourceDrafts } from '../source-pane/source-drafts.service'
   templateUrl: './removed-source-draft.component.html',
 })
 export class RemovedSourceDraftComponent {
-  private readonly activity = inject(ActivityService)
+  private readonly data = inject(ActivityDataService)
+  private readonly settings = inject(ConnectionSettings)
   private readonly drafts = inject(SourceDrafts)
 
   /** The removed connection the draft was made for. */
@@ -51,11 +53,11 @@ export class RemovedSourceDraftComponent {
     this.adding.set(true)
     this.failure.set(null)
     try {
-      const answer = await this.activity.addConnection({
+      const answer = await this.settings.addConnection({
         source: this.connection().source,
         label: this.label(),
       })
-      const standing = this.activity.receiptStanding(answer.installed)
+      const standing = this.data.receiptStanding(answer.installed)
       if (standing !== 'current' && standing !== 'superseded') {
         this.failure.set(
           failure('The source was added, but the app on screen does not show it yet; try again.')

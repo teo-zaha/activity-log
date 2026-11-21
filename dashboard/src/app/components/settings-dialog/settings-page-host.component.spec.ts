@@ -6,8 +6,8 @@ import { fireEvent, render, screen } from '@testing-library/angular'
 import { describe, expect, it, vi } from 'vitest'
 import { provideAppRouter } from '../../app.routes'
 import { ActivityDataService } from '../../services/activity-data.service'
-import { ActivityService } from '../../services/activity.service'
 import { failure } from '../../services/failure'
+import { NoticeService } from '../../services/notice.service'
 import { MockBackendTransport, provideMockBackend } from '../../testing/activity-fixtures'
 import { SettingsDialogLauncher } from './settings-dialog-launcher.service'
 import { LOGS_POLL_INTERVAL_MS } from './logs-pane/settings-logs-pane.component'
@@ -145,7 +145,7 @@ describe('SettingsPageHostComponent', () => {
   it('keeps waiting for the sources while a notice about something else shows', async () => {
     const { injector, settle } = await openSettings('/timeline?settings=jira%2Fgone')
 
-    injector.get(ActivityService).notice.set({
+    injector.get(NoticeService).show({
       origin: 'export',
       failure: failure('Exporting failed: the disk is full'),
     })

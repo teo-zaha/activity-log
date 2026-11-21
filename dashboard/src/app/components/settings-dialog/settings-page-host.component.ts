@@ -1,7 +1,7 @@
 import { A11yModule } from '@angular/cdk/a11y'
 import { Component, ElementRef, effect, inject, viewChild } from '@angular/core'
 import { TopLayer } from '../../layouts/shell/top-layer.service'
-import { ActivityService } from '../../services/activity.service'
+import { ActivityViewStateService } from '../../services/activity-view-state.service'
 import { ShortcutService } from '../../services/shortcut.service'
 import { SettingsDialogLauncher } from './settings-dialog-launcher.service'
 import { SettingsDialogComponent } from './settings-dialog.component'
@@ -35,7 +35,7 @@ import { SettingsDialogComponent } from './settings-dialog.component'
   styleUrl: './settings-page-host.component.scss',
 })
 export class SettingsPageHostComponent {
-  private readonly activity = inject(ActivityService)
+  private readonly viewState = inject(ActivityViewStateService)
   private readonly host = inject<ElementRef<HTMLElement>>(ElementRef).nativeElement
   protected readonly open = inject(SettingsDialogLauncher).pageOpen
   private readonly layers = inject(TopLayer)
@@ -68,7 +68,7 @@ export class SettingsPageHostComponent {
       const onTop = (): boolean => this.layers.top() === 'settingsPage'
       const off = [
         this.shortcuts.openLayer({ kind: 'page', hidesRoute: true }),
-        this.shortcuts.bind('layer.close', () => void this.activity.closeSettings(), onTop),
+        this.shortcuts.bind('layer.close', () => void this.viewState.closeSettings(), onTop),
         this.shortcuts.bind('app.back', () => this.pageBack(), onTop),
       ]
       onCleanup(() => off.forEach(close => close()))

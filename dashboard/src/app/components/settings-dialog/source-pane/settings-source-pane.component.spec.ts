@@ -16,7 +16,8 @@ import type {
   ProviderConfigSaveResponseDto,
   ProviderConfigSnapshotDto,
 } from '../../../generated/activity'
-import { ActivityService } from '../../../services/activity.service'
+import { ActivityDataService } from '../../../services/activity-data.service'
+import { ConnectionSettings } from '../../../services/connection-settings.service'
 import type { ReceiptStanding } from '../../../services/types'
 import { RuntimeEnvironmentService } from '../../../services/backend/runtime-environment.service'
 import { providerInfo } from '../../../testing/activity-fixtures'
@@ -154,16 +155,21 @@ async function setup(
     on: { removed, opened },
     providers: [
       {
-        provide: ActivityService,
+        provide: ConnectionSettings,
         useValue: {
           loadProviderConfig,
           saveProviderConfig,
           checkProviderConfig,
+          removeConnection,
+          addConnection,
+        },
+      },
+      {
+        provide: ActivityDataService,
+        useValue: {
           recheckConnection,
           receiptStanding,
           hostEpoch,
-          removeConnection,
-          addConnection,
         },
       },
       {
@@ -1293,12 +1299,17 @@ describe('SettingsSourcePaneComponent', () => {
         on: { removed },
         providers: [
           {
-            provide: ActivityService,
+            provide: ConnectionSettings,
+            useValue: {
+              loadProviderConfig: (): Promise<ProviderConfigSnapshotDto> => Promise.resolve(both()),
+              removeConnection,
+            },
+          },
+          {
+            provide: ActivityDataService,
             useValue: {
               receiptStanding: (): ReceiptStanding => 'current',
               hostEpoch: signal('mock-host'),
-              loadProviderConfig: (): Promise<ProviderConfigSnapshotDto> => Promise.resolve(both()),
-              removeConnection,
             },
           },
           { provide: RuntimeEnvironmentService, useValue: { isTauri: (): boolean => true } },
@@ -1345,12 +1356,17 @@ describe('SettingsSourcePaneComponent', () => {
       })
       const providers = [
         {
-          provide: ActivityService,
+          provide: ConnectionSettings,
+          useValue: {
+            loadProviderConfig: (): Promise<ProviderConfigSnapshotDto> => Promise.resolve(both()),
+            saveProviderConfig,
+          },
+        },
+        {
+          provide: ActivityDataService,
           useValue: {
             receiptStanding: (): ReceiptStanding => 'current',
             hostEpoch: signal('mock-host'),
-            loadProviderConfig: (): Promise<ProviderConfigSnapshotDto> => Promise.resolve(both()),
-            saveProviderConfig,
           },
         },
         { provide: RuntimeEnvironmentService, useValue: { isTauri: (): boolean => true } },
@@ -1400,12 +1416,17 @@ describe('SettingsSourcePaneComponent', () => {
       })
       const providers = [
         {
-          provide: ActivityService,
+          provide: ConnectionSettings,
+          useValue: {
+            loadProviderConfig: (): Promise<ProviderConfigSnapshotDto> => Promise.resolve(both()),
+            saveProviderConfig,
+          },
+        },
+        {
+          provide: ActivityDataService,
           useValue: {
             receiptStanding: (): ReceiptStanding => 'current',
             hostEpoch: signal('mock-host'),
-            loadProviderConfig: (): Promise<ProviderConfigSnapshotDto> => Promise.resolve(both()),
-            saveProviderConfig,
           },
         },
         { provide: RuntimeEnvironmentService, useValue: { isTauri: (): boolean => true } },
@@ -1452,12 +1473,17 @@ describe('SettingsSourcePaneComponent', () => {
         on: { removed },
         providers: [
           {
-            provide: ActivityService,
+            provide: ConnectionSettings,
+            useValue: {
+              loadProviderConfig: (): Promise<ProviderConfigSnapshotDto> => Promise.resolve(both()),
+              removeConnection,
+            },
+          },
+          {
+            provide: ActivityDataService,
             useValue: {
               receiptStanding: (): ReceiptStanding => 'current',
               hostEpoch: signal('mock-host'),
-              loadProviderConfig: (): Promise<ProviderConfigSnapshotDto> => Promise.resolve(both()),
-              removeConnection,
             },
           },
           { provide: RuntimeEnvironmentService, useValue: { isTauri: (): boolean => true } },
@@ -1696,14 +1722,19 @@ describe('SettingsSourcePaneComponent connections', () => {
       on: { removed },
       providers: [
         {
-          provide: ActivityService,
+          provide: ConnectionSettings,
           useValue: {
-            receiptStanding,
-            hostEpoch: signal('mock-host'),
             loadProviderConfig: (): Promise<ProviderConfigSnapshotDto> =>
               Promise.resolve(connectionsSnapshot()),
             saveProviderConfig,
             removeConnection,
+          },
+        },
+        {
+          provide: ActivityDataService,
+          useValue: {
+            receiptStanding,
+            hostEpoch: signal('mock-host'),
           },
         },
         { provide: RuntimeEnvironmentService, useValue: { isTauri: (): boolean => true } },

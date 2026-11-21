@@ -27,7 +27,8 @@ import type {
   ProviderConfigSaveRequestDto,
 } from '../../../generated/activity'
 import { type ConnectionKey, connectionKey } from '../../../providers/connection'
-import { ActivityService } from '../../../services/activity.service'
+import { ActivityDataService } from '../../../services/activity-data.service'
+import { ConnectionSettings } from '../../../services/connection-settings.service'
 import { type Failure, FailureError, failureOf, refusedAs } from '../../../services/failure'
 import { RuntimeEnvironmentService } from '../../../services/backend/runtime-environment.service'
 import { ToastService } from '../../../services/toast.service'
@@ -103,7 +104,8 @@ interface CheckedDraft {
   styleUrl: './settings-source-pane.component.scss',
 })
 export class SettingsSourcePaneComponent {
-  private readonly activity = inject(ActivityService)
+  private readonly data = inject(ActivityDataService)
+  private readonly settings = inject(ConnectionSettings)
   private readonly runtime = inject(RuntimeEnvironmentService)
   private readonly dialog = inject(MatDialog)
   private readonly toast = inject(ToastService)
@@ -138,15 +140,15 @@ export class SettingsSourcePaneComponent {
     params: () => (this.isDesktop ? this.selectionKey() : undefined),
     loader: async () => {
       for (;;) {
-        const host = untracked(this.activity.hostEpoch)
+        const host = untracked(this.data.hostEpoch)
         try {
-          const snapshot = await this.activity.loadProviderConfig()
-          if (untracked(this.activity.hostEpoch) === host) {
+          const snapshot = await this.settings.loadProviderConfig()
+          if (untracked(this.data.hostEpoch) === host) {
             this.snapshotReads++
             return snapshot
           }
         } catch (error) {
-          if (untracked(this.activity.hostEpoch) === host) {
+          if (untracked(this.data.hostEpoch) === host) {
             throw new FailureError(failureOf(error, 'Failed to load provider settings.'))
           }
         }
@@ -245,7 +247,7 @@ export class SettingsSourcePaneComponent {
   protected async recheck(): Promise<void> {
     const { key, info } = this.provider()
     await this.operations.run(key, 'recheck', 'Checking the source again failed.', () =>
-      this.activity.recheckConnection(info.connection)
+      this.data.recheckConnection(info.connection)
     )
   }
 
@@ -417,7 +419,7 @@ export class SettingsSourcePaneComponent {
   ): Promise<void> {
     let issues: readonly ProviderConfigFieldIssueDto[]
     try {
-      issues = await this.activity.checkProviderConfig(recovery.request)
+      issues = await this.settings.checkProviderConfig(recovery.request)
     } catch (error) {
       if (this.recovery() !== recovery) return
       this.recovery.set(null)
@@ -449,7 +451,7 @@ export class SettingsSourcePaneComponent {
     if (!this.isDesktop || draft === null || request === null) return
     let result: CheckResult
     try {
-      result = { kind: 'issues', issues: await this.activity.checkProviderConfig(request) }
+      result = { kind: 'issues', issues: await this.settings.checkProviderConfig(request) }
     } catch (error) {
       result = { kind: 'failed', failure: failureOf(error, 'Checking the settings failed.') }
     }
@@ -610,7 +612,7 @@ export class SettingsSourcePaneComponent {
     // The draft the removal drops: one made while it is out stays.
     const revision = this.drafts.revisionOf(key)
     const removed = await this.operations.run(key, 'remove', 'Failed to remove the source.', () =>
-      this.activity.removeConnection({ ...state.connection, basedOn })
+      this.settings.removeConnection({ ...state.connection, basedOn })
     )
     if (!removed.ok) {
       // Another program changed it: what it is now shows before another attempt.
@@ -624,7 +626,7 @@ export class SettingsSourcePaneComponent {
     // Answered by a host that is gone, or one that shut down before it installed the removal:
     // the connection of that name on screen is not the one removed there, so its draft and its
     // section stay, and the snapshot is read again.
-    const standing = this.activity.receiptStanding(removed.value.installed)
+    const standing = this.data.receiptStanding(removed.value.installed)
     if (standing === 'otherHost' || standing === 'notInstalled') {
       this.config.reload()
       return
@@ -708,7 +710,7 @@ export class SettingsSourcePaneComponent {
     const revision = this.drafts.set(key, draft)
     const readsAtSend = this.snapshotReads
     const saved = await this.operations.run(key, 'save', 'Failed to save provider settings.', () =>
-      this.activity.saveProviderConfig(request)
+      this.settings.saveProviderConfig(request)
     )
     if (!saved.ok) {
       const failure = this.operations.failure(key, 'save')
@@ -727,7 +729,7 @@ export class SettingsSourcePaneComponent {
     // later install of the sources on screen and no read of the file since the save was sent,
     // which may be newer than both. Otherwise the snapshot is read again.
     const newest =
-      this.activity.receiptStanding(saved.value.installed) === 'current' &&
+      this.data.receiptStanding(saved.value.installed) === 'current' &&
       this.snapshotReads === readsAtSend
     if (newest) {
       this.config.set(saved.value.snapshot)

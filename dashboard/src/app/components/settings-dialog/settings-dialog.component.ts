@@ -13,12 +13,12 @@ import {
   linkedSignal,
   viewChild,
 } from '@angular/core'
-import { mediaQuery } from '@signality/core/browser/media-query'
 import { connectionKey, isSource } from '../../providers/connection'
 import { getProviderAdapter } from '../../providers/provider-adapter'
-import { ActivityService } from '../../services/activity.service'
+import { ActivityDataService } from '../../services/activity-data.service'
+import { ActivityViewStateService } from '../../services/activity-view-state.service'
+import { BreakpointState } from '../../services/breakpoint-state.service'
 import { ShortcutService } from '../../services/shortcut.service'
-import { downQuery } from '../../utils/breakpoints'
 import { NavigationMotionService } from '../../navigation-motion'
 import { PageHeaderComponent } from '../page-header/page-header.component'
 import { ButtonComponent } from '../button/button.component'
@@ -72,11 +72,12 @@ const DESCRIPTIONS: Partial<Record<SettingsPage, string>> = {
   host: { '[class.is-page]': "chrome() === 'page'" },
 })
 export class SettingsDialogComponent {
-  protected readonly activity = inject(ActivityService)
+  private readonly data = inject(ActivityDataService)
+  private readonly viewState = inject(ActivityViewStateService)
   protected readonly pageActions = inject(SettingsPageActions).template
   /** `page` fills the window it is in; `dialog` is a panel of its own. */
   readonly chrome = input<'dialog' | 'page'>('dialog')
-  protected readonly isPhone = mediaQuery(downQuery('phone'))
+  protected readonly isPhone = inject(BreakpointState).phone
   protected readonly motion = inject(NavigationMotionService)
   private readonly shortcuts = inject(ShortcutService)
   /**
@@ -92,7 +93,7 @@ export class SettingsDialogComponent {
 
   /** The URL's section; while the settings close, the URL has none and the last one stays. */
   private readonly selection = linkedSignal<SettingsSelection | null, SettingsSelection>({
-    source: this.activity.settings,
+    source: this.viewState.settings,
     computation: (selection, previous) => selection ?? previous?.value ?? 'general',
   })
   /** Whether a phone shows the list of sections as the page. */
@@ -103,7 +104,7 @@ export class SettingsDialogComponent {
     return selection === 'home' ? 'general' : selection
   })
   protected readonly providerRows = computed<SettingsProviderRow[]>(() => {
-    return this.activity.providerInfo().map(info => {
+    return this.data.providerInfo().map(info => {
       const adapter = getProviderAdapter(info.connection.source)
       return {
         info,
@@ -124,8 +125,7 @@ export class SettingsDialogComponent {
    */
   protected readonly missingSource = computed<'loading' | 'missing' | null>(() => {
     if (isSettingsPage(this.section()) || this.selectedProvider() !== null) return null
-    const known =
-      this.activity.providersLoaded() || this.activity.connection().status.kind === 'failed'
+    const known = this.data.providersLoaded() || this.data.connection().status.kind === 'failed'
     return known ? 'missing' : 'loading'
   })
   private readonly drafts = inject(SourceDrafts)
@@ -193,7 +193,7 @@ export class SettingsDialogComponent {
         return
       }
       const lost = active === null || active === document.body || host.contains(active)
-      if (!lost || !hadFocus || this.activity.settings() === null) return
+      if (!lost || !hadFocus || this.viewState.settings() === null) return
       this.titleOnScreen()?.focus()
     })
   }
@@ -211,12 +211,12 @@ export class SettingsDialogComponent {
   /** From the list: on a phone the section is a page of its own, Back returns to the list. */
   protected select(selection: SettingsSelection): void {
     void (this.isPhone()
-      ? this.activity.enterSettings(selection)
-      : this.activity.showSettings(selection))
+      ? this.viewState.enterSettings(selection)
+      : this.viewState.showSettings(selection))
   }
 
   protected back(): void {
-    void this.activity.backToSettingsHome()
+    void this.viewState.backToSettingsHome()
   }
 
   /** Back on the phone's page (`app.back`): from a section to the list, from the list out. */
@@ -228,11 +228,11 @@ export class SettingsDialogComponent {
   /** After a source is removed, and from a source that is not there: the list on a phone, else General. */
   protected afterRemove(): void {
     void (this.isPhone()
-      ? this.activity.backToSettingsHome()
-      : this.activity.showSettings('general'))
+      ? this.viewState.backToSettingsHome()
+      : this.viewState.showSettings('general'))
   }
 
   protected close(): void {
-    void this.activity.closeSettings()
+    void this.viewState.closeSettings()
   }
 }
