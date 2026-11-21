@@ -229,11 +229,10 @@ impl Host {
         }
     }
 
-    /// Stops the watcher, stops the shown run and drops the spawner, so nothing the host
-    /// starts runs any more.
     /// The host's last transition: the shown run stops, every run and check still in flight
     /// is no longer current (it shows nothing and a run ends `Stopped`), no edit or reload
-    /// installs anything, and the spawner is dropped. What shows stays as it was.
+    /// installs anything, and the spawner is dropped. The config watcher stops and every feed
+    /// ends. What shows stays as it was.
     pub fn shutdown(&self) {
         let retired = {
             let mut state = self.lock();
