@@ -12,10 +12,12 @@ import {
 } from '@angular/core'
 import { MatIconModule } from '@angular/material/icon'
 import { Router } from '@angular/router'
-import { mediaQuery } from '@signality/core/browser/media-query'
 import { AutoAnimateDirective } from '../auto-animate/auto-animate.directive'
 import type { EntryUiAdapter } from '../../providers/types'
-import { ActivityService } from '../../services/activity.service'
+import { ActivityDataService } from '../../services/activity-data.service'
+import { ActivitySelection } from '../../services/activity-selection.service'
+import { ActivityViewStateService } from '../../services/activity-view-state.service'
+import { BreakpointState } from '../../services/breakpoint-state.service'
 import { ButtonComponent } from '../button/button.component'
 import { EmptyStateComponent } from '../empty-state/empty-state.component'
 import { IconButtonComponent } from '../button/icon-button.component'
@@ -25,7 +27,6 @@ import { PageHeaderComponent } from '../page-header/page-header.component'
 import { appLink, injectLinkBase, injectShareLink } from '../share/share-link'
 import { SourceBadgeComponent } from '../source-badge/source-badge.component'
 import { TopLayer } from '../../layouts/shell/top-layer.service'
-import { downQuery } from '../../utils/breakpoints'
 import { NavigationMotionService } from '../../navigation-motion'
 import { ShortcutService, ariaKeysOf } from '../../services/shortcut.service'
 
@@ -57,13 +58,15 @@ import { ShortcutService, ariaKeysOf } from '../../services/shortcut.service'
   },
 })
 export class EventDetailComponent {
-  protected readonly activity = inject(ActivityService)
+  private readonly data = inject(ActivityDataService)
+  private readonly selection = inject(ActivitySelection)
+  private readonly viewState = inject(ActivityViewStateService)
   private readonly injector = inject(Injector)
   private readonly router = inject(Router)
   private readonly shareLink = injectShareLink()
   private readonly linkBase = injectLinkBase()
   /** On a phone the details are a page of their own, left with a back arrow. */
-  protected readonly isPhone = mediaQuery(downQuery('phone'))
+  protected readonly isPhone = inject(BreakpointState).phone
   protected readonly motion = inject(NavigationMotionService)
   protected readonly layers = inject(TopLayer)
   private readonly shortcuts = inject(ShortcutService)
@@ -88,9 +91,9 @@ export class EventDetailComponent {
   private wasOpen = false
 
   /** The listed group's loaded events; null without a group. */
-  protected readonly group = this.activity.selectedEntries
+  protected readonly group = this.selection.selectedEntries
   /** The open event, once its entry is loaded. */
-  protected readonly detail = this.activity.selectedEntry
+  protected readonly detail = this.selection.selectedEntry
   /** Where the open event sits in the group; null while the list shows, and without a group. */
   protected readonly openIndex = computed(() => {
     const group = this.group()
@@ -98,19 +101,19 @@ export class EventDetailComponent {
     const index = group && entry ? group.indexOf(entry) : -1
     return index < 0 ? null : index
   })
-  protected readonly isOpen = this.activity.detailsOpen
+  protected readonly isOpen = this.viewState.detailsOpen
   /**
    * What shows for details the URL names but the entries do not hold: `loading` until the log is
    * in, then `missing` (another range, or the entry is gone). Null when there is something to show.
    */
   protected readonly pending = computed<'loading' | 'missing' | null>(() => {
-    const eventMissing = this.activity.openEventKey() !== null && this.detail() === null
+    const eventMissing = this.viewState.openEventKey() !== null && this.detail() === null
     const groupMissing = this.group()?.length === 0
     if (!eventMissing && !groupMissing) return null
-    const status = this.activity.collectionStatus().kind
+    const status = this.data.collectionStatus().kind
     const notYet =
-      this.activity.isLoading() ||
-      (status === 'idle' && this.activity.meta() === null && !this.activity.hasNoSources())
+      this.data.isLoading() ||
+      (status === 'idle' && this.data.meta() === null && !this.data.hasNoSources())
     return notYet ? 'loading' : 'missing'
   })
   /** The group position last shown, to move focus when the list and an event swap. */
@@ -200,16 +203,16 @@ export class EventDetailComponent {
   }
 
   protected close(): void {
-    void this.activity.closeDetail()
+    void this.viewState.closeDetail()
   }
 
   protected open(index: number): void {
     const entry = this.group()?.[index]
-    if (entry) void this.activity.showInGroup(entry.trackKey)
+    if (entry) void this.viewState.showInGroup(entry.trackKey)
   }
 
   protected backToList(): void {
-    void this.activity.backToGroupList()
+    void this.viewState.backToGroupList()
   }
 
   /** Moves to the previous or next event of the group; false at either end. */
@@ -218,7 +221,7 @@ export class EventDetailComponent {
     const index = this.openIndex()
     const next = group && index !== null ? group[index + delta] : undefined
     if (!next) return false
-    void this.activity.stepInGroup(next.trackKey)
+    void this.viewState.stepInGroup(next.trackKey)
     return true
   }
 
@@ -263,7 +266,7 @@ export class EventDetailComponent {
   /** Shares the link to this one event in the range on screen, without its group or filter. */
   /** The link names the range shown, the URL's or the collected one, so it opens with the event in it. */
   protected shareEntry(entry: EntryUiAdapter): Promise<void> {
-    const [from, to] = [this.activity.dateFrom(), this.activity.dateTo()]
+    const [from, to] = [this.viewState.dateFrom(), this.viewState.dateTo()]
     const range = from && to ? { from, to } : {}
     return this.shareLink(
       appLink(this.router, [], { ...range, event: entry.trackKey }, this.linkBase)
