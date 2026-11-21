@@ -158,3 +158,46 @@ fn a_reader_that_goes_away_ends_the_run_quietly() {
     assert_eq!(status.code(), Some(0), "{stderr}");
     assert!(!stderr.contains("panicked"), "{stderr}");
 }
+
+/// What a script reads stops early (`| true`): the commands that print end quietly too.
+#[test]
+fn listing_into_a_closed_pipe_ends_quietly() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("config.toml");
+    fs::write(&path, empty_git(dir.path())).unwrap();
+    for args in [&["sources"][..], &["config", "path"]] {
+        let mut child = cli(dir.path())
+            .arg("--config")
+            .arg(&path)
+            .args(args)
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
+            .unwrap();
+        drop(child.stdout.take());
+        let mut stderr = String::new();
+        child
+            .stderr
+            .take()
+            .unwrap()
+            .read_to_string(&mut stderr)
+            .unwrap();
+        let status = child.wait().unwrap();
+
+        assert_eq!(status.code(), Some(0), "{args:?}: {stderr}");
+        assert!(!stderr.contains("panicked"), "{args:?}: {stderr}");
+    }
+}
+
+/// `--help` and the README say the same about the exit status.
+#[test]
+fn the_readme_says_what_help_says_about_the_exit_status() {
+    let dir = tempfile::tempdir().unwrap();
+    let help = text(&cli(dir.path()).arg("--help").output().unwrap().stdout);
+    let readme = include_str!("../../README.md");
+    let said = help
+        .lines()
+        .find(|line| line.starts_with("Exit status:"))
+        .expect("--help states the exit status");
+    assert!(readme.contains(said), "{said}");
+}

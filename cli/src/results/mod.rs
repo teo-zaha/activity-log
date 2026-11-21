@@ -16,11 +16,8 @@ pub(crate) enum ConnectionResult<'a> {
         info: &'a ProviderInfo,
         entries: usize,
     },
-    /// Its check found it unusable; `problem` says whether that fails the run.
-    Unusable {
-        info: &'a ProviderInfo,
-        problem: Option<ProviderProblem>,
-    },
+    /// Its check found it unusable; its `problem` says whether that fails the run.
+    Unusable { info: &'a ProviderInfo },
     /// It was checked, and its collection failed.
     Failed {
         info: &'a ProviderInfo,
@@ -66,9 +63,9 @@ impl ConnectionResult<'_> {
     pub(crate) fn fails_run(&self) -> bool {
         match self {
             Self::Collected { .. } => false,
-            Self::Unusable { problem, .. } => {
-                problem.is_none_or(|problem| problem_terms(problem).1 == Effect::Fails)
-            }
+            Self::Unusable { info } => info
+                .problem
+                .is_none_or(|problem| problem_terms(problem).1 == Effect::Fails),
             Self::Failed { .. } | Self::Unfinished { .. } => true,
         }
     }
@@ -80,8 +77,10 @@ impl ConnectionResult<'_> {
             Self::Collected { info, entries } => {
                 format!("  ✓ {} ({entries} entries)", name(info))
             }
-            Self::Unusable { info, problem } => {
-                let (words, effect) = problem.map_or((UNAVAILABLE, Effect::Fails), problem_terms);
+            Self::Unusable { info } => {
+                let (words, effect) = info
+                    .problem
+                    .map_or((UNAVAILABLE, Effect::Fails), problem_terms);
                 let mark = match effect {
                     Effect::Fails => "✗",
                     Effect::Skips => "-",
@@ -125,10 +124,7 @@ pub(crate) fn connection_results<'a>(
                     },
                     Outcome::Failed { failure, .. } => ConnectionResult::Failed { info, failure },
                 },
-                Some(Slot::Skipped) => ConnectionResult::Unusable {
-                    info,
-                    problem: info.problem,
-                },
+                Some(Slot::Skipped) => ConnectionResult::Unusable { info },
                 Some(Slot::Pending { .. }) | None => ConnectionResult::Unfinished { info },
             }
         })

@@ -49,19 +49,13 @@ fn a_problem_fails_the_run_only_where_the_source_cannot_work() {
     for problem in skips {
         assert_eq!(problem_terms(problem).1, Effect::Skips, "{problem:?}");
         let info = info(Source::Outlook, "mail", Some(problem));
-        let skipped = ConnectionResult::Unusable {
-            info: &info,
-            problem: Some(problem),
-        };
+        let skipped = ConnectionResult::Unusable { info: &info };
         assert!(!skipped.fails_run(), "{problem:?}");
     }
     for problem in fails {
         assert_eq!(problem_terms(problem).1, Effect::Fails, "{problem:?}");
         let info = info(Source::Gitlab, "work", Some(problem));
-        let refused = ConnectionResult::Unusable {
-            info: &info,
-            problem: Some(problem),
-        };
+        let refused = ConnectionResult::Unusable { info: &info };
         assert!(refused.fails_run(), "{problem:?}");
     }
 }
@@ -80,11 +74,7 @@ fn a_failed_collection_always_fails_the_run() {
     );
     assert!(ConnectionResult::Unfinished { info: &info }.fails_run());
     assert!(
-        ConnectionResult::Unusable {
-            info: &info,
-            problem: None,
-        }
-        .fails_run(),
+        ConnectionResult::Unusable { info: &info }.fails_run(),
         "an unusable source without a problem is not known to be fine"
     );
     assert!(
@@ -141,10 +131,7 @@ fn each_connection_gets_its_own_result() {
                 info: &git,
                 entries: 7
             },
-            ConnectionResult::Unusable {
-                info: &outlook,
-                problem: Some(ProviderProblem::Unsupported)
-            },
+            ConnectionResult::Unusable { info: &outlook },
             ConnectionResult::Failed {
                 info: &jira,
                 failure: &failure

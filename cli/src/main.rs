@@ -32,13 +32,16 @@ use range::{RangePreset, day_range, parse_day, resolve_preset, today};
 use results::connection_results;
 use sources::{Terminal, list_lines, resolve_connection};
 
+/// What the exit status says; the README says it in the same words (a test checks).
+const EXIT_STATUS: &str = "Exit status: 0 when every source was collected or skipped (another OS, not installed, not running, nothing to read); 1 when a source failed (refused, unreachable, timed out, not configured, not permitted, its check or its collection failed), after the export of the others is written, or on any error, an invalid flag or value included.";
+
 /// Collects your activity, or manages the sources it is collected from.
 #[derive(Parser)]
 #[command(
     author,
     version,
     about,
-    after_help = "Exit status: 0 when every source was collected or has nothing to give here (another OS, an app not installed or not running); 1 when a source failed, after writing what the others collected, or when nothing could be collected."
+    after_help = EXIT_STATUS
 )]
 struct Cli {
     /// The config file; default: ACTIVITY_LOG_CONFIG, else activity-log/config.toml in the OS
@@ -53,11 +56,11 @@ struct Cli {
 
 #[derive(Args)]
 struct CollectArgs {
-    /// First local day, YYYY-MM-DD.
-    #[arg(long, value_parser = parse_day)]
+    /// First local day.
+    #[arg(long, value_name = "YYYY-MM-DD", value_parser = parse_day)]
     since: Option<NaiveDate>,
-    /// Last local day, YYYY-MM-DD.
-    #[arg(long, value_parser = parse_day)]
+    /// Last local day.
+    #[arg(long, value_name = "YYYY-MM-DD", value_parser = parse_day)]
     until: Option<NaiveDate>,
     /// Where the export goes, `-` for standard output; default: logs/activity_log.json or .md.
     #[arg(long, value_name = "PATH", value_parser = output_target())]
@@ -101,7 +104,8 @@ where
     T::Err: std::error::Error + Send + Sync + 'static,
 {
     PossibleValuesParser::new(T::iter().map(Into::<&'static str>::into))
-        .try_map(|value| value.parse::<T>())
+        // The names are lowercase; `ignore_case` lets any case through to here.
+        .try_map(|value| value.to_ascii_lowercase().parse::<T>())
 }
 
 #[derive(Subcommand)]
@@ -123,7 +127,7 @@ enum SourcesCommand {
     /// Add a source, such as a GitLab account; asks for its values.
     Add {
         /// The kind of source.
-        #[arg(value_parser = spellings::<Source>())]
+        #[arg(value_parser = spellings::<Source>(), ignore_case = true)]
         kind: Source,
         /// Shown in lists and on entries; defaults to the kind's name.
         #[arg(long)]
@@ -179,7 +183,8 @@ async fn main() -> ExitCode {
 }
 
 fn fatal(err: &anyhow::Error) -> ExitCode {
-    eprintln!("Fatal: {err}");
+    // With standard error gone there is nowhere left to say it.
+    let _ = writeln!(io::stderr(), "Fatal: {err}");
     ExitCode::FAILURE
 }
 
@@ -195,7 +200,7 @@ async fn run(cli: Cli) -> Result<ExitCode> {
         }) => change_sources(action, config)?,
         Some(Command::Config {
             action: ConfigCommand::Path,
-        }) => println!("{}", config_path(config)?.display()),
+        }) => Status::stdout().say(&config_path(config)?.display().to_string())?,
         Some(Command::Config {
             action: ConfigCommand::Edit,
         }) => edit_in_editor(config)?,
@@ -209,8 +214,9 @@ fn config_path(config: Option<&Path>) -> Result<PathBuf> {
 }
 
 async fn list_sources(config: Option<&Path>) -> Result<()> {
+    let mut status = Status::stdout();
     if let Some(path) = ConfigFile::resolve_path(config) {
-        println!("{}\n", path.display());
+        status.say(&format!("{}\n", path.display()))?;
     }
     let runtimes = inspect_provider_runtimes_with(&load_connections(config)?).await;
     let providers = runtimes
@@ -218,7 +224,7 @@ async fn list_sources(config: Option<&Path>) -> Result<()> {
         .map(|runtime| runtime.info().clone())
         .collect::<Vec<_>>();
     for line in list_lines(&providers) {
-        println!("{line}");
+        status.say(&line)?;
     }
     Ok(())
 }
@@ -299,13 +305,14 @@ fn change_sources(action: SourcesCommand, config: Option<&Path>) -> Result<()> {
     };
     let edited =
         edit_config(&path, precondition, change).map_err(|err| edit_failure(err, label))?;
+    let mut status = Status::stdout();
     if let Some(message) = edited.value {
-        println!("{message}");
+        status.say(&message)?;
     }
     for warning in edited.warnings {
         diagnostics::warn("config", warning);
     }
-    println!("Saved {}", path.display());
+    status.say(&format!("Saved {}", path.display()))?;
     Ok(())
 }
 
@@ -334,13 +341,14 @@ fn edit_in_editor(config: Option<&Path>) -> Result<()> {
         }
         Ok(())
     })?;
+    let mut status = Status::stdout();
     match outcome {
-        ExternalEdit::Unchanged => println!("No changes"),
+        ExternalEdit::Unchanged => status.say("No changes")?,
         ExternalEdit::Saved { warnings } => {
             for warning in warnings {
                 diagnostics::warn("config", warning);
             }
-            println!("Saved {}", path.display());
+            status.say(&format!("Saved {}", path.display()))?;
         }
     }
     Ok(())
@@ -439,12 +447,21 @@ struct Status {
 }
 
 impl Status {
+    fn stdout() -> Self {
+        Self {
+            out: Box::new(io::stdout()),
+            closed: false,
+        }
+    }
+
     fn for_output(output: &Output) -> Self {
-        let out: Box<dyn Write> = match output {
-            Output::File(_) => Box::new(io::stdout()),
-            Output::Stdout => Box::new(io::stderr()),
-        };
-        Self { out, closed: false }
+        match output {
+            Output::File(_) => Self::stdout(),
+            Output::Stdout => Self {
+                out: Box::new(io::stderr()),
+                closed: false,
+            },
+        }
     }
 
     fn say(&mut self, line: &str) -> io::Result<()> {

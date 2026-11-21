@@ -219,6 +219,21 @@ fn parses_source_commands() {
     assert!(Cli::try_parse_from(["activity-log-cli", "sources", "add", "nope"]).is_err());
 }
 
+/// A kind is taken in any case, as `--range` and `--format` are.
+#[test]
+fn sources_add_takes_a_kind_in_any_case() {
+    let cli = Cli::try_parse_from(["activity-log-cli", "sources", "add", "GitLab"]).unwrap();
+    assert!(matches!(
+        cli.command,
+        Some(crate::Command::Sources {
+            action: Some(crate::SourcesCommand::Add {
+                kind: Source::Gitlab,
+                ..
+            })
+        })
+    ));
+}
+
 #[test]
 fn sources_add_offers_every_kind_of_source() {
     let mut command = Cli::command();
