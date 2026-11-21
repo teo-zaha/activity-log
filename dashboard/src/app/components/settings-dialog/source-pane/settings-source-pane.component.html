@@ -23,7 +23,7 @@
     } @else if (removedDraft()) {
       <app-removed-source-draft
         [connection]="provider().info.connection"
-        [label]="provider().label"
+        [label]="provider().info.label"
         (opened)="opened.emit($event)"
         (discarded)="afterDiscard()"
       />

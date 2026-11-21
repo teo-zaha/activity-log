@@ -15,7 +15,7 @@
         [class.is-checking]="provider.info.status === 'checking'"
         [attr.aria-pressed]="isActive(provider.key)"
         [attr.aria-disabled]="provider.info.status === 'checking' || null"
-        [attr.data-src]="provider.chipKey"
+        [attr.data-src]="provider.info.connection.source"
         [attr.aria-label]="sourceAriaLabel(provider)"
         (click)="selection.toggleConnection(provider.key)"
         (dblclick)="selection.isolateConnection(provider.key)"
@@ -23,8 +23,12 @@
         [matTooltipDisabled]="!sourceTooltip(provider)"
         [matTooltipPosition]="isRail() ? 'right' : 'above'"
       >
-        <app-provider-icon class="source-icon" [source]="provider.chipKey" size="sm" />
-        <span class="source-label">{{ provider.label }}</span>
+        <app-provider-icon
+          class="source-icon"
+          [source]="provider.info.connection.source"
+          size="sm"
+        />
+        <span class="source-label">{{ provider.info.label }}</span>
         @if (provider.info.status === 'degraded') {
           <app-status-dot class="source-warn" status="degraded" size="sm" />
         }
@@ -81,9 +85,13 @@
           [matTooltipDisabled]="!provider.info.reason"
           matTooltipPosition="right"
         >
-          <app-provider-icon class="issue-icon" [source]="provider.chipKey" size="sm" />
+          <app-provider-icon
+            class="issue-icon"
+            [source]="provider.info.connection.source"
+            size="sm"
+          />
           <span class="issue-copy">
-            <span class="issue-name">{{ provider.label }}</span>
+            <span class="issue-name">{{ provider.info.label }}</span>
             <span class="issue-reason">{{ provider.info.reason ?? 'Unavailable' }}</span>
           </span>
           @if (!canRecheck(provider)) {
@@ -96,7 +104,7 @@
             size="sm"
             icon="refresh"
             class="issue-action"
-            [label]="'Check ' + provider.label + ' again'"
+            [label]="'Check ' + provider.info.label + ' again'"
             matTooltip="Check again"
             matTooltipPosition="right"
             (click)="recheck(provider)"

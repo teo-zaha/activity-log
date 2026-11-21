@@ -109,7 +109,6 @@ export class SettingsDialogComponent {
       return {
         info,
         key: connectionKey(info.connection),
-        label: info.label,
         kindLabel: adapter.label,
         tooltip: adapter.getStatusTooltip(info),
       }
@@ -157,7 +156,7 @@ export class SettingsDialogComponent {
         return 'General'
       default:
         return (
-          this.selectedProvider()?.label ??
+          this.selectedProvider()?.info.label ??
           (this.missingSource() === 'loading' ? 'Source' : 'Source not found')
         )
     }

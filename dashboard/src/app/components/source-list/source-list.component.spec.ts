@@ -13,10 +13,8 @@ import { SettingsDialogLauncher } from '../settings-dialog/settings-dialog-launc
 import { SourceListComponent } from './source-list.component'
 
 const git: ProviderViewModel = {
-  info: providerInfo[0],
+  info: { ...providerInfo[0], label: 'Git' },
   key: 'git/default',
-  label: 'Git',
-  chipKey: 'git',
   tooltip: null,
   count: 4,
   collecting: false,
@@ -34,8 +32,6 @@ const outlook: ProviderViewModel = {
     supportedOs: ['macos', 'windows'],
     checkedAt: '2026-05-18T08:00:00Z',
   },
-  label: 'Outlook',
-  chipKey: 'outlook',
   tooltip: 'Startup check timed out after 15s',
   count: 0,
   collecting: false,

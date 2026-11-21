@@ -1,14 +1,10 @@
-import type { ProviderInfo, Source } from '../generated/activity'
+import type { ProviderInfo } from '../generated/activity'
 import type { Failure } from './failure'
 import type { ConnectionKey } from '../providers/connection'
 
 export interface ProviderViewModel {
   info: ProviderInfo
   key: ConnectionKey
-  /** The connection's label when its kind has several, else the kind's name. */
-  label: string
-  /** The kind, for icons and colours. */
-  chipKey: Source
   tooltip: string | null
   count: number
   /** The running collection still waits for this connection, so `count` is not known yet. */

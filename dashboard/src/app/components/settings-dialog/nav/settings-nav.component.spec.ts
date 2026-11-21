@@ -16,7 +16,6 @@ const gitlab: SettingsProviderRow = {
     checkedAt: '2026-11-17T09:00:00Z',
   },
   key: 'gitlab/gitlab',
-  label: 'GitLab',
   kindLabel: 'GitLab',
   tooltip: null,
 }

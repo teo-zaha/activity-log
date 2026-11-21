@@ -600,7 +600,10 @@ export class SettingsSourcePaneComponent {
     if (!state || this.removing()) return
     // The source asked about, whatever is shown once the question is answered, as the snapshot
     // on screen showed it.
-    const { key, label } = this.provider()
+    const {
+      key,
+      info: { label },
+    } = this.provider()
     const basedOn = this.snapshotRevision() ?? undefined
     const confirmed = await confirmAction(this.dialog, {
       title: `Remove ${label}?`,
@@ -705,7 +708,7 @@ export class SettingsSourcePaneComponent {
     const draft = this.draft()
     if (draft === null) return
     const key = this.selectionKey()
-    const label = request.label ?? this.provider().label
+    const label = request.label ?? this.provider().info.label
     // The draft sent: edits made after it (in a pane opened again) are not cleared by its answer.
     const revision = this.drafts.set(key, draft)
     const readsAtSend = this.snapshotReads

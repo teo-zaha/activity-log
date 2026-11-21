@@ -28,9 +28,8 @@ import { ToastService } from '../../../services/toast.service'
 import { BackendFailure } from '../../../services/backend/backend-failure'
 
 const row = (index: 0 | 1): SettingsProviderRow => ({
-  info: providerInfo[index],
+  info: { ...providerInfo[index], label: index === 0 ? 'Git' : 'Jira' },
   key: index === 0 ? 'git/default' : 'jira/default',
-  label: index === 0 ? 'Git' : 'Jira',
   kindLabel: index === 0 ? 'Git' : 'Jira',
   tooltip: null,
 })

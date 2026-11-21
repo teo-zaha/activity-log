@@ -86,8 +86,8 @@ export class CollectionStatusComponent {
         return null
       case 'collecting': {
         const providers = this.data.providers()
-        const sources = providers.map(provider => provider.label)
-        const pending = providers.filter(provider => provider.collecting).map(p => p.label)
+        const sources = providers.map(provider => provider.info.label)
+        const pending = providers.filter(provider => provider.collecting).map(p => p.info.label)
         return {
           tone: 'info',
           icon: 'autorenew',
