@@ -7,6 +7,7 @@ import { type ConnectionKey, connectionKey } from '../../../providers/connection
 import { UPCOMING_SOURCES, onlyOnLabel } from '../../../providers/source-catalog'
 import { ActivityDataService } from '../../../services/activity-data.service'
 import { ConnectionSettings } from '../../../services/connection-settings.service'
+import { readOnHost } from '../../../services/read-on-host'
 import { type Failure, failureOf, refusedAs } from '../../../services/failure'
 import { RuntimeEnvironmentService } from '../../../services/backend/runtime-environment.service'
 import { ProviderIconComponent } from '../../provider-icon/provider-icon.component'
@@ -49,9 +50,10 @@ export class SettingsAddSourcePaneComponent {
   protected readonly isDesktop = this.runtime.isTauri()
   protected readonly upcoming = UPCOMING_SOURCES
 
+  /** The snapshot of the host on screen: a read the host restarted under is sent again. */
   private readonly config = resource({
     params: () => (this.isDesktop ? true : undefined),
-    loader: () => this.settings.loadProviderConfig(),
+    loader: () => readOnHost(this.data.hostEpoch, () => this.settings.loadProviderConfig()),
   })
   protected readonly loading = this.config.isLoading
   protected readonly loadError = computed(() => {

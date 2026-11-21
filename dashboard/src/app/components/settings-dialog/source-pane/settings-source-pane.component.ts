@@ -29,6 +29,7 @@ import type {
 import { type ConnectionKey, connectionKey } from '../../../providers/connection'
 import { ActivityDataService } from '../../../services/activity-data.service'
 import { ConnectionSettings } from '../../../services/connection-settings.service'
+import { readOnHost } from '../../../services/read-on-host'
 import { type Failure, FailureError, failureOf, refusedAs } from '../../../services/failure'
 import { RuntimeEnvironmentService } from '../../../services/backend/runtime-environment.service'
 import { ToastService } from '../../../services/toast.service'
@@ -139,19 +140,14 @@ export class SettingsSourcePaneComponent {
   private readonly config = resource({
     params: () => (this.isDesktop ? this.selectionKey() : undefined),
     loader: async () => {
-      for (;;) {
-        const host = untracked(this.data.hostEpoch)
-        try {
-          const snapshot = await this.settings.loadProviderConfig()
-          if (untracked(this.data.hostEpoch) === host) {
-            this.snapshotReads++
-            return snapshot
-          }
-        } catch (error) {
-          if (untracked(this.data.hostEpoch) === host) {
-            throw new FailureError(failureOf(error, 'Failed to load provider settings.'))
-          }
-        }
+      try {
+        const snapshot = await readOnHost(this.data.hostEpoch, () =>
+          this.settings.loadProviderConfig()
+        )
+        this.snapshotReads++
+        return snapshot
+      } catch (error) {
+        throw new FailureError(failureOf(error, 'Failed to load provider settings.'))
       }
     },
   })

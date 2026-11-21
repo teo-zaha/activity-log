@@ -1,3 +1,4 @@
+import { signal, type WritableSignal } from '@angular/core'
 import { render, screen } from '@testing-library/angular'
 import userEvent from '@testing-library/user-event'
 import { describe, expect, it, vi } from 'vitest'
@@ -55,11 +56,13 @@ async function setup(
   after: ProviderConfigSnapshotDto,
   desktop = true,
   created: ConnectionId | undefined = after.connections.at(-1)?.connection,
-  installed: InstallReceipt | null = { epoch: 'mock-host', revision: 1 }
+  installed: InstallReceipt | null = { epoch: 'mock-host', revision: 1 },
+  firstRead?: () => Promise<ProviderConfigSnapshotDto>
 ): Promise<{
   addConnection: ReturnType<typeof vi.fn>
   opened: ReturnType<typeof vi.fn>
   loadProviderConfig: ReturnType<typeof vi.fn>
+  hostEpoch: WritableSignal<string | null>
 }> {
   const addConnection = vi.fn().mockResolvedValue({
     created,
@@ -71,6 +74,8 @@ async function setup(
   const loadProviderConfig = vi.fn((): Promise<ProviderConfigSnapshotDto> =>
     Promise.resolve(before)
   )
+  if (firstRead) loadProviderConfig.mockImplementationOnce(firstRead)
+  const hostEpoch = signal<string | null>('mock-host')
   // As the coordinator decides it: no receipt is a save the host never installed.
   const receiptStanding = (receipt: InstallReceipt | null): ReceiptStanding =>
     receipt === null ? 'notInstalled' : 'current'
@@ -81,11 +86,11 @@ async function setup(
         provide: ConnectionSettings,
         useValue: { loadProviderConfig, addConnection },
       },
-      { provide: ActivityDataService, useValue: { receiptStanding } },
+      { provide: ActivityDataService, useValue: { receiptStanding, hostEpoch } },
       { provide: RuntimeEnvironmentService, useValue: { isTauri: (): boolean => desktop } },
     ],
   })
-  return { addConnection, opened, loadProviderConfig }
+  return { addConnection, opened, loadProviderConfig, hostEpoch }
 }
 
 describe('SettingsAddSourcePaneComponent', () => {
@@ -121,6 +126,27 @@ describe('SettingsAddSourcePaneComponent', () => {
     expect((await screen.findByRole('button', { name: 'GitLab' })).textContent).not.toContain(
       '1 added'
     )
+  })
+
+  it('reads the snapshot again when the host restarts while it is read', async () => {
+    let answer = (_: ProviderConfigSnapshotDto): void => undefined
+    const fresh = snapshot([])
+    const { loadProviderConfig, hostEpoch } = await setup(
+      fresh,
+      fresh,
+      true,
+      undefined,
+      undefined,
+      () => new Promise(resolve => (answer = resolve))
+    )
+
+    // The old host answers after the new one is on screen: System as it had it, added.
+    hostEpoch.set('restarted')
+    answer(snapshot([{ source: 'system', name: 'system' }]))
+
+    await vi.waitFor(() => expect(loadProviderConfig).toHaveBeenCalledTimes(2))
+    const system = await screen.findByRole('button', { name: 'System' })
+    expect(system.textContent).not.toContain('Added · Open')
   })
 
   it('describes each source as the backend declares it', async () => {
@@ -169,7 +195,7 @@ describe('SettingsAddSourcePaneComponent', () => {
           provide: ConnectionSettings,
           useValue: { loadProviderConfig, addConnection: vi.fn().mockRejectedValue(refused) },
         },
-        { provide: ActivityDataService, useValue: {} },
+        { provide: ActivityDataService, useValue: { hostEpoch: signal('mock-host') } },
         { provide: RuntimeEnvironmentService, useValue: { isTauri: (): boolean => true } },
       ],
     })
@@ -192,7 +218,7 @@ describe('SettingsAddSourcePaneComponent', () => {
           provide: ConnectionSettings,
           useValue: { loadProviderConfig, addConnection: vi.fn().mockRejectedValue(refused) },
         },
-        { provide: ActivityDataService, useValue: {} },
+        { provide: ActivityDataService, useValue: { hostEpoch: signal('mock-host') } },
         { provide: RuntimeEnvironmentService, useValue: { isTauri: (): boolean => true } },
       ],
     })
