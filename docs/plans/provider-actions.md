@@ -188,6 +188,7 @@ allow = ["search", "read", "create", "log_time"]
 - An `allow` that is not a list of strings **fails closed** to `[]`, with a config warning. An unknown name in the list is dropped with a warning.
 - `core::settings` parses it into `Connection.allow: BTreeSet<Capability>`. The CLI and the desktop write it with `toml_edit` like other fields.
 - Turning on a write capability in the desktop settings asks for confirmation once ("Activity Log will be able to create tickets in Work Jira as you").
+- **Writes need TLS** (UI decisions of 2026-11-21, Q17): a connection whose URL is plain `http` on any host other than localhost can search and read but never write. It is one typed rule in core, checked with the allow list (a write capability on such a connection is refused as `NotAllowed` with its own reason), with no new setting; the mockups' `insecure = true` is dropped. The connection's Access section says why its writes are off.
 
 ### Token scopes and the startup check
 
@@ -297,6 +298,7 @@ Some systems store time as a day and hours (Odoo timesheets), some as an instant
   - The day and week views draw time entries with `started` as blocks, like meetings, in a "logged" style.
   - Entries with only a `day` go into that day's header row.
   - Per-day totals ("Logged 6h15m") are computed in the dashboard (`dashboard/src/app/utils/time-totals.ts`) and the CLI (`time report`). Grouping by local day is the client's job: core never computes day totals from instants.
+  - **"Not logged yet" per day is computed in core** (UI decisions of 2026-11-21, Q9), from attendance and time entries, next to the time suggestions, and sent in the DTO for the request's days; the dashboard only shows it. It combines sources, so it must not change with the dashboard's source filter.
 - **Per item:** `Get` returns `time: { spentSeconds, estimateSeconds?, entries: [TimeEntry] (latest 20) }`.
 
 ### Writing
@@ -336,7 +338,7 @@ This is the main reason to make time tracking first class.
 
 The suggestions (duration rounding, start and day, description, target key) are derived in Rust core, as the repo's rules require of derived results; the dashboard keeps the selected entries, the browser-local day and the editing (user decision, 2026-11-18). Their contract is designed when the Time step starts; nothing of it is built in the generic read step.
 
-Later (not planned): mark entries that a time entry already covers, and an "unlogged time" view comparing tracked activity with logged time per day.
+Later (not planned): mark entries that a time entry already covers. (The "unlogged time" comparison is now the "not logged yet" row core computes, above, and the day headers of section 7.)
 
 ## 5. Contract
 
@@ -521,12 +523,12 @@ The docs say so plainly.
 
 1. `request_write` arrives on the socket with a connection and a `WriteRequest`. The desktop checks limits and policy, runs `plan`, and stores an **immutable snapshot**: the request, the plan, the core-rendered preview and the fingerprint.
 2. It answers with a **request handle**: 128 random bits. Holding the handle is what lets the agent ask for the status. A separate 8-hex correlation id goes to logs and the audit; the handle is never logged.
-3. The request appears in an **inbox** (a badge, no unsolicited dialog). Approving or rejecting acts on that snapshot. Nothing is read again from the agent before sending.
+3. The request appears as a draft in the **Review view** (a badge on its nav item, no unsolicited dialog; "Review", not "inbox", UI decisions of 2026-11-21, Q18). Approving or rejecting acts on that snapshot. Nothing is read again from the agent before sending.
 4. **States:** `pending` → `approved` → `applying` → `done | failed | outcome_unknown`, or `rejected` / `expired`.
    - `applying` is written to the audit (and flushed) **before** the request is sent. If that write fails, nothing is sent.
 5. **Crash recovery:**
    - Superseded by the decision on drafts ([open-decisions-design.md](../open-decisions-design.md)): an agent request is saved as a draft (request and origin only, never tokens) in the app's private data folder, expires after 7 days, and is prepared again under the current settings with a fresh preview when opened. The prepared plan itself still lives only in the runtime's memory.
-   - On start, an `applying` audit line without an outcome shows in the inbox as `outcome_unknown`. It is never replayed.
+   - On start, an `applying` audit line without an outcome shows in Review as `outcome_unknown`. It is never replayed.
 6. **`request_status(handle)`:**
    - It returns the state and, when done, the result in the agent projection (below).
    - It is authorized against the **current** policy.
@@ -676,12 +678,15 @@ Decision: target the **latest Odoo version** with the JSON-2 API, on **any hosti
 
 ## 7. UI (dashboard, desktop app)
 
-- **Work items view:** in the sidebar's Work group (direction A), shown in the desktop app when some connection allows `search`.
+The UI follows the direction mix recorded in [open-decisions-design.md](../open-decisions-design.md) (A's backbone with C's calendar look, review cards and AI pieces, B's selection bar now and ⌘K later), as the UI decisions of 2026-11-21 (Q1–Q18) settle it. The mockups in `docs/mockups/ui-directions/` keep the original directions; their "Decided (2026-11-21)" page shows the mix.
+
+- **Work items view:** in the sidebar's Work group (from A), shown in the desktop app when some connection allows `search`.
   - Connection picker; decided (user, 2026-11-18; Q1 in `generic-read-step.md`): all connections, narrowed by the picker, as "Search work items…".
   - Filter chips: Assigned to me, Unassigned, Not mine, Created by me, Open/Done.
   - A text box, and a JQL toggle for Jira.
   - The results are a list of `WorkItem`s, separate from the timeline: they are current state, not events. They never mix with entries, filters, export or the timeline search.
   - Selecting a result docks its detail beside the list above 1100 px, with the flyout below that and a full page on phones, as event details are (the open item in the URL, Back closes it).
+  - A GitLab merge request's detail shows the shared Stack section of merged plan step 16, computed in core when the item is opened, within that step's budget rules (Q12).
 - **Action bar** in the detail panel, for work items and for timeline entries that point to one (a Jira entry, a GitLab MR event, a commit mentioning a key):
   - **Open in `<source>`** in the browser, named by the item's own source ("Open in Jira").
   - **Comment…**, **Move to…**, **Assign to me**, **Log time…**.
@@ -690,7 +695,19 @@ Decision: target the **latest Odoo version** with the JSON-2 API, on **any hosti
 - **New item:** a button in the Work items view and an entry action ("Create ticket from this…" prefills the summary and description). The form comes from `DescribeCreate`: connection, project, type, then the type's fields.
 - **Log time:**
   - Opened from one entry, a selection of entries (multi-select in the day and week views and on the timeline), or a work item. The prefill comes from section 4.
-  - In the day and week views, `timeEntries` draw as blocks, and the day header shows the day's total.
+  - Multi-select brings up B's selection bar in every view (Q18), with "Log time…" and the other actions the selection allows.
+- **Calendar (C's look, Q2, Q3, Q11, Q13):**
+  - Solid, hatched and dashed mean done, booked and drafted time everywhere: activity solid, `timeEntries` hatched, drafts dashed. Today's meeting marks move: a tentative meeting becomes a lighter fill with a small label, a free one a faint outline without dashes (today tentative is hatched and free is dashed, `_calendar-shared.scss`).
+  - Each day header shows logged of present on its main line, with a bar that turns amber when the gap is large, or "of tracked span" without attendance; meeting time (with tentative as the lighter extra) becomes a small second line. "Not logged yet" comes from core (section 4).
+  - Once the Time view exists, the Week and Work week views draw C's lanes: activity, and booked time with its drafts. The Day view keeps one wide column with the patterns only. The calendar grid of merged plan step 11 needs a lane concept then.
+  - A legend names done, booked and drafted and the meeting marks.
+- **Drafts and the Review view (Q1, Q7, Q10, Q13, Q18):**
+  - A draft is a write prepared but not written, from the agent or from you: every write dialog has "Save for later". Both kinds share one store, the 7-day expiry, a fresh preview when opened and the same confirm, and each is marked by origin.
+  - The Review view in the Work group lists them as C's cards (what, where, why, who asked; Review and Discard), with the badge on its nav item. "Review" is the name everywhere.
+  - Opening a draft shows C's draft screen: its sources highlighted on the calendar, the agent's reason labelled as model text (plain, no links), "Sources it used", and the re-checked preview, then Discard, Edit and the named confirm.
+  - Edit opens the regular write dialog filled in; saving replaces the draft. Discard leaves an audit line in Logs (what, origin, when). A draft whose fresh preview is refused becomes a grey "no longer valid" card with its reason as a typed kind; only Edit and Discard remain.
+  - Without an agent: "No agent connected · Set up" in Review, linking to the AI access setting. Agent drafts, and the agent's confirmed writes in the timeline, carry a "from agent" badge.
+  - Deferred with C's docked tray: the agent activity feed, the agent status line and Pause.
 - **Confirmation, one pattern for every write:**
   - The dialog shows the preview core rendered: connection label, target key and title, each field as it will be sent, any recent-write warning, and a warning for writes others will see ("Comments notify watchers").
   - The confirm button names the effect ("Create in Work Jira", "Log 1h30m on ABC-123"); it is never a generic "OK".
@@ -698,11 +715,14 @@ Decision: target the **latest Odoo version** with the JSON-2 API, on **any hosti
   - On success, the returned item or time entry appears at once, with a toast and a link.
   - On `OutcomeUnknown`, a sticky warning with what to check.
   - The UI never offers to undo a remote write.
-- **Settings:** each connection pane gets an **Access** section (desktop only, like the other settings):
+  - On a phone the confirmation is a page, like the details: it slides in, Back cancels it and it stays in history. There is no sheet anywhere (Q8).
+- **Settings:** each connection pane gets an **Access** section (desktop only, like the other settings; a section, not a tab, Q15):
   - Toggles: "Search and read items", and one per write capability the kind supports ("Create tickets", "Comment", "Change status and assignee", "Log time").
   - Next to each toggle, the probed token state ("token lacks `api` scope").
   - Turning on the first write capability asks for confirmation.
-- **Command palette (later):** `Ctrl+K` for "Search work items…", "Log time…", "New ticket…". It is not needed for the first phases.
+  - On a plain-`http` connection (not localhost) the write toggles are off and say why (Q17).
+  - AI access is stored and enforced from the first read step but shown here only once an agent can connect, with the MCP transport (Q16). From then on a small AI badge shows on the source chip of a connection whose AI access is on; there is no other access summary in the sidebar (Q15).
+- **Command palette (later, from B):** `Ctrl+K` for "Search work items…", "Log time…", "New ticket…", on top of the shortcut registry. It is not needed for the first phases.
 
 ## 8. Security and safety
 
@@ -787,7 +807,7 @@ Phase 0, 1a and the agent policy of 1b are planned in detail in [generic-read-st
 - `describe_create`, `plan`/`apply` for `Create`.
 - The write path from section 3: `PendingActions` in the runtime with fingerprint and channel (S1, S2), random confirm and correlation ids (S6), the `confirm_action` command, `actions.jsonl` audit with the recent-write warning (S7), typed plan with one mutation and core-rendered preview (S8), closed `FieldValue` with the createmeta re-check (S9).
 - New item dialog with preview and confirm; CLI `jira create` with `--dry-run`/`--yes`.
-- Agent writes: `request_write`, `request_status`, the desktop inbox and confirmation display, and the audit states with `applying` before sending.
+- Agent writes: `request_write`, `request_status`, the desktop's Review view and confirmation display, and the audit states with `applying` before sending.
 - The returned item is inserted by the client.
 - Tests:
   - Prepare → confirm → second confirm returns the stored result.
@@ -806,7 +826,7 @@ Phase 0, 1a and the agent policy of 1b are planned in detail in [generic-read-st
     - no confirm call on the socket;
     - write-request limits (per connection, total, per hour, input length).
   - `request_status`: unknown, expired and no-longer-visible handles all get `not_found`; results use the agent projection; the handle is in no log.
-  - Crash between `applying` and the outcome → `outcome_unknown` in the inbox after restart, no replay. A failed audit append → nothing sent.
+  - Crash between `applying` and the outcome → `outcome_unknown` in Review after restart, no replay. A failed audit append → nothing sent.
   - Display: control and bidi characters made visible; Confirm locked until the target is typed; no focus on the next request.
 
 **Phase 2: time tracking with Jira**
@@ -869,7 +889,7 @@ Each later phase adds its new actions to the MCP tools under the same rules.
 - **Error cleanup in the collectors**, which echoed response bodies. Built (slice 1).
 - **The desktop CSP**, before any remote text is shown (phase 1a). The Host-check fairing is dropped by decision.
 - **A `Choice` config value type** (single and list) for Odoo's `time_target` and `read`.
-- **The agent surface:** the desktop's agent socket and inbox, a thin MCP subcommand in `cli`, `agent_allow` in settings, and agent response types with their projection.
+- **The agent surface:** the desktop's agent socket and Review view, a thin MCP subcommand in `cli`, `agent_allow` in settings, and agent response types with their projection.
 
 ### Risks
 
@@ -892,11 +912,11 @@ Each later phase adds its new actions to the MCP tools under the same rules.
 4. **An AI agent is a near-term goal.**
    - The agent works through a thin MCP adapter (stdio) that talks to the running desktop app. The desktop is the only authority for policy, requests, confirmation and audit.
    - The agent has its own `Agent` origin and its own `agent_allow` list, which grants nothing by default.
-   - It gets reads in phase 1b. Writes come in phase 1c, only as requests a human confirms in the desktop inbox. CLI confirmation of agent requests is deferred.
+   - It gets reads in phase 1b. Writes come in phase 1c, only as requests a human confirms in the desktop's Review view. CLI confirmation of agent requests is deferred.
    - The durable audit applies to it from the start.
 
 5. **No Host check** on the local API server; the DNS-rebinding exposure of today's activity routes is accepted.
-6. **Further decisions** (UI direction A with C's calendar look, saved agent drafts, generic read step for Jira and GitLab together, AI access select per connection, naming, shortcuts, approved `rmcp` and `tauri-plugin-single-instance`) are in [open-decisions-design.md](../open-decisions-design.md).
+6. **Further decisions** (the UI direction mix: A's backbone with C's calendar look and review cards, B's ⌘K later; saved agent drafts, generic read step for Jira and GitLab together, AI access select per connection, naming, shortcuts, approved `rmcp` and `tauri-plugin-single-instance`) are in [open-decisions-design.md](../open-decisions-design.md); the UI decisions of 2026-11-21 (Q1–Q18) settle what that mix takes from each mockup, and section 7 applies them.
 
 ### Still open
 
