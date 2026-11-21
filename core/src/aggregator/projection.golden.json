@@ -1,0 +1,219 @@
+{
+  "meta": {
+    "generated": "generated",
+    "start": "2026-03-01T00:00:00+00:00",
+    "end": "2026-04-01T00:00:00+00:00",
+    "pending": [
+      {
+        "source": "git",
+        "name": "wsl"
+      },
+      {
+        "source": "calendar",
+        "name": "later"
+      }
+    ]
+  },
+  "summary": {
+    "connections": [
+      {
+        "connection": {
+          "source": "git",
+          "name": "laptop"
+        },
+        "count": 4
+      },
+      {
+        "connection": {
+          "source": "gitlab",
+          "name": "work"
+        },
+        "count": 1
+      },
+      {
+        "connection": {
+          "source": "calendar",
+          "name": "team"
+        },
+        "count": 3
+      },
+      {
+        "connection": {
+          "source": "jira",
+          "name": "tickets"
+        },
+        "count": 0
+      },
+      {
+        "connection": {
+          "source": "calendar",
+          "name": "other"
+        },
+        "count": 1
+      }
+    ],
+    "mergedCount": 3
+  },
+  "entries": [
+    {
+      "source": "git",
+      "connection": "laptop",
+      "id": "c3",
+      "timestamp": "2026-03-10T11:00:00+01:00",
+      "repo": "repo",
+      "hash": "c3",
+      "message": "commit c3",
+      "author": "me@example.com",
+      "branch": "main",
+      "gitlabEvent": {
+        "source": "gitlab",
+        "connection": "work",
+        "id": "c3",
+        "type": "pushedTo",
+        "timestamp": "2026-03-10T10:00:00Z",
+        "title": "repo",
+        "targetType": "Project",
+        "branch": "main",
+        "commitCount": 1,
+        "pushedCommit": "c3"
+      }
+    },
+    {
+      "source": "calendar",
+      "connection": "team",
+      "id": "2026-03-10T10:00:00Z",
+      "timestamp": "2026-03-10T10:00:00Z",
+      "title": "Offsite",
+      "durationMinutes": 30,
+      "meetingWeight": "busy"
+    },
+    {
+      "source": "calendar",
+      "connection": "team",
+      "id": "2026-03-10T10:00:00Z#2",
+      "timestamp": "2026-03-10T10:00:00Z",
+      "title": "Offsite",
+      "durationMinutes": 30,
+      "meetingWeight": "busy"
+    },
+    {
+      "source": "calendar",
+      "connection": "other",
+      "id": "2026-03-10T10:00:00Z",
+      "timestamp": "2026-03-10T10:00:00Z",
+      "title": "Offsite",
+      "durationMinutes": 30,
+      "meetingWeight": "busy"
+    },
+    {
+      "source": "calendar",
+      "connection": "later",
+      "id": "2026-03-10T10:00:00Z",
+      "timestamp": "2026-03-10T10:00:00Z",
+      "title": "Offsite",
+      "durationMinutes": 30,
+      "meetingWeight": "busy"
+    },
+    {
+      "source": "git",
+      "connection": "laptop",
+      "id": "c1",
+      "timestamp": "2026-03-10T10:00:00Z",
+      "repo": "repo",
+      "hash": "c1",
+      "message": "commit c1",
+      "author": "me@example.com",
+      "branch": "main",
+      "gitlabEvent": {
+        "source": "gitlab",
+        "connection": "work",
+        "id": "c1",
+        "type": "pushedTo",
+        "timestamp": "2026-03-10T10:05:00Z",
+        "title": "repo",
+        "targetType": "Project",
+        "branch": "main",
+        "commitCount": 1,
+        "pushedCommit": "c1"
+      }
+    },
+    {
+      "source": "git",
+      "connection": "laptop",
+      "id": "c2",
+      "timestamp": "2026-03-10T10:00:00Z",
+      "repo": "repo",
+      "hash": "c2",
+      "message": "commit c2",
+      "author": "me@example.com",
+      "branch": "main"
+    },
+    {
+      "source": "gitlab",
+      "connection": "work",
+      "id": "zz",
+      "type": "pushedTo",
+      "timestamp": "2026-03-10T10:00:00Z",
+      "title": "repo",
+      "targetType": "Project",
+      "branch": "main",
+      "commitCount": 1,
+      "pushedCommit": "zz"
+    },
+    {
+      "source": "calendar",
+      "connection": "team",
+      "id": "2026-03-10T09:00:00Z",
+      "timestamp": "2026-03-10T09:00:00Z",
+      "title": "Offsite",
+      "durationMinutes": 30,
+      "meetingWeight": "busy"
+    },
+    {
+      "source": "git",
+      "connection": "laptop",
+      "id": "c1#2",
+      "timestamp": "2026-03-10T09:00:00Z",
+      "repo": "repo",
+      "hash": "c1",
+      "message": "commit c1",
+      "author": "me@example.com",
+      "branch": "main",
+      "gitlabEvent": {
+        "source": "gitlab",
+        "connection": "work",
+        "id": "c1#2",
+        "type": "pushedTo",
+        "timestamp": "2026-03-10T10:06:00Z",
+        "title": "repo",
+        "targetType": "Project",
+        "branch": "main",
+        "commitCount": 1,
+        "pushedCommit": "c1"
+      }
+    },
+    {
+      "source": "git",
+      "connection": "wsl",
+      "id": "w1",
+      "timestamp": "2026-03-09T09:00:00Z",
+      "repo": "repo",
+      "hash": "w1",
+      "message": "commit w1",
+      "author": "me@example.com",
+      "branch": "main",
+      "gitlabEvent": {
+        "source": "gitlab",
+        "connection": "work",
+        "id": "w1",
+        "type": "pushedTo",
+        "timestamp": "2026-03-09T09:30:00Z",
+        "title": "repo",
+        "targetType": "Project",
+        "branch": "main",
+        "commitCount": 1,
+        "pushedCommit": "w1"
+      }
+    }
+  ]
+}

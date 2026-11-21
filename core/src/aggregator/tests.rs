@@ -430,3 +430,308 @@ fn a_push_folds_into_one_commit_even_when_two_clones_have_it() {
     assert_eq!(folded, 1, "the push shows once");
     assert!(merged.remaining_gitlab.is_empty());
 }
+
+fn meeting_in(connection: &str, timestamp: &str) -> ActivityEntry {
+    let mut entry = meeting(timestamp, 30);
+    if let ActivityEntry::Calendar(meeting) = &mut entry {
+        meeting.connection = connection.into();
+    }
+    entry
+}
+
+fn push_in(connection: &str, commit_to: &str, timestamp: &str) -> ActivityEntry {
+    let mut entry = push_at(commit_to, timestamp);
+    if let ActivityEntry::GitLab(push) = &mut entry {
+        push.connection = connection.into();
+    }
+    entry
+}
+
+/// A run with every kind of slot: repeated ids, ties in time (one written with an offset),
+/// carried entries (one a finished connection has too), a push folded into a carried commit, a
+/// second push of a folded commit, a failed, a skipped and a kept connection.
+fn projected_fixture() -> String {
+    use crate::runtime::report::{CollectFailure, CollectionKey, Outcome, RunReport, Slot, Stored};
+
+    let stored = |mut entries: Vec<ActivityEntry>| {
+        make_ids_unique(&mut entries);
+        Stored {
+            key: CollectionKey::UNKEYED,
+            entries: entries.into(),
+        }
+    };
+    let report = RunReport {
+        slots: vec![
+            (
+                id(Source::Git, "laptop"),
+                Slot::Settled(Outcome::Collected(stored(vec![
+                    commit_in("laptop", "c1", "2026-03-10T10:00:00Z"),
+                    commit_in("laptop", "c2", "2026-03-10T10:00:00Z"),
+                    commit_in("laptop", "c1", "2026-03-10T09:00:00Z"),
+                    commit_in("laptop", "c3", "2026-03-10T11:00:00+01:00"),
+                ]))),
+            ),
+            (
+                id(Source::Gitlab, "work"),
+                Slot::Settled(Outcome::Collected(stored(vec![
+                    push_in("work", "c1", "2026-03-10T10:05:00Z"),
+                    push_in("work", "c1", "2026-03-10T10:06:00Z"),
+                    push_in("work", "c3", "2026-03-10T10:00:00Z"),
+                    push_in("work", "zz", "2026-03-10T10:00:00Z"),
+                    push_in("work", "w1", "2026-03-09T09:30:00Z"),
+                ]))),
+            ),
+            (
+                id(Source::Git, "wsl"),
+                Slot::Pending {
+                    carried: Some(stored(vec![
+                        commit_in("wsl", "c2", "2026-03-10T10:00:00Z"),
+                        commit_in("wsl", "w1", "2026-03-09T09:00:00Z"),
+                    ])),
+                },
+            ),
+            (
+                id(Source::Calendar, "team"),
+                Slot::Settled(Outcome::Collected(stored(vec![
+                    meeting_in("team", "2026-03-10T10:00:00Z"),
+                    meeting_in("team", "2026-03-10T10:00:00Z"),
+                    meeting_in("team", "2026-03-10T09:00:00Z"),
+                ]))),
+            ),
+            (
+                id(Source::Jira, "tickets"),
+                Slot::Settled(Outcome::Failed {
+                    key: CollectionKey::UNKEYED,
+                    failure: CollectFailure::timed_out(std::time::Duration::from_secs(1)),
+                }),
+            ),
+            (id(Source::System, "system"), Slot::Skipped),
+            (
+                id(Source::Calendar, "other"),
+                Slot::Kept(Outcome::Collected(stored(vec![meeting_in(
+                    "other",
+                    "2026-03-10T10:00:00Z",
+                )]))),
+            ),
+            (
+                id(Source::Calendar, "later"),
+                Slot::Pending {
+                    carried: Some(stored(vec![meeting_in("later", "2026-03-10T10:00:00Z")])),
+                },
+            ),
+        ],
+    };
+    let mut log = report.project(march()).log;
+    log.meta.generated = "generated".to_string();
+    serde_json::to_string_pretty(&log).unwrap() + "\n"
+}
+
+/// The projection's bytes, entry order included, as they were before its rework (step 12).
+#[test]
+fn a_projection_keeps_its_bytes_and_its_order() {
+    assert_eq!(projected_fixture(), include_str!("projection.golden.json"));
+}
+
+/// `make_ids_unique` as it was before it kept a counter per id (step 12): the oracle the
+/// counter version must agree with.
+fn make_ids_unique_by_search(entries: &mut [ActivityEntry]) -> usize {
+    let mut taken = entries
+        .iter()
+        .map(|entry| entry.id().to_string())
+        .collect::<std::collections::HashSet<_>>();
+    let mut seen = std::collections::HashSet::new();
+    let mut renamed = 0;
+    for entry in entries {
+        if seen.insert(entry.id().to_string()) {
+            continue;
+        }
+        let unique = (2..)
+            .map(|n| format!("{}#{n}", entry.id()))
+            .find(|candidate| !taken.contains(candidate))
+            .expect("an unused id exists");
+        taken.insert(unique.clone());
+        seen.insert(unique.clone());
+        *entry.id_mut() = unique;
+        renamed += 1;
+    }
+    renamed
+}
+
+#[test]
+fn numbering_by_counter_agrees_with_searching_from_two() {
+    let ids = ["x", "x#2", "x#3", "y", "x#2#2", "x#5"];
+    // Every sequence of up to five ids from `ids`, so originals that look numbered come before,
+    // between and after the repeats.
+    let mut sequences: Vec<Vec<&str>> = vec![Vec::new()];
+    let mut last = sequences.clone();
+    for _ in 0..5 {
+        last = last
+            .iter()
+            .flat_map(|sequence| {
+                ids.iter().map(move |id| {
+                    let mut longer = sequence.clone();
+                    longer.push(*id);
+                    longer
+                })
+            })
+            .collect();
+        sequences.extend(last.iter().cloned());
+    }
+    for sequence in sequences {
+        let entries = sequence
+            .iter()
+            .map(|id| {
+                let mut entry = push(id);
+                *entry.id_mut() = id.to_string();
+                entry
+            })
+            .collect::<Vec<_>>();
+        let (mut counted, mut searched) = (entries.clone(), entries);
+        assert_eq!(
+            make_ids_unique(&mut counted),
+            make_ids_unique_by_search(&mut searched),
+            "{sequence:?}"
+        );
+        assert_eq!(
+            counted.iter().map(ActivityEntry::id).collect::<Vec<_>>(),
+            searched.iter().map(ActivityEntry::id).collect::<Vec<_>>(),
+            "{sequence:?}"
+        );
+    }
+}
+
+/// Times the projection every command answer and read waits on under the host's state lock, and
+/// numbering a connection's repeated ids:
+/// `cargo test --release -p core --lib benchmark_projection -- --ignored --nocapture`.
+#[test]
+#[ignore]
+fn benchmark_projection() {
+    use std::{hint::black_box, time::Instant};
+
+    use crate::{
+        model::{CalendarTag, GitLabTag, MeetingBody, Timestamp},
+        runtime::report::{CollectionKey, Outcome, RunReport, Slot, Stored},
+    };
+
+    fn timestamp(i: usize) -> Timestamp {
+        Utc.timestamp_opt(1_777_000_000 + (i * 71 % 53_999) as i64, 0)
+            .unwrap()
+            .into()
+    }
+    fn meeting(i: usize, connection: &str) -> ActivityEntry {
+        ActivityEntry::Calendar(CalendarEntry {
+            source: CalendarTag,
+            connection: connection.into(),
+            id: i.to_string(),
+            timestamp: timestamp(i),
+            title: Some("Planning and review".into()),
+            location: None,
+            organizer: None,
+            meeting: MeetingBody {
+                duration_minutes: 30,
+                busy_status: None,
+                meeting_weight: MeetingWeight::Busy,
+                description: Some(
+                    "A recurring planning meeting with participants and agenda".repeat(4),
+                ),
+                description_blocks: vec![],
+                join_url: None,
+            },
+        })
+    }
+    fn commit(i: usize) -> ActivityEntry {
+        let mut entry = GitEntry::new(
+            "repo".into(),
+            i.to_string(),
+            "A commit subject".into(),
+            "dev@example.org".into(),
+            Some("main".into()),
+            timestamp(i),
+        );
+        entry.connection = "git".into();
+        ActivityEntry::Git(entry)
+    }
+    fn push(i: usize) -> ActivityEntry {
+        ActivityEntry::GitLab(GitLabEntry {
+            source: GitLabTag,
+            connection: "gitlab".into(),
+            id: i.to_string(),
+            title: Some("repo".into()),
+            entry_type: GitLabType::PushedTo,
+            timestamp: timestamp(i + 1),
+            target_type: Some("Project".into()),
+            project_id: None,
+            mr_iid: None,
+            issue_iid: None,
+            branch: Some("main".into()),
+            commit_count: Some(1),
+            note_body: None,
+            note_file: None,
+            note_resolved: None,
+            pushed_commit: Some((i * 2).to_string()),
+            change_stack: None,
+        })
+    }
+    fn stored(entries: Vec<ActivityEntry>) -> Stored {
+        Stored {
+            key: CollectionKey::UNKEYED,
+            entries: entries.into(),
+        }
+    }
+    fn median(label: &str, mut run: impl FnMut() -> u128) {
+        let mut samples = (0..19).map(|_| run()).collect::<Vec<_>>();
+        samples.drain(..2);
+        samples.sort_unstable();
+        println!(
+            "{label}: median {} µs (min {} µs, max {} µs)",
+            samples[8], samples[0], samples[16]
+        );
+    }
+
+    let mut slots = vec![
+        (
+            id(Source::Git, "git"),
+            Slot::Settled(Outcome::Collected(stored(
+                (0..10_000).map(commit).collect(),
+            ))),
+        ),
+        (
+            id(Source::Gitlab, "gitlab"),
+            Slot::Settled(Outcome::Collected(stored((0..8_000).map(push).collect()))),
+        ),
+    ];
+    for n in 0..26 {
+        let name = format!("team-{n}");
+        let stored = stored((0..1_000).map(|i| meeting(i + 1000 * n, &name)).collect());
+        let slot = if n < 22 {
+            Slot::Settled(Outcome::Collected(stored))
+        } else {
+            Slot::Pending {
+                carried: Some(stored),
+            }
+        };
+        slots.push((id(Source::Calendar, &name), slot));
+    }
+    let report = RunReport { slots };
+    let options = CollectOptions {
+        start: Utc.timestamp_opt(1_776_000_000, 0).unwrap(),
+        end: Utc.timestamp_opt(1_778_000_000, 0).unwrap(),
+    };
+    median("44k entries of 28 connections, 4 pending", || {
+        let started = Instant::now();
+        let log = black_box(report.project(options));
+        let elapsed = started.elapsed().as_micros();
+        assert_eq!(log.log.entries.len(), 39_000);
+        elapsed
+    });
+    let mut repeated = vec![meeting(0, "same"); 3_000];
+    *repeated[1].id_mut() = "0#2".into();
+    median("3k entries with one id", || {
+        let mut entries = repeated.clone();
+        let started = Instant::now();
+        let renamed = black_box(make_ids_unique(&mut entries));
+        let elapsed = started.elapsed().as_micros();
+        assert_eq!(renamed, 2_998);
+        elapsed
+    });
+}
