@@ -96,8 +96,16 @@ export class SettingsAddSourcePaneComponent {
     ]
   })
 
-  /** The tile being added, so it can show progress while the others wait. */
-  protected readonly adding = signal<string | null>(null)
+  /** The connection being added, so its tile can show progress while the others wait. */
+  private readonly adding = signal<AddConnectionRequestDto | null>(null)
+  protected readonly busy = computed(() => this.adding() !== null)
+  /** The kind whose tile shows progress. */
+  protected readonly addingKind = computed(() => this.adding()?.source ?? null)
+  /** The Git location whose tile shows progress: its distribution, `null` for this computer. */
+  protected readonly addingLocation = computed(() => {
+    const request = this.adding()
+    return request?.source === 'git' ? { wslDistro: request.wslDistro ?? null } : null
+  })
   protected readonly error = signal<Failure | null>(null)
 
   protected choose(tile: SourceTile): void {
@@ -113,7 +121,7 @@ export class SettingsAddSourcePaneComponent {
           this.locationsFor.set(tile.kind)
           return
         }
-        void this.add({ source: tile.kind.source }, tile.kind.source)
+        void this.add({ source: tile.kind.source })
     }
   }
 
@@ -122,7 +130,7 @@ export class SettingsAddSourcePaneComponent {
       location.wslDistro === null
         ? { source: 'git' }
         : { source: 'git', wslDistro: location.wslDistro }
-    void this.add(request, location.label)
+    void this.add(request)
   }
 
   protected backToSources(): void {
@@ -159,10 +167,10 @@ export class SettingsAddSourcePaneComponent {
     return { kind: 'add', count: existing.length }
   }
 
-  private async add(request: AddConnectionRequestDto, tileId: string): Promise<void> {
+  private async add(request: AddConnectionRequestDto): Promise<void> {
     if (this.adding() !== null || !this.config.hasValue()) return
 
-    this.adding.set(tileId)
+    this.adding.set(request)
     this.error.set(null)
     try {
       const response = await this.settings.addConnection(request)

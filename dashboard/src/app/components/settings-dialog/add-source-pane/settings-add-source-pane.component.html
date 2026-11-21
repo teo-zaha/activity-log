@@ -24,13 +24,14 @@
 
     <ul class="tile-grid">
       @for (location of locations(); track location.label) {
+        @let locationBusy = addingLocation()?.wslDistro === location.wslDistro;
         <li>
           <button
             type="button"
             class="tile"
             data-src="git"
-            [class.is-busy]="adding() === location.label"
-            [disabled]="adding() !== null"
+            [class.is-busy]="locationBusy"
+            [disabled]="busy()"
             [attr.aria-labelledby]="'location-' + $index + '-name'"
             [attr.aria-describedby]="'location-' + $index + '-desc location-' + $index + '-state'"
             (click)="chooseLocation(location)"
@@ -45,10 +46,10 @@
               }}</span>
             </span>
             <span class="tile-state" data-tone="add" [id]="'location-' + $index + '-state'">
-              <mat-icon [class.u-spin]="adding() === location.label">{{
-                adding() === location.label ? 'autorenew' : 'add'
+              <mat-icon [class.u-spin]="locationBusy">{{
+                locationBusy ? 'autorenew' : 'add'
               }}</mat-icon>
-              {{ adding() === location.label ? 'Adding…' : 'Add' }}
+              {{ locationBusy ? 'Adding…' : 'Add' }}
             </span>
           </button>
         </li>
@@ -71,8 +72,8 @@
               class="tile"
               [attr.data-src]="tile.kind.source"
               [attr.data-state]="tile.state.kind"
-              [class.is-busy]="adding() === tile.kind.source"
-              [disabled]="tile.state.kind === 'unsupported' || adding() !== null"
+              [class.is-busy]="addingKind() === tile.kind.source"
+              [disabled]="tile.state.kind === 'unsupported' || busy()"
               [attr.aria-labelledby]="'tile-' + tile.kind.source + '-name'"
               [attr.aria-describedby]="
                 'tile-' + tile.kind.source + '-desc tile-' + tile.kind.source + '-state'
@@ -93,7 +94,7 @@
                 [attr.data-tone]="tile.state.kind"
                 [id]="'tile-' + tile.kind.source + '-state'"
               >
-                @if (adding() === tile.kind.source) {
+                @if (addingKind() === tile.kind.source) {
                   <mat-icon class="u-spin">autorenew</mat-icon>
                   Adding…
                 } @else {
