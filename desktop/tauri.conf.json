@@ -35,6 +35,8 @@
   "bundle": {
     "active": true,
     "targets": "all",
+    "publisher": "Activity Log contributors",
+    "copyright": "Copyright © 2026 Activity Log contributors",
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",
