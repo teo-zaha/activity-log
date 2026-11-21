@@ -137,6 +137,19 @@ svg.i.sm{width:15px;height:15px}svg.i.xs{width:13px;height:13px}
 .selbar .btn{height:30px;background:#1f2937;border-color:#374151;color:#e6edf3}
 .selbar .btn.primary{background:var(--accent);border-color:var(--accent)}
 .selbar .kbd{background:transparent;border-color:#4b5563;color:#9ca3af}
+
+/* Decided layer (2026-11-21), added beside the original content */
+.layer-banner{display:flex;gap:14px;align-items:flex-start;margin:0 0 22px;padding:14px 18px;border-radius:16px;background:#fff;border:2px solid #0d9488;box-shadow:0 2px 10px rgba(13,148,136,.12);font-size:13.5px;line-height:1.45;color:#3d4756;max-width:1280px}
+.layer-banner .stamp{flex-shrink:0;padding:5px 10px;border-radius:999px;background:#0d9488;color:#fff;font:800 11px/1.2 Inter,system-ui,sans-serif;letter-spacing:.06em;text-transform:uppercase}
+.layer-banner b{color:#0f1623}.layer-banner h3{margin:0 0 4px;font-size:15px;color:#0f1623}
+.layer-banner ul{margin:6px 0 0;padding-left:18px}.layer-banner li{margin:3px 0}
+.layer-banner a{color:#2563eb;font-weight:600}
+.layer-banner .src{display:inline-flex;align-items:center;height:18px;padding:0 7px;border-radius:6px;font:800 10px/1 Inter,system-ui,sans-serif;letter-spacing:.05em;text-transform:uppercase;vertical-align:1px}
+.layer-banner .src.a{background:#dbeafe;color:#1e40af}.layer-banner .src.b{background:#fef3c7;color:#92400e}.layer-banner .src.c{background:#f3e8ff;color:#6b21a8}.layer-banner .src.l{background:#ccfbf1;color:#115e59}
+.layer-banner .stt{display:inline-flex;align-items:center;height:18px;padding:0 7px;border-radius:999px;font:700 10px/1 Inter,system-ui,sans-serif;letter-spacing:.04em;text-transform:uppercase;border:1px solid currentColor;vertical-align:1px}
+.layer-banner .stt.ok{color:#15803d}.layer-banner .stt.ch{color:#1d4ed8}.layer-banner .stt.def{color:#b45309}.layer-banner .stt.rej{color:#b91c1c}
+.layer-banner .grid2{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:4px 26px}
+@media (max-width:760px){.layer-banner{flex-direction:column}.layer-banner .grid2{grid-template-columns:1fr}}
 </style></head>
 <body><svg width="0" height="0" style="position:absolute" aria-hidden="true">
 <symbol id="brand" viewBox="0 0 24 24"><path d="M3 16l5-6 4 4 8-9"/></symbol>
@@ -181,6 +194,12 @@ svg.i.sm{width:15px;height:15px}svg.i.xs{width:13px;height:13px}
 <div class="page">
 <header class="doc"><h1>B · Command-centric</h1><nav><a href="index.html">← Overview</a><a href="a-views-grow.html">A</a><a href="c-workspace.html">C</a><a href="shared-write-flow.html">Shared: access &amp; confirm</a></nav></header>
 <p class="lede">The four views stay as they are. One <b>command bar</b> (<span class="kbd">⌘</span> <span class="kbd">K</span>, or the field in the header) becomes the way into everything new. It searches work items and your own activity side by side, runs verbs (log time, new ticket, move, assign, check in) and hands requests to the agent. Its forms are small. The confirm step is the same preview the other directions use, shown inside the bar.</p>
+<section class="layer-banner" aria-label="Decided layer, 2026-11-21"><span class="stamp">Decided 2026-11-21</span><div><h3>This page is kept as drawn. B gives the direction mix two pieces.</h3><p style="margin:0">Added beside the original; nothing below changed. See <a href="decided-2026-11-21.html">Decided (2026-11-21): the direction mix</a>.</p>
+<ul>
+<li><span class="stt ok">Adopted</span> the <b>selection bar</b> (Screen 2, pin 9): its look is used for multi-select in every view (Q18).</li>
+<li><span class="stt def">Deferred</span> the <b>⌘K command bar</b>, after the actions exist, on top of the shortcut registry; it only lists existing actions and opens the existing dialogs.</li>
+<li><span class="stt rej">Rejected</span> the bar as the way into everything, verb tokens, one answer mixing remote items with your activity, the drafts chip and the bar as a phone sheet (hard to discover, poor on phones, Jira's create forms do not fit). Day totals in the headers come from <span class="src c">C</span>'s header instead (Q3).</li>
+</ul></div></section>
 
 <div class="caption"><span class="tag">Screen 1</span>One query, three kinds of answer: actions, work items, your activity</div>
 <div class="screen">

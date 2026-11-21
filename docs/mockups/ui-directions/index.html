@@ -129,12 +129,37 @@ tr:last-child td{border-bottom:0}
 ol.plist{padding-left:20px}ol.plist li{margin:5px 0;font-size:13.5px}
 .links{display:flex;gap:10px;flex-wrap:wrap;margin:6px 0 0}
 @media (max-width:900px){.dirs,.find{grid-template-columns:1fr}}
+
+/* Decided layer (2026-11-21), added beside the original content */
+.layer-banner{display:flex;gap:14px;align-items:flex-start;margin:0 0 22px;padding:14px 18px;border-radius:16px;background:#fff;border:2px solid #0d9488;box-shadow:0 2px 10px rgba(13,148,136,.12);font-size:13.5px;line-height:1.45;color:#3d4756;max-width:1280px}
+.layer-banner .stamp{flex-shrink:0;padding:5px 10px;border-radius:999px;background:#0d9488;color:#fff;font:800 11px/1.2 Inter,system-ui,sans-serif;letter-spacing:.06em;text-transform:uppercase}
+.layer-banner b{color:#0f1623}.layer-banner h3{margin:0 0 4px;font-size:15px;color:#0f1623}
+.layer-banner ul{margin:6px 0 0;padding-left:18px}.layer-banner li{margin:3px 0}
+.layer-banner a{color:#2563eb;font-weight:600}
+.layer-banner .src{display:inline-flex;align-items:center;height:18px;padding:0 7px;border-radius:6px;font:800 10px/1 Inter,system-ui,sans-serif;letter-spacing:.05em;text-transform:uppercase;vertical-align:1px}
+.layer-banner .src.a{background:#dbeafe;color:#1e40af}.layer-banner .src.b{background:#fef3c7;color:#92400e}.layer-banner .src.c{background:#f3e8ff;color:#6b21a8}.layer-banner .src.l{background:#ccfbf1;color:#115e59}
+.layer-banner .stt{display:inline-flex;align-items:center;height:18px;padding:0 7px;border-radius:999px;font:700 10px/1 Inter,system-ui,sans-serif;letter-spacing:.04em;text-transform:uppercase;border:1px solid currentColor;vertical-align:1px}
+.layer-banner .stt.ok{color:#15803d}.layer-banner .stt.ch{color:#1d4ed8}.layer-banner .stt.def{color:#b45309}.layer-banner .stt.rej{color:#b91c1c}
+.layer-banner .grid2{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:4px 26px}
+@media (max-width:760px){.layer-banner{flex-direction:column}.layer-banner .grid2{grid-template-columns:1fr}}
 </style></head>
 <body><div class="page">
 <header class="doc"><h1>How the UI grows: three directions</h1></header>
 <p class="lede">Activity Log is growing from a read-only log of your own work into a tool that also searches and writes to Jira Data Center (then GitLab and Odoo), tracks time and later lets an agent prepare writes for you. These are three ways the UI could follow. All three share one write pattern: a per-connection allow list, a core-rendered preview and a confirm button that names the effect. Mockups are static, 1280×800 desktop screens with made-up data, drawn in the app's own tokens.</p>
 <div class="links"><a class="btn" href="a-views-grow.html">A · Views grow</a><a class="btn" href="b-command.html">B · Command-centric</a><a class="btn" href="c-workspace.html">C · Workspace with agent</a><a class="btn ghost" href="shared-write-flow.html">Shared: Access settings and the confirm dialog</a></div>
 
+<section class="layer-banner" aria-label="Decided layer, 2026-11-21" style="flex-direction:column;gap:8px"><div style="display:flex;gap:12px;align-items:center"><span class="stamp">Decided 2026-11-21</span><h3 style="margin:0">No single direction was chosen: the next version is a mix</h3></div>
+<p style="margin:0">Everything below this box is the original comparison and stays as it was. The decisions (<code>docs/open-decisions-design.md</code>, the native-feel and layout decisions, and the UI decisions of 21 November, Q1–Q18) take:</p>
+<div class="grid2"><ul>
+<li><span class="src a">A</span> the backbone: the Work group with Work items, Time and Review, the docked detail, “Open in &lt;source&gt;”.</li>
+<li><span class="src c">C</span> the calendar look (solid, hatched, dashed; logged-of-present headers; lanes in the multi-day views once Time exists), the review cards and draft screen inside A's Review view, the legend, “No agent connected” and the “from agent” badge.</li>
+<li><span class="src b">B</span> the selection bar now; the ⌘K command bar later.</li>
+</ul><ul>
+<li><span class="src l">Later decisions</span> details and write confirmations as pages on phones, one phone tab per group (in the browser too), the shortcut registry and macOS menu, drafts of both origins, Access as a section, AI access shown once an agent can connect, writes refused on plain http.</li>
+<li><span class="stt def">Deferred</span> C's docked tray with the agent feed, status line and Pause; ⌘K. <span class="stt rej">Rejected</span> the sidebar fold at 1280 px, B as the way into everything, A's and C's phone tab layouts.</li>
+</ul></div>
+<p style="margin:0">Screens: <a href="decided-2026-11-21.html#today-1">the app today</a> · <a href="decided-2026-11-21.html#decided-1">Work items</a> · <a href="decided-2026-11-21.html#decided-2">calendar with time</a> · <a href="decided-2026-11-21.html#decided-3">Review</a> · <a href="decided-2026-11-21.html#decided-4">Access</a> · <a href="decided-2026-11-21.html#decided-5">phone</a>. Each original page now opens with a box saying what was adopted, changed, deferred or rejected from it.</p>
+</section>
 <h2>Recommendation</h2>
 <div class="rec">
  <h3>Build A as the backbone. Take two pieces from C now, and B's command bar later.</h3>

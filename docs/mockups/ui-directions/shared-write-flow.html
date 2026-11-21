@@ -125,6 +125,19 @@ svg.i.sm{width:15px;height:15px}svg.i.xs{width:13px;height:13px}
 .toast .ic{display:grid;place-items:center;width:30px;height:30px;border-radius:10px;flex-shrink:0}
 .toast .acts{display:flex;gap:6px;margin-top:8px}.toast .btn{height:28px;font-size:12px}
 .olbl{position:absolute;z-index:56;left:790px;font:700 10.5px/1 Inter,system-ui;letter-spacing:.08em;text-transform:uppercase;color:#fff;text-shadow:0 1px 2px rgba(0,0,0,.4)}
+
+/* Decided layer (2026-11-21), added beside the original content */
+.layer-banner{display:flex;gap:14px;align-items:flex-start;margin:0 0 22px;padding:14px 18px;border-radius:16px;background:#fff;border:2px solid #0d9488;box-shadow:0 2px 10px rgba(13,148,136,.12);font-size:13.5px;line-height:1.45;color:#3d4756;max-width:1280px}
+.layer-banner .stamp{flex-shrink:0;padding:5px 10px;border-radius:999px;background:#0d9488;color:#fff;font:800 11px/1.2 Inter,system-ui,sans-serif;letter-spacing:.06em;text-transform:uppercase}
+.layer-banner b{color:#0f1623}.layer-banner h3{margin:0 0 4px;font-size:15px;color:#0f1623}
+.layer-banner ul{margin:6px 0 0;padding-left:18px}.layer-banner li{margin:3px 0}
+.layer-banner a{color:#2563eb;font-weight:600}
+.layer-banner .src{display:inline-flex;align-items:center;height:18px;padding:0 7px;border-radius:6px;font:800 10px/1 Inter,system-ui,sans-serif;letter-spacing:.05em;text-transform:uppercase;vertical-align:1px}
+.layer-banner .src.a{background:#dbeafe;color:#1e40af}.layer-banner .src.b{background:#fef3c7;color:#92400e}.layer-banner .src.c{background:#f3e8ff;color:#6b21a8}.layer-banner .src.l{background:#ccfbf1;color:#115e59}
+.layer-banner .stt{display:inline-flex;align-items:center;height:18px;padding:0 7px;border-radius:999px;font:700 10px/1 Inter,system-ui,sans-serif;letter-spacing:.04em;text-transform:uppercase;border:1px solid currentColor;vertical-align:1px}
+.layer-banner .stt.ok{color:#15803d}.layer-banner .stt.ch{color:#1d4ed8}.layer-banner .stt.def{color:#b45309}.layer-banner .stt.rej{color:#b91c1c}
+.layer-banner .grid2{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:4px 26px}
+@media (max-width:760px){.layer-banner{flex-direction:column}.layer-banner .grid2{grid-template-columns:1fr}}
 </style></head>
 <body><svg width="0" height="0" style="position:absolute" aria-hidden="true">
 <symbol id="brand" viewBox="0 0 24 24"><path d="M3 16l5-6 4 4 8-9"/></symbol>
@@ -169,6 +182,16 @@ svg.i.sm{width:15px;height:15px}svg.i.xs{width:13px;height:13px}
 <div class="page">
 <header class="doc"><h1>Shared by all three directions</h1><nav><a href="index.html">← Overview</a><a href="a-views-grow.html">A</a><a href="b-command.html">B</a><a href="c-workspace.html">C</a></nav></header>
 <p class="lede">Whichever direction you pick, these pieces are the same: the <b>Access</b> section in each connection's settings, and the <b>prepare, preview, confirm</b> dialog with its outcomes. Visual grammar used throughout: <b>solid</b> means it happened, <span class="hatch" style="padding:0 6px;border-radius:4px;border:1px solid var(--logged)">hatched</span> means time is booked, <span style="padding:0 6px;border-radius:4px;border:1.5px dashed var(--agent);color:var(--agent-fg)">dashed violet</span> means a draft nothing has sent yet.</p>
+<section class="layer-banner" aria-label="Decided layer, 2026-11-21"><span class="stamp">Decided 2026-11-21</span><div><h3>This page is kept as drawn. Its write pattern is shared by the direction mix.</h3><p style="margin:0">Added beside the original; nothing below changed. See <a href="decided-2026-11-21.html">Decided (2026-11-21): the direction mix</a>.</p>
+<div class="grid2"><ul>
+<li><span class="stt ok">Adopted</span> one preview-and-confirm pattern for every write: core's preview, the button naming the effect, Enter never sending, outcome unknown sticky.</li>
+<li><span class="stt ok">Adopted</span> allowed and granted shown apart; amber write toggles that ask once.</li>
+<li><span class="stt ch">Changed</span> Access is a <b>section</b> of the source pane, not a tab, and the sidebar shows no access summary; a small AI badge marks a source chip whose AI access is on (Q15).</li>
+</ul><ul>
+<li><span class="stt ch">Changed</span> agent rights show only once an agent can connect (Q16).</li>
+<li><span class="stt ch">Changed</span> <code>insecure = true</code> is dropped: a plain-<code>http</code> connection other than localhost can read but never write (Q17).</li>
+<li><span class="stt ch">Changed</span> on a phone the confirmation is a page, not a sheet (Q8); a draft's Discard leaves an audit line in Logs (Q10).</li>
+</ul></div></div></section>
 
 <div class="caption"><span class="tag">Screen 1</span>Settings › Work Jira › Access: allow list per connection, with what the token can actually do</div>
 <div class="screen">
