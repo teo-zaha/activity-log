@@ -452,21 +452,26 @@ Run collections and manage `config.toml` without building the dashboard.
 
 ### Collecting activity
 
-| Flag                | Description                                                               |
-| ------------------- | ------------------------------------------------------------------------- |
-| `--range <preset>`  | `today`, `yesterday`, `week`, `lastweek`, `month`, or `lastmonth`         |
-| `--since <date>`    | Start local day (`YYYY-MM-DD`); defaults to 30 days ago without `--range` |
-| `--until <date>`    | End local day (`YYYY-MM-DD`); defaults to today without `--range`         |
-| `--format <format>` | `json` (default) or `markdown`                                            |
-| `--output <path>`   | Output file path (default: `logs/activity_log.json` or `.md`)             |
-| `--config <path>`   | Config file path (overrides `ACTIVITY_LOG_CONFIG` and default location)   |
+| Flag                | Description                                                                                             |
+| ------------------- | ------------------------------------------------------------------------------------------------------- |
+| `--range <preset>`  | `today`, `yesterday`, `week`, `lastweek`, `month`, or `lastmonth`                                       |
+| `--since <date>`    | Start local day (`YYYY-MM-DD`); defaults to 30 days ago without `--range`                               |
+| `--until <date>`    | End local day (`YYYY-MM-DD`); defaults to today without `--range`                                       |
+| `--format <format>` | `json` (default) or `markdown`                                                                          |
+| `--output <path>`   | Output file path (default: `logs/activity_log.json` or `.md`); `-` writes the export to standard output |
+| `--config <path>`   | Config file path (overrides `ACTIVITY_LOG_CONFIG` and default location)                                 |
 
 Dates are whole local days. `--range week` and `--range lastweek` start on Monday, as in the dashboard.
+
+Each source gets one line: collected with its entry count, skipped when it has nothing to give on this machine (another OS, an app not installed or not running, no repositories), or failed. With `--output -` the export alone goes to standard output and every other line to standard error (run it as `pnpm -s cli:collect`, or the binary itself, so pnpm's banner stays out of the export).
+
+Exit status: `0` when every source was collected or skipped; `1` when a source failed (refused, unreachable, timed out, not configured, not permitted, or its collection failed) after the export of the others is written, and for any error, an invalid flag or value included.
 
 ```bash
 pnpm cli:collect --range week
 pnpm cli:collect --range lastmonth --format markdown --output reports/last-month.md
 pnpm cli:collect --since 2026-11-01 --until 2026-11-14
+pnpm -s cli:collect --range today --output - | jq '.entries | length'
 ```
 
 ### Managing sources

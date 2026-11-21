@@ -18,6 +18,8 @@ use activity_log_core::{
 };
 use anyhow::{Result, bail};
 
+use crate::results::problem_terms;
+
 #[cfg(test)]
 mod tests;
 
@@ -231,7 +233,12 @@ pub(crate) fn list_lines(providers: &[ProviderInfo]) -> Vec<String> {
             let status = match (&info.reason, info.usable) {
                 (None, true) => "✓ ready".to_string(),
                 (Some(reason), true) => format!("! {reason}"),
-                (reason, false) => format!("✗ {}", reason.as_deref().unwrap_or("unavailable")),
+                (Some(reason), false) => format!("✗ {reason}"),
+                (None, false) => format!(
+                    "✗ {}",
+                    info.problem
+                        .map_or("unavailable", |problem| problem_terms(problem).0)
+                ),
             };
             format!(
                 "{:width$}  {:label_width$}  {status}",

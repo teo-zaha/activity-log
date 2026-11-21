@@ -5,8 +5,9 @@ Standalone Rust command-line interface for `activity-log`.
 ## Responsibilities
 
 - Run activity collection without starting the API server
-- Write JSON or Markdown output files
-- Resolve relative date presets such as `today`, `week`, and `lastmonth`
+- Write JSON or Markdown output files, or the export alone to standard output (`--output -`)
+- Say how each source did, and exit 1 when one failed
+- Resolve relative date presets such as `today`, `week` (from Monday), and `lastmonth`
 - Provide a separate Rust binary that generates TypeScript DTO files for the Angular app
 
 ## Important entry points

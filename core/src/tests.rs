@@ -9,7 +9,7 @@ use futures::{FutureExt, future::BoxFuture};
 use tokio::sync::Notify;
 
 use crate::{
-    collect_activity_detailed_with_provider_runtimes, collect_planned, collect_progressively,
+    collect_planned, collect_progressively, collect_runtimes,
     model::{
         ActivityEntry, ActivityLog, CollectOptions, ConnectionCount, ConnectionId, Source,
         SupportedOs, SystemEntry, SystemEntryType,
@@ -86,7 +86,7 @@ async fn git_connections_share_emails_and_entries_name_their_connection() {
         start: Utc.with_ymd_and_hms(2026, 3, 1, 0, 0, 0).unwrap(),
         end: Utc.with_ymd_and_hms(2026, 4, 1, 0, 0, 0).unwrap(),
     };
-    let collected = collect_activity_detailed_with_provider_runtimes(options, &runtimes).await;
+    let collected = collect_runtimes(options, &runtimes).await.project(options);
 
     let mut commits = collected
         .log
@@ -140,7 +140,7 @@ async fn a_commit_in_two_clones_is_listed_once() {
         start: Utc.with_ymd_and_hms(2026, 3, 1, 0, 0, 0).unwrap(),
         end: Utc.with_ymd_and_hms(2026, 4, 1, 0, 0, 0).unwrap(),
     };
-    let collected = collect_activity_detailed_with_provider_runtimes(options, &runtimes).await;
+    let collected = collect_runtimes(options, &runtimes).await.project(options);
 
     assert_eq!(
         collected.log.entries.len(),
@@ -306,7 +306,7 @@ async fn a_fast_connection_is_reported_while_a_slow_one_still_collects() {
 
     // The order the connections finish in does not change the result.
     release.notify_one();
-    let at_once = collect_activity_detailed_with_provider_runtimes(march(), &runtimes).await;
+    let at_once = collect_runtimes(march(), &runtimes).await.project(march());
     assert_eq!(wire(&at_once.log), wire(&collected.log));
 }
 
@@ -345,7 +345,7 @@ async fn a_blocked_startup_check_does_not_delay_another_connection() {
 async fn a_failed_connection_is_listed_without_entries() {
     let runtimes = fake_runtimes(&Arc::new(Notify::new()), &["broken", "fast"]).await;
 
-    let collected = collect_activity_detailed_with_provider_runtimes(march(), &runtimes).await;
+    let collected = collect_runtimes(march(), &runtimes).await.project(march());
 
     assert_eq!(labels(&collected.log), ["fast"]);
     assert_eq!(counts(&collected.log), [("broken", 0), ("fast", 1)]);
@@ -467,7 +467,7 @@ async fn entries_a_source_repeats_get_ids_of_their_own_and_one_warning() {
     let release = Arc::new(Notify::new());
     let runtimes = fake_runtimes(&release, &["twice", "fast"]).await;
 
-    let collected = collect_activity_detailed_with_provider_runtimes(march(), &runtimes).await;
+    let collected = collect_runtimes(march(), &runtimes).await.project(march());
 
     let mut ids = collected
         .log
@@ -515,7 +515,7 @@ async fn a_commit_two_clones_of_one_connection_hold_is_not_numbered() {
     let runtimes =
         inspect_provider_runtimes_with(&[git_connection("both-clones", parent.path())]).await;
 
-    let collected = collect_activity_detailed_with_provider_runtimes(march(), &runtimes).await;
+    let collected = collect_runtimes(march(), &runtimes).await.project(march());
 
     let ids = collected
         .log
