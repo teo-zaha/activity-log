@@ -11,6 +11,7 @@ import { RouterOutlet } from '@angular/router'
 import { SettingsDialogLauncher } from './components/settings-dialog/settings-dialog-launcher.service'
 import { WindowControlsComponent } from './components/window-controls/window-controls.component'
 import { ActivityService } from './services/activity.service'
+import { NativeMenuService } from './services/native-menu/native-menu.service'
 import { ThemeService } from './services/theme.service'
 import { followTouchInput } from './utils/touch-input'
 import { WindowChromeService } from './services/window-chrome.service'
@@ -35,6 +36,8 @@ export class AppComponent implements OnInit {
 
   constructor() {
     inject(SettingsDialogLauncher).followUrl()
+    // The macOS menu bar, in the desktop app there; the page keeps every key until it is in.
+    inject(NativeMenuService).start()
 
     followTouchInput(this.document)
 

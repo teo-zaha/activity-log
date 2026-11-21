@@ -300,5 +300,9 @@ test('no key listener on the document or the window outside the shortcut service
 
 test('the shortcut service is the one that listens', () => {
   const source = readFileSync(join(APP, ...OWNER), 'utf8')
-  assert.equal(globalKeyListenersInScript(source).length, 1)
+  // The keys, and when a held key is let go (the macOS menu's accelerators wait it out).
+  assert.deepEqual(
+    globalKeyListenersInScript(source).map(where => where.replace(/^\d+: /, '')),
+    ["listener(this.document, 'keydown')", "listener(this.document, 'keyup')"]
+  )
 })

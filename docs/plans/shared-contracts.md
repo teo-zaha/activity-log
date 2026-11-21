@@ -1394,7 +1394,8 @@ One table of app shortcuts, one document listener and one resolution rule decide
 ```ts
 /** `global`, or the scope a route declares in `data.shortcutScope`. Slice 9 adds 'work-items'. */
 export type ShortcutScope = 'global' | 'timeline' | 'calendar'
-export type MenuSubmenu = 'app' | 'file' | 'edit' | 'view' | 'window' | 'help'
+// `MenuSubmenu` ('app' | 'file' | 'edit' | 'view' | 'window' | 'help') is generated from Rust
+// (`core/src/model/menu/`), with `MENU_SUBMENUS`; see "As built (step 10a)" below.
 
 export interface Chord {
   /** Normalized by `utils/key-chord.ts`: 'mod+r', 'f5', '/', '?', 'escape', 'mod+[', 'alt+arrowleft'. */
@@ -1426,11 +1427,15 @@ export interface ShortcutEntry {
 bind(id: ShortcutId, run: () => void | false, enabled?: Signal<boolean>): () => void
 /** Opens a layer (a detail page or panel, the phone settings page) until the returned function is called. */
 openLayer(layer: { readonly hidesRoute: boolean }): () => void
-/** Runs `id` as a key would, with the same guards; for buttons without a host and menu items. */
-trigger(id: ShortcutId): boolean
-resolve(keys: ChordKeys): Signal<ShortcutEntry | null>
+/** A menu item with an accelerator: what a press of `keys` would run, by that chord's typing rule. */
 triggerChord(keys: ChordKeys): boolean
-/** Set by the native menu once `setAsAppMenu()` resolved (NF-6). */
+/** A menu item without an accelerator, only ever clicked: the guards without the typing rule. */
+choose(id: ShortcutId): boolean
+/** The entry a press of `keys` runs in the scope on screen (an item's title). */
+resolve(keys: ChordKeys): Signal<ShortcutEntry | null>
+/** Whether `id` would run now, read from signals: scope, layers, dialogs, enabled bindings. */
+available(id: ShortcutId): boolean
+/** Set by `NativeMenuService` once `install_menu` answered `installed` (step 10a). */
 readonly menuOwnsAccelerators: WritableSignal<boolean>
 ```
 
@@ -1438,7 +1443,7 @@ readonly menuOwnsAccelerators: WritableSignal<boolean>
 
 On a `keydown` at the document (the only key listener for app shortcuts), dispatched in the bubbling phase so focused widgets see the key first:
 
-1. Ignore it when `defaultPrevented` (a field or widget consumed it, which also leaves every layer open), during IME composition (`isComposing`, key 229), on auto-repeat, or when the target is inside an `inert` subtree.
+1. Ignore it when `defaultPrevented` (a field or widget consumed it, which also leaves every layer open), during IME composition (`isComposing`, key 229), on auto-repeat, or when the target is inside an `inert` subtree. A menu accelerator runs nothing while a key is held either (`triggerChord` declines until a key goes up or the window loses focus): WebKit hands each repeat of a ⌘ key the page leaves on to the menu, also one the page cannot read as its chord (macOS shows ⌘[ as ⌘Ö on a German layout).
 2. Normalize it to `ChordKeys` (`mod` = ⌘ on macOS, Ctrl elsewhere).
 3. Candidates: entries with that chord for this OS and build (`where` per chord).
 4. **Active scope**: if an open layer has `hidesRoute` (the phone settings page, a phone detail page), the route scope is inactive and only `global` entries apply; otherwise the `shortcutScope` of the deepest route in `router.routerState.snapshot` that declares one, recomputed on `router.lastSuccessfulNavigation()`, else `global`.
@@ -1451,13 +1456,23 @@ On a `keydown` at the document (the only key listener for app shortcuts), dispat
 
 **Escape** keeps today's behaviour (`event-detail.component.ts:135`, `settings-page-host.component.ts:60`): `layer.close` has `escape` with `whileTyping: true`; a field or a dialog that handles Escape marks it handled and step 1 stops it; otherwise the top layer's binding closes that layer only. Each layer binds `layer.close` when it opens; inner layers open later, so they are on top. A layer that wants Escape to reach the layer below returns false.
 
-**Menu dispatch**: a menu item's action runs `trigger`/`triggerChord` with the same guards; for an entry whose renderer chord is not `whileTyping`, the action declines while `document.activeElement` is editable. Because a native accelerator consumes the keystroke before the page sees it, a chord may be `menuAccelerator` only if it has no text-editing meaning on that OS: ⌘[ on macOS qualifies; Alt+← (word navigation) is never a menu accelerator and stays renderer-only, not while typing.
+**Menu dispatch**: an item with an accelerator runs `triggerChord(keys)` with the same guards; when the chord is not `whileTyping`, it declines while `document.activeElement` is editable (the menu event cannot tell a click from the keystroke, so View › Back clicked while typing does nothing too). An item without an accelerator can only be clicked and runs `choose(id)`: the same guards, without the typing rule (Export…, Copy Link, Help › Keyboard Shortcuts run while a field has focus). Because a native accelerator consumes the keystroke before the page sees it, a chord may be `menuAccelerator` only if it has no text-editing meaning on that OS: ⌘[ on macOS qualifies; Alt+← (word navigation) is never a menu accelerator and stays renderer-only, not while typing.
 
 ### Menu items (NF-6)
 
 - Entries with `menu` are grouped per submenu and OS by their `menuAccelerator` chord. A chord shared by several entries becomes one item whose title is `resolve(keys)().label` and whose action is `triggerChord(keys)`; the title follows scope changes with `setText`. ⌘F is the case: `app.filter` ("Filter Activity…", global) and, with slice 9, `work.search` ("Search work items…", `work-items`) share `mod+f` in `edit`.
-- An entry with `menu` and no accelerator chord is one item without an accelerator whose action is `trigger(id)` (Export…, Copy Link, Help › Keyboard Shortcuts, whose `?` stays in the renderer).
+- An entry with `menu` and no accelerator chord is one item without an accelerator whose action is `choose(id)` (Export…, Copy Link, Help › Keyboard Shortcuts, whose `?` stays in the renderer).
+- The views (⌘1–4, View) decline under a layer, as ⌘F does: they would switch the view behind the details or the phone's Settings tab.
 - Accelerators come only from `menuAccelerator` chords, through `toAccelerator()`. All menu operations go through the signed plan's single serial queue tagged with a generation (NF-6).
+
+**As built (step 10a), replacing NF-6's JS menu.** NF-6 proposed building the menu in the dashboard with `@tauri-apps/api/menu`. The menu is built in Rust instead (`desktop/src/app_menu/`), from a `MenuSpec` the dashboard derives from the table (`services/native-menu/menu-plan.ts`), for two reasons: the JS API names items by free strings that both sides would have to agree on, while the spec names them by numeric `MenuItemKey`s inside a host-assigned generation, all generated by ts-rs (`MenuSpec`, `MenuItemState`, `MenuKey`, `MenuInstall`, `MenuItemUpdate`, `MenuCommand`, the `MENU_COMMANDS` and `MENU_COMMAND_EVENT` names); and the layout around the system items and the accelerator mapping are Rust code a Rust test pins (`MenuKey::accelerator`, parsed by Tauri's own parser). `toAccelerator()` is `menuKeyOf` (dashboard, chord to `MenuKey`) plus `MenuKey::accelerator` (Rust). The contract:
+
+- `install_menu(spec) -> MenuInstall`: `installed { generation }` on macOS, `notOffered` elsewhere; a spec with a key or an accelerator twice is `invalidRequest`; a failure to build or install keeps the menu before (`internal`). `MenuError` maps in `core/src/backend_error/`.
+- `update_menu(generation, items)`: all or none; a generation that is not the installed one is `conflict`, an unknown key or a kind change `invalidRequest`.
+- `menu-command` event, `MenuCommand { generation, key }`; the dashboard drops one of another generation and holds those that arrive before its install's answer.
+- A page load (`PageLoadEvent::Started`) retires the installed menu and restores Tauri's default one, so a reloaded page that has not installed yet keeps its keys.
+- `menuOwnsAccelerators` is set only after `installed`; the serial queue is one install, then one update at a time carrying what changed since the last answered one. The states are read after each render (`afterRenderEffect`), so a binding that reads the page (a disabled Collect button) is read as shown.
+- Not done: a failed update is sent again only with the next change, and a `conflict` leaves `menuOwnsAccelerators` set (a retired menu means the page was replaced, so this does not occur today).
 
 ### Invariants (a registry spec checks them)
 

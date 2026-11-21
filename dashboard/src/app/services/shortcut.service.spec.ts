@@ -1,4 +1,4 @@
-import { Component } from '@angular/core'
+import { Component, computed, signal } from '@angular/core'
 import { TestBed } from '@angular/core/testing'
 import { MatDialog } from '@angular/material/dialog'
 import { Router, provideRouter } from '@angular/router'
@@ -150,19 +150,24 @@ describe('ShortcutService', () => {
     expect(run).not.toHaveBeenCalled()
   })
 
-  it('applies the typing rule to a command run from outside the keyboard', async () => {
+  it('applies the typing rule to a menu accelerator, not to a menu item chosen by a click', async () => {
     const shortcuts = await setup()
     const back = vi.fn()
     const collect = vi.fn()
+    const exportMarkdown = vi.fn()
     shortcuts.bind('app.back', back)
     shortcuts.bind('app.collect', collect)
+    shortcuts.bind('app.export-markdown', exportMarkdown)
     field().focus()
 
-    // Back is not a typing chord: from a menu it waits while a field has focus; Collect is one.
-    expect(shortcuts.trigger('app.back')).toBe(false)
-    expect(shortcuts.trigger('app.collect')).toBe(true)
+    // Back is not a typing chord: from the menu it waits while a field has focus; Collect is one.
+    expect(shortcuts.triggerChord('mod+[')).toBe(false)
+    expect(shortcuts.triggerChord('mod+r')).toBe(true)
     expect(back).not.toHaveBeenCalled()
     expect(collect).toHaveBeenCalledOnce()
+    // An item without a key is only ever clicked: it runs while a field has focus.
+    expect(shortcuts.choose('app.export-markdown')).toBe(true)
+    expect(exportMarkdown).toHaveBeenCalledOnce()
 
     // A command that hands on to another (⌘F to the filter) is past the typing rule already.
     const filter = vi.fn()
@@ -184,7 +189,7 @@ describe('ShortcutService', () => {
     expect(press('/').defaultPrevented).toBe(false)
     expect(press('?').defaultPrevented).toBe(false)
     expect(press('Escape').defaultPrevented).toBe(false)
-    expect(shortcuts.trigger('timeline.filter')).toBe(false)
+    expect(shortcuts.choose('timeline.filter')).toBe(false)
     closePicker()
 
     expect(press('/').defaultPrevented).toBe(true)
@@ -224,7 +229,7 @@ describe('ShortcutService', () => {
     await TestBed.inject(Router).navigateByUrl('/timeline')
     const close = shortcuts.openLayer({ kind: 'page', hidesRoute: true })
     expect(press('/').defaultPrevented).toBe(false)
-    expect(shortcuts.trigger('timeline.filter')).toBe(false)
+    expect(shortcuts.choose('timeline.filter')).toBe(false)
     close()
     expect(press('/').defaultPrevented).toBe(true)
     expect(run).toHaveBeenCalledOnce()
@@ -356,5 +361,132 @@ describe('ShortcutService', () => {
     expect(browser.hint('app.collect')).toBeNull()
     expect(browser.ariaKeys('app.collect')).toBeNull()
     expect(browser.hint('timeline.filter')).toBe('/')
+  })
+
+  it('leaves a menu accelerator to the macOS menu only once the menu is installed', async () => {
+    const shortcuts = await setup({ os: 'mac', build: 'desktop' })
+    const collect = vi.fn()
+    const close = vi.fn()
+    shortcuts.bind('app.collect', collect)
+    shortcuts.bind('layer.close', close)
+
+    // Before (or after a failed installation) the page takes ⌘R.
+    expect(press('r', { metaKey: true }).defaultPrevented).toBe(true)
+    shortcuts.menuOwnsAccelerators.set(true)
+    expect(press('r', { metaKey: true }).defaultPrevented).toBe(false)
+    // Escape is no accelerator: the page keeps it.
+    expect(press('Escape').defaultPrevented).toBe(true)
+    shortcuts.menuOwnsAccelerators.set(false)
+    expect(press('r', { metaKey: true }).defaultPrevented).toBe(true)
+
+    expect(collect).toHaveBeenCalledTimes(2)
+    expect(close).toHaveBeenCalledOnce()
+  })
+
+  it('runs a held menu accelerator once: its repeats from the menu run nothing', async () => {
+    const shortcuts = await setup({ os: 'mac', build: 'desktop' })
+    const collect = vi.fn()
+    shortcuts.bind('app.collect', collect)
+    shortcuts.menuOwnsAccelerators.set(true)
+
+    // The menu runs each repeat the page leaves it: whatever key it is on this layout.
+    press('r', { metaKey: true })
+    expect(shortcuts.triggerChord('mod+r')).toBe(true)
+    press('r', { metaKey: true, repeat: true })
+    expect(shortcuts.triggerChord('mod+r')).toBe(false)
+    press('ö', { metaKey: true, repeat: true })
+    expect(shortcuts.triggerChord('mod+r')).toBe(false)
+    document.body.dispatchEvent(new KeyboardEvent('keyup', { key: 'r', bubbles: true }))
+    expect(shortcuts.triggerChord('mod+r')).toBe(true)
+
+    // Leaving the window while holding a key lets it go too.
+    press('r', { metaKey: true, repeat: true })
+    expect(shortcuts.triggerChord('mod+r')).toBe(false)
+    window.dispatchEvent(new Event('blur'))
+    expect(shortcuts.triggerChord('mod+r')).toBe(true)
+
+    expect(collect).toHaveBeenCalledTimes(3)
+  })
+
+  it('keeps every chord off macOS, whatever the flag says', async () => {
+    const shortcuts = await setup({ os: 'other', build: 'desktop' })
+    const collect = vi.fn()
+    shortcuts.bind('app.collect', collect)
+    shortcuts.menuOwnsAccelerators.set(true)
+
+    expect(press('r', { ctrlKey: true }).defaultPrevented).toBe(true)
+    expect(collect).toHaveBeenCalledOnce()
+  })
+
+  it('runs a chord from the menu by the scope on screen and the chord’s typing rule', async () => {
+    const shortcuts = await setup()
+    const back = vi.fn()
+    const collect = vi.fn()
+    shortcuts.bind('app.back', back)
+    shortcuts.bind('app.collect', collect)
+    const input = field()
+    input.focus()
+
+    // Back from the menu does nothing while typing; Collect is a typing chord.
+    expect(shortcuts.triggerChord('mod+[')).toBe(false)
+    expect(shortcuts.triggerChord('mod+r')).toBe(true)
+    input.blur()
+    expect(shortcuts.triggerChord('mod+[')).toBe(true)
+    expect(back).toHaveBeenCalledOnce()
+    expect(collect).toHaveBeenCalledOnce()
+
+    // `/` is the Timeline's: from the menu it does nothing on another view.
+    const filter = vi.fn()
+    shortcuts.bind('timeline.filter', filter)
+    await TestBed.inject(Router).navigateByUrl('/day')
+    expect(shortcuts.triggerChord('/')).toBe(false)
+    expect(filter).not.toHaveBeenCalled()
+  })
+
+  it('resolves a chord to the entry of the scope on screen as the route changes', async () => {
+    const shortcuts = await setup()
+    const slash = shortcuts.resolve('/')
+    const collect = shortcuts.resolve('mod+r')
+
+    expect(slash()?.id).toBe('timeline.filter')
+    expect(collect()?.id).toBe('app.collect')
+    await TestBed.inject(Router).navigateByUrl('/day')
+    expect(slash()).toBeNull()
+    shortcuts.openLayer({ kind: 'page', hidesRoute: true })
+    await TestBed.inject(Router).navigateByUrl('/timeline')
+    expect(slash()).toBeNull()
+  })
+
+  it('says, as signals change, whether an entry would run', async () => {
+    const shortcuts = await setup()
+    const enabled = signal(true)
+    const available = computed(() => shortcuts.available('app.collect'))
+
+    expect(available()).toBe(false)
+    const unbind = shortcuts.bind('app.collect', vi.fn(), enabled)
+    expect(available()).toBe(true)
+    enabled.set(false)
+    expect(available()).toBe(false)
+    enabled.set(true)
+
+    const closePicker = shortcuts.openLayer({ kind: 'modal' })
+    expect(available()).toBe(false)
+    closePicker()
+    expect(available()).toBe(true)
+
+    const dialogs = TestBed.inject(MatDialog)
+    const dialog = dialogs.open(BlankComponent)
+    expect(available()).toBe(false)
+    dialog.close()
+    await vi.waitFor(() => expect(available()).toBe(true))
+
+    unbind()
+    expect(available()).toBe(false)
+    // A view's entry runs only while its view is on screen.
+    shortcuts.bind('timeline.filter', vi.fn())
+    const filter = computed(() => shortcuts.available('timeline.filter'))
+    expect(filter()).toBe(true)
+    await TestBed.inject(Router).navigateByUrl('/day')
+    expect(filter()).toBe(false)
   })
 })

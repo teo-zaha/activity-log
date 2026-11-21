@@ -1,8 +1,10 @@
 import { DOCUMENT } from '@angular/common'
 import { InjectionToken, Service, type Signal, computed, inject, signal } from '@angular/core'
+import { toSignal } from '@angular/core/rxjs-interop'
 import { MatDialog } from '@angular/material/dialog'
 import { type ActivatedRouteSnapshot, Router } from '@angular/router'
 import { listener, setupSync } from '@signality/core/browser/listener'
+import { concat, map, mergeMap, of, scan } from 'rxjs'
 import {
   type Build,
   type Chord,
@@ -15,7 +17,7 @@ import {
   resolveChord,
   shortcut,
 } from '../models/shortcuts'
-import { type Os, ariaChord, chordOf, formatChord, osOf } from '../utils/key-chord'
+import { type ChordKeys, type Os, ariaChord, chordOf, formatChord, osOf } from '../utils/key-chord'
 import { RuntimeEnvironmentService } from './backend/runtime-environment.service'
 
 export interface ShortcutPlatform {
@@ -30,6 +32,15 @@ export const SHORTCUT_PLATFORM = new InjectionToken<ShortcutPlatform>('ShortcutP
     os: osOf(inject(DOCUMENT).defaultView?.navigator.userAgent ?? ''),
     build: inject(RuntimeEnvironmentService).isTauri() ? 'desktop' : 'browser',
   }),
+})
+
+/**
+ * The table keys and the macOS menu are resolved from: `SHORTCUTS`. A spec gives entries the app
+ * has yet to add, such as a view's own ⌘F beside the global one.
+ */
+export const SHORTCUT_TABLE = new InjectionToken<readonly ShortcutEntry[]>('ShortcutTable', {
+  providedIn: 'root',
+  factory: (): readonly ShortcutEntry[] => SHORTCUTS,
 })
 
 /** The route data key a view's route declares its scope under. */
@@ -114,12 +125,47 @@ function routeScopeOf(root: ActivatedRouteSnapshot): ShortcutScope {
 @Service()
 export class ShortcutService {
   private readonly platform = inject(SHORTCUT_PLATFORM)
+  private readonly table = inject(SHORTCUT_TABLE)
   private readonly router = inject(Router)
   private readonly dialogs = inject(MatDialog)
   private readonly document = inject(DOCUMENT)
   private readonly bindings = new Map<ShortcutId, Binding[]>()
   private readonly fallbacks = new Map<ShortcutId, Binding>()
+  /** Raised as bindings come and go, so what reads them (`available`) reads them again. */
+  private readonly bound = signal(0)
   private readonly layers = signal<readonly ShortcutLayer[]>([])
+  /** The ids of the open dialogs, as each opens and until it has closed. */
+  private readonly openDialogs = toSignal(
+    this.dialogs.afterOpened.pipe(
+      mergeMap(dialog =>
+        concat(
+          of({ dialog, open: true }),
+          dialog.afterClosed().pipe(map(() => ({ dialog, open: false })))
+        )
+      ),
+      scan(
+        (open: readonly string[], change) =>
+          change.open ? [...open, change.dialog.id] : open.filter(id => id !== change.dialog.id),
+        this.dialogs.openDialogs.map(dialog => dialog.id)
+      )
+    ),
+    { initialValue: this.dialogs.openDialogs.map(dialog => dialog.id) }
+  )
+
+  /**
+   * Set by the macOS menu once it is installed: from then on it takes the chords that are its
+   * accelerators (`menuAccelerator`) and runs them through `triggerChord`, so the page leaves
+   * them alone. Before that, after a failed installation and everywhere else the page takes
+   * every chord.
+   */
+  readonly menuOwnsAccelerators = signal(false)
+
+  /**
+   * A key is held down: the latest press was an auto-repeat and no key went up since. WebKit
+   * hands each repeat of a ⌘ key the page leaves on to the menu, also one the page cannot read as
+   * its chord (macOS shows ⌘[ as ⌘Ö on a German layout), so the menu's commands wait it out.
+   */
+  private held = false
 
   private readonly routeScope = computed(() => {
     this.router.lastSuccessfulNavigation()
@@ -136,7 +182,13 @@ export class ShortcutService {
   constructor() {
     // Bubbling, so a field or widget that handles a key first marks it handled. At once: a key
     // can come before the first render.
-    setupSync(() => listener(this.document, 'keydown', event => this.onKeydown(event)))
+    setupSync(() => {
+      listener(this.document, 'keydown', event => this.onKeydown(event))
+      // Only to know when a held key is let go (`held`).
+      listener(this.document, 'keyup', () => (this.held = false))
+      const view = this.document.defaultView
+      if (view) listener(view, 'blur', () => (this.held = false))
+    })
   }
 
   /**
@@ -148,11 +200,14 @@ export class ShortcutService {
     const binding: Binding = { run, enabled }
     const stack = this.bindings.get(id) ?? []
     this.bindings.set(id, [...stack, binding])
-    return () =>
+    this.bound.update(count => count + 1)
+    return () => {
       this.bindings.set(
         id,
         (this.bindings.get(id) ?? []).filter(b => b !== binding)
       )
+      this.bound.update(count => count + 1)
+    }
   }
 
   /** The app's own command for `id`, tried once no binding takes the key. One per entry. */
@@ -164,8 +219,11 @@ export class ShortcutService {
     if (this.fallbacks.has(id)) throw new Error(`${id} has a fallback already`)
     const binding: Binding = { run, enabled }
     this.fallbacks.set(id, binding)
+    this.bound.update(count => count + 1)
     return () => {
-      if (this.fallbacks.get(id) === binding) this.fallbacks.delete(id)
+      if (this.fallbacks.get(id) !== binding) return
+      this.fallbacks.delete(id)
+      this.bound.update(count => count + 1)
     }
   }
 
@@ -176,15 +234,25 @@ export class ShortcutService {
   }
 
   /**
-   * Runs `id` as its key would, from somewhere that is not a key press (a menu item): the scope,
-   * the dialogs and the typing rule decide as for a key. An entry none of whose chords here fires
-   * while typing waits while a field has focus.
+   * Runs what a press of `keys` would run here and now, from somewhere that is not a key press
+   * (a menu item's accelerator, which macOS takes before the page): the scope, the dialogs and
+   * the typing rule of the chord it matches decide as for a key, and nothing runs while a key is
+   * held (`held`).
    */
-  trigger(id: ShortcutId): boolean {
-    const entry = shortcut(id)
-    const typing = isEditable(this.document.activeElement)
-    if (typing && !this.chords(entry).some(chord => chord.whileTyping)) return false
-    return this.handOff(id)
+  triggerChord(keys: ChordKeys): boolean {
+    // A held accelerator runs once, as a held key does.
+    if (this.held) return false
+    const match = this.match(keys)
+    if (match === null || (this.typing() && !match.chord.whileTyping)) return false
+    return this.run(match.entry.id)
+  }
+
+  /**
+   * Runs `id` for a menu item without an accelerator, which only a click chooses: the scope, the
+   * dialogs and the bindings decide; the typing rule does not, since no key was pressed.
+   */
+  choose(id: ShortcutId): boolean {
+    return this.run(id)
   }
 
   /**
@@ -192,14 +260,31 @@ export class ShortcutService {
    * dialogs decide; the typing rule does not, since the first command's key passed it already.
    */
   handOff(id: ShortcutId): boolean {
-    const entry = shortcut(id)
-    if (entry.scope !== 'global' && entry.scope !== this.activeScope()) return false
     return this.run(id)
   }
 
+  /** The entry a press of `keys` runs here, following the scope on screen (a menu item's title). */
+  resolve(keys: ChordKeys): Signal<ShortcutEntry | null> {
+    return computed(() => this.match(keys)?.entry ?? null)
+  }
+
+  /**
+   * Whether `id` would run now, from a key or a menu item, as far as signals tell: its scope is
+   * on screen, no modal layer or dialog holds the keys, and a binding or fallback is enabled. The
+   * typing rule is not in it (focus is no signal); `triggerChord` applies it when an item with an
+   * accelerator is chosen.
+   */
+  available(id: ShortcutId): boolean {
+    return this.takers(id).length > 0
+  }
+
   /** The entry a key press of `keys` would run here and now, with the chord it matched. */
-  private resolve(keys: string): { readonly entry: ShortcutEntry; readonly chord: Chord } | null {
-    return resolveChord(SHORTCUTS, { ...this.platform, scope: this.activeScope() }, keys)
+  private match(keys: string): { readonly entry: ShortcutEntry; readonly chord: Chord } | null {
+    return resolveChord(this.table, { ...this.platform, scope: this.activeScope() }, keys)
+  }
+
+  private typing(): boolean {
+    return isEditable(this.document.activeElement)
   }
 
   /** The chords of an entry here: on this platform, and in this build. */
@@ -227,6 +312,8 @@ export class ShortcutService {
   }
 
   private onKeydown(event: KeyboardEvent): void {
+    // Widgets claim only unmodified keys, so a held ⌘ key always gets here.
+    this.held = event.repeat
     // Handled by a field or widget, mid-composition (IME), or held down.
     if (event.defaultPrevented || event.isComposing || event.keyCode === 229 || event.repeat) {
       return
@@ -234,26 +321,45 @@ export class ShortcutService {
     const target = event.target
     if (target instanceof Element && target.closest('[inert]') !== null) return
     const keys = chordOf(event, this.platform.os)
-    const match = keys === null ? null : this.resolve(keys)
-    if (match === null) return
+    const match = keys === null ? null : this.match(keys)
+    if (match === null || this.menuTakes(match.chord)) return
     if (isEditable(target) && !match.chord.whileTyping) return
     if (this.run(match.entry.id)) event.preventDefault()
   }
 
-  /**
-   * The top binding of `id` that takes it, else its fallback. A dialog or a modal layer owns its
-   * keys, Escape included; the help takes only its own `?`, which closes it.
-   */
+  /** Whether the installed macOS menu takes `chord` before the page (`menuOwnsAccelerators`). */
+  private menuTakes(chord: Chord): boolean {
+    return (
+      chord.menuAccelerator &&
+      this.platform.os === 'mac' &&
+      this.platform.build === 'desktop' &&
+      this.menuOwnsAccelerators()
+    )
+  }
+
+  /** The first binding of `id` that runs it, else its fallback; whether one did. */
   private run(id: ShortcutId): boolean {
-    if (this.layers().some(layer => layer.kind === 'modal')) return false
-    const open = this.dialogs.openDialogs
+    return this.takers(id).some(binding => binding.run() !== false)
+  }
+
+  /**
+   * The bindings that would take `id` now, latest first, then its fallback: none while its scope
+   * is not on screen or a dialog or a modal layer owns the keys, Escape included; the help takes
+   * only its own `?`, which closes it. The one rule for keys, menu items and `available`.
+   */
+  private takers(id: ShortcutId): readonly Binding[] {
+    const entry = shortcut(id)
+    if (entry.scope !== 'global' && entry.scope !== this.activeScope()) return []
+    if (this.layers().some(layer => layer.kind === 'modal')) return []
+    const open = this.openDialogs()
     if (open.length > 0) {
-      const onlyHelp = open.every(dialog => dialog.id === SHORTCUT_HELP_DIALOG_ID)
-      if (!onlyHelp || id !== 'app.help') return false
+      const onlyHelp = open.every(dialog => dialog === SHORTCUT_HELP_DIALOG_ID)
+      if (!onlyHelp || id !== 'app.help') return []
     }
+    this.bound()
     const stack = this.bindings.get(id) ?? []
     const fallback = this.fallbacks.get(id)
     const candidates = fallback ? [...stack].reverse().concat(fallback) : [...stack].reverse()
-    return candidates.some(binding => binding.enabled() && binding.run() !== false)
+    return candidates.filter(binding => binding.enabled())
   }
 }
