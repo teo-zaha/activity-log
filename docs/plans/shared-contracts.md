@@ -1393,7 +1393,8 @@ One table of app shortcuts, one document listener and one resolution rule decide
 
 ```ts
 /** `global`, or the scope a route declares in `data.shortcutScope`. Slice 9 adds 'work-items'. */
-export type ShortcutScope = 'global' | 'timeline' | 'calendar'
+export const SHORTCUT_SCOPES = ['global', 'timeline'] as const // no 'calendar': the calendar views have no field
+export type ShortcutScope = (typeof SHORTCUT_SCOPES)[number]
 // `MenuSubmenu` ('app' | 'file' | 'edit' | 'view' | 'window' | 'help') is generated from Rust
 // (`core/src/model/menu/`), with `MENU_SUBMENUS`; see "As built (step 10a)" below.
 
@@ -1425,8 +1426,8 @@ export interface ShortcutEntry {
 ```ts
 /** Binds `run` to `id` until the returned function is called. `run` returning false declines. */
 bind(id: ShortcutId, run: () => void | false, enabled?: Signal<boolean>): () => void
-/** Opens a layer (a detail page or panel, the phone settings page) until the returned function is called. */
-openLayer(layer: { readonly hidesRoute: boolean }): () => void
+/** Opens a layer until the returned function is called: a `page` (a detail page or panel, the phone settings page) or a `modal` that owns the keyboard (an open date picker). */
+openLayer(layer: { readonly kind: 'page'; readonly hidesRoute: boolean } | { readonly kind: 'modal' }): () => void
 /** A menu item with an accelerator: what a press of `keys` would run, by that chord's typing rule. */
 triggerChord(keys: ChordKeys): boolean
 /** A menu item without an accelerator, only ever clicked: the guards without the typing rule. */
