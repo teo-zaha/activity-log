@@ -26,7 +26,7 @@ import { ActivityBackendClient } from './backend/backend-client'
 import { type RuntimeStateSink, RuntimeStateSource } from './runtime-state/runtime-state-source'
 import { FIRST_PAIR_TIMEOUT_MS } from './runtime-state/push-state-source'
 import { ActivityViewStateService } from './activity-view-state.service'
-import { ProviderConfigFacade } from './provider-config-facade.service'
+import { ConnectionSettings } from './connection-settings.service'
 import { localDayRange } from '../utils/local-day'
 import { provideAppRouter } from '../app.routes'
 import { BackendFailure } from './backend/backend-failure'
@@ -78,7 +78,7 @@ function setup(stepMs = 1): {
 }
 
 const save = (): Promise<ProviderConfigSaveResponseDto> =>
-  TestBed.inject(ProviderConfigFacade).saveProviderConfig({
+  TestBed.inject(ConnectionSettings).saveProviderConfig({
     connection: { source: 'jira', name: 'default' },
     label: 'Work',
     values: [],
@@ -598,7 +598,7 @@ describe('ActivityDataService', () => {
       backend.saveGate = reply.gate
       // The removal of Jira is installed; its answer is held.
       backend.providersResponse = { currentOs: 'linux', providers: [providerInfo[0]!] }
-      const removal = TestBed.inject(ProviderConfigFacade).removeConnection({
+      const removal = TestBed.inject(ConnectionSettings).removeConnection({
         source: 'jira',
         name: 'default',
       })

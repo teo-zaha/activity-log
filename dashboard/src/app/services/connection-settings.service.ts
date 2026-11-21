@@ -11,8 +11,12 @@ import type {
 import { ActivityBackendClient } from './backend/backend-client'
 import { ActivityDataService } from './activity-data.service'
 
+/**
+ * The settings' connections as `config.toml` holds them: the snapshot, the check of a save, and
+ * the changes, each of which shows through `ActivityDataService.saveSettings`.
+ */
 @Service()
-export class ProviderConfigFacade {
+export class ConnectionSettings {
   private readonly backend = inject(ActivityBackendClient)
   private readonly data = inject(ActivityDataService)
 

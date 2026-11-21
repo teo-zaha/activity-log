@@ -18,7 +18,7 @@ import { ActivitySelection } from './activity-selection.service'
 import { failure, failureWhile, type Notice } from './failure'
 import { ActivityExportService } from './activity-export.service'
 import { ActivityViewStateService } from './activity-view-state.service'
-import { ProviderConfigFacade } from './provider-config-facade.service'
+import { ConnectionSettings } from './connection-settings.service'
 import { ToastService } from './toast.service'
 import type { ReceiptStanding } from './types'
 import type { ViewMode } from '../utils/app-url'
@@ -30,7 +30,7 @@ export class ActivityService {
   private readonly selection = inject(ActivitySelection)
   private readonly viewState = inject(ActivityViewStateService)
   private readonly exportService = inject(ActivityExportService)
-  private readonly providerConfig = inject(ProviderConfigFacade)
+  private readonly connectionSettings = inject(ConnectionSettings)
   private readonly toast = inject(ToastService)
 
   readonly allEntries = this.data.allEntries
@@ -225,27 +225,27 @@ export class ActivityService {
   }
 
   loadProviderConfig(): Promise<ProviderConfigSnapshotDto> {
-    return this.providerConfig.loadProviderConfig()
+    return this.connectionSettings.loadProviderConfig()
   }
 
   saveProviderConfig(
     request: ProviderConfigSaveRequestDto
   ): Promise<ProviderConfigSaveResponseDto> {
-    return this.providerConfig.saveProviderConfig(request)
+    return this.connectionSettings.saveProviderConfig(request)
   }
 
   checkProviderConfig(
     request: ProviderConfigSaveRequestDto
   ): Promise<ProviderConfigFieldIssueDto[]> {
-    return this.providerConfig.checkProviderConfig(request)
+    return this.connectionSettings.checkProviderConfig(request)
   }
 
   addConnection(request: AddConnectionRequestDto): Promise<AddConnectionResponseDto> {
-    return this.providerConfig.addConnection(request)
+    return this.connectionSettings.addConnection(request)
   }
 
   removeConnection(request: RemoveConnectionRequestDto): Promise<ProviderConfigSaveResponseDto> {
-    return this.providerConfig.removeConnection(request)
+    return this.connectionSettings.removeConnection(request)
   }
 
   /** Where a save's receipt stands against the state on screen, see `ReceiptStanding`. */
