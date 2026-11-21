@@ -238,7 +238,7 @@ Press <kbd>?</kbd> anywhere, or open **Settings → General → Keyboard shortcu
 Single keys never trigger while typing in a field or picking from a list. Letters are read by where they are on the keyboard, so <kbd>R</kbd> and <kbd>⌘R</kbd> work on a Cyrillic or Greek layout too; punctuation and digits by the character typed. **Settings → General → Single-key shortcuts** turns every single key off (<kbd>/</kbd> and <kbd>?</kbd> included) for speech input or stray presses; <kbd>Esc</kbd> and the <kbd>⌘</kbd>/<kbd>Ctrl</kbd> chords stay. The setting is kept on the device, like the theme. On Windows, the desktop app disables WebView2's built-in reload, print, find, and back accelerators so these shortcuts reach the dashboard while standard editing and clipboard shortcuts continue to work.
 
 <p align="center">
-  <img src="pics/shortcuts-help.png" width="820" alt="Keyboard shortcuts help dialog opened with ?">
+  <img src="pics/shortcuts-help.png" width="820" alt="Keyboard shortcuts help in the desktop app on macOS: each command with its ⌘ chord or single key, by where it works">
 </p>
 
 ### Export
