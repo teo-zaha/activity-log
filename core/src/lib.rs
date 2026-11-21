@@ -246,7 +246,7 @@ async fn annotate(runtime: &ProviderRuntime, entries: &mut [ActivityEntry]) {
         diagnostics::warn(
             runtime.id().to_string(),
             format!(
-                "Stopped looking up what is current (such as change stacks) after {} s; the entries show without it",
+                "Stopped adding current details after {} s; the entries show without them",
                 ANNOTATE_TIMEOUT.as_secs()
             ),
         );

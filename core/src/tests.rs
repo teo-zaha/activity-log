@@ -11,8 +11,8 @@ use tokio::sync::Notify;
 use crate::{
     collect_planned, collect_progressively, collect_runtimes,
     model::{
-        ActivityEntry, ActivityLog, CollectOptions, ConnectionCount, ConnectionId, Source,
-        SupportedOs, SystemEntry, SystemEntryType,
+        ActivityEntry, ActivityLog, CollectOptions, ConnectionCount, ConnectionId, LogLevel,
+        Source, SupportedOs, SystemEntry, SystemEntryType,
     },
     provider::{
         ProviderRuntime,
@@ -229,7 +229,8 @@ impl ProviderAdapter for FakeSource {
         Box::pin(async move {
             match name.as_str() {
                 "noted" => {
-                    crate::diagnostics::info("system", "Annotating");
+                    // A warning, so the test tells it from the collection's line by its level.
+                    crate::diagnostics::warn("system", "Annotating");
                     for entry in entries.iter_mut() {
                         if let ActivityEntry::System(entry) = entry {
                             entry.label = Self::annotated(&entry.label);
@@ -625,19 +626,13 @@ async fn annotations_follow_the_logged_collection() {
     let mut labels = labels(&collected.log);
     labels.sort();
     assert_eq!(labels, ["fast", FakeSource::annotated("noted").as_str()]);
-    let lines: Vec<String> = crate::diagnostics::entries()
+    // The check's line, the collection's, then the annotation's warning.
+    let levels: Vec<LogLevel> = crate::diagnostics::entries()
         .into_iter()
         .filter(|line| line.scope == "system/noted")
-        .map(|line| line.message)
+        .map(|line| line.level)
         .collect();
-    let collected_at = lines
-        .iter()
-        .position(|line| line.starts_with("Collected 1 entries"));
-    let annotated_at = lines.iter().position(|line| line == "Annotating");
-    assert!(
-        matches!((collected_at, annotated_at), (Some(collected), Some(annotated)) if collected < annotated),
-        "{lines:?}"
-    );
+    assert_eq!(levels, [LogLevel::Info, LogLevel::Info, LogLevel::Warn]);
 }
 
 /// An annotation that never ends is stopped; the connection keeps its entries and is not
@@ -652,7 +647,13 @@ async fn an_annotation_that_never_ends_costs_no_entries() {
         .collect();
     let started = tokio::time::Instant::now();
 
-    let report = collect_planned(march(), plans, |_| {}).await;
+    // Bounded here too, so a missing safety timeout fails the test instead of hanging it.
+    let report = tokio::time::timeout(
+        crate::ANNOTATE_TIMEOUT * 2,
+        collect_planned(march(), plans, |_| {}),
+    )
+    .await
+    .expect("the safety timeout stops the annotation");
 
     match &report.slots[0].1 {
         Slot::Settled(Outcome::Collected(stored)) => {
