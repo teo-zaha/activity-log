@@ -34,12 +34,19 @@ use crate::{
 #[cfg(test)]
 mod tests;
 #[cfg(any(target_os = "windows", test))]
-pub(crate) mod windows;
+mod windows;
 
-#[cfg(target_os = "windows")]
-use self::windows as windows_impl;
 #[cfg(not(target_os = "windows"))]
-mod windows_impl {
+use self::fallback as imp;
+#[cfg(target_os = "windows")]
+use self::windows as imp;
+/// Whether a WSL distribution has a repository under the target's folders, for the provider's
+/// check.
+#[cfg(target_os = "windows")]
+pub(crate) use self::windows::has_wsl_repos;
+
+#[cfg(not(target_os = "windows"))]
+mod fallback {
     use anyhow::{Result, bail};
 
     use super::{RepoCommits, WslTarget};
@@ -203,7 +210,7 @@ pub(crate) async fn collect_git(
                 distro,
                 dirs: config.wsl_dirs()?,
             };
-            windows_impl::collect_wsl(&target, &options, cancelled)
+            imp::collect_wsl(&target, &options, cancelled)
         }
     })
     .await?

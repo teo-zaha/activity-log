@@ -369,11 +369,9 @@ fn field_label(field: &ProviderConfigFieldRefDto, keys: &[ProviderConfigKey]) ->
     }
 }
 
-#[cfg_attr(not(target_os = "windows"), allow(unused_variables))]
 fn wsl_distros(source: &Source, current_os: &SupportedOs) -> Vec<String> {
-    #[cfg(target_os = "windows")]
     if *source == Source::Git && *current_os == SupportedOs::Windows {
-        return crate::provider::git::windows::default_wsl_distros();
+        return crate::provider::git::default_wsl_distros();
     }
     Vec::new()
 }

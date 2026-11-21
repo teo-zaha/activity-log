@@ -20,7 +20,7 @@ pub(super) fn check_wsl_ready(
     cancelled: &std::sync::atomic::AtomicBool,
 ) -> crate::provider::provider_check_result::ProviderCheckResult {
     use crate::{
-        collect::git::{WslTarget, windows::has_wsl_repos},
+        collect::git::{WslTarget, has_wsl_repos},
         model::ProviderProblem,
         provider::provider_check_result::ProviderCheckResult,
     };
