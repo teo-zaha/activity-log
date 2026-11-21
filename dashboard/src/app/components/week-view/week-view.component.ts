@@ -2,6 +2,7 @@ import { Component, ElementRef, afterNextRender, computed, inject, viewChild } f
 import { MatIconModule } from '@angular/material/icon'
 import { IconButtonComponent } from '../button/icon-button.component'
 import { ButtonComponent } from '../button/button.component'
+import { ActivityDataService } from '../../services/activity-data.service'
 import { ActivitySelection } from '../../services/activity-selection.service'
 import { ActivityViewStateService } from '../../services/activity-view-state.service'
 import type { EntryKey } from '../../providers/connection'
@@ -19,6 +20,7 @@ import { CalendarAllDayRowComponent } from '../calendar/calendar-all-day-row/cal
 import { CalendarDayColumnComponent } from '../calendar/calendar-day-column/calendar-day-column.component'
 import { CalendarHoursComponent } from '../calendar/calendar-hours/calendar-hours.component'
 import { CALENDAR_TIME_ZONE } from '../calendar/calendar-time-zone'
+import { calendarEmptyHint } from '../calendar/calendar-empty-hint'
 import { collectedDays } from '../calendar/collected-days'
 import { injectMinuteClock } from '../../utils/clock'
 import { dateOfKey, wallClock, type DayKey } from '../../utils/local-day'
@@ -67,6 +69,7 @@ interface WeekDay {
 export class WeekViewComponent {
   protected readonly viewState = inject(ActivityViewStateService)
   private readonly selection = inject(ActivitySelection)
+  private readonly data = inject(ActivityDataService)
   protected readonly motion = inject(NavigationMotionService)
   private readonly timeZone = inject(CALENDAR_TIME_ZONE)
 
@@ -132,14 +135,19 @@ export class WeekViewComponent {
     )
   )
 
-  /** What an empty week says: that nothing happened, or that none of it was collected. */
+  /** Why an empty week is empty, see `calendarEmptyHint`; null with entries. */
   protected readonly emptyHint = computed(() => {
     const empty =
       this.allDay().bars.length === 0 && this.columns().every(column => column.items.length === 0)
-    if (!empty) return null
-    return this.collectedDays().length === 0
-      ? 'This week was not collected'
-      : 'No activity in this week'
+    return empty
+      ? calendarEmptyHint({
+          unit: 'week',
+          days: this.days(),
+          from: this.viewState.dateFrom(),
+          to: this.viewState.dateTo(),
+          coverage: this.selection.rangeCoverage(),
+        })
+      : null
   })
 
   /** Only for the collected days: a day outside them has meetings that were not read. */
@@ -177,6 +185,10 @@ export class WeekViewComponent {
       }
     })
   })
+
+  protected collectOwnRange(): void {
+    void this.data.collectShownRange()
+  }
 
   protected openDay(day: DayKey): void {
     void this.viewState.openDay(day)

@@ -214,13 +214,17 @@ describe('WeekViewComponent', () => {
 
   it('says an empty week outside the collection was not collected', async () => {
     await renderWeek({ day: '2026-11-10', from: '2026-11-16', to: '2026-11-22' })
-    expect(screen.getByRole('status').textContent?.trim()).toBe('This week was not collected')
+    expect(screen.getByRole('status').querySelector('.hint-title')?.textContent).toBe(
+      'This week was not collected'
+    )
   })
 
   it('says a collected week without entries had no activity', async () => {
     // Only Sunday is collected: enough to say nothing happened in it.
     await renderWeek({ from: '2026-11-22', to: '2026-11-29' })
-    expect(screen.getByRole('status').textContent?.trim()).toBe('No activity in this week')
+    expect(screen.getByRole('status').querySelector('.hint-title')?.textContent).toBe(
+      'No activity in this week'
+    )
   })
 
   it('totals meeting time only for the days another collection on screen holds', async () => {
@@ -240,5 +244,32 @@ describe('WeekViewComponent', () => {
     // Wednesday's two hours of the late meeting are drawn, but not totalled.
     expect(screen.getByLabelText('Meetings this week: 2h')).toBeTruthy()
     expect(screen.getByRole('button', { name: /^Open day view for Wed 18$/ })).toBeTruthy()
+  })
+
+  it('offers to collect this tab’s range where another collection on screen leaves it out', async () => {
+    const { state } = await renderWeek({
+      from: '2026-11-16',
+      to: '2026-11-22',
+      coverage: {
+        kind: 'other',
+        collected: { from: '2026-11-02', to: '2026-11-08' },
+        own: { from: '2026-11-16', to: '2026-11-22' },
+        overlaps: false,
+      },
+    })
+
+    const status = screen.getByRole('status')
+    expect(status.querySelector('.hint-title')?.textContent).toBe('This week was not collected')
+    expect(status.querySelector('.hint-message')?.textContent).toBe(
+      'The activity on screen covers 2 Nov – 8 Nov 2026.'
+    )
+    screen.getByRole('button', { name: 'Collect 16 Nov – 22 Nov 2026' }).click()
+    expect(state.collects()).toBe(1)
+  })
+
+  it('offers no collect where this tab’s range holds none of the week', async () => {
+    await renderWeek({ day: '2026-11-10', from: '2026-11-16', to: '2026-11-22' })
+
+    expect(screen.queryByRole('button', { name: /^Collect/ })).toBeNull()
   })
 })
