@@ -29,16 +29,26 @@
         size="sm"
         icon="chevron_left"
         label="Previous day"
+        appShortcut="calendar.previous"
         (click)="viewState.navigateDay(-1)"
       ></button>
-      <button appButton variant="ghost" size="sm" class="today-btn" (click)="viewState.goToToday()">
+      <button
+        appButton
+        variant="ghost"
+        size="sm"
+        class="today-btn"
+        appShortcut="calendar.today"
+        (click)="viewState.goToToday()"
+      >
         Today
+        <app-key-tag shortcut="calendar.today" />
       </button>
       <button
         appIconButton
         size="sm"
         icon="chevron_right"
         label="Next day"
+        appShortcut="calendar.next"
         (click)="viewState.navigateDay(1)"
       ></button>
     </div>

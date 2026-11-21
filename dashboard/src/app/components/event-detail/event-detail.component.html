@@ -79,6 +79,7 @@
                 icon="keyboard_arrow_up"
                 label="Previous event"
                 [attr.aria-disabled]="index === 0"
+                [attr.aria-keyshortcuts]="stepKeys().previous"
                 (click)="step(-1)"
               ></button>
               <button
@@ -87,6 +88,7 @@
                 icon="keyboard_arrow_down"
                 label="Next event"
                 [attr.aria-disabled]="index === entries.length - 1"
+                [attr.aria-keyshortcuts]="stepKeys().next"
                 (click)="step(1)"
               ></button>
             </div>

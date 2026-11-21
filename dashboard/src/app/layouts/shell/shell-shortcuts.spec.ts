@@ -44,11 +44,20 @@ async function ready(url: string, platform: ShortcutPlatform): Promise<OpenApp> 
   return app
 }
 
+/** The rows of the open help, each `label: keys`, keys as they read (`⌘R or R`). */
+async function helpRows(): Promise<string[]> {
+  const help = await screen.findByRole('dialog', { name: 'Keyboard shortcuts' })
+  return within(help)
+    .getAllByRole('term')
+    .map(term => `${term.textContent}: ${term.nextElementSibling?.textContent?.trim()}`)
+}
+
 describe('Shortcuts in the app', APP_RENDER_TEST, () => {
   let phone: ReturnType<typeof mockPhone> | null = null
   afterEach(() => {
     phone?.restore()
     phone = null
+    localStorage.clear()
   })
 
   describe('`/` and the Timeline’s filter', () => {
@@ -73,14 +82,17 @@ describe('Shortcuts in the app', APP_RENDER_TEST, () => {
       expect(TestBed.inject(MatDialog).openDialogs).toHaveLength(0)
     })
 
-    it('does nothing on a calendar view, where the Timeline is kept away', async () => {
-      const { router, settle } = await openApp('/timeline', { platform: BROWSER })
-      await screen.findByRole('searchbox', { name: 'Filter activity' }, SLOW)
-      await router.navigateByUrl('/day/2026-05-18')
+    it('switches from a calendar view to the Timeline and focuses its filter, as ⌘F does', async () => {
+      const { router, settle } = await openApp('/day/2026-05-18?from=2026-05-17&to=2026-05-18', {
+        platform: BROWSER,
+      })
+
+      expect(press('/', { code: 'Slash' }).defaultPrevented).toBe(true)
+      await vi.waitFor(() => expect(router.url).toBe('/timeline?from=2026-05-17&to=2026-05-18'))
       await settle()
 
-      expect(press('/').defaultPrevented).toBe(false)
-      expect(document.activeElement?.tagName).not.toBe('INPUT')
+      await vi.waitFor(() => expect(document.activeElement).toBe(filter()), SLOW)
+      expect(filter()).toHaveProperty('value', '')
     })
 
     it('does nothing under the phone’s Settings tab', async () => {
@@ -170,12 +182,27 @@ describe('Shortcuts in the app', APP_RENDER_TEST, () => {
     })
   })
 
-  describe('The views: ⌘1 to ⌘4', () => {
+  describe('The views: ⌘1 to ⌘4, and 1 to 4', () => {
     it('switches the view, keeping the range', async () => {
       const { router } = await openApp('/day/2026-05-18', { platform: MAC_DESKTOP })
 
       expect(press('4', { metaKey: true }).defaultPrevented).toBe(true)
       await vi.waitFor(() => expect(router.url).toBe('/week/2026-05-18'))
+    })
+
+    it('switches the view with the digit alone in the browser, and names it on the links', async () => {
+      const { router } = await openApp('/timeline?from=2026-05-17&to=2026-05-18', {
+        platform: BROWSER,
+      })
+      const views = screen.getByRole('navigation', { name: 'Views' })
+      expect(
+        within(views).getByRole('link', { name: 'Day' }).getAttribute('aria-keyshortcuts')
+      ).toBe('2')
+
+      expect(press('2', { code: 'Digit2' }).defaultPrevented).toBe(true)
+      await vi.waitFor(() => expect(router.url).toMatch(/^\/day\/.*from=2026-05-17&to=2026-05-18$/))
+      expect(press('1', { code: 'Digit1' }).defaultPrevented).toBe(true)
+      await vi.waitFor(() => expect(router.url).toBe('/timeline?from=2026-05-17&to=2026-05-18'))
     })
 
     it('does not switch the view behind open details, as ⌘F does not', async () => {
@@ -194,7 +221,7 @@ describe('Shortcuts in the app', APP_RENDER_TEST, () => {
       await ready('/timeline', MAC_DESKTOP)
       const collect = vi.spyOn(TestBed.inject(ActivityDataService), 'collect')
 
-      expect(collectButton().getAttribute('aria-keyshortcuts')).toBe('Meta+R')
+      expect(collectButton().getAttribute('aria-keyshortcuts')).toBe('Meta+R R')
       expect(collectButton().querySelector('app-key-tag')?.textContent).toBe('⌘R')
 
       filter().focus()
@@ -211,7 +238,7 @@ describe('Shortcuts in the app', APP_RENDER_TEST, () => {
       const data = TestBed.inject(ActivityDataService)
       const collect = vi.spyOn(data, 'collect')
 
-      expect(collectButton().getAttribute('aria-keyshortcuts')).toBe('Control+R F5')
+      expect(collectButton().getAttribute('aria-keyshortcuts')).toBe('Control+R F5 R')
       expect(collectButton().querySelector('app-key-tag')?.textContent).toBe('Ctrl+R')
       expect(press('F5').defaultPrevented).toBe(true)
       await vi.waitFor(() => expect(collect).toHaveBeenCalledOnce())
@@ -279,15 +306,143 @@ describe('Shortcuts in the app', APP_RENDER_TEST, () => {
       expect(document.activeElement).toBe(filter())
     })
 
-    it('leaves the browser its reload, with no key on the button', async () => {
+    it('leaves the browser its reload, and collects with R there', async () => {
       await ready('/timeline', BROWSER)
       const collect = vi.spyOn(TestBed.inject(ActivityDataService), 'collect')
 
-      expect(press('r', { ctrlKey: true }).defaultPrevented).toBe(false)
+      expect(press('r', { ctrlKey: true, code: 'KeyR' }).defaultPrevented).toBe(false)
       expect(press('F5').defaultPrevented).toBe(false)
       expect(collect).not.toHaveBeenCalled()
-      expect(collectButton().hasAttribute('aria-keyshortcuts')).toBe(false)
-      expect(collectButton().querySelector('app-key-tag')?.hasAttribute('hidden')).toBe(true)
+      expect(collectButton().getAttribute('aria-keyshortcuts')).toBe('R')
+      expect(collectButton().querySelector('app-key-tag')?.textContent).toBe('R')
+
+      expect(press('r', { code: 'KeyR' }).defaultPrevented).toBe(true)
+      await vi.waitFor(() => expect(collect).toHaveBeenCalledOnce())
+      // Not from a field, where R types.
+      await vi.waitFor(() => expect(TestBed.inject(ActivityDataService).isLoading()).toBe(false))
+      filter().focus()
+      expect(press('r', { code: 'KeyR' }).defaultPrevented).toBe(false)
+      expect(collect).toHaveBeenCalledOnce()
+    })
+
+    it('shows ⌘R on the desktop app’s button, and takes R there too', async () => {
+      await ready('/timeline', MAC_DESKTOP)
+      const collect = vi.spyOn(TestBed.inject(ActivityDataService), 'collect')
+
+      expect(collectButton().getAttribute('aria-keyshortcuts')).toBe('Meta+R R')
+      expect(collectButton().querySelector('app-key-tag')?.textContent).toBe('⌘R')
+      expect(press('r', { code: 'KeyR' }).defaultPrevented).toBe(true)
+      await vi.waitFor(() => expect(collect).toHaveBeenCalledOnce())
+    })
+  })
+
+  describe('Settings: ⌘, and ,', () => {
+    it(
+      'opens the settings with `,` in the browser, named on the sidebar’s button',
+      async () => {
+        const { router } = await openApp('/timeline', { platform: BROWSER })
+        expect(
+          screen.getByRole('button', { name: 'Settings' }).getAttribute('aria-keyshortcuts')
+        ).toBe(',')
+
+        expect(press(',', { code: 'Comma' }).defaultPrevented).toBe(true)
+        await vi.waitFor(() => expect(router.url).toBe('/timeline?settings=general'))
+        await screen.findByRole('heading', { name: 'Appearance' }, SLOW)
+        await userEvent.click(screen.getByRole('button', { name: 'Close settings' }))
+        await vi.waitFor(() => expect(router.url).toBe('/timeline'))
+        await vi.waitFor(() => expect(TestBed.inject(MatDialog).openDialogs).toHaveLength(0))
+      },
+      SLOW_TEST
+    )
+  })
+
+  describe('The calendar: P, N and T', () => {
+    it('moves the Day view by a day, and goes to today', async () => {
+      const { router, settle } = await openApp('/day/2026-05-18', { platform: BROWSER })
+      await settle()
+      const today = screen.getByRole('button', { name: /Today/ })
+      expect(today.getAttribute('aria-keyshortcuts')).toBe('T')
+      expect(today.querySelector('app-key-tag')?.textContent).toBe('T')
+      expect(
+        screen.getByRole('button', { name: 'Next day' }).getAttribute('aria-keyshortcuts')
+      ).toBe('N')
+
+      expect(press('n', { code: 'KeyN' }).defaultPrevented).toBe(true)
+      await vi.waitFor(() => expect(router.url).toBe('/day/2026-05-19'))
+      await settle()
+      press('p', { code: 'KeyP' })
+      await vi.waitFor(() => expect(router.url).toBe('/day/2026-05-18'))
+      await settle()
+      press('p', { code: 'KeyP' })
+      await vi.waitFor(() => expect(router.url).toBe('/day/2026-05-17'))
+      await settle()
+      press('t', { code: 'KeyT' })
+      await vi.waitFor(() => expect(router.url).not.toBe('/day/2026-05-17'))
+      expect(router.url).toMatch(/^\/day\/\d{4}-\d{2}-\d{2}$/)
+      await settle()
+    })
+
+    it('moves the Week view by a week', async () => {
+      const { router, settle } = await openApp('/week/2026-05-18', { platform: BROWSER })
+      await settle()
+
+      expect(press('n', { code: 'KeyN' }).defaultPrevented).toBe(true)
+      await vi.waitFor(() => expect(router.url).toBe('/week/2026-05-25'))
+    })
+
+    it('does nothing on the Timeline', async () => {
+      const { router } = await openApp('/timeline', { platform: BROWSER })
+      await screen.findByRole('searchbox', { name: 'Filter activity' }, SLOW)
+
+      expect(press('n', { code: 'KeyN' }).defaultPrevented).toBe(false)
+      expect(press('t', { code: 'KeyT' }).defaultPrevented).toBe(false)
+      expect(router.url).toBe('/timeline')
+    })
+  })
+
+  describe('The details: P and N', () => {
+    const group = `/week/2026-05-18?events=${key(git)}&events=${key(jira)}`
+
+    it('steps through a group, not the week behind it, and declines at its ends', async () => {
+      const { router } = await openApp(`${group}&event=${key(git)}`, { platform: BROWSER })
+      await screen.findByRole('heading', { name: git?.title }, SLOW)
+      expect(
+        screen.getByRole('button', { name: 'Next event' }).getAttribute('aria-keyshortcuts')
+      ).toBe('N')
+
+      expect(press('p', { code: 'KeyP' }).defaultPrevented).toBe(false)
+      expect(press('n', { code: 'KeyN' }).defaultPrevented).toBe(true)
+      await screen.findByRole('heading', { name: jira?.title }, SLOW)
+      expect(router.parseUrl(router.url)).toEqual(router.parseUrl(`${group}&event=${key(jira)}`))
+      expect(press('n', { code: 'KeyN' }).defaultPrevented).toBe(false)
+      // Today is the calendar's: it does nothing under the details.
+      expect(press('t', { code: 'KeyT' }).defaultPrevented).toBe(false)
+      expect(router.url.startsWith('/week/2026-05-18')).toBe(true)
+    })
+
+    it('does nothing in the group’s list', async () => {
+      const { router } = await openApp(group, { platform: BROWSER })
+      await screen.findByRole('dialog', {}, SLOW)
+
+      expect(press('n', { code: 'KeyN' }).defaultPrevented).toBe(false)
+      expect(router.parseUrl(router.url)).toEqual(router.parseUrl(group))
+    })
+
+    it('steps the details over the phone’s Settings tab, opened under them', async () => {
+      phone = mockPhone(true)
+      const { router } = await openApp(`${group}&event=${key(git)}`, { platform: BROWSER })
+      await screen.findByRole('heading', { name: git?.title }, SLOW)
+      // `,` opens the Settings tab, which goes under the details.
+      expect(press(',', { code: 'Comma' }).defaultPrevented).toBe(true)
+      await vi.waitFor(() =>
+        expect(router.parseUrl(router.url).queryParams['settings']).toBeDefined()
+      )
+      await screen.findByRole('region', { name: 'Settings' }, SLOW)
+
+      expect(press('n', { code: 'KeyN' }).defaultPrevented).toBe(true)
+      await vi.waitFor(() =>
+        expect(router.parseUrl(router.url).queryParams['event']).toBe(jira?.trackKey)
+      )
     })
   })
 
@@ -390,45 +545,55 @@ describe('Shortcuts in the app', APP_RENDER_TEST, () => {
   })
 
   describe('`?`, the help', () => {
-    it('lists the shortcuts the browser has, and closes with `?` again', async () => {
+    it('lists the shortcuts the browser has by where they work, and closes with `?` again', async () => {
       await openApp('/timeline', { platform: BROWSER })
 
       expect(press('?', { shiftKey: true }).defaultPrevented).toBe(true)
       const help = await screen.findByRole('dialog', { name: 'Keyboard shortcuts' })
-      const rows = within(help)
-        .getAllByRole('term')
-        .map(term => `${term.textContent} ${term.nextElementSibling?.textContent?.trim()}`)
-      expect(rows).toEqual([
-        'Close details or settings Esc',
-        'Keyboard Shortcuts ?',
-        'Filter activity /',
+      expect(
+        within(help)
+          .getAllByRole('heading', { level: 3 })
+          .map(heading => heading.textContent)
+      ).toEqual(['Everywhere', 'Timeline', 'Calendar', 'Event details'])
+      expect(await helpRows()).toEqual([
+        'Collect: R',
+        'Filter Activity…: /',
+        'Timeline: 1',
+        'Day: 2',
+        'Work week: 3',
+        'Week: 4',
+        'Settings…: ,',
+        'Close details or settings: Esc',
+        'Keyboard Shortcuts: ?',
+        'Filter activity: /',
+        'Previous day or week: P',
+        'Next day or week: N',
+        'Today: T',
+        'Previous event: P',
+        'Next event: N',
       ])
+      expect(within(help).queryByText(/Single-key shortcuts are off/)).toBeNull()
 
       press('?', { shiftKey: true })
       await vi.waitFor(() => expect(TestBed.inject(MatDialog).openDialogs).toHaveLength(0))
     })
 
-    it('lists the desktop app’s keys as the platform writes them', async () => {
-      await openApp('/day/2026-05-18', { platform: MAC_DESKTOP })
+    it('lists each command once with all the desktop app’s keys, as the platform writes them', async () => {
+      await openApp('/day/2026-05-18', { platform: WINDOWS_DESKTOP })
 
       press('?')
-      const help = await screen.findByRole('dialog', { name: 'Keyboard shortcuts' })
 
-      const keys = within(help)
-        .getAllByRole('term')
-        .map(term => `${term.textContent}: ${term.nextElementSibling?.textContent?.trim()}`)
-      expect(keys).toEqual([
-        'Collect: ⌘R',
-        'Filter Activity…: ⌘F',
-        'Timeline: ⌘1',
-        'Day: ⌘2',
-        'Work week: ⌘3',
-        'Week: ⌘4',
-        'Settings…: ⌘,',
-        'Back: ⌘[',
+      expect((await helpRows()).slice(0, 10)).toEqual([
+        'Collect: Ctrl+R or F5 or R',
+        'Filter Activity…: Ctrl+F or /',
+        'Timeline: Ctrl+1 or 1',
+        'Day: Ctrl+2 or 2',
+        'Work week: Ctrl+3 or 3',
+        'Week: Ctrl+4 or 4',
+        'Settings…: Ctrl+, or ,',
+        'Back: Alt+←',
         'Close details or settings: Esc',
         'Keyboard Shortcuts: ?',
-        'Filter activity: /',
       ])
     })
   })

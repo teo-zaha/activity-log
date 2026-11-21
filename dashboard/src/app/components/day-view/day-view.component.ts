@@ -32,6 +32,8 @@ import { CalendarHintComponent } from '../calendar/calendar-hint/calendar-hint.c
 import { collectedDays } from '../calendar/collected-days'
 import { injectCalendarZoom } from '../calendar-zoom'
 import { NavigationMotionService } from '../../navigation-motion'
+import { KeyTagComponent } from '../shortcut/key-tag.component'
+import { ShortcutDirective } from '../shortcut/shortcut.directive'
 
 /** The most blocks side by side in the day's one column; more go into an overflow. */
 const MAX_VISIBLE = 5
@@ -46,6 +48,8 @@ const MAX_VISIBLE = 5
     CalendarDayColumnComponent,
     CalendarHoursComponent,
     CalendarHintComponent,
+    KeyTagComponent,
+    ShortcutDirective,
   ],
   templateUrl: './day-view.component.html',
   styleUrl: './day-view.component.scss',

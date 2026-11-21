@@ -14,6 +14,7 @@
                 [queryParams]="{ q: null, settings: null }"
                 [routerLinkActive]="settingsTab() ? [] : 'active'"
                 [ariaCurrentWhenActive]="settingsTab() ? undefined : 'page'"
+                [attr.aria-keyshortcuts]="shortcuts.ariaKeys(viewShortcuts[item.id])"
                 [matTooltip]="item.label"
                 [matTooltipDisabled]="!isRail()"
                 matTooltipPosition="right"
@@ -31,6 +32,7 @@
           class="view-btn"
           [class.active]="settingsTab()"
           [attr.aria-current]="settingsTab() ? 'page' : null"
+          [attr.aria-keyshortcuts]="shortcuts.ariaKeys('app.settings')"
           (click)="showSettingsTab()"
         >
           <mat-icon>settings</mat-icon>
@@ -49,6 +51,7 @@
         class="settings-button"
         type="button"
         (click)="openSettings()"
+        [attr.aria-keyshortcuts]="shortcuts.ariaKeys('app.settings')"
         matTooltip="Settings"
         [matTooltipDisabled]="!isRail()"
         matTooltipPosition="right"

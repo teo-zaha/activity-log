@@ -1,4 +1,4 @@
-import { Component, inject } from '@angular/core'
+import { Component, computed, inject } from '@angular/core'
 import { MatDialog, MatDialogModule } from '@angular/material/dialog'
 import { SHORTCUT_SCOPES, SHORTCUTS, type ShortcutScope } from '../../models/shortcuts'
 import { SHORTCUT_HELP_DIALOG_ID, ShortcutService } from '../../services/shortcut.service'
@@ -8,10 +8,13 @@ import { ButtonComponent } from '../button/button.component'
 const SCOPE_TITLES: Readonly<Record<ShortcutScope, string>> = {
   global: 'Everywhere',
   timeline: 'Timeline',
+  calendar: 'Calendar',
+  details: 'Event details',
 }
 
 interface HelpRow {
   readonly label: string
+  /** Every chord of the command here, in the table's order: the template joins them with "or". */
   readonly keys: readonly string[]
 }
 
@@ -31,7 +34,9 @@ export function toggleShortcutHelp(dialogs: MatDialog): void {
     id: SHORTCUT_HELP_DIALOG_ID,
     panelClass: 'app-dialog-panel',
     backdropClass: 'settings-dialog-backdrop',
-    width: 'min(440px, var(--dialog-max-width))',
+    width: 'min(720px, var(--dialog-max-width))',
+    // Material caps a dialog at 560px otherwise: too narrow for the help's two columns.
+    maxWidth: 'var(--dialog-max-width)',
     maxHeight: 'var(--dialog-max-height)',
     autoFocus: 'dialog',
     restoreFocus: true,
@@ -39,7 +44,10 @@ export function toggleShortcutHelp(dialogs: MatDialog): void {
   })
 }
 
-/** The help (`?`): every shortcut that has a key here, by where it works, from the registry. */
+/**
+ * The help (`?`): every command that has a key here, once, with all its keys, by where it
+ * works, from the registry. With single-key shortcuts off it lists only the keys left.
+ */
 @Component({
   selector: 'app-shortcut-help-dialog',
   imports: [ButtonComponent, MatDialogModule],
@@ -49,11 +57,13 @@ export function toggleShortcutHelp(dialogs: MatDialog): void {
 export class ShortcutHelpDialogComponent {
   private readonly shortcuts = inject(ShortcutService)
 
-  protected readonly sections: readonly HelpSection[] = SHORTCUT_SCOPES.map(scope => ({
-    title: SCOPE_TITLES[scope],
-    rows: SHORTCUTS.filter(entry => entry.scope === scope).flatMap(entry => {
-      const keys = this.shortcuts.chords(entry).map(chord => this.shortcuts.format(chord))
-      return keys.length > 0 ? [{ label: entry.label, keys }] : []
-    }),
-  })).filter(section => section.rows.length > 0)
+  protected readonly sections = computed<readonly HelpSection[]>(() =>
+    SHORTCUT_SCOPES.map(scope => ({
+      title: SCOPE_TITLES[scope],
+      rows: SHORTCUTS.filter(entry => entry.scope === scope).flatMap(entry => {
+        const keys = this.shortcuts.chords(entry).map(chord => this.shortcuts.format(chord))
+        return keys.length > 0 ? [{ label: entry.label, keys }] : []
+      }),
+    })).filter(section => section.rows.length > 0)
+  )
 }

@@ -60,14 +60,15 @@ export class SettingsPageHostComponent {
       wasOpen = open
     })
 
-    // While open, the page is a layer that hides the view: Escape closes it while it is on top
-    // (details over it close first; a dialog over it, a confirmation or a select's list, handles
-    // Escape first, too), and Back leaves its section, then the page.
+    // While open, the page is a layer that hides the view and its keys (`global`: no scope of its
+    // own). Escape closes it while it is on top (details over it close first; a dialog over it, a
+    // confirmation or a select's list, handles Escape first, too), and Back leaves its section,
+    // then the page.
     effect(onCleanup => {
       if (!this.open()) return
       const onTop = (): boolean => this.layers.top() === 'settingsPage'
       const off = [
-        this.shortcuts.openLayer({ kind: 'page', hidesRoute: true }),
+        this.shortcuts.openLayer({ kind: 'page', scope: 'global', onTop }),
         this.shortcuts.bind('layer.close', () => void this.viewState.closeSettings(), onTop),
         this.shortcuts.bind('app.back', () => this.pageBack(), onTop),
       ]

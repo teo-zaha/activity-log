@@ -12,16 +12,17 @@ import {
   type ShortcutId,
   VIEW_SHORTCUTS,
   chordsIn,
+  isCharacterChord,
 } from '../../models/shortcuts'
 import type { ViewMode } from '../../utils/app-url'
-import { type ChordKeys, type Os, menuKeyOf } from '../../utils/key-chord'
+import { type CommandChordKeys, type Os, menuKeyOf } from '../../utils/key-chord'
 
 /**
  * What a chosen item runs: what its accelerator's chord resolves to here and now (several
  * entries may share it, the scope on screen deciding, as ⌘F does), or its one entry.
  */
 export type MenuAction =
-  | { readonly kind: 'chord'; readonly keys: ChordKeys }
+  | { readonly kind: 'chord'; readonly keys: CommandChordKeys }
   | { readonly kind: 'entry'; readonly id: ShortcutId }
 
 /** One item of the macOS menu, made from the shortcut table. */
@@ -56,10 +57,14 @@ interface Draft {
  */
 export function menuPlanOf(entries: readonly ShortcutEntry[], os: Os): readonly MenuSectionPlan[] {
   const drafts: Draft[] = []
-  const byChord = new Map<ChordKeys, Draft>()
+  const byChord = new Map<CommandChordKeys, Draft>()
+  // A character key is never an accelerator, so the single-key setting cannot change the menu.
+  const here = { os, build: 'desktop', characterKeys: 'on' } as const
   for (const entry of entries) {
     if (entry.menu === undefined) continue
-    const chord = chordsIn(entry, os, 'desktop').find(c => c.menuAccelerator)
+    const chord = chordsIn(entry, here)
+      .filter(c => !isCharacterChord(c))
+      .find(c => c.menuAccelerator)
     if (chord === undefined) {
       drafts.push({ accelerator: null, action: { kind: 'entry', id: entry.id }, entries: [entry] })
       continue

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { SHORTCUTS, type ShortcutEntry } from '../../models/shortcuts'
+import { SHORTCUTS, type ShortcutEntry, isCharacterChord } from '../../models/shortcuts'
 import { menuPlanOf, menuSpecOf, sameState } from './menu-plan'
 
 /** Each section as `submenu: title (accelerator)`, the way the menu bar reads. */
@@ -28,6 +28,25 @@ describe('menuPlanOf', () => {
       ['view: Back (bracketLeft)'],
       ['help: Keyboard Shortcuts'],
     ])
+  })
+
+  it('is the same with the single keys as without: they are the page’s, never the menu’s', () => {
+    const withoutSingleKeys = SHORTCUTS.map(entry => ({
+      ...entry,
+      chords: entry.chords.filter(chord => !isCharacterChord(chord)),
+    }))
+    // What the menu shows and runs: the items, their accelerators and actions, not the chords.
+    const shown = (entries: readonly ShortcutEntry[], os: 'mac' | 'other'): unknown =>
+      menuPlanOf(entries, os).map(section => ({
+        submenu: section.submenu,
+        items: section.items.map(({ entries: of, ...item }) => ({
+          ...item,
+          ids: of.map(e => e.id),
+        })),
+      }))
+    for (const os of ['mac', 'other'] as const) {
+      expect(shown(SHORTCUTS, os)).toEqual(shown(withoutSingleKeys, os))
+    }
   })
 
   it('checks the views, runs a shared accelerator by its chord and the others by their entry', () => {

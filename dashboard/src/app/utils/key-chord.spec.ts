@@ -27,6 +27,24 @@ describe('chordOf', () => {
     expect(chordOf(press('[', { metaKey: true }), 'mac')).toBe('mod+[')
   })
 
+  it('reads a letter by its physical key, whatever the layout types there', () => {
+    // A Cyrillic layout types к where a Latin keyboard has R.
+    expect(chordOf(press('к', { code: 'KeyR' }), 'other')).toBe('r')
+    expect(chordOf(press('к', { code: 'KeyR', metaKey: true }), 'mac')).toBe('mod+r')
+    expect(chordOf(press('Н', { code: 'KeyN', shiftKey: true }), 'other')).toBe('shift+n')
+    // QWERTZ swaps Y and Z: the key is read where it is.
+    expect(chordOf(press('z', { code: 'KeyY' }), 'mac')).toBe('y')
+  })
+
+  it('reads punctuation and digits by the character typed', () => {
+    // AZERTY types & unshifted and 1 with Shift; German types / with Shift+7.
+    expect(chordOf(press('1', { code: 'Digit1', shiftKey: true }), 'other')).toBe('1')
+    expect(chordOf(press('&', { code: 'Digit1' }), 'other')).toBe('&')
+    expect(chordOf(press('/', { code: 'Digit7', shiftKey: true }), 'other')).toBe('/')
+    // AZERTY types , where a Latin keyboard has M.
+    expect(chordOf(press(',', { code: 'KeyM' }), 'other')).toBe(',')
+  })
+
   it('has no chord for a modifier alone or a key being composed', () => {
     expect(chordOf(press('Meta', { metaKey: true }), 'mac')).toBeNull()
     expect(chordOf(press('Shift', { shiftKey: true }), 'other')).toBeNull()
@@ -43,6 +61,9 @@ describe('formatChord and ariaChord', () => {
     expect(formatChord('mod+[', 'mac')).toBe('⌘[')
     expect(formatChord('escape', 'mac')).toBe('Esc')
     expect(formatChord('/', 'other')).toBe('/')
+    expect(formatChord('p', 'mac')).toBe('P')
+    expect(formatChord('n', 'other')).toBe('N')
+    expect(formatChord('t', 'mac')).toBe('T')
   })
 
   it('name the keys as `aria-keyshortcuts` does', () => {
@@ -51,6 +72,8 @@ describe('formatChord and ariaChord', () => {
     expect(ariaChord('alt+arrowleft', 'other')).toBe('Alt+ArrowLeft')
     expect(ariaChord('escape', 'mac')).toBe('Escape')
     expect(ariaChord('f5', 'other')).toBe('F5')
+    expect(ariaChord('t', 'mac')).toBe('T')
+    expect(ariaChord('1', 'other')).toBe('1')
   })
 })
 
@@ -73,5 +96,6 @@ describe('menuKeyOf', () => {
     expect(menuKeyOf('mod+escape')).toBeNull()
     expect(menuKeyOf('/')).toBeNull()
     expect(menuKeyOf('f5')).toBeNull()
+    for (const key of ['n', 'p', 't', 'r'] as const) expect(menuKeyOf(key)).toBeNull()
   })
 })
