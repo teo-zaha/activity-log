@@ -41,7 +41,7 @@ export interface EntryDetailSection {
   fields: readonly ProviderDetailField[]
 }
 
-interface EntryUiAdapterInit {
+export interface EntryUiAdapterInit {
   title: string
   meta: string
   entryIcon: string
