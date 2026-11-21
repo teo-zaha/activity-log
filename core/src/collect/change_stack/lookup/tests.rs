@@ -21,7 +21,8 @@ fn a_change_shows_as_its_number_title_and_link() {
         &reqwest::Url::parse("https://gitlab.example.org")
             .unwrap()
             .origin(),
-    );
+    )
+    .ok();
     let change = OpenChange::new(
         7,
         "Parse A".into(),

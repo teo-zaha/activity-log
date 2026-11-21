@@ -4,7 +4,7 @@
 mod merge_requests;
 mod pager;
 
-pub(crate) use merge_requests::{MergeRequestFilter, MergeRequestRow};
+pub(crate) use merge_requests::{MergeRequestFilter, MergeRequestRow, RowFit};
 pub(crate) use pager::{PageError, PagedRow, Pager};
 
 use reqwest::{Url, header::HeaderName};

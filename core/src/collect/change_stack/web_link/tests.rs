@@ -1,6 +1,6 @@
 use reqwest::Url;
 
-use super::web_link;
+use super::{Unshown, web_link};
 
 fn origin(url: &str) -> url::Origin {
     Url::parse(url).unwrap().origin()
@@ -14,7 +14,7 @@ fn a_link_to_the_hosts_pages_is_kept() {
         "https://GITLAB.example.org:443/acme/widgets/-/merge_requests/12",
         "https://gitlab.example.org/other/place?tab=diffs#note_1",
     ] {
-        assert!(web_link(link, &allowed).is_some(), "{link}");
+        assert!(web_link(link, &allowed).is_ok(), "{link}");
     }
 }
 
@@ -34,7 +34,7 @@ fn every_other_link_is_dropped() {
         "gitlab.example.org/acme",
         "",
     ] {
-        assert_eq!(web_link(link, &allowed), None, "{link}");
+        assert!(web_link(link, &allowed).is_err(), "{link}");
     }
 }
 
@@ -42,10 +42,12 @@ fn every_other_link_is_dropped() {
 #[test]
 fn http_and_https_are_different_origins() {
     let allowed = origin("http://gitlab.example.org:8080");
-    assert!(web_link("http://gitlab.example.org:8080/acme/widgets", &allowed).is_some());
+    assert!(web_link("http://gitlab.example.org:8080/acme/widgets", &allowed).is_ok());
     assert_eq!(
         web_link("https://gitlab.example.org:8080/acme/widgets", &allowed),
-        None
+        Err(Unshown::Elsewhere(origin(
+            "https://gitlab.example.org:8080"
+        )))
     );
 }
 
@@ -55,4 +57,30 @@ fn the_link_is_kept_as_parsed() {
     let allowed = origin("https://gitlab.example.org");
     let link = web_link("https://GitLab.Example.org/a b", &allowed).unwrap();
     assert_eq!(link.as_str(), "https://gitlab.example.org/a%20b");
+}
+
+/// A web page elsewhere says where it leads, without its user info; anything else is no web
+/// page at all.
+#[test]
+fn a_dropped_link_says_why() {
+    let allowed = origin("https://gitlab.example.org");
+    assert_eq!(
+        web_link(
+            "https://gitlab.internal:8443/acme/widgets/-/merge_requests/12",
+            &allowed
+        ),
+        Err(Unshown::Elsewhere(origin("https://gitlab.internal:8443")))
+    );
+    for link in [
+        "https://u:p@gitlab.internal/acme",
+        "https://u@gitlab.example.org/acme",
+        "javascript:alert(1)",
+        "/acme/widgets",
+    ] {
+        assert_eq!(
+            web_link(link, &allowed),
+            Err(Unshown::NotAWebPage),
+            "{link}"
+        );
+    }
 }

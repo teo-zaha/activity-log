@@ -4,7 +4,10 @@
 
 use std::{
     collections::HashMap,
-    sync::atomic::{AtomicUsize, Ordering},
+    sync::{
+        Mutex, PoisonError,
+        atomic::{AtomicUsize, Ordering},
+    },
 };
 
 use futures::{FutureExt, future::BoxFuture};
@@ -14,14 +17,14 @@ use url::Origin;
 use crate::{
     collect::change_stack::{
         Budget, ChangeLookup, ChangeRef, FailureKind, LookupCause, LookupFailure, OpenChange,
-        OpenPage, change_stacks, web_link,
+        OpenPage, Unshown, change_stacks, web_link,
     },
     diagnostics,
     model::{ActivityEntry, ChangeStack, GitLabEntry},
     provider::{
         gitlab::{
             GitLabConfig,
-            api::{GitLabApi, MergeRequestFilter, MergeRequestRow, PageError, Pager},
+            api::{GitLabApi, MergeRequestFilter, MergeRequestRow, PageError, Pager, RowFit},
         },
         provider_context::ProviderContext,
         remote_api::Retry,
@@ -92,21 +95,20 @@ async fn look_up(
     let budget = Budget::for_collection();
     let report = change_stacks(wanted, &lookup, &budget).await;
     report.log("gitlab", GitLabApi::SERVICE);
-    let skipped = lookup.skipped();
-    if skipped > 0 {
-        diagnostics::warn(
-            "gitlab",
-            format!(
-                "Change stacks: skipped {skipped} {} GitLab sent that could not be read",
-                if skipped == 1 {
-                    "merge request"
-                } else {
-                    "merge requests"
-                }
-            ),
-        );
-    }
+    lookup.log_left_out();
     report.stacks
+}
+
+/// `count` merge requests, worded for one and for many.
+fn merge_requests(count: usize) -> String {
+    format!(
+        "{count} {}",
+        if count == 1 {
+            "merge request"
+        } else {
+            "merge requests"
+        }
+    )
 }
 
 /// Requests in flight at once for one connection.
@@ -122,6 +124,11 @@ pub(crate) struct GitLabChanges<'a> {
     origin: Origin,
     /// Rows that were no merge request, or one with a blank title or branch.
     skipped: AtomicUsize,
+    /// Rows asked for that were no longer open.
+    not_open: AtomicUsize,
+    /// Links to web pages of another origin than the configured one, and the first such
+    /// origin.
+    elsewhere: Mutex<(usize, Option<Origin>)>,
 }
 
 /// How much of a list to read.
@@ -137,17 +144,67 @@ impl<'a> GitLabChanges<'a> {
             api,
             origin: api.web_origin(),
             skipped: AtomicUsize::new(0),
+            not_open: AtomicUsize::new(0),
+            elsewhere: Mutex::new((0, None)),
         }
     }
 
-    /// Rows skipped so far, for one warning once the lookups are done.
+    /// Rows skipped so far.
     pub(crate) fn skipped(&self) -> usize {
         self.skipped.load(Ordering::SeqCst)
     }
 
+    /// Rows asked for that were no longer open, so far.
+    pub(crate) fn not_open(&self) -> usize {
+        self.not_open.load(Ordering::SeqCst)
+    }
+
+    /// Links dropped for leading to another origin so far, and the first one.
+    pub(crate) fn elsewhere(&self) -> (usize, Option<Origin>) {
+        self.elsewhere
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .clone()
+    }
+
+    /// One line for each kind of row or link left out of the lookups.
+    fn log_left_out(&self) {
+        let skipped = self.skipped();
+        if skipped > 0 {
+            diagnostics::warn(
+                "gitlab",
+                format!(
+                    "Change stacks: skipped {} GitLab sent that could not be read",
+                    merge_requests(skipped)
+                ),
+            );
+        }
+        let not_open = self.not_open();
+        if not_open > 0 {
+            diagnostics::info(
+                "gitlab",
+                format!(
+                    "Change stacks: left out {} GitLab listed as open that no longer were",
+                    merge_requests(not_open)
+                ),
+            );
+        }
+        if let (count @ 1.., Some(origin)) = self.elsewhere() {
+            diagnostics::warn(
+                "gitlab",
+                format!(
+                    "Change stacks: left out {count} {} to {}, which is not the configured {}",
+                    if count == 1 { "link" } else { "links" },
+                    origin.ascii_serialization(),
+                    self.origin.ascii_serialization(),
+                ),
+            );
+        }
+    }
+
     /// `project`'s open merge requests that `filter` asks for, and whether GitLab named a page
-    /// after those read. A row the request did not ask for fails the list: the server ignored
-    /// a filter, so nothing it sent can be trusted.
+    /// after those read. A row of another project, number or branch fails the list: the server
+    /// ignored a filter, so nothing it sent can be trusted. One no longer open is left out.
     async fn read(
         &self,
         project: u64,
@@ -162,11 +219,18 @@ impl<'a> GitLabChanges<'a> {
             let page = page.map_err(failure_of)?;
             let mut skipped = page.skipped;
             for row in page.rows {
-                if !filter.asks_for(project, &row) {
-                    return Err(LookupFailure::caused_by(
-                        FailureKind::Failed,
-                        LookupCause::IgnoredFilter,
-                    ));
+                match filter.fit(project, &row) {
+                    RowFit::Asked => {}
+                    RowFit::NotOpen => {
+                        self.not_open.fetch_add(1, Ordering::SeqCst);
+                        continue;
+                    }
+                    RowFit::NotAsked => {
+                        return Err(LookupFailure::caused_by(
+                            FailureKind::Failed,
+                            LookupCause::IgnoredFilter,
+                        ));
+                    }
                 }
                 match self.change_of(row) {
                     Some(change) => changes.push(change),
@@ -192,13 +256,26 @@ impl<'a> GitLabChanges<'a> {
             .map(|(changes, _)| changes)
     }
 
-    /// The change a row is, its link kept only when it leads to this GitLab's pages.
+    /// The change a row is, its link kept only when it leads to this GitLab's pages; one that
+    /// leads to another origin is counted.
     fn change_of(&self, row: MergeRequestRow) -> Option<OpenChange> {
         let same_repo = row.source_project_id == Some(row.target_project_id);
         let web_url = row
             .web_url
             .as_deref()
-            .and_then(|raw| web_link(raw, &self.origin));
+            .and_then(|raw| match web_link(raw, &self.origin) {
+                Ok(link) => Some(link),
+                Err(Unshown::Elsewhere(origin)) => {
+                    let mut elsewhere = self
+                        .elsewhere
+                        .lock()
+                        .unwrap_or_else(PoisonError::into_inner);
+                    elsewhere.0 += 1;
+                    elsewhere.1.get_or_insert(origin);
+                    None
+                }
+                Err(Unshown::NotAWebPage) => None,
+            });
         OpenChange::new(
             row.iid,
             row.title,
@@ -209,20 +286,18 @@ impl<'a> GitLabChanges<'a> {
         )
     }
 
-    /// The open merge requests of `project` by one of its branches. A blank branch is never
-    /// asked about: GitLab would read it as no filter.
+    /// The open merge requests of `project` by one of its branches: none from or into a
+    /// blank branch, which is never asked about.
     async fn by_branch(
         &self,
         project: u64,
-        filter: MergeRequestFilter<'_>,
-        branch: &str,
+        filter: Option<MergeRequestFilter<'_>>,
         budget: &Budget,
     ) -> Result<Vec<OpenChange>, LookupFailure> {
-        debug_assert!(!branch.trim().is_empty(), "a blank branch was asked about");
-        if branch.trim().is_empty() {
-            return Ok(Vec::new());
+        match filter {
+            Some(filter) => self.read_all(project, filter, budget).await,
+            None => Ok(Vec::new()),
         }
-        self.read_all(project, filter, budget).await
     }
 }
 
@@ -238,7 +313,7 @@ impl ChangeLookup<u64> for GitLabChanges<'_> {
     ) -> BoxFuture<'a, Result<OpenPage, LookupFailure>> {
         async move {
             let (changes, more) = self
-                .read(*repo, MergeRequestFilter::All, Pages::First, budget)
+                .read(*repo, MergeRequestFilter::ALL, Pages::First, budget)
                 .await?;
             Ok(if more {
                 OpenPage::Partial(changes)
@@ -257,11 +332,11 @@ impl ChangeLookup<u64> for GitLabChanges<'_> {
     ) -> BoxFuture<'a, Result<Vec<OpenChange>, LookupFailure>> {
         async move {
             let mut open = Vec::new();
-            for chunk in numbers.chunks(NUMBERS_PER_REQUEST) {
-                open.extend(
-                    self.read_all(*repo, MergeRequestFilter::Numbers(chunk), budget)
-                        .await?,
-                );
+            for filter in numbers
+                .chunks(NUMBERS_PER_REQUEST)
+                .filter_map(MergeRequestFilter::numbers)
+            {
+                open.extend(self.read_all(*repo, filter, budget).await?);
             }
             Ok(open)
         }
@@ -274,7 +349,7 @@ impl ChangeLookup<u64> for GitLabChanges<'_> {
         branch: &'a str,
         budget: &'a Budget,
     ) -> BoxFuture<'a, Result<Vec<OpenChange>, LookupFailure>> {
-        self.by_branch(*repo, MergeRequestFilter::From(branch), branch, budget)
+        self.by_branch(*repo, MergeRequestFilter::from_branch(branch), budget)
             .boxed()
     }
 
@@ -284,7 +359,7 @@ impl ChangeLookup<u64> for GitLabChanges<'_> {
         branch: &'a str,
         budget: &'a Budget,
     ) -> BoxFuture<'a, Result<Vec<OpenChange>, LookupFailure>> {
-        self.by_branch(*repo, MergeRequestFilter::Into(branch), branch, budget)
+        self.by_branch(*repo, MergeRequestFilter::into_branch(branch), budget)
             .boxed()
     }
 }

@@ -201,6 +201,7 @@ fn link(number: u64) -> Option<WebLink> {
         &format!("https://gitlab.example.org/acme/widgets/-/merge_requests/{number}"),
         &origin,
     )
+    .ok()
 }
 
 fn open(number: u64, source: &str, target: &str, same_repo: bool) -> OpenChange {
