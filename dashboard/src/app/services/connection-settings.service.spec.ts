@@ -8,9 +8,9 @@ import {
   provideMockBackend,
 } from '../testing/activity-fixtures'
 import { ActivityDataService } from './activity-data.service'
-import { ProviderConfigFacade } from './provider-config-facade.service'
+import { ConnectionSettings } from './connection-settings.service'
 
-describe('ProviderConfigFacade', () => {
+describe('ConnectionSettings', () => {
   it('shows the new sources and follows the collection the backend starts for them', async () => {
     vi.useFakeTimers()
     onTestFinished(() => void vi.useRealTimers())
@@ -26,7 +26,7 @@ describe('ProviderConfigFacade', () => {
     }
     backend.activityResponses = [collectingLog, activityLog]
 
-    await TestBed.inject(ProviderConfigFacade).addConnection({ source: 'gitlab' })
+    await TestBed.inject(ConnectionSettings).addConnection({ source: 'gitlab' })
 
     // The host pushes the new source and the collection it started for it.
     await vi.advanceTimersByTimeAsync(backend.stepMs)
