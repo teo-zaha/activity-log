@@ -5,8 +5,9 @@ import { fireEvent, screen, within } from '@testing-library/angular'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { loadView } from '../../app.routes'
 import { createEntryAdapter } from '../../providers/provider-adapter'
+import { failure } from '../../services/failure'
 import { NoticeService } from '../../services/notice.service'
-import { activityLog } from '../../testing/activity-fixtures'
+import { activityLog, MockBackendTransport } from '../../testing/activity-fixtures'
 import { openApp as open } from '../../testing/app'
 import { mockPhone } from '../../testing/media'
 import { holdMotion } from '../../testing/motion'
@@ -327,5 +328,37 @@ describe('A view whose code does not load as the app starts', () => {
     } finally {
       splash.remove()
     }
+  })
+})
+
+describe('The app’s live regions', () => {
+  afterEach(() => document.getElementById('splash')?.remove())
+
+  /** Whatever screen readers announce on a change: a region inside another is read twice. */
+  const LIVE = '[aria-live], [role="status"], [role="alert"], [role="log"]'
+
+  it('nest in none of each other while the collection’s card, a notice and the details show', async () => {
+    const backend = new MockBackendTransport()
+    const failed = {
+      start: activityLog.meta.start,
+      end: activityLog.meta.end,
+      error: 'GitLab unreachable: connection refused',
+    }
+    backend.activityResponses = [failed]
+    backend.activityResponse = failed
+    const { settle } = await open(`/timeline?from=2026-05-17&to=2026-05-18&event=${key(git)}`, {
+      backend,
+    })
+    TestBed.inject(NoticeService).show({
+      origin: 'export',
+      failure: failure('Export failed: the backend did not answer'),
+    })
+    await settle()
+
+    await vi.waitFor(() => expect(screen.getByRole('alert').textContent).toContain('GitLab'))
+    expect(document.querySelector('app-event-detail [role="status"]')).not.toBeNull()
+    const regions = [...document.querySelectorAll(LIVE)]
+    const nested = regions.filter(region => region.parentElement?.closest(LIVE) != null)
+    expect(nested.map(region => region.outerHTML.slice(0, 80))).toEqual([])
   })
 })
