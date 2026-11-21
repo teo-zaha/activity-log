@@ -179,7 +179,10 @@ describe('DayViewComponent', () => {
       'This day was not collected'
     )
 
-    screen.getByRole('button', { name: 'Collect 16 Nov – 22 Nov 2026' }).click()
+    const collect = screen.getByRole('button', { name: 'Collect 16 Nov – 22 Nov 2026' })
+    // Only the hint's text is announced; the button is not part of the live region.
+    expect(screen.getByRole('status').contains(collect)).toBe(false)
+    collect.click()
     expect(state.collects()).toBe(1)
   })
 
