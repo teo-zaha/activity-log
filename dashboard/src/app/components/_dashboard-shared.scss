@@ -1,7 +1,8 @@
 @use 'sass:map';
 @use 'sass:selector';
 
-// Keep in sync with `BREAKPOINTS` in `src/app/utils/breakpoints.ts`.
+// The same as `BREAKPOINTS` in `src/app/utils/breakpoints.ts`, which
+// `scripts/breakpoints.test.mjs` checks.
 $breakpoints: (
   'desktop-compact': 1100px,
   'tablet': 900px,

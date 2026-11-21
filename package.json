@@ -25,7 +25,7 @@
     "types:check": "cargo run -p cli --bin generate-ts -- --check",
     "dashboard:install": "pnpm --dir dashboard install",
     "dashboard:dev": "pnpm --dir dashboard run dev",
-    "dashboard:lint": "eslint . && node --test scripts/eslint-message-rule.test.mjs scripts/dev-proxy.test.mjs scripts/touch-styles.test.mjs scripts/shortcut-listeners.test.mjs",
+    "dashboard:lint": "eslint . && node --test scripts/eslint-message-rule.test.mjs scripts/dev-proxy.test.mjs scripts/touch-styles.test.mjs scripts/shortcut-listeners.test.mjs scripts/breakpoints.test.mjs",
     "dashboard:test": "pnpm --dir dashboard run test",
     "dashboard:test:layout": "pnpm --dir dashboard run test:layout",
     "dashboard:browsers": "pnpm --dir dashboard exec playwright install --only-shell chromium",
