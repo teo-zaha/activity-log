@@ -4,7 +4,7 @@
     @if (characterKeys() === 'off') {
       <p class="help-note">Single-key shortcuts are off. Turn them on in Settings › General.</p>
     }
-    <div class="help-sections">
+    <div class="help-sections" [class.is-single]="sections().length === 1">
       @for (section of sections(); track section.title) {
         <section class="help-section" [attr.aria-labelledby]="'shortcut-help-' + $index">
           <h3 class="help-section-title" [id]="'shortcut-help-' + $index">{{ section.title }}</h3>

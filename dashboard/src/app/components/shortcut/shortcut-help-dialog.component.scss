@@ -26,12 +26,15 @@
   font-size: 13px;
 }
 
-// Columns, not a grid, keep the reading order of the DOM: down the first, then the next.
+// Columns, not a grid, keep the reading order of the DOM: down the first, then the next. One
+// section (single keys off) keeps one column rather than leave the second empty.
 .help-sections {
   column-gap: 32px;
 
   @container (min-width: 600px) {
-    columns: 2;
+    &:not(.is-single) {
+      columns: 2;
+    }
   }
 }
 
