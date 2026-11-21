@@ -301,6 +301,7 @@ Each source below lists its entry types, Timeline subtitle line, detail panel fi
 - **Timeline line:** action · target type (for example `merged · MergeRequest`)
 - **Detail panel:** Action, Title, Target type, MR (`!iid`), Issue (`#iid`), Branch, Commits, File, Comment, Resolved
 - **Merge:** Push events (`pushedTo`, `pushedNew`) whose commit SHA matches a local Git commit fold into that commit's **git/lab** entry.
+- **Stack:** When a merge request event's merge request is still open and part of a stack, its detail panel shows a **Stack** section: the branch it builds on, the open merge requests below it, and those built on it, each linked to its page on the configured GitLab server. The stack is looked up fresh on every collection (never cached), which can delay that connection's entries by up to about 20 seconds on a slow server, and needs a token that can read the project's merge requests (`read_api` or `api`); without that scope, entries show without stacks and **Settings → Logs** says why.
 - **Configuration:** `url`, `token`, and `user` (all required). Tokens are sent only to the configured origin (cross-origin redirects are rejected). Uses the [per-day cache](#per-day-cache).
 
 </td>
@@ -584,5 +585,4 @@ These items are in progress or planned and are not yet part of the current build
 
 - Native macOS menu bar
 - Touch pull-to-refresh on the Timeline
-- GitLab merge request stacks
 - Additional sources: GitHub, Microsoft Teams, Figma, Miro, and Odoo
