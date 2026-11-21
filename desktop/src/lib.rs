@@ -60,6 +60,7 @@ pub fn run() {
                 .build(),
         )
         .manage(app_menu::AppMenu::<tauri::Wry>::default())
+        .manage(commands::ExportTurn::default())
         .on_menu_event(|app, event| app_menu::chosen(app, event.id()))
         // A page that loads again starts with the default menu and installs its own.
         .on_page_load(|webview, payload| {

@@ -135,6 +135,7 @@ fn invoke(
 ) -> Result<serde_json::Value, serde_json::Value> {
     let app = mock_builder()
         .manage(state)
+        .manage(super::ExportTurn::default())
         .invoke_handler(tauri::generate_handler![
             super::get_runtime_state,
             super::collect,
@@ -315,6 +316,19 @@ async fn config_problems_after_an_edit_reach_the_logs() {
                 .message
                 .contains("gitlab/edited: unknown setting `urll`")
     }));
+}
+
+/// A second export while one's dialog is open is refused as busy; once it ends, the next goes.
+#[test]
+fn one_export_at_a_time() {
+    let turn = super::ExportTurn::default();
+    let open = turn.take().unwrap();
+    assert_eq!(
+        turn.take().err().map(|err| err.kind),
+        Some(BackendErrorKind::Busy)
+    );
+    drop(open);
+    assert!(turn.take().is_ok());
 }
 
 /// B5: the file the user confirmed is written as named; a file with another extension that
