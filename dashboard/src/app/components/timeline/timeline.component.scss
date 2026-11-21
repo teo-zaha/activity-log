@@ -448,8 +448,8 @@
   z-index: 5;
 }
 
-// Follows the finger while it pulls (`--pull-distance`), and otherwise eases to where it rests:
-// back out of sight, or down while the collection runs. Reduced motion jumps there.
+// Follows the finger while it pulls (`--pull-distance`), and otherwise eases back out of sight.
+// Reduced motion jumps there.
 .pull-indicator {
   display: flex;
   width: fit-content;
@@ -472,13 +472,12 @@
     transition: none;
   }
 
-  [data-pull='armed'] &,
-  [data-pull='refreshing'] & {
+  [data-pull='armed'] & {
     color: var(--text-primary);
   }
 }
 
-// Points down while pulling, up once releasing collects, and turns while collecting.
+// Points down while pulling, and up once releasing collects.
 .pull-icon {
   --icon-size: 18px;
 
@@ -487,10 +486,6 @@
 
   [data-pull='armed'] & {
     transform: rotate(180deg);
-  }
-
-  [data-pull='refreshing'] & {
-    color: var(--accent);
   }
 }
 

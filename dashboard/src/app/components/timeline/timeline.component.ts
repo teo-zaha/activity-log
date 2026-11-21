@@ -227,8 +227,7 @@ export class TimelineComponent {
           this.data.anySourceReady() &&
           !this.data.isLoading()
       ),
-      running: this.data.isLoading,
-      refresh: () => this.data.collectShownRange() !== null,
+      refresh: () => void this.data.collectShownRange(),
       announce: () => void announcer.announce('Release to collect', 'polite'),
     })
   }

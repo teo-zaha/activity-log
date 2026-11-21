@@ -40,10 +40,8 @@ export type PullState =
       /** Whether this pull was past the threshold before, so that is said once. */
       readonly reached: boolean
     })
-  /** Past the threshold: releasing collects. */
+  /** Past the threshold: releasing collects, and the indicator goes back up at once. */
   | (Held & { readonly kind: 'armed'; readonly distance: number })
-  /** Released past the threshold: the collection it asked for runs. */
-  | { readonly kind: 'refreshing' }
 
 export type PullInput =
   | { readonly kind: 'press'; readonly touch: number; readonly x: number; readonly y: number }
@@ -51,8 +49,6 @@ export type PullInput =
   | { readonly kind: 'release'; readonly touch: number }
   /** The touch was cancelled, a second finger came, or pulling is no longer offered. */
   | { readonly kind: 'cancel' }
-  /** The collection a pull asked for is over, or none was started. */
-  | { readonly kind: 'settled' }
 
 /** What a step asks of the page beside its new state. */
 export type PullEffect = 'none' | 'announce' | 'refresh'
@@ -78,18 +74,17 @@ function follow(held: Held, y: number, reached: boolean): PullStep {
 /**
  * The next state of a pull. A press only counts where a pull may start (`pullMayStart`); its
  * first move is a pull if it goes down at least as much as sideways, and otherwise leaves the
- * touch to the browser (a scroll, the system's edge swipe). A collection runs until `settled`,
- * and nothing starts meanwhile.
+ * touch to the browser (a scroll, the system's edge swipe). A release past the threshold asks
+ * for the collection and is over: what it collects shows as every collection does.
  */
 export function stepPull(state: PullState, input: PullInput): PullStep {
   switch (input.kind) {
     case 'press':
-      if (state.kind === 'refreshing') return stay(state)
       // A second finger: a pinch or a scroll, never a pull.
       if (state.kind !== 'idle') return stay(IDLE)
       return stay({ kind: 'pressed', touch: input.touch, x: input.x, y: input.y })
     case 'move': {
-      if (state.kind === 'idle' || state.kind === 'refreshing') return stay(state)
+      if (state.kind === 'idle') return stay(state)
       if (input.touch !== state.touch) return stay(state)
       if (state.kind === 'pressed') {
         const down = input.y - state.y
@@ -100,26 +95,20 @@ export function stepPull(state: PullState, input: PullInput): PullStep {
       return follow(state, input.y, state.kind === 'armed' || state.reached)
     }
     case 'release':
-      if (state.kind === 'idle' || state.kind === 'refreshing') return stay(state)
+      if (state.kind === 'idle') return stay(state)
       if (input.touch !== state.touch) return stay(state)
-      return state.kind === 'armed'
-        ? { state: { kind: 'refreshing' }, effect: 'refresh' }
-        : stay(IDLE)
+      return { state: IDLE, effect: state.kind === 'armed' ? 'refresh' : 'none' }
     case 'cancel':
-      return stay(state.kind === 'refreshing' ? state : IDLE)
-    case 'settled':
-      return stay(state.kind === 'refreshing' ? IDLE : state)
+      return stay(IDLE)
   }
 }
 
-/** How far down the indicator shows: with the finger, then where it rests while collecting. */
+/** How far down the indicator shows: with the finger while it pulls, and otherwise out of sight. */
 export function indicatorDistance(state: PullState): number {
   switch (state.kind) {
     case 'pulling':
     case 'armed':
       return state.distance
-    case 'refreshing':
-      return PULL_THRESHOLD_PX
     case 'idle':
     case 'pressed':
       return 0
@@ -160,10 +149,8 @@ export interface PullToRefreshOptions {
   readonly controls: Signal<ElementRef<HTMLElement>>
   /** Whether a pull may start: the Timeline on screen with nothing over it, idle, with sources. */
   readonly enabled: Signal<boolean>
-  /** Whether a collection runs. */
-  readonly running: Signal<boolean>
-  /** Collects again; false when there was nothing to collect. */
-  readonly refresh: () => boolean
+  /** Collects again. */
+  readonly refresh: () => void
   /** Says, once per pull, that releasing now collects. */
   readonly announce: () => void
 }
@@ -185,7 +172,7 @@ export function pullToRefresh(options: PullToRefreshOptions): Signal<PullState> 
     const step = stepPull(state(), input)
     state.set(step.state)
     if (step.effect === 'announce') options.announce()
-    if (step.effect === 'refresh' && !options.refresh()) apply({ kind: 'settled' })
+    if (step.effect === 'refresh') options.refresh()
     return step
   }
 
@@ -256,13 +243,9 @@ export function pullToRefresh(options: PullToRefreshOptions): Signal<PullState> 
   listener.passive(scroller, 'touchcancel', () => apply({ kind: 'cancel' }))
 
   // A layer that opens, a collection another client starts, the sources that go: a pull under
-  // way is dropped. One that collects ends with the collection.
+  // way is dropped.
   effect(() => {
-    const kind = state().kind
-    if (kind === 'refreshing' && !options.running()) untracked(() => apply({ kind: 'settled' }))
-    else if (kind !== 'idle' && kind !== 'refreshing' && !options.enabled()) {
-      untracked(() => apply({ kind: 'cancel' }))
-    }
+    if (state().kind !== 'idle' && !options.enabled()) untracked(() => apply({ kind: 'cancel' }))
   })
 
   return state.asReadonly()

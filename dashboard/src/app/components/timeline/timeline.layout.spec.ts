@@ -191,9 +191,16 @@ interface Point {
   readonly y: number
 }
 
-/** What the pull indicator shows: `idle`, `pulling`, `armed`, `refreshing`. */
+/** What the pull indicator shows: `idle`, `pressed`, `pulling`, `armed`. */
 function pullShown(): string | null {
   return document.querySelector('app-timeline .pull')?.getAttribute('data-pull') ?? null
+}
+
+/** Whether the pull indicator is out of sight, above the strip it comes out of. */
+function indicatorHidden(): boolean {
+  const strip = document.querySelector('app-timeline .pull')!.getBoundingClientRect()
+  const indicator = document.querySelector('app-timeline .pull-indicator')!.getBoundingClientRect()
+  return indicator.bottom <= strip.top
 }
 
 /** Where things are that must not move while a finger pulls: the page, the shell, the list. */
@@ -312,12 +319,29 @@ describe('pulling the timeline to collect again', () => {
     expect(collect).toHaveBeenCalledOnce()
     // The finger lifted on an entry: its details stay closed.
     expect(TestBed.inject(ActivityViewStateService).detailsOpen()).toBe(false)
-    // The indicator stays while the collection runs, and another pull meanwhile starts none.
-    expect(pullShown()).toBe('refreshing')
-    await drag('touch', onEntry(), 220)
-    expect(pullShown()).toBe('refreshing')
     answer()
-    await expect.poll(pullShown).toBe('idle')
+  })
+
+  it('goes back up once released past the threshold, leaving the collection to its status', async () => {
+    const backend = new MockBackendTransport()
+    let answer = (): void => undefined
+    const { collect } = await openPullable({ backend })
+    backend.collectGate = new Promise(resolve => (answer = resolve))
+
+    await drag('touch', onEntry(), 220)
+
+    expect(collect).toHaveBeenCalledOnce()
+    expect(TestBed.inject(ActivityDataService).isLoading()).toBe(true)
+    // The collection runs, and the indicator neither stays nor says so: the status pill does.
+    expect(pullShown()).toBe('idle')
+    await expect.poll(indicatorHidden).toBe(true)
+    const indicator = document.querySelector('app-timeline .pull')!
+    expect(indicator.textContent).not.toContain('Collecting')
+    expect(indicator.querySelector('.u-spin')).toBeNull()
+    // Another pull meanwhile starts none.
+    expect((await drag('touch', onEntry(), 220)).beforeRelease).toBe('idle')
+    answer()
+    await expect.poll(() => TestBed.inject(ActivityDataService).isLoading()).toBe(false)
     expect(collect).toHaveBeenCalledOnce()
   })
 

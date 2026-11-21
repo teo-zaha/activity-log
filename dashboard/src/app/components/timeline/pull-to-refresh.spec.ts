@@ -56,11 +56,26 @@ describe('resisted', () => {
 })
 
 describe('a pull', () => {
-  it('collects once when released past the threshold', () => {
+  it('collects once when released past the threshold, and goes back up at once', () => {
     const steps = run(press, moveBy(20), moveBy(travelFor(PULL_THRESHOLD_PX) + 5), release)
 
-    expect(kinds(steps)).toEqual(['pressed', 'pulling', 'armed', 'refreshing'])
+    expect(kinds(steps)).toEqual(['pressed', 'pulling', 'armed', 'idle'])
     expect(effects(steps)).toEqual(['none', 'none', 'announce', 'refresh'])
+    expect(indicatorDistance(last(steps).state)).toBe(0)
+  })
+
+  it('is over once released: what the finger does next collects nothing more', () => {
+    const steps = run(
+      press,
+      moveBy(travelFor(PULL_THRESHOLD_PX) + 5),
+      release,
+      moveBy(300),
+      release,
+      { kind: 'cancel' }
+    )
+
+    expect(effects(steps).filter(effect => effect === 'refresh')).toHaveLength(1)
+    expect(kinds(steps.slice(2))).toEqual(['idle', 'idle', 'idle', 'idle'])
   })
 
   it('follows the finger with resistance', () => {
@@ -140,26 +155,6 @@ describe('a pull', () => {
 
   it('drops the pull when the touch is cancelled or pulling is no longer offered', () => {
     expect(last(run(press, moveBy(200), { kind: 'cancel' }, release)).state.kind).toBe('idle')
-  })
-})
-
-describe('a collection a pull started', () => {
-  const refreshing: PullState = { kind: 'refreshing' }
-
-  it('shows the indicator where it rests until the collection is over', () => {
-    expect(indicatorDistance(refreshing)).toBe(PULL_THRESHOLD_PX)
-    expect(stepPull(refreshing, { kind: 'settled' }).state.kind).toBe('idle')
-  })
-
-  it('starts no other pull meanwhile', () => {
-    for (const input of [press, moveBy(300), release, { kind: 'cancel' } satisfies PullInput]) {
-      expect(stepPull(refreshing, input)).toEqual({ state: refreshing, effect: 'none' })
-    }
-  })
-
-  it('is not ended by a settled collection while no pull asked for one', () => {
-    const pulling = last(run(press, moveBy(40))).state
-    expect(stepPull(pulling, { kind: 'settled' }).state).toBe(pulling)
   })
 })
 
