@@ -1,4 +1,7 @@
-/** Mirrors `$breakpoints` in `components/_dashboard-shared.scss`. */
+/**
+ * The same as `$breakpoints` in `components/_dashboard-shared.scss`, which
+ * `scripts/breakpoints.test.mjs` checks.
+ */
 export const BREAKPOINTS = {
   'desktop-compact': 1100,
   tablet: 900,
