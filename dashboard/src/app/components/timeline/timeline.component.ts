@@ -6,6 +6,7 @@ import {
   computed,
   inject,
   signal,
+  untracked,
   viewChild,
   viewChildren,
 } from '@angular/core'
@@ -175,13 +176,23 @@ export class TimelineComponent {
 
   /**
    * Reads the summary out once the filter has settled, as the URL takes it, not on every key: a
-   * live region around it would be read at each keystroke.
+   * live region around it would be read at each keystroke. Nothing is read while a collection
+   * runs, so only its result is, nor while the Timeline is not what the user is on: another view,
+   * or the settings or the details over it (the router keeps the Timeline alive underneath).
    */
   private announceSettled(): void {
     const announcer = inject(LiveAnnouncer)
-    const shown = computed(() => (this.selection.groupedByDay().length > 0 ? this.summary() : null))
+    const shown = computed(() =>
+      !this.data.isLoading() && this.selection.groupedByDay().length > 0 ? this.summary() : null
+    )
+    const onScreen = computed(
+      () =>
+        this.viewState.currentView() === 'list' &&
+        this.viewState.settings() === null &&
+        !this.viewState.detailsOpen()
+    )
     watcher(debounced(shown, inject(SEARCH_URL_DELAY_MS)), summary => {
-      if (summary !== null) void announcer.announce(summary, 'polite')
+      if (summary !== null && untracked(onScreen)) void announcer.announce(summary, 'polite')
     })
   }
 
