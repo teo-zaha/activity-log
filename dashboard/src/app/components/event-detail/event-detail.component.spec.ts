@@ -1,4 +1,4 @@
-import { computed, type Provider, type Signal, signal, type WritableSignal } from '@angular/core'
+import { computed, type Provider, signal, type WritableSignal } from '@angular/core'
 import { provideRouter } from '@angular/router'
 import { fireEvent, render, screen, within } from '@testing-library/angular'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
@@ -9,7 +9,9 @@ import type { EntryUiAdapter } from '../../providers/types'
 import { ActivityDataService } from '../../services/activity-data.service'
 import { ActivitySelection } from '../../services/activity-selection.service'
 import { ActivityViewStateService } from '../../services/activity-view-state.service'
+import type { CollectionStatus } from '../../services/types'
 import { stubLayoutObservers } from '../../testing/observers'
+import type { DayKey } from '../../utils/local-day'
 import {
   MockBackendTransport,
   activityLog,
@@ -25,25 +27,27 @@ interface OpenDetails {
 /**
  * The parts of the activity services the drawer uses (the URL's state, the collection, the
  * open entries), with the URL as two signals: opening, stepping and closing set them as the real
- * navigations would. One object stands for all three services, each reading its own members.
+ * navigations would. One object stands for all three services, each reading its own members,
+ * every member typed as the real one.
  */
-interface FakeActivity {
-  readonly openEventKey: WritableSignal<EntryKey | null>
-  readonly openGroupKeys: WritableSignal<readonly EntryKey[]>
-  readonly detailsOpen: Signal<boolean>
-  readonly dateFrom: Signal<string>
-  readonly dateTo: Signal<string>
-  readonly isLoading: WritableSignal<boolean>
-  readonly meta: Signal<unknown>
-  readonly hasNoSources: Signal<boolean>
-  readonly collectionStatus: Signal<{ readonly kind: 'idle' }>
-  readonly selectedEntry: Signal<EntryUiAdapter | null>
-  readonly selectedEntries: Signal<readonly EntryUiAdapter[] | null>
-  showInGroup(key: EntryKey): void
-  stepInGroup(key: EntryKey): void
-  backToGroupList(): void
-  closeDetail(): void
-}
+type FakeActivity = Pick<
+  ActivityViewStateService,
+  | 'openEventKey'
+  | 'openGroupKeys'
+  | 'detailsOpen'
+  | 'dateFrom'
+  | 'dateTo'
+  | 'showInGroup'
+  | 'stepInGroup'
+  | 'backToGroupList'
+  | 'closeDetail'
+> &
+  Pick<ActivityDataService, 'isLoading' | 'meta' | 'hasNoSources' | 'collectionStatus'> &
+  Pick<ActivitySelection, 'selectedEntry' | 'selectedEntries'> & {
+    readonly openEventKey: WritableSignal<EntryKey | null>
+    readonly openGroupKeys: WritableSignal<readonly EntryKey[]>
+    readonly isLoading: WritableSignal<boolean>
+  }
 
 /** Where the settings show, which decides the layer on top (`TopLayer`). */
 interface FakeSettings {
@@ -56,17 +60,18 @@ function fakeActivity(entries: readonly EntryUiAdapter[], open: OpenDetails): Fa
   const openGroupKeys = signal<readonly EntryKey[]>(open.events ?? [])
   const byKey = new Map(entries.map(entry => [entry.trackKey, entry]))
   const isLoading = signal(false)
+  const navigated = (): Promise<boolean> => Promise.resolve(true)
   return {
     openEventKey,
     openGroupKeys,
     detailsOpen: computed(() => openEventKey() !== null || openGroupKeys().length > 0),
     // The collected range: the URL names none.
-    dateFrom: signal('2026-11-01'),
-    dateTo: signal('2026-11-30'),
+    dateFrom: signal<DayKey | null>('2026-11-01'),
+    dateTo: signal<DayKey | null>('2026-11-30'),
     isLoading,
     meta: signal(activityLog.meta),
     hasNoSources: signal(false),
-    collectionStatus: signal({ kind: 'idle' as const }),
+    collectionStatus: signal<CollectionStatus>({ kind: 'idle' }),
     selectedEntry: computed(() => {
       const key = openEventKey()
       return key === null ? null : (byKey.get(key) ?? null)
@@ -75,12 +80,22 @@ function fakeActivity(entries: readonly EntryUiAdapter[], open: OpenDetails): Fa
       const keys = openGroupKeys()
       return keys.length === 0 ? null : keys.flatMap(key => byKey.get(key) ?? [])
     }),
-    showInGroup: (key: EntryKey): void => openEventKey.set(key),
-    stepInGroup: (key: EntryKey): void => openEventKey.set(key),
-    backToGroupList: (): void => openEventKey.set(null),
-    closeDetail: (): void => {
+    showInGroup: (key): Promise<boolean> => {
+      openEventKey.set(key)
+      return navigated()
+    },
+    stepInGroup: (key): Promise<boolean> => {
+      openEventKey.set(key)
+      return navigated()
+    },
+    backToGroupList: (): Promise<boolean> => {
+      openEventKey.set(null)
+      return navigated()
+    },
+    closeDetail: (): Promise<boolean> => {
       openEventKey.set(null)
       openGroupKeys.set([])
+      return navigated()
     },
   }
 }
