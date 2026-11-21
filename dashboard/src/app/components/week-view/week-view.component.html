@@ -27,9 +27,9 @@
         size="sm"
         icon="chevron_left"
         label="Previous week"
-        (click)="activity.navigateWeek(-1)"
+        (click)="viewState.navigateWeek(-1)"
       ></button>
-      <button appButton variant="ghost" size="sm" class="today-btn" (click)="activity.goToToday()">
+      <button appButton variant="ghost" size="sm" class="today-btn" (click)="viewState.goToToday()">
         Today
       </button>
       <button
@@ -37,7 +37,7 @@
         size="sm"
         icon="chevron_right"
         label="Next week"
-        (click)="activity.navigateWeek(1)"
+        (click)="viewState.navigateWeek(1)"
       ></button>
     </div>
     <div class="nav-controls zoom-controls">
@@ -114,13 +114,15 @@
       }
     </div>
 
-    @if (isEmpty()) {
-      <div class="u-floating-hint" role="status"><span>No activity in this week</span></div>
+    @if (emptyHint(); as hint) {
+      <div class="u-floating-hint" role="status">
+        <span>{{ hint }}</span>
+      </div>
     }
 
     <div class="week-grid" #gridEl [style.height.px]="gridHeight()">
       <app-calendar-hours
-        [hourHeight]="activity.hourHeight()"
+        [hourHeight]="viewState.hourHeight()"
         [coveredHour]="nowLine()?.coveredHour ?? null"
       />
 
