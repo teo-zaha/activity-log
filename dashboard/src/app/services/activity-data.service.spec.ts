@@ -195,6 +195,23 @@ describe('ActivityDataService', () => {
     expect(service.collectionStatus()).toEqual({ kind: 'idle' })
   })
 
+  it('collects the range on screen, and nothing without one', async () => {
+    const { backend, service, viewState } = setup()
+    vi.spyOn(backend, 'call')
+
+    // Nothing collected and no range in the URL: no range on screen.
+    expect(service.collectShownRange()).toBeNull()
+    expect(calls(backend, BackendOperations.collect)).toEqual([])
+
+    await service.initLoad()
+    viewState.showCollectedRange({ from: '2026-05-10', to: '2026-05-11' })
+    await service.collectShownRange()
+
+    expect(calls(backend, BackendOperations.collect)).toEqual([
+      localDayRange('2026-05-10', '2026-05-11'),
+    ])
+  })
+
   describe('opened on a URL with a range', () => {
     const range = localDayRange('2026-05-17', '2026-05-18')
 

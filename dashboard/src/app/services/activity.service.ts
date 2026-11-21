@@ -1,10 +1,9 @@
-import { Service, computed, inject, signal } from '@angular/core'
+import { Service, inject } from '@angular/core'
 import type {
   AddConnectionRequestDto,
   AddConnectionResponseDto,
   ConnectionId,
   InstallReceipt,
-  OutputFormat,
   ProviderConfigFieldIssueDto,
   ProviderConfigSaveRequestDto,
   ProviderConfigSaveResponseDto,
@@ -15,15 +14,19 @@ import type { SettingsSelection } from '../components/settings-dialog/settings-d
 import type { ConnectionKey, EntryKey } from '../providers/connection'
 import { ActivityDataService } from './activity-data.service'
 import { ActivitySelection } from './activity-selection.service'
-import { failure, failureWhile, type Notice } from './failure'
 import { ActivityExportService } from './activity-export.service'
 import { ActivityViewStateService } from './activity-view-state.service'
 import { ConnectionSettings } from './connection-settings.service'
-import { ToastService } from './toast.service'
+import { NoticeService } from './notice.service'
 import type { ReceiptStanding } from './types'
 import type { ViewMode } from '../utils/app-url'
-import { localDayRange, type DayKey } from '../utils/local-day'
+import type { DayKey } from '../utils/local-day'
 
+/**
+ * The facade the dashboard's components still inject: only delegation to `ActivityDataService`,
+ * `ActivityViewStateService`, `ActivitySelection`, `ActivityExportService`, `ConnectionSettings`
+ * and `NoticeService`. Consumers move to those one by one; it is deleted once none is left.
+ */
 @Service()
 export class ActivityService {
   private readonly data = inject(ActivityDataService)
@@ -31,7 +34,7 @@ export class ActivityService {
   private readonly viewState = inject(ActivityViewStateService)
   private readonly exportService = inject(ActivityExportService)
   private readonly connectionSettings = inject(ConnectionSettings)
-  private readonly toast = inject(ToastService)
+  private readonly notices = inject(NoticeService)
 
   readonly allEntries = this.data.allEntries
   readonly allEntryAdapters = this.data.allEntryAdapters
@@ -44,10 +47,9 @@ export class ActivityService {
   readonly connectionCounts = this.data.connectionCounts
   readonly meta = this.data.meta
   readonly isLoading = this.data.isLoading
-  /** Whether there is a log to export: one is in and no collection is replacing it. */
-  readonly canExport = computed(() => this.meta() !== null && !this.isLoading())
-  /** The snackbar's notice: a failure of an action that has no place of its own to show it. */
-  readonly notice = signal<Notice | null>(null)
+  readonly canExport = this.exportService.canExport
+  /** The notice service's own signal, so `notice.set(…)` still shows a notice. */
+  readonly notice = this.notices.current
   readonly collectionStatus = this.data.collectionStatus
   readonly connection = this.data.connection
 
@@ -171,10 +173,8 @@ export class ActivityService {
     return this.data.collect(fromKey, toKey)
   }
 
-  /** Collects the range on screen (Collect, ⌘R); null when it has no range to collect. */
   collectShownRange(): Promise<void> | null {
-    const [from, to] = [this.dateFrom(), this.dateTo()]
-    return from !== null && to !== null ? this.collect(from, to) : null
+    return this.data.collectShownRange()
   }
 
   /** Retry for the collection failure shown, see `ActivityDataService.retryCollection`. */
@@ -187,41 +187,11 @@ export class ActivityService {
   }
 
   exportJson(): Promise<void> {
-    return this.exportAs('json')
+    return this.exportService.exportShown('json')
   }
 
   exportMarkdown(): Promise<void> {
-    return this.exportAs('markdown')
-  }
-
-  /**
-   * The entries the view shows, over the chosen local days or else the collected range: the
-   * timeline's list, or what a calendar view draws, a meeting that runs into the range included.
-   */
-  private async exportAs(format: OutputFormat): Promise<void> {
-    if (this.notice()?.origin === 'export') this.notice.set(null)
-    const from = this.dateFrom()
-    const to = this.dateTo()
-    const meta = this.meta()
-    const range = from && to ? localDayRange(from, to) : meta
-    if (!range) {
-      this.notice.set({
-        origin: 'export',
-        failure: failure('Export failed: nothing has been collected yet'),
-      })
-      return
-    }
-    try {
-      const shown = this.selection.exportedEntries()
-      const outcome = await this.exportService.export(
-        format,
-        shown.map(entry => entry.entry),
-        range
-      )
-      if (outcome === 'saved') this.toast.success('Exported')
-    } catch (error) {
-      this.notice.set({ origin: 'export', failure: failureWhile('Export', error) })
-    }
+    return this.exportService.exportShown('markdown')
   }
 
   loadProviderConfig(): Promise<ProviderConfigSnapshotDto> {

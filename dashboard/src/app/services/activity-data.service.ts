@@ -300,6 +300,15 @@ export class ActivityDataService {
   }
 
   /**
+   * Collects the range on screen (Collect, ⌘R): this tab's own, else the collected one. Null when
+   * there is none to collect, and nothing is sent.
+   */
+  collectShownRange(): Promise<void> | null {
+    const [from, to] = [this.viewState.dateFrom(), this.viewState.dateTo()]
+    return from !== null && to !== null ? this.collect(from, to) : null
+  }
+
+  /**
    * Runs a source's startup check again; the backend then collects its kind again for the range
    * on screen, which is followed on its own. Resolves once the backend has answered; a refused
    * request rejects, for its caller to show.
