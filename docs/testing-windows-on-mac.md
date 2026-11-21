@@ -93,6 +93,8 @@ Event Log path works out of the box.
   folders are alternatives if you need two-way sync.
 - **GitHub Actions `windows-latest`**: wired up as
   [`.github/workflows/windows.yml`](../.github/workflows/windows.yml) — runs
-  clippy + `cargo test` on real Windows for the Event Log + portable suite on
-  every push/PR (hosted runners have no Outlook, so COM stays uncovered there).
+  clippy + `cargo test` on real Windows for the whole workspace, the desktop
+  crate included, on every push/PR (hosted runners have no Outlook, so COM
+  stays uncovered there). `.github/workflows/linux.yml` does the same for
+  Linux, the desktop's tests left out.
 - **Self-hosted Windows runner with Outlook**: would enable automated COM tests.
