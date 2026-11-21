@@ -2,6 +2,7 @@ use strum::IntoEnumIterator;
 use ts_rs::{Config, TS};
 
 use crate::{
+    ipc::{DESKTOP_COMMANDS, DESKTOP_EVENTS},
     menu::{INSTALL_MENU_COMMAND, MENU_COMMAND_EVENT, UPDATE_MENU_COMMAND},
     model::{
         ActivityEntry, ActivityLog, ActivityLogMeta, ActivityState, ActivityUpdate,
@@ -22,7 +23,7 @@ use crate::{
         RemoveConnectionRequestDto, RuntimePing, RuntimeState, ShownActivity, Source, StackCut,
         StackedChange, SupportedOs, SystemEntry, SystemEntryType, TextSegment,
     },
-    runtime::PING_INTERVAL,
+    runtime::{PING_INTERVAL, forward::RuntimeMessage},
 };
 
 pub fn activity_typescript() -> String {
@@ -138,13 +139,31 @@ fn constants() -> String {
          /** Every submenu of the macOS menu bar, in the bar's order. */\n\
          export const MENU_SUBMENUS = [{submenus}] as const satisfies readonly MenuSubmenu[]\n\n\
          /** The desktop commands that install the macOS menu and change what its items show. */\n\
-         export const MENU_COMMANDS = {{ install: {}, update: {} }} as const\n",
+         export const MENU_COMMANDS = {{ install: {}, update: {} }} as const\n\n\
+         /** The desktop app's commands, by the names it registers them under (`core::ipc`). */\n\
+         export const DESKTOP_COMMANDS = {} as const\n\n\
+         /** The desktop app's own events (`core::ipc`); the host's state comes as `RUNTIME_EVENTS`. */\n\
+         export const DESKTOP_EVENTS = {} as const\n\n\
+         /** The events the host's state comes as, on `GET /api/events` and from the desktop app. */\n\
+         export const RUNTIME_EVENTS = [{}] as const\n",
         CollectOptions::MAX_DAYS,
         PING_INTERVAL.as_secs(),
         json(MENU_COMMAND_EVENT),
         json(INSTALL_MENU_COMMAND),
         json(UPDATE_MENU_COMMAND),
+        object(DESKTOP_COMMANDS),
+        object(DESKTOP_EVENTS),
+        RuntimeMessage::EVENTS.map(json).join(", "),
     )
+}
+
+/// `{ key: "name", … }`.
+fn object(names: &[(&str, &str)]) -> String {
+    let fields = names
+        .iter()
+        .map(|(key, name)| format!("{key}: {}", json(name)))
+        .collect::<Vec<_>>();
+    format!("{{ {} }}", fields.join(", "))
 }
 
 fn json(text: &str) -> String {

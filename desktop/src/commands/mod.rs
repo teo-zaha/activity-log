@@ -258,7 +258,10 @@ fn write_export(path: &std::path::Path, content: &str) -> Result<(), BackendErro
 /// Opens a link from an event in the default browser. Descriptions come from whoever sent the
 /// invitation, so only web links are opened, never files or other apps' schemes.
 #[tauri::command]
-pub(crate) fn open_url(app: tauri::AppHandle, request: String) -> Result<(), BackendError> {
+pub(crate) fn open_url<R: tauri::Runtime>(
+    app: tauri::AppHandle<R>,
+    request: String,
+) -> Result<(), BackendError> {
     let url = web_url(&request)?;
     app.opener()
         .open_url(url.as_str(), None::<&str>)

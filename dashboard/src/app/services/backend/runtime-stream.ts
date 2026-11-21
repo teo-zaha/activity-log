@@ -1,4 +1,9 @@
-import type { ActivityUpdate, ProvidersUpdate, RuntimeState } from '../../generated/activity'
+import type {
+  ActivityUpdate,
+  ProvidersUpdate,
+  RUNTIME_EVENTS,
+  RuntimeState,
+} from '../../generated/activity'
 import type { BackendFailure } from './backend-failure'
 
 /**
@@ -6,14 +11,17 @@ import type { BackendFailure } from './backend-failure'
  * (`docs/plans/shared-contracts.md` §5): `GET /api/events` names its server-sent events so, and
  * the desktop app emits Tauri events of these names.
  */
-export interface RuntimeEvents {
+interface RuntimePayloads {
   /** Both parts of one moment. */
   readonly state: RuntimeState
   readonly activity: ActivityUpdate
   readonly providers: ProvidersUpdate
 }
 
-export type RuntimeEventName = keyof RuntimeEvents
+/** Each event's payload; an event the backend adds has none here, which does not compile. */
+export type RuntimeEvents = { readonly [Name in RuntimeEventName]: RuntimePayloads[Name] }
+
+export type RuntimeEventName = Exclude<(typeof RUNTIME_EVENTS)[number], 'ping'>
 
 /** One message of the stream, tagged by its event. */
 export type RuntimeMessage = {

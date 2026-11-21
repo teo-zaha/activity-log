@@ -1,21 +1,25 @@
-import type {
-  AddConnectionRequestDto,
-  AddConnectionResponseDto,
-  CollectAnswer,
-  CollectRequest,
-  ConnectionId,
-  ExportFile,
-  ExportOutcome,
-  ExportRequest,
-  LogsResponse,
-  ProviderConfigFieldIssueDto,
-  ProviderConfigSaveRequestDto,
-  ProviderConfigSaveResponseDto,
-  ProviderConfigSnapshotDto,
-  RemoveConnectionRequestDto,
-  RecheckAnswer,
-  RuntimeState,
+import {
+  DESKTOP_COMMANDS,
+  type AddConnectionRequestDto,
+  type AddConnectionResponseDto,
+  type CollectAnswer,
+  type CollectRequest,
+  type ConnectionId,
+  type ExportFile,
+  type ExportOutcome,
+  type ExportRequest,
+  type LogsResponse,
+  type ProviderConfigFieldIssueDto,
+  type ProviderConfigSaveRequestDto,
+  type ProviderConfigSaveResponseDto,
+  type ProviderConfigSnapshotDto,
+  type RemoveConnectionRequestDto,
+  type RecheckAnswer,
+  type RuntimeState,
 } from '../../generated/activity'
+
+/** A command the desktop app registers (`core::ipc`). */
+export type DesktopCommand = (typeof DESKTOP_COMMANDS)[keyof typeof DESKTOP_COMMANDS]
 
 export type HttpMethod = 'GET' | 'POST' | 'DELETE'
 
@@ -32,7 +36,7 @@ export interface BackendOperation<Req, Res> {
   /** Names the operation in errors. */
   readonly label: string
   /** Tauri command; its payload is passed as `{ request }`. `null` marks a browser-only operation. */
-  readonly tauriCommand: string | null
+  readonly tauriCommand: DesktopCommand | null
   /** `null` marks a desktop-only operation. */
   readonly http: HttpEndpoint | null
   readonly request?: Req
@@ -46,7 +50,7 @@ export interface ReadOperation<Res> extends BackendOperation<void, Res> {
 
 interface OperationSpec {
   readonly label: string
-  readonly tauri: string | null
+  readonly tauri: DesktopCommand | null
 }
 
 function read<Res>(spec: OperationSpec & { readonly route?: string }): ReadOperation<Res> {
@@ -68,42 +72,48 @@ export const BackendOperations = {
    * Both parts of the host's state, as one coherent pair with the host's stamps: the desktop
    * app's handshake before its events. The browser follows `GET /api/events` instead.
    */
-  runtimeState: read<RuntimeState>({ label: 'Runtime state', tauri: 'get_runtime_state' }),
+  runtimeState: read<RuntimeState>({
+    label: 'Runtime state',
+    tauri: DESKTOP_COMMANDS.getRuntimeState,
+  }),
   providerConfig: read<ProviderConfigSnapshotDto>({
     label: 'Provider configuration',
-    tauri: 'get_provider_config',
+    tauri: DESKTOP_COMMANDS.getProviderConfig,
   }),
-  logs: read<LogsResponse>({ label: 'Logs', tauri: 'get_logs', route: '/api/logs' }),
+  logs: read<LogsResponse>({ label: 'Logs', tauri: DESKTOP_COMMANDS.getLogs, route: '/api/logs' }),
   collect: command<CollectRequest, CollectAnswer>({
     label: 'Collect',
-    tauri: 'collect',
+    tauri: DESKTOP_COMMANDS.collect,
     http: { method: 'POST', url: '/api/collect' },
   }),
   saveProviderConfig: command<ProviderConfigSaveRequestDto, ProviderConfigSaveResponseDto>({
     label: 'Provider configuration',
-    tauri: 'save_provider_config',
+    tauri: DESKTOP_COMMANDS.saveProviderConfig,
   }),
   /** The issues a save would be refused for, at their fields; nothing is saved. */
   checkProviderConfig: command<ProviderConfigSaveRequestDto, ProviderConfigFieldIssueDto[]>({
     label: 'Check settings',
-    tauri: 'check_provider_config',
+    tauri: DESKTOP_COMMANDS.checkProviderConfig,
   }),
   addConnection: command<AddConnectionRequestDto, AddConnectionResponseDto>({
     label: 'Add source',
-    tauri: 'add_connection',
+    tauri: DESKTOP_COMMANDS.addConnection,
   }),
   /** Runs a source's startup check again; the backend then collects its kind again. */
   recheckConnection: command<ConnectionId, RecheckAnswer>({
     label: 'Check again',
-    tauri: 'recheck_connection',
+    tauri: DESKTOP_COMMANDS.recheckConnection,
     http: { method: 'POST', url: '/api/connections/recheck' },
   }),
   removeConnection: command<RemoveConnectionRequestDto, ProviderConfigSaveResponseDto>({
     label: 'Remove source',
-    tauri: 'remove_connection',
+    tauri: DESKTOP_COMMANDS.removeConnection,
   }),
   /** Renders the export and saves it through a native dialog. */
-  saveExport: command<ExportRequest, ExportOutcome>({ label: 'Export', tauri: 'save_export' }),
+  saveExport: command<ExportRequest, ExportOutcome>({
+    label: 'Export',
+    tauri: DESKTOP_COMMANDS.saveExport,
+  }),
   /** Renders the export for the browser to download. */
   renderExport: command<ExportRequest, ExportFile>({
     label: 'Export',
@@ -113,13 +123,13 @@ export const BackendOperations = {
   /** The `activity-log:` link that launched the desktop app, once; later ones come as events. */
   takeLaunchDeepLink: command<void, string | null>({
     label: 'Deep link',
-    tauri: 'take_launch_deep_link',
+    tauri: DESKTOP_COMMANDS.takeLaunchDeepLink,
   }),
   /** Opens a web link in the default browser; the browser opens links itself. */
-  openUrl: command<string, void>({ label: 'Open link', tauri: 'open_url' }),
+  openUrl: command<string, void>({ label: 'Open link', tauri: DESKTOP_COMMANDS.openUrl }),
   clearLogs: command<void, void>({
     label: 'Clear logs',
-    tauri: 'clear_logs',
+    tauri: DESKTOP_COMMANDS.clearLogs,
     http: { method: 'DELETE', url: '/api/logs' },
   }),
 } as const
