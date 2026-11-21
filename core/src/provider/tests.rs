@@ -614,18 +614,57 @@ async fn git_provider_is_unavailable_when_discovered_repositories_are_invalid() 
 }
 
 #[test]
-fn git_repo_discovery_skips_dependency_and_appdata_folders() {
+fn git_repo_discovery_skips_dependency_build_and_cache_folders() {
     let tmp = tempdir().expect("tempdir");
     let kept = tmp.path().join("code").join("app");
     std::fs::create_dir_all(kept.join(".git")).expect("kept repo");
-    for skipped in ["node_modules", "AppData"] {
-        std::fs::create_dir_all(tmp.path().join(skipped).join("pkg").join(".git"))
+    let skipped = [
+        "node_modules",
+        "AppData",
+        ".direnv",
+        "target",
+        ".cache",
+        ".cargo",
+        ".rustup",
+        ".Trash",
+    ];
+    for name in skipped {
+        std::fs::create_dir_all(tmp.path().join("code").join(name).join("pkg").join(".git"))
             .expect("skipped repo");
     }
+    // A repository is read whatever its name; the walk only does not go into such a folder.
+    let named_target = tmp.path().join("target");
+    std::fs::create_dir_all(named_target.join(".git")).expect("repo named target");
 
     let repos = resolve_git_repos_from_roots(&[tmp.path().to_path_buf()]);
 
-    assert_eq!(repos, vec![kept]);
+    assert_eq!(repos, vec![kept, named_target]);
+}
+
+#[test]
+fn git_home_discovery_skips_the_systems_and_media_folders_of_the_home_only() {
+    let tmp = tempdir().expect("tempdir");
+    let home = tmp.path().join("home");
+    for dir in [
+        "Library",
+        ".local/share",
+        "Pictures",
+        "Music",
+        "Movies",
+        "Videos",
+    ] {
+        std::fs::create_dir_all(home.join(dir).join("nested").join(".git")).expect("home repo");
+    }
+    // Elsewhere those names are folders like any other.
+    let kept = home.join("code").join("Music").join("player");
+    std::fs::create_dir_all(kept.join(".git")).expect("kept repo");
+    let local = home.join(".local").join("src").join("tool");
+    std::fs::create_dir_all(local.join(".git")).expect("local repo");
+
+    let repos = resolve_git_repos_with_home_root(&GitConfig { dirs: None }, Some(home))
+        .expect("home discovery should succeed");
+
+    assert_eq!(repos, vec![local, kept]);
 }
 
 #[tokio::test]

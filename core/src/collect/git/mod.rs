@@ -192,8 +192,30 @@ pub(crate) fn own_commits(commits: RepoCommits) -> (FoundIdentities, Vec<GitEntr
     (found, own, ignored)
 }
 
-// Directories that never hold a user's own repositories but are expensive to walk.
-const SKIPPED_DIR_NAMES: &[&str] = &["node_modules", "AppData", ".direnv"];
+/// Folders, wherever they are, that hold no repositories of the user's own but are expensive to
+/// walk: dependencies, build output, tool caches and the trash. One that is a repository itself is
+/// still read; the walk only does not go into it.
+const SKIPPED_DIR_NAMES: &[&str] = &[
+    "node_modules",
+    "AppData",
+    ".direnv",
+    "target",
+    ".cache",
+    ".cargo",
+    ".rustup",
+    ".Trash",
+];
+
+/// Folders of the home folder that hold no repositories: the system's own (macOS `Library`,
+/// deep and partly behind privacy prompts) and media.
+const SKIPPED_HOME_DIRS: &[&str] = &[
+    "Library",
+    ".local/share",
+    "Pictures",
+    "Music",
+    "Movies",
+    "Videos",
+];
 
 /// Reads the repositories of one Git connection, with commits by every author; the provider
 /// keeps the user's own once all connections are read.
@@ -349,8 +371,10 @@ pub(crate) fn resolve_git_repos(
     config: &GitConfig,
     cancelled: &AtomicBool,
 ) -> Result<Vec<PathBuf>> {
+    let home = default_git_root();
     Ok(resolve_git_repos_from_roots_until(
-        &git_roots(config, default_git_root())?,
+        &git_roots(config, home.clone())?,
+        home.as_deref(),
         cancelled,
     ))
 }
@@ -360,19 +384,29 @@ pub(crate) fn resolve_git_repos_with_home_root(
     config: &GitConfig,
     home_root: Option<PathBuf>,
 ) -> Result<Vec<PathBuf>> {
-    Ok(resolve_git_repos_from_roots(&git_roots(config, home_root)?))
+    let roots = git_roots(config, home_root.clone())?;
+    Ok(resolve_git_repos_from_roots_until(
+        &roots,
+        home_root.as_deref(),
+        &AtomicBool::new(false),
+    ))
 }
 
 #[cfg(test)]
 pub(crate) fn resolve_git_repos_from_roots(roots: &[PathBuf]) -> Vec<PathBuf> {
-    resolve_git_repos_from_roots_until(roots, &AtomicBool::new(false))
+    resolve_git_repos_from_roots_until(roots, None, &AtomicBool::new(false))
 }
 
-/// The repositories under `roots`, found until `cancelled` is set.
-fn resolve_git_repos_from_roots_until(roots: &[PathBuf], cancelled: &AtomicBool) -> Vec<PathBuf> {
+/// The repositories under `roots`, found until `cancelled` is set; `home` is the user's home
+/// folder, whose own system and media folders are not walked.
+fn resolve_git_repos_from_roots_until(
+    roots: &[PathBuf],
+    home: Option<&Path>,
+    cancelled: &AtomicBool,
+) -> Vec<PathBuf> {
     let mut repos = BTreeSet::new();
     for root in roots {
-        let found = visit_git_dir_input(root, cancelled, &mut |repo| {
+        let found = visit_git_dir_input(root, home, cancelled, &mut |repo| {
             repos.insert(repo);
             ControlFlow::Continue(())
         });
@@ -409,8 +443,9 @@ pub(crate) fn visit_git_repos(
     config: &GitConfig,
     visit: &mut impl FnMut(PathBuf) -> ControlFlow<()>,
 ) -> Result<()> {
-    for root in git_roots(config, default_git_root())? {
-        if visit_git_dir_input(&root, &AtomicBool::new(false), visit).is_break() {
+    let home = default_git_root();
+    for root in git_roots(config, home.clone())? {
+        if visit_git_dir_input(&root, home.as_deref(), &AtomicBool::new(false), visit).is_break() {
             break;
         }
     }
@@ -528,19 +563,21 @@ fn head_target(repo: &Repository) -> Option<(ObjectId, String)> {
 /// Visits `path` or the repositories under it; a set `cancelled` ends the walk like a break.
 fn visit_git_dir_input(
     path: &Path,
+    home: Option<&Path>,
     cancelled: &AtomicBool,
     visit: &mut impl FnMut(PathBuf) -> ControlFlow<()>,
 ) -> ControlFlow<()> {
     if path.join(".git").exists() {
         return visit(path.to_path_buf());
     }
-    visit_repos(path, 0, 4, cancelled, visit)
+    visit_repos(path, 0, 4, home, cancelled, visit)
 }
 
 fn visit_repos(
     root: &Path,
     depth: usize,
     max_depth: usize,
+    home: Option<&Path>,
     cancelled: &AtomicBool,
     visit: &mut impl FnMut(PathBuf) -> ControlFlow<()>,
 ) -> ControlFlow<()> {
@@ -559,23 +596,28 @@ fn visit_repos(
         let Ok(metadata) = entry.metadata() else {
             continue;
         };
-        if !metadata.is_dir() || is_skipped_dir(&path) {
+        if !metadata.is_dir() {
             continue;
         }
 
         if path.join(".git").exists() {
             visit(path)?;
-        } else {
-            visit_repos(&path, depth + 1, max_depth, cancelled, visit)?;
+        } else if !is_skipped_dir(&path, home) {
+            visit_repos(&path, depth + 1, max_depth, home, cancelled, visit)?;
         }
     }
     ControlFlow::Continue(())
 }
 
-fn is_skipped_dir(path: &Path) -> bool {
-    path.file_name()
+fn is_skipped_dir(path: &Path, home: Option<&Path>) -> bool {
+    let named = path
+        .file_name()
         .and_then(|name| name.to_str())
-        .is_some_and(|name| SKIPPED_DIR_NAMES.contains(&name))
+        .is_some_and(|name| SKIPPED_DIR_NAMES.contains(&name));
+    let in_home = home
+        .and_then(|home| path.strip_prefix(home).ok())
+        .is_some_and(|inside| SKIPPED_HOME_DIRS.iter().any(|dir| inside == Path::new(dir)));
+    named || in_home
 }
 
 fn gix_time_to_rfc3339(time: gix::date::Time) -> Result<String> {
