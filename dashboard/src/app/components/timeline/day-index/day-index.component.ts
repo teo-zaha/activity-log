@@ -21,7 +21,7 @@ import {
   nearestDayWithEntries,
   slotAt,
 } from '../../../utils/day-index'
-import { longDayLabel } from '../../../utils/local-day'
+import { longDayLabel, type DayKey } from '../../../utils/local-day'
 
 // Keep in step with the stylesheet: the track's inset and the month heading heights.
 const TRACK_INSET = 6
@@ -104,11 +104,11 @@ function eventCount(count: number): string {
 export class DayIndexComponent {
   readonly items = input.required<readonly DayIndexItem[]>()
   /** The day whose header is stuck at the top of the list. */
-  readonly activeDay = input.required<string | null>()
-  /** Scroll the list to this `YYYY-MM-DD` day. */
-  readonly jump = output<string>()
+  readonly activeDay = input.required<DayKey | null>()
+  /** Scroll the list to this day. */
+  readonly jump = output<DayKey>()
   /** Move keyboard focus into this day's events. */
-  readonly focusDay = output<string>()
+  readonly focusDay = output<DayKey>()
 
   private readonly host = inject<ElementRef<HTMLElement>>(ElementRef).nativeElement
   private readonly track = viewChild.required<ElementRef<HTMLElement>>('track')
@@ -120,7 +120,7 @@ export class DayIndexComponent {
   private readonly pointerY = signal<number | null>(null)
   private pendingY = 0
   private frame = 0
-  private lastJump: string | null = null
+  private lastJump: DayKey | null = null
 
   protected readonly days = computed(() =>
     this.items().filter((item): item is DayIndexDay => item.kind === 'day')

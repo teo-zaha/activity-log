@@ -8,7 +8,7 @@ import {
   signal,
 } from '@angular/core'
 import { listener } from '@signality/core/browser/listener'
-import type { DayKey } from '../../utils/local-day'
+import { isDayKey, type DayKey } from '../../utils/local-day'
 
 /** How many frames after a jump its landing is corrected, see `jumpTo`. */
 const ALIGN_FRAMES = 4
@@ -54,6 +54,12 @@ export function dayAt(count: number, bottomOf: (index: number) => number, y: num
   return low
 }
 
+/** The day a section shows, from its `data-day`. */
+function dayOf(section: Element): DayKey | null {
+  const day = section.getAttribute('data-day')
+  return day !== null && isDayKey(day) ? day : null
+}
+
 export interface ActiveDayOptions {
   readonly scroller: Signal<ElementRef<HTMLElement>>
   /** The days' sections, top to bottom, each with its day in `data-day`. */
@@ -72,9 +78,9 @@ export interface ActiveDay {
   /** The day whose header is stuck at the top, else the first day; null without days. */
   readonly day: Signal<DayKey | null>
   /** Lands the day's section on the sticky header line and keeps it active until the user scrolls. */
-  jumpTo(day: string): void
+  jumpTo(day: DayKey): void
   /** The section of a day the list shows. */
-  sectionOf(day: string): HTMLElement | undefined
+  sectionOf(day: DayKey): HTMLElement | undefined
 }
 
 /**
@@ -84,7 +90,7 @@ export interface ActiveDay {
 export function trackActiveDay(options: ActiveDayOptions): ActiveDay {
   const { scroller, sections, viewport, enabled, attached } = options
   /** The day as last seen by the observer or set by a jump. */
-  const tracked = signal<string | null>(null)
+  const tracked = signal<DayKey | null>(null)
   /** After a jump the chosen day stays active (the last days may never reach the header line). */
   let pinned = false
   /** The frame that next re-aligns a jumped-to day, see `jumpTo`. */
@@ -94,13 +100,13 @@ export function trackActiveDay(options: ActiveDayOptions): ActiveDay {
   const sectionsByDay = computed(
     () =>
       new Map(
-        sections().map(({ nativeElement }) => [
-          nativeElement.getAttribute('data-day') ?? '',
-          nativeElement,
-        ])
+        sections().flatMap(({ nativeElement }) => {
+          const day = dayOf(nativeElement)
+          return day === null ? [] : [[day, nativeElement] as const]
+        })
       )
   )
-  const sectionOf = (day: string): HTMLElement | undefined => sectionsByDay().get(day)
+  const sectionOf = (day: DayKey): HTMLElement | undefined => sectionsByDay().get(day)
 
   const track = (): void => {
     if (pinned || !enabled() || !attached()) return
@@ -119,11 +125,12 @@ export function trackActiveDay(options: ActiveDayOptions): ActiveDay {
       i => list[i]?.nativeElement.getBoundingClientRect().bottom ?? 0,
       element.getBoundingClientRect().top + line + slide
     )
-    const day = list[index]?.nativeElement.getAttribute('data-day')
-    if (day) tracked.set(day)
+    const section = list[index]?.nativeElement
+    const day = section === undefined ? null : dayOf(section)
+    if (day !== null) tracked.set(day)
   }
 
-  const alignTo = (day: string, frames: number): void => {
+  const alignTo = (day: DayKey, frames: number): void => {
     const section = sectionOf(day)
     if (!section || !pinned) return
     const element = scroller().nativeElement

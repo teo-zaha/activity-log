@@ -1,5 +1,9 @@
-import { describe, expect, it } from 'vitest'
-import { dayAt, slideLine, type ScrollMetrics } from './active-day'
+import { Component, signal, viewChild, viewChildren, type ElementRef } from '@angular/core'
+import { render } from '@testing-library/angular'
+import { beforeEach, describe, expect, it } from 'vitest'
+import { stubLayoutObservers } from '../../testing/observers'
+import type { DayKey } from '../../utils/local-day'
+import { dayAt, slideLine, trackActiveDay, type ScrollMetrics } from './active-day'
 
 describe('slideLine', () => {
   // A 600 px screen with the line 42 px down, over a list 2000 px tall: the last 558 px slide.
@@ -71,5 +75,61 @@ describe('dayAt', () => {
 
     expect(index).toBe(543)
     expect(reads).toBeLessThanOrEqual(11)
+  })
+})
+
+const DAYS: readonly DayKey[] = ['2026-05-18', '2026-05-17']
+
+/** Two days' sections in a scroller; jsdom lays nothing out, so every box is empty. */
+@Component({
+  template: `<div #scroller>
+    @for (day of days; track day) {
+      <section #daySection [attr.data-day]="day"></section>
+    }
+  </div>`,
+})
+class TrackedList {
+  readonly days = DAYS
+  readonly attached = signal(true)
+  private readonly scroller = viewChild.required<ElementRef<HTMLElement>>('scroller')
+  private readonly sections = viewChildren<ElementRef<HTMLElement>>('daySection')
+  readonly active = trackActiveDay({
+    scroller: this.scroller,
+    sections: this.sections,
+    days: signal(DAYS),
+    viewport: signal({ height: 600, headerTop: 40 }),
+    enabled: signal(true),
+    attached: this.attached,
+  })
+}
+
+describe('trackActiveDay', () => {
+  beforeEach(() => stubLayoutObservers())
+
+  it('keeps the day while the list is out of the document, where every box reads empty', async () => {
+    const { fixture, container } = await render(TrackedList)
+    const list = fixture.componentInstance
+    const scroller = container.querySelector('div')!
+    expect(list.active.day()).toBe('2026-05-18')
+
+    // Out of the document every section's box is empty, which reads as the list's end.
+    list.attached.set(false)
+    scroller.dispatchEvent(new Event('scroll'))
+    expect(list.active.day()).toBe('2026-05-18')
+
+    list.attached.set(true)
+    scroller.dispatchEvent(new Event('scroll'))
+    expect(list.active.day()).toBe('2026-05-17')
+  })
+
+  it('finds a jumped-to day’s section by its day', async () => {
+    const { fixture, container } = await render(TrackedList)
+    const { active } = fixture.componentInstance
+
+    active.jumpTo('2026-05-17')
+
+    expect(active.day()).toBe('2026-05-17')
+    expect(active.sectionOf('2026-05-17')).toBe(container.querySelectorAll('section')[1])
+    expect(active.sectionOf('2026-05-16')).toBeUndefined()
   })
 })
