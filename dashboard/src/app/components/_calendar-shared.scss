@@ -278,7 +278,7 @@ $text-inset: 4px;
   }
 }
 
-// The current time across today's column, its time in the gutter at the left edge.
+// The current time across today's column.
 @mixin now-line {
   .now-line {
     position: absolute;
@@ -301,7 +301,10 @@ $text-inset: 4px;
       background: var(--accent);
     }
   }
+}
 
+// The current time in the gutter, at the left edge of the columns it is placed in.
+@mixin now-label {
   .now-label {
     position: absolute;
     top: 0;

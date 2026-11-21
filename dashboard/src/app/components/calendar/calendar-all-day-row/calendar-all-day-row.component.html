@@ -1,0 +1,19 @@
+<div class="time-gutter-allday"></div>
+<div class="allday-bars">
+  @for (bar of row().bars; track bar.key) {
+    <button
+      type="button"
+      [class]="bar.className"
+      [attr.data-src]="bar.entry.styleKey"
+      [style.left]="bar.left"
+      [style.width]="bar.width"
+      [style.top.px]="bar.top"
+      [style.height.px]="bar.height"
+      (click)="openEvent.emit(bar.key)"
+      [attr.aria-label]="bar.label"
+    >
+      <mat-icon class="cal-event-icon">event</mat-icon>
+      <span class="cal-event-title">{{ bar.entry.title }}</span>
+    </button>
+  }
+</div>

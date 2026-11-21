@@ -1,0 +1,25 @@
+@use '../../calendar-shared' as cal;
+
+:host {
+  display: contents;
+}
+
+.hour-slot {
+  position: absolute;
+  left: 0;
+  right: 0;
+  display: flex;
+  align-items: flex-start;
+  pointer-events: none;
+}
+
+.hour-label {
+  @include cal.hour-label;
+  width: var(--cal-gutter);
+  flex-shrink: 0;
+}
+
+.hour-line {
+  @include cal.hour-line;
+  flex: 1;
+}

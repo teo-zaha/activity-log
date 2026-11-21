@@ -1,0 +1,10 @@
+@use '../../calendar-shared' as cal;
+
+// The view sizes and places the column; blocks are positioned inside it.
+:host {
+  display: block;
+  position: relative;
+}
+
+@include cal.event-styles;
+@include cal.now-line;

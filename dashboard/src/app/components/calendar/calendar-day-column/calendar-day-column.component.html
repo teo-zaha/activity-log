@@ -1,0 +1,35 @@
+@if (now(); as now) {
+  <div class="now-line" [style.top.px]="now.top" aria-hidden="true"></div>
+}
+@for (item of column().items; track item.key) {
+  @if (item.kind === 'overflow') {
+    <button
+      type="button"
+      class="cal-overflow"
+      [style.top.px]="item.top"
+      [style.height.px]="item.height"
+      [style.left]="item.left"
+      [style.width]="item.width"
+      (click)="openGroup.emit(item.keys)"
+      [attr.aria-label]="item.label"
+    >
+      <mat-icon class="cal-event-icon">more_horiz</mat-icon>
+      <span class="cal-event-title">+{{ item.keys.length }}</span>
+    </button>
+  } @else {
+    <button
+      type="button"
+      [class]="item.className"
+      [attr.data-src]="item.entry.styleKey"
+      [style.top.px]="item.top"
+      [style.height.px]="item.height"
+      [style.left]="item.left"
+      [style.width]="item.width"
+      (click)="openEvent.emit(item.key)"
+      [attr.aria-label]="item.label"
+    >
+      <mat-icon class="cal-event-icon">{{ item.entry.entryIcon }}</mat-icon
+      ><span class="cal-event-title">{{ item.entry.title }}</span>
+    </button>
+  }
+}

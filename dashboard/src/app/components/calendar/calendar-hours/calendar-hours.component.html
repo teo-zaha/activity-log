@@ -1,0 +1,6 @@
+@for (row of rows; track row.hour) {
+  <div class="hour-slot" [style.top.px]="row.hour * hourHeight()" [style.height.px]="hourHeight()">
+    <span class="hour-label" [class.is-covered]="coveredHour() === row.hour">{{ row.label }}</span>
+    <div class="hour-line"></div>
+  </div>
+}

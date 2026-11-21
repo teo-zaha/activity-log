@@ -2,7 +2,7 @@
   <!-- Navigation -->
   <div class="cal-nav">
     <div class="cal-heading">
-      <h2 class="cal-title">{{ formatWeekRange(days()) }}</h2>
+      <h2 class="cal-title">{{ title() }}</h2>
       @if (weekMeetingTimeParts(); as parts) {
         <p
           class="cal-meeting-time"
@@ -81,18 +81,18 @@
       <div class="week-col-headers">
         <div class="time-gutter"></div>
         <!-- A column stays the same weekday across weeks, so moving a week updates it in place. -->
-        @for (day of days(); track $index) {
+        @for (day of weekDays(); track $index) {
           <button
             type="button"
             class="day-col-hdr"
-            [class.is-today]="isToday(day)"
-            [class.is-selected]="isSelectedDay(day)"
-            (click)="selectDay(day)"
-            [attr.aria-label]="dayAriaLabel(day)"
+            [class.is-today]="day.isToday"
+            [class.is-selected]="day.isSelected"
+            (click)="openDay(day.day)"
+            [attr.aria-label]="day.label"
           >
-            <span class="day-weekday">{{ formatDayCol(day).weekday }}</span>
-            <span class="day-date">{{ formatDayCol(day).date }}</span>
-            @if (dayMeetingTimeParts(day); as parts) {
+            <span class="day-weekday">{{ day.weekday }}</span>
+            <span class="day-date">{{ day.date }}</span>
+            @if (day.meetingTime; as parts) {
               <span class="day-meeting-time" aria-hidden="true">
                 @if (parts.busy) {
                   <span class="mt-busy">{{ parts.busy }}</span>
@@ -109,28 +109,8 @@
       </div>
 
       <!-- All-day banner row for multi-day events -->
-      @if (multiDayLayout().length) {
-        <div class="cal-allday-row" [style.height.px]="allDayRowHeight()">
-          <div class="time-gutter-allday"></div>
-          <div class="allday-bars">
-            @for (bar of positionedMultiDayLayout(); track bar.key) {
-              <button
-                type="button"
-                [class]="eventClass('cal-allday-bar', bar.entry)"
-                [attr.data-src]="bar.entry.styleKey"
-                [style.left]="bar.left"
-                [style.width]="bar.width"
-                [style.top.px]="bar.top"
-                [style.height.px]="bar.height"
-                (click)="selectEntry(bar.entry)"
-                [attr.aria-label]="eventAriaLabel(bar.entry)"
-              >
-                <mat-icon class="cal-event-icon">event</mat-icon>
-                <span class="cal-event-title">{{ bar.entry.title }}</span>
-              </button>
-            }
-          </div>
-        </div>
+      @if (allDay().bars.length) {
+        <app-calendar-all-day-row [row]="allDay()" (openEvent)="openEvent($event)" />
       }
     </div>
 
@@ -139,69 +119,27 @@
     }
 
     <div class="week-grid" #gridEl [style.height.px]="gridHeight()">
-      <!-- Hour lines -->
-      @for (hour of hours; track hour) {
-        <div
-          class="hour-slot"
-          [style.top.px]="hour * activity.hourHeight()"
-          [style.height.px]="activity.hourHeight()"
-        >
-          <span class="hour-label" [class.is-covered]="nowLine()?.coveredHour === hour">{{
-            formatHour(hour)
-          }}</span>
-          <div class="hour-line"></div>
-        </div>
-      }
+      <app-calendar-hours
+        [hourHeight]="activity.hourHeight()"
+        [coveredHour]="nowLine()?.coveredHour ?? null"
+      />
 
       <!-- Day columns -->
       <div class="week-body">
         @if (nowLine(); as now) {
           <span class="now-label" [style.top.px]="now.top" aria-hidden="true">{{ now.label }}</span>
         }
-        @for (day of days(); track $index) {
-          <div
+        @for (column of columns(); track $index) {
+          @let day = weekDays()[$index];
+          <app-calendar-day-column
             class="day-col"
-            [class.is-today]="isToday(day)"
-            [class.has-allday]="dayHasMultiDayEvent(day)"
-          >
-            @if (isToday(day) && nowLine(); as now) {
-              <div class="now-line" [style.top.px]="now.top" aria-hidden="true"></div>
-            }
-            @for (item of getLayoutForDay(day); track item.key) {
-              @if (item.kind === 'overflow') {
-                <button
-                  type="button"
-                  class="cal-overflow"
-                  [style.top.px]="item.top"
-                  [style.height.px]="item.height"
-                  [style.left]="item.style.left"
-                  [style.width]="item.style.width"
-                  [style.right]="item.style.right"
-                  (click)="selectOverflow(item.entries)"
-                  [attr.aria-label]="overflowAriaLabel(item.entries)"
-                >
-                  <mat-icon class="cal-event-icon">more_horiz</mat-icon>
-                  <span class="cal-event-title">+{{ item.entries.length }}</span>
-                </button>
-              } @else {
-                <button
-                  type="button"
-                  [class]="eventClass('cal-event', item.entry)"
-                  [attr.data-src]="item.entry.styleKey"
-                  [style.top.px]="item.top"
-                  [style.height.px]="item.height"
-                  [style.left]="item.style.left"
-                  [style.width]="item.style.width"
-                  [style.right]="item.style.right"
-                  (click)="selectEntry(item.entry)"
-                  [attr.aria-label]="eventAriaLabel(item.entry)"
-                >
-                  <mat-icon class="cal-event-icon">{{ item.entry.entryIcon }}</mat-icon
-                  ><span class="cal-event-title">{{ item.entry.title }}</span>
-                </button>
-              }
-            }
-          </div>
+            [class.is-today]="day.isToday"
+            [class.has-allday]="day.hasAllDay"
+            [column]="column"
+            [now]="day.isToday ? nowLine() : null"
+            (openEvent)="openEvent($event)"
+            (openGroup)="openGroup($event)"
+          />
         }
       </div>
     </div>
