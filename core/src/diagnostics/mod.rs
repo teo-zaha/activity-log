@@ -120,7 +120,11 @@ pub fn record(level: LogLevel, scope: impl Into<String>, message: impl Into<Stri
         "logged under the host state lock: [{scope}] {message}"
     );
     if level >= LogLevel::Warn {
-        eprintln!("  [{scope}] {message}");
+        // With standard error gone (a closed pipe) the line is in the log all the same.
+        let _ = std::io::Write::write_fmt(
+            &mut std::io::stderr(),
+            format_args!("  [{scope}] {message}\n"),
+        );
     }
     with_log(|log| {
         log.push(level, scope, message);
