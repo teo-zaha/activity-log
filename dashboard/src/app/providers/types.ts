@@ -7,6 +7,7 @@ import type {
   Source,
 } from '../generated/activity'
 import { clockTime, type DayKey, dayKeyOf } from '../utils/local-day'
+import type { ChangeStackVm } from './change-stack'
 import { type ConnectionKey, type EntryKey, entryConnectionKeys } from './connection'
 
 export type EntryBySource<S extends Source> = Extract<ActivityEntry, { source: S }>
@@ -57,6 +58,8 @@ export interface EntryUiAdapterInit {
   descriptionBlocks?: readonly DescriptionBlock[]
   /** Meetings only: the https link that joins the online meeting. */
   joinUrl?: string | null
+  /** Changes only: where the change stands among its repository's open changes, if anywhere. */
+  changeStack?: ChangeStackVm | null
   detailFields: readonly ProviderDetailField[]
   badge: EntryBadgeVm
   badges: readonly EntryBadgeVm[]
@@ -106,6 +109,8 @@ export abstract class EntryUiAdapter<TEntry extends ActivityEntry = ActivityEntr
   readonly descriptionBlocks: readonly DescriptionBlock[]
   /** The link that joins an online meeting; null for other entries and when there is none. */
   readonly joinUrl: string | null
+  /** The change's stack as of the last collection; null for other entries and outside one. */
+  readonly changeStack: ChangeStackVm | null
   readonly detailFields: readonly ProviderDetailField[]
   readonly badge: EntryBadgeVm
   readonly badges: readonly EntryBadgeVm[]
@@ -144,6 +149,7 @@ export abstract class EntryUiAdapter<TEntry extends ActivityEntry = ActivityEntr
     this.description = init.description ?? null
     this.descriptionBlocks = init.descriptionBlocks ?? []
     this.joinUrl = init.joinUrl ?? null
+    this.changeStack = init.changeStack ?? null
     this.detailFields = init.detailFields
     this.badge = init.badge
     this.badges = init.badges

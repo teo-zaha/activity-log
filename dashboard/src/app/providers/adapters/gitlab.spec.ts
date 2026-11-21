@@ -31,4 +31,25 @@ describe('GitLab adapter', () => {
 
     expect(fields).toContainEqual({ label: 'MR', value: '!12' })
   })
+
+  it('lays out a merge request’s stack with GitLab’s `!`, and none without one', () => {
+    const mergeRequest: GitLabEntry = {
+      ...opened,
+      targetType: 'MergeRequest',
+      issueIid: undefined,
+      mrIid: 12,
+    }
+    const stacked = createEntryAdapter({
+      ...mergeRequest,
+      changeStack: {
+        current: { number: 12, title: 'Broken build' },
+        below: [{ number: 11, title: 'Groundwork' }],
+        bottom: { kind: 'reached', branch: 'main' },
+        above: { changes: [], end: { kind: 'complete' } },
+      },
+    })
+
+    expect(stacked.changeStack?.chain.map(row => row.reference)).toEqual(['!11', '!12'])
+    expect(createEntryAdapter(mergeRequest).changeStack).toBeNull()
+  })
 })
