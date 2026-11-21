@@ -113,7 +113,7 @@
           </h2>
           <p class="flyout-time">
             <mat-icon>schedule</mat-icon>
-            <time [attr.datetime]="entry.timestamp">{{ formatDateTime(entry.timestamp) }}</time>
+            <time [attr.datetime]="entry.timestamp">{{ detailTime() }}</time>
           </p>
           @if (entry.joinUrl; as joinUrl) {
             <a
