@@ -5,55 +5,36 @@ use crate::{
 };
 
 #[cfg(target_os = "macos")]
-pub mod macos;
+mod macos;
 #[cfg(target_os = "windows")]
-pub mod windows;
+mod windows;
+
+#[cfg(not(any(target_os = "windows", target_os = "macos")))]
+use self::fallback as imp;
+#[cfg(target_os = "macos")]
+use self::macos as imp;
+#[cfg(target_os = "windows")]
+use self::windows as imp;
 
 /// Answers on a system this provider does not run on; the runtime checks the OS first.
-async fn unsupported() -> anyhow::Result<()> {
-    crate::platform::unsupported_result("OS not supported")
-}
-
-#[cfg(target_os = "windows")]
-use self::windows as windows_impl;
-#[cfg(not(target_os = "windows"))]
-mod windows_impl {
+#[cfg(not(any(target_os = "windows", target_os = "macos")))]
+mod fallback {
     pub(super) async fn check_system_support() -> anyhow::Result<()> {
-        super::unsupported().await
-    }
-}
-
-#[cfg(target_os = "macos")]
-use self::macos as macos_impl;
-#[cfg(not(target_os = "macos"))]
-mod macos_impl {
-    pub(super) async fn check_system_support() -> anyhow::Result<()> {
-        super::unsupported().await
-    }
-}
-
-mod linux_impl {
-    pub(super) async fn check_system_support() -> anyhow::Result<()> {
-        super::unsupported().await
+        anyhow::bail!("OS not supported")
     }
 }
 
 crate::provider! {
     SystemProvider(Source::System, &[SupportedOs::Windows, SupportedOs::Macos]) {
-        async fn startup_check(&self, current_os, _context) {
-            let result = match current_os {
-                SupportedOs::Windows => windows_impl::check_system_support().await,
-                SupportedOs::Macos => macos_impl::check_system_support().await,
-                SupportedOs::Linux => linux_impl::check_system_support().await,
-            };
-            match result {
+        async fn startup_check(&self, _current_os, _context) {
+            match imp::check_system_support().await {
                 Ok(()) => ProviderCheckResult::available(),
                 Err(err) => ProviderCheckResult::unavailable_from(&err),
             }
         }
 
-        async fn collect(&self, current_os, options, _context) {
-            let entries = collect_system(&options, current_os).await?;
+        async fn collect(&self, _current_os, options, _context) {
+            let entries = collect_system(&options).await?;
             Ok(entries.into_activity_entries())
         }
 

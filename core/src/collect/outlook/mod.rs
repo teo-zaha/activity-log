@@ -7,7 +7,7 @@ use super::meeting_text::meeting_text;
 #[cfg(any(target_os = "windows", target_os = "macos", test))]
 use crate::model::BusyStatus;
 use crate::model::{
-    CollectOptions, MeetingBody, MeetingWeight, OutlookEntry, OutlookTag, SupportedOs, Timestamp,
+    CollectOptions, MeetingBody, MeetingWeight, OutlookEntry, OutlookTag, Timestamp,
     outlook::raw_outlook_event::RawOutlookEvent,
 };
 
@@ -18,60 +18,26 @@ mod tests;
 #[cfg(target_os = "windows")]
 mod windows;
 
-#[cfg(target_os = "windows")]
-use self::windows as windows_impl;
-#[cfg(not(target_os = "windows"))]
-mod windows_impl {
-    use anyhow::Result;
-
-    use crate::{
-        model::{CollectOptions, OutlookEntry},
-        platform::unsupported_result,
-    };
-
-    pub(super) async fn collect_outlook(_options: &CollectOptions) -> Result<Vec<OutlookEntry>> {
-        unsupported_result("Outlook collection is not supported on this OS")
-    }
-}
-
+#[cfg(not(any(target_os = "windows", target_os = "macos")))]
+use self::fallback as imp;
 #[cfg(target_os = "macos")]
-use self::macos as macos_impl;
-#[cfg(not(target_os = "macos"))]
-mod macos_impl {
-    use anyhow::Result;
+use self::macos as imp;
+#[cfg(target_os = "windows")]
+use self::windows as imp;
 
-    use crate::{
-        model::{CollectOptions, OutlookEntry},
-        platform::unsupported_result,
-    };
+#[cfg(not(any(target_os = "windows", target_os = "macos")))]
+mod fallback {
+    use anyhow::{Result, bail};
+
+    use crate::model::{CollectOptions, OutlookEntry};
 
     pub(super) async fn collect_outlook(_options: &CollectOptions) -> Result<Vec<OutlookEntry>> {
-        unsupported_result("Outlook collection is not supported on this OS")
+        bail!("Outlook collection is not supported on this OS")
     }
 }
 
-mod linux_impl {
-    use anyhow::Result;
-
-    use crate::{
-        model::{CollectOptions, OutlookEntry},
-        platform::unsupported_result,
-    };
-
-    pub(super) async fn collect_outlook(_options: &CollectOptions) -> Result<Vec<OutlookEntry>> {
-        unsupported_result("Outlook collection is not supported on this OS")
-    }
-}
-
-pub async fn collect_outlook(
-    options: &CollectOptions,
-    current_os: SupportedOs,
-) -> Result<Vec<OutlookEntry>> {
-    match current_os {
-        SupportedOs::Windows => windows_impl::collect_outlook(options).await,
-        SupportedOs::Macos => macos_impl::collect_outlook(options).await,
-        SupportedOs::Linux => linux_impl::collect_outlook(options).await,
-    }
+pub async fn collect_outlook(options: &CollectOptions) -> Result<Vec<OutlookEntry>> {
+    imp::collect_outlook(options).await
 }
 
 /// What to do when Outlook has not registered itself for other apps to attach to.

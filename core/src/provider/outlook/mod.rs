@@ -1,55 +1,39 @@
 use crate::{
     collect::outlook::collect_outlook,
     model::{IntoActivityEntries, Source, SupportedOs},
-    platform::unsupported_result,
     provider::provider_check_result::ProviderCheckResult,
 };
 
 #[cfg(target_os = "macos")]
-pub mod macos;
+mod macos;
 #[cfg(target_os = "windows")]
-pub mod windows;
+mod windows;
 
-#[cfg(target_os = "windows")]
-use self::windows as windows_impl;
-#[cfg(not(target_os = "windows"))]
-mod windows_impl {
-    pub(super) async fn check_outlook_ready() -> anyhow::Result<()> {
-        super::unsupported_result("OS not supported")
-    }
-}
-
+#[cfg(not(any(target_os = "windows", target_os = "macos")))]
+use self::fallback as imp;
 #[cfg(target_os = "macos")]
-use self::macos as macos_impl;
-#[cfg(not(target_os = "macos"))]
-mod macos_impl {
-    pub(super) async fn check_outlook_ready() -> anyhow::Result<()> {
-        super::unsupported_result("OS not supported")
-    }
-}
+use self::macos as imp;
+#[cfg(target_os = "windows")]
+use self::windows as imp;
 
-mod linux_impl {
+#[cfg(not(any(target_os = "windows", target_os = "macos")))]
+mod fallback {
     pub(super) async fn check_outlook_ready() -> anyhow::Result<()> {
-        super::unsupported_result("OS not supported")
+        anyhow::bail!("OS not supported")
     }
 }
 
 crate::provider! {
     OutlookProvider(Source::Outlook, &[SupportedOs::Windows, SupportedOs::Macos]) {
-        async fn startup_check(&self, current_os, _context) {
-            let result = match current_os {
-                SupportedOs::Windows => windows_impl::check_outlook_ready().await,
-                SupportedOs::Macos => macos_impl::check_outlook_ready().await,
-                SupportedOs::Linux => linux_impl::check_outlook_ready().await,
-            };
-            match result {
+        async fn startup_check(&self, _current_os, _context) {
+            match imp::check_outlook_ready().await {
                 Ok(()) => ProviderCheckResult::available(),
                 Err(err) => ProviderCheckResult::unavailable_from(&err),
             }
         }
 
-        async fn collect(&self, current_os, options, _context) {
-            let entries = collect_outlook(&options, current_os).await?;
+        async fn collect(&self, _current_os, options, _context) {
+            let entries = collect_outlook(&options).await?;
             Ok(entries.into_activity_entries())
         }
 
