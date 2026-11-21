@@ -158,11 +158,13 @@ describe('DayViewComponent', () => {
 
   it('says an empty day was not collected when it lies outside the collection', async () => {
     await renderDay({ day: '2026-11-10', from: '2026-11-16', to: '2026-11-22' })
-    expect(screen.getByRole('status').textContent?.trim()).toBe('This day was not collected')
+    expect(screen.getByRole('status').querySelector('.hint-title')?.textContent).toBe(
+      'This day was not collected'
+    )
   })
 
-  it('says an empty day of another collection on screen was not collected', async () => {
-    await renderDay({
+  it('offers to collect this tab’s range where another collection on screen leaves the day out', async () => {
+    const { state } = await renderDay({
       day: '2026-11-17',
       from: '2026-11-16',
       to: '2026-11-22',
@@ -173,11 +175,18 @@ describe('DayViewComponent', () => {
         overlaps: false,
       },
     })
-    expect(screen.getByRole('status').textContent?.trim()).toBe('This day was not collected')
+    expect(screen.getByRole('status').querySelector('.hint-title')?.textContent).toBe(
+      'This day was not collected'
+    )
+
+    screen.getByRole('button', { name: 'Collect 16 Nov – 22 Nov 2026' }).click()
+    expect(state.collects()).toBe(1)
   })
 
   it('says a collected day without entries had no activity', async () => {
     await renderDay({ day: '2026-11-17', from: '2026-11-16', to: '2026-11-22' })
-    expect(screen.getByRole('status').textContent?.trim()).toBe('No activity on this day')
+    expect(screen.getByRole('status').querySelector('.hint-title')?.textContent).toBe(
+      'No activity on this day'
+    )
   })
 })

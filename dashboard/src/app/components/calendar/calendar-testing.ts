@@ -3,6 +3,7 @@
 import { computed, signal, type Provider, type WritableSignal } from '@angular/core'
 import type { EntryKey } from '../../providers/connection'
 import type { EntryUiAdapter } from '../../providers/types'
+import { ActivityDataService } from '../../services/activity-data.service'
 import { ActivitySelection, type RangeCoverage } from '../../services/activity-selection.service'
 import { ActivityViewStateService } from '../../services/activity-view-state.service'
 import type { ViewMode } from '../../utils/app-url'
@@ -30,9 +31,14 @@ export interface FakeCalendarState {
   readonly hourHeight: WritableSignal<number>
   /** The events and groups the view opened, by key. */
   readonly opened: (EntryKey | readonly EntryKey[])[]
+  /** How often the view collected the range on screen. */
+  readonly collects: () => number
 }
 
-/** `ActivityViewStateService` and `ActivitySelection` as far as the calendar views read them. */
+/**
+ * `ActivityViewStateService`, `ActivitySelection` and `ActivityDataService` as far as the calendar
+ * views use them.
+ */
 export function fakeCalendarState(init: CalendarStateInit): FakeCalendarState {
   const selectedDay = signal(init.day)
   const currentView = signal<ViewMode>(init.view ?? 'week')
@@ -68,6 +74,13 @@ export function fakeCalendarState(init: CalendarStateInit): FakeCalendarState {
       return Promise.resolve(true)
     },
   } satisfies Partial<ActivityViewStateService>
+  let collects = 0
+  const data = {
+    collectShownRange: (): Promise<void> => {
+      collects += 1
+      return Promise.resolve()
+    },
+  } satisfies Partial<ActivityDataService>
   const selection = {
     calendarEntries,
     rangeCoverage: signal(init.coverage ?? { kind: 'unknown' }),
@@ -76,6 +89,7 @@ export function fakeCalendarState(init: CalendarStateInit): FakeCalendarState {
     providers: [
       { provide: ActivityViewStateService, useValue: viewState },
       { provide: ActivitySelection, useValue: selection },
+      { provide: ActivityDataService, useValue: data },
       { provide: CALENDAR_TIME_ZONE, useValue: init.timeZone },
     ],
     selectedDay,
@@ -83,5 +97,6 @@ export function fakeCalendarState(init: CalendarStateInit): FakeCalendarState {
     calendarEntries,
     hourHeight,
     opened,
+    collects: () => collects,
   }
 }

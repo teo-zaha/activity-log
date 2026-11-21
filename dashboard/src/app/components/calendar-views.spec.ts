@@ -148,6 +148,8 @@ describe('calendar views over a loaded log', () => {
 
     await show(WeekViewComponent)
 
-    expect(screen.getByRole('status').textContent?.trim()).toBe('This week was not collected')
+    expect(screen.getByRole('status').querySelector('.hint-title')?.textContent).toBe(
+      'This week was not collected'
+    )
   })
 })

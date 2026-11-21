@@ -321,3 +321,45 @@ $text-inset: 4px;
     text-align: right;
   }
 }
+
+// The hint of an empty view, in the sticky `.u-floating-hint`: a pill with its text, or a card
+// that also names the days on screen and offers to collect this tab's range.
+@mixin empty-hint {
+  .calendar-hint {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: center;
+    gap: 8px 12px;
+    max-width: min(560px, calc(100% - 24px));
+    padding: 6px 12px;
+    border: 1px solid var(--hairline);
+    border-radius: 999px;
+    background: var(--surface);
+    box-shadow: var(--control-shadow);
+    color: var(--text-tertiary);
+    font-size: 12.5px;
+    pointer-events: auto;
+
+    &:has(.hint-message, button) {
+      padding: 10px 14px;
+      border-radius: var(--radius-sm);
+    }
+  }
+
+  .hint-text {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    margin: 0;
+  }
+
+  .hint-title {
+    white-space: nowrap;
+  }
+
+  .calendar-hint:has(.hint-message) .hint-title {
+    color: var(--text-secondary);
+    font-weight: 600;
+  }
+}

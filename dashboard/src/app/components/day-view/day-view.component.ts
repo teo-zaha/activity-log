@@ -2,6 +2,7 @@ import { Component, ElementRef, afterNextRender, computed, inject, viewChild } f
 import { MatIconModule } from '@angular/material/icon'
 import { IconButtonComponent } from '../button/icon-button.component'
 import { ButtonComponent } from '../button/button.component'
+import { ActivityDataService } from '../../services/activity-data.service'
 import { ActivitySelection } from '../../services/activity-selection.service'
 import { ActivityViewStateService } from '../../services/activity-view-state.service'
 import { BreakpointState } from '../../services/breakpoint-state.service'
@@ -26,6 +27,7 @@ import { CalendarAllDayRowComponent } from '../calendar/calendar-all-day-row/cal
 import { CalendarDayColumnComponent } from '../calendar/calendar-day-column/calendar-day-column.component'
 import { CalendarHoursComponent } from '../calendar/calendar-hours/calendar-hours.component'
 import { CALENDAR_TIME_ZONE } from '../calendar/calendar-time-zone'
+import { calendarEmptyHint } from '../calendar/calendar-empty-hint'
 import { collectedDays } from '../calendar/collected-days'
 import { injectCalendarZoom } from '../calendar-zoom'
 import { NavigationMotionService } from '../../navigation-motion'
@@ -54,6 +56,7 @@ const MAX_VISIBLE = 5
 export class DayViewComponent {
   protected readonly viewState = inject(ActivityViewStateService)
   private readonly selection = inject(ActivitySelection)
+  private readonly data = inject(ActivityDataService)
   protected readonly motion = inject(NavigationMotionService)
   private readonly isPhone = inject(BreakpointState).phone
   private readonly timeZone = inject(CALENDAR_TIME_ZONE)
@@ -125,11 +128,22 @@ export class DayViewComponent {
     () => layoutDays(this.plan(), this.viewState.hourHeight(), MAX_VISIBLE)[0]
   )
 
-  /** What an empty day says: that nothing happened, or that it was not collected. */
-  protected readonly emptyHint = computed(() => {
-    if (this.allDay().bars.length > 0 || this.column().items.length > 0) return null
-    return this.collected() ? 'No activity on this day' : 'This day was not collected'
-  })
+  /** Why an empty day is empty, see `calendarEmptyHint`; null with entries. */
+  protected readonly emptyHint = computed(() =>
+    this.allDay().bars.length === 0 && this.column().items.length === 0
+      ? calendarEmptyHint({
+          unit: 'day',
+          days: [this.viewState.selectedDay()],
+          from: this.viewState.dateFrom(),
+          to: this.viewState.dateTo(),
+          coverage: this.selection.rangeCoverage(),
+        })
+      : null
+  )
+
+  protected collectOwnRange(): void {
+    void this.data.collectShownRange()
+  }
 
   protected openEvent(key: EntryKey): void {
     void this.viewState.openEvent(key)

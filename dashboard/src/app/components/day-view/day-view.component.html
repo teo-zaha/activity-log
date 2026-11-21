@@ -86,8 +86,20 @@
     }
 
     @if (emptyHint(); as hint) {
-      <div class="u-floating-hint" role="status">
-        <span>{{ hint }}</span>
+      <div class="u-floating-hint">
+        <div class="calendar-hint">
+          <p role="status" class="hint-text">
+            <span class="hint-title">{{ hint.title }}</span>
+            @if (hint.message) {
+              <span class="hint-message">{{ hint.message }}</span>
+            }
+          </p>
+          @if (hint.action; as action) {
+            <button appButton variant="primary" size="sm" icon="sync" (click)="collectOwnRange()">
+              {{ action.label }}
+            </button>
+          }
+        </div>
       </div>
     }
 
