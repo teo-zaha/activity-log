@@ -14,7 +14,7 @@ mod web_link;
 
 pub(crate) use budget::{Breaker, Budget, STACK_BUDGET, STACK_REQUESTS};
 pub(crate) use lookup::{
-    ChangeLookup, ChangeRef, FailureKind, LookupFailure, OpenChange, OpenPage,
+    ChangeLookup, ChangeRef, FailureKind, LookupCause, LookupFailure, OpenChange, OpenPage,
 };
 pub(crate) use walk::{Failures, STACK_DEPTH, STACK_MEMBERS, StackReport, change_stacks};
 pub(crate) use web_link::{WebLink, web_link};

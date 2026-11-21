@@ -1,11 +1,15 @@
-//! The GitLab REST client used by the startup check and the collector.
+//! The GitLab REST client used by the startup check, the collector and the change stack
+//! lookup.
 
+mod merge_requests;
 mod pager;
 
+pub(crate) use merge_requests::{MergeRequestFilter, MergeRequestRow};
 pub(crate) use pager::{PageError, PagedRow, Pager};
 
 use reqwest::{Url, header::HeaderName};
 use serde::de::DeserializeOwned;
+use url::Origin;
 
 use crate::{
     model::RemoteIdentity,
@@ -32,6 +36,12 @@ impl GitLabApi {
             crate::provider::http_client_builder(),
         )
         .map(|remote| Self { remote })
+    }
+
+    /// Where its pages are: the configured URL's origin, which links to merge requests must
+    /// point to.
+    pub(crate) fn web_origin(&self) -> Origin {
+        self.remote.origin()
     }
 
     /// `{base}/api/v4/{segments…}`

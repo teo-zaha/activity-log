@@ -1,5 +1,13 @@
 pub(crate) mod api;
 mod config;
+#[cfg_attr(
+    not(test),
+    expect(
+        dead_code,
+        reason = "GitLab's `annotate` uses it (plan step 16, stage 6)"
+    )
+)]
+mod stack;
 
 pub use config::*;
 
