@@ -29,9 +29,9 @@ fn complete(changes: Vec<ChangeStackNode>) -> ChangeStackAbove {
     }
 }
 
-fn node(change: StackedChange) -> ChangeStackNode {
+fn node(number: u64, title: &str) -> ChangeStackNode {
     ChangeStackNode {
-        change,
+        change: change(number, title),
         above: complete(vec![]),
     }
 }
@@ -91,7 +91,7 @@ fn a_change_below_or_above_makes_a_stack() {
         change(1, "Parse A"),
         vec![],
         reached("main"),
-        complete(vec![node(change(2, "Parse B"))]),
+        complete(vec![node(2, "Parse B")]),
     );
     assert!(above.is_some());
 }
@@ -123,7 +123,7 @@ fn blank_titles_and_branches_are_refused() {
     );
     let deep_blank = complete(vec![ChangeStackNode {
         change: change(3, "Parse C"),
-        above: complete(vec![node(change(4, ""))]),
+        above: complete(vec![node(4, "")]),
     }]);
     assert_eq!(
         ChangeStack::new(change(2, "Parse B"), base(), reached("main"), deep_blank),
@@ -155,7 +155,10 @@ fn only_http_links_without_user_info_are_kept() {
             None,
             "{refused}"
         );
-        let in_tree = complete(vec![node(with_link(refused))]);
+        let in_tree = complete(vec![ChangeStackNode {
+            change: with_link(refused),
+            above: complete(vec![]),
+        }]);
         assert_eq!(
             ChangeStack::new(change(1, "Parse A"), vec![], reached("main"), in_tree),
             None,
@@ -210,4 +213,51 @@ fn a_stack_is_read_only_if_new_would_make_it() {
     let mut above_ambiguous = stack(json!({ "kind": "ambiguous" }), "Parse B");
     above_ambiguous["above"]["end"] = json!({ "kind": "cut", "reason": "ambiguous" });
     assert!(read(above_ambiguous).is_err());
+}
+
+/// A change is on one path once: never twice on the way down, never above a change on its way
+/// down or on its own way up. Above two changes from one branch, it may show twice.
+#[test]
+fn a_change_twice_on_one_path_is_refused() {
+    let new = |current, below: Vec<StackedChange>, above| {
+        ChangeStack::new(change(current, "Parse"), below, reached("main"), above)
+    };
+    assert_eq!(new(2, vec![change(2, "Parse")], complete(vec![])), None);
+    assert_eq!(
+        new(
+            3,
+            vec![change(1, "Parse"), change(1, "Parse")],
+            complete(vec![])
+        ),
+        None
+    );
+    assert_eq!(
+        new(
+            2,
+            vec![change(1, "Parse")],
+            complete(vec![node(1, "Parse")])
+        ),
+        None
+    );
+    assert_eq!(new(2, vec![], complete(vec![node(2, "Parse")])), None);
+    let back_up = complete(vec![ChangeStackNode {
+        change: change(3, "Parse"),
+        above: complete(vec![ChangeStackNode {
+            change: change(4, "Parse"),
+            above: complete(vec![node(3, "Parse")]),
+        }]),
+    }]);
+    assert_eq!(new(2, vec![], back_up), None);
+
+    let shared = complete(vec![
+        ChangeStackNode {
+            change: change(3, "Parse"),
+            above: complete(vec![node(5, "Parse")]),
+        },
+        ChangeStackNode {
+            change: change(4, "Parse"),
+            above: complete(vec![node(5, "Parse")]),
+        },
+    ]);
+    assert!(new(2, vec![change(1, "Parse")], shared).is_some());
 }
