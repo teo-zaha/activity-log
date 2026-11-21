@@ -32,6 +32,13 @@
       },
       {
         "connection": {
+          "source": "gitlab",
+          "name": "oss"
+        },
+        "count": 1
+      },
+      {
+        "connection": {
           "source": "calendar",
           "name": "team"
         },
@@ -159,6 +166,18 @@
       "branch": "main",
       "commitCount": 1,
       "pushedCommit": "zz"
+    },
+    {
+      "source": "gitlab",
+      "connection": "oss",
+      "id": "yy",
+      "type": "pushedTo",
+      "timestamp": "2026-03-10T10:00:00Z",
+      "title": "repo",
+      "targetType": "Project",
+      "branch": "main",
+      "commitCount": 1,
+      "pushedCommit": "yy"
     },
     {
       "source": "calendar",
