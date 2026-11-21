@@ -74,8 +74,6 @@ export class ActivityService {
   readonly filteredEntries = this.selection.filteredEntries
   readonly calendarEntries = this.selection.calendarEntries
   readonly groupedByDay = this.selection.groupedByDay
-  readonly dayEntries = this.selection.dayEntries
-  readonly weekEntriesByDay = this.selection.weekEntriesByDay
 
   navigateDay(delta: number): void {
     this.viewState.navigateDay(delta)
