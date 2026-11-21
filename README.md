@@ -80,6 +80,8 @@ The Tauri desktop app runs on macOS, Windows, and Linux using the same Angular i
 - **Platform chrome:** macOS uses an overlay title bar with traffic lights over the header; Windows uses a frameless window with custom caption buttons and Windows 11 snap layouts over the maximize button.
 - **Window state:** Reopens at your last size, position, maximized, or fullscreen state.
 - **Context menu:** Suppresses the default web view right-click menu except inside text fields and over selected text.
+- **macOS menu bar:** The app's commands (Collect, Export, Copy Link, Filter Activity, the views, Back, Settings, and Keyboard Shortcuts) sit in the menu bar with their shortcuts, next to the standard macOS items; items grey out when they do not apply, and the current view is checked.
+- **Notification when a long collection ends:** When a collection that took 20 seconds or more finishes or fails while the window is in the background, the desktop app shows a system notification. Stopped collections show none.
 - **Live updates without polling:** Both the desktop app (via Tauri events) and the web dashboard (via server-sent events on `GET /api/events`) receive source status and collection updates as they happen, including edits made to `config.toml` outside the app.
 
 ### Four views
@@ -583,6 +585,4 @@ pnpm --dir dashboard exec tauri icon src/favicon.svg -o ../desktop/icons  # rege
 
 These items are in progress or planned and are not yet part of the current build:
 
-- Native macOS menu bar
-- Touch pull-to-refresh on the Timeline
 - Additional sources: GitHub, Microsoft Teams, Figma, Miro, and Odoo
