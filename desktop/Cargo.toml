@@ -13,6 +13,7 @@ tauri-build = { version = "2.7.4", features = [] }
 
 [dependencies]
 activity-log-core = { package = "core", path = "../core" }
+anyhow.workspace = true
 futures.workspace = true
 rfd.workspace = true
 serde.workspace = true
@@ -38,6 +39,9 @@ windows = { version = "0.62.2", features = [
 ] }
 
 [dev-dependencies]
+# The accelerator parser Tauri's menu uses (the version in its tree), to check ours parse.
+muda = { version = "0.20.0", default-features = false }
+strum.workspace = true
 tempfile = "3.27"
 tokio = { workspace = true, features = ["test-util"] }
 # The mock runtime, to call commands as the dashboard does and see what they answer.

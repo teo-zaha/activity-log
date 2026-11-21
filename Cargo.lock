@@ -6,11 +6,14 @@ version = 4
 name = "activity-log-desktop"
 version = "1.0.0"
 dependencies = [
+ "anyhow",
  "core",
  "futures",
+ "muda",
  "rfd",
  "serde",
  "serde_json",
+ "strum",
  "tauri",
  "tauri-build",
  "tauri-plugin-deep-link",

@@ -3,6 +3,7 @@
 
 use crate::{
     export::ExportError,
+    menu::MenuError,
     model::{BackendError, BackendErrorKind, ConnectionId, RangeError},
     runtime::RecheckRefused,
     settings::{ConfigEditError, ConfigError, EditError, LoadError, NO_LOCATION},
@@ -21,6 +22,20 @@ pub(crate) fn refused_recheck(refused: RecheckRefused, id: &ConnectionId) -> Bac
         RecheckRefused::ShutDown => BackendError::internal(format!(
             "Activity Log is quitting; {id} was not checked again"
         )),
+    }
+}
+
+impl From<MenuError> for BackendError {
+    fn from(err: MenuError) -> Self {
+        let kind = match &err {
+            MenuError::DuplicateKey(_)
+            | MenuError::DuplicateAccelerator(_)
+            | MenuError::UnknownItem(_)
+            | MenuError::KindChanged(_) => BackendErrorKind::InvalidRequest,
+            MenuError::Stale { .. } => BackendErrorKind::Conflict,
+            MenuError::Native(_) => BackendErrorKind::Internal,
+        };
+        Self::new(kind, err.to_string())
     }
 }
 

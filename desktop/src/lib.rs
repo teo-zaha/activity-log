@@ -1,3 +1,4 @@
+mod app_menu;
 mod app_state;
 mod browser_keys;
 mod commands;
@@ -11,7 +12,7 @@ mod window_state;
 use std::time::{Duration, Instant};
 
 use activity_log_core::settings::ConfigFile;
-use tauri::{Emitter, Manager, RunEvent, Runtime, WebviewWindow};
+use tauri::{Emitter, Manager, RunEvent, Runtime, WebviewWindow, webview::PageLoadEvent};
 
 use app_state::AppState;
 
@@ -30,7 +31,19 @@ pub fn run() {
                 .open_js_links_on_click(false)
                 .build(),
         )
+        .manage(app_menu::AppMenu::<tauri::Wry>::default())
+        .on_menu_event(|app, event| app_menu::chosen(app, event.id()))
+        // A page that loads again starts with the default menu and installs its own.
+        .on_page_load(|webview, payload| {
+            if webview.label() == deep_link::MAIN_WINDOW
+                && payload.event() == PageLoadEvent::Started
+            {
+                app_menu::page_loading(webview.app_handle());
+            }
+        })
         .invoke_handler(tauri::generate_handler![
+            app_menu::install_menu,
+            app_menu::update_menu,
             commands::get_runtime_state,
             commands::collect,
             commands::get_provider_config,
