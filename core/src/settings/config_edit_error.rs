@@ -18,8 +18,6 @@ pub enum ConfigEditError {
         source: Source,
         key: &'static str,
     },
-    /// A kind this build has no provider for.
-    UnknownProvider(Source),
     /// The kind's entry in the file is not a list of tables (`gitlab = "x"`).
     NotATableList(Source),
 }
@@ -34,7 +32,6 @@ impl std::fmt::Display for ConfigEditError {
             Self::UnknownSetting { source, key } => {
                 write!(f, "{} has no setting {key}", source.label())
             }
-            Self::UnknownProvider(source) => write!(f, "Unknown provider {source}"),
             Self::NotATableList(source) => {
                 write!(f, "`{}` must be a list of tables", source.as_ref())
             }

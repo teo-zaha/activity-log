@@ -85,7 +85,7 @@ impl ConnectionCheck {
     fn info(&self) -> ProviderInfo {
         match &self.state {
             CheckState::Running(_) => self.checking.clone(),
-            CheckState::Recorded(checked) => checked.runtime.info_owned(),
+            CheckState::Recorded(checked) => checked.runtime.info().clone(),
         }
     }
 

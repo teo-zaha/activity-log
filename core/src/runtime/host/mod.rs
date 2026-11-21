@@ -113,7 +113,7 @@ impl Host {
     ) -> anyhow::Result<Host> {
         let host = Self::build(
             path.clone(),
-            Arc::new(start_check),
+            Arc::new(|connection: &Connection| Some(start_check(connection))),
             planned_collector(),
             spawner,
         );
@@ -141,7 +141,12 @@ impl Host {
 
     /// A host of fixed connections that never reloads, for tests.
     pub fn fixed(connections: &[Connection], spawner: RunSpawner) -> Host {
-        let host = Self::build(None, Arc::new(start_check), planned_collector(), spawner);
+        let host = Self::build(
+            None,
+            Arc::new(|connection: &Connection| Some(start_check(connection))),
+            planned_collector(),
+            spawner,
+        );
         host.install(connections.to_vec(), None);
         host
     }

@@ -13,12 +13,8 @@ crate::provider_config! {
 }
 
 crate::provider! {
-    CalendarProvider(Source::Calendar, &[SupportedOs::Windows, SupportedOs::Macos, SupportedOs::Linux], CalendarConfig) {
-        async fn startup_check(&self, _current_os, context) {
-            let config = match context.config::<CalendarConfig>() {
-                Ok(config) => config,
-                Err(err) => return ProviderCheckResult::unavailable_from(&err),
-            };
+    CalendarProvider(Source::Calendar, &[SupportedOs::Windows, SupportedOs::Macos, SupportedOs::Linux], config: CalendarConfig) {
+        async fn startup_check(&self, _current_os, _context, config) {
             match check_feed(&config.ics_url).await {
                 Ok(_) => ProviderCheckResult::available(),
                 Err(err) => ProviderCheckResult::unavailable_from(&err),

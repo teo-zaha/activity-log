@@ -330,16 +330,11 @@ fn debug_output_of_a_settings_snapshot_shows_no_url_query() {
 }
 
 fn key_of(source: Source, name: &str) -> crate::provider::provider_config::ProviderConfigKey {
-    crate::provider::provider_registry()
-        .into_iter()
-        .find(|adapter| adapter.id() == source)
-        .and_then(|adapter| {
-            adapter
-                .config_requirements()
-                .iter()
-                .copied()
-                .find(|key| key.name == name)
-        })
+    crate::provider::adapter(&source)
+        .config_requirements()
+        .iter()
+        .copied()
+        .find(|key| key.name == name)
         .unwrap_or_else(|| panic!("no key {name}"))
 }
 

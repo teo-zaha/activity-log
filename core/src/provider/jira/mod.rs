@@ -6,19 +6,13 @@ pub use config::*;
 use crate::{
     collect::jira::collect_jira,
     model::{IntoActivityEntries, Source, SupportedOs},
-    provider::{provider_check_result::ProviderCheckResult, remote_api::identity_check},
+    provider::remote_api::identity_check,
 };
 use api::JiraApi;
 
 crate::provider! {
-    JiraProvider(Source::Jira, &[SupportedOs::Windows, SupportedOs::Macos, SupportedOs::Linux], JiraConfig, cache: crate::cache::CachePolicy::api()) {
-        async fn startup_check(&self, _current_os, context) {
-            let config = match context.config::<JiraConfig>() {
-                Ok(c) => c,
-                Err(_) => {
-                    return ProviderCheckResult::unavailable("Jira config resolution failed");
-                }
-            };
+    JiraProvider(Source::Jira, &[SupportedOs::Windows, SupportedOs::Macos, SupportedOs::Linux], config: JiraConfig, cache: crate::cache::CachePolicy::api()) {
+        async fn startup_check(&self, _current_os, _context, config) {
             let api = match JiraApi::new(config) {
                 Ok(api) => api,
                 Err(err) => return err.check_result(JiraApi::SERVICE),

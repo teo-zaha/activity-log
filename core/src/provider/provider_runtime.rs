@@ -9,7 +9,7 @@ use crate::{
     diagnostics,
     model::{
         ActivityEntry, CollectOptions, ConnectionId, ConnectionStamp, IdentityEvidence, LogLevel,
-        ProviderInfo, ProviderProblem, ProviderStatus, ProvidersResponse, Source, SupportedOs,
+        ProviderInfo, ProviderProblem, ProviderStatus, Source, SupportedOs,
     },
     utils::now_iso,
 };
@@ -17,12 +17,12 @@ use crate::{
 use crate::cache::Uncached;
 
 use super::{
+    adapter,
     connection::{Connection, ConnectionLocation},
     current_os,
     provider_adapter::{CollectionState, ProviderAdapter},
     provider_check_result::ProviderCheckResult,
     provider_context::ProviderContext,
-    provider_registry,
 };
 
 // A hung OS integration (Outlook dialog, unreachable host, huge directory walk)
@@ -92,10 +92,6 @@ impl ProviderRuntime {
     /// Whose token the startup check saw.
     pub fn identity(&self) -> &IdentityEvidence {
         &self.identity
-    }
-
-    pub fn info_owned(&self) -> ProviderInfo {
-        self.info.clone()
     }
 
     /// The day cache's scope for this connection: its safe fingerprint and the principal the
@@ -221,22 +217,16 @@ pub async fn inspect_provider_runtimes_with(connections: &[Connection]) -> Vec<P
     .await
 }
 
-/// For each connection of a known kind: what its info says while its startup check runs, and
-/// that check.
+/// For each connection: what its info says while its startup check runs, and that check.
 pub fn start_checks(
     connections: &[Connection],
 ) -> Vec<(ProviderInfo, BoxFuture<'static, ProviderRuntime>)> {
-    connections.iter().filter_map(start_check).collect()
+    connections.iter().map(start_check).collect()
 }
 
-/// `start_checks` for one connection; `None` for a kind no provider handles.
-pub fn start_check(
-    connection: &Connection,
-) -> Option<(ProviderInfo, BoxFuture<'static, ProviderRuntime>)> {
-    let adapter = provider_registry()
-        .into_iter()
-        .find(|adapter| adapter.id() == *connection.source())?;
-    Some(start_check_with(adapter, connection))
+/// `start_checks` for one connection.
+pub fn start_check(connection: &Connection) -> (ProviderInfo, BoxFuture<'static, ProviderRuntime>) {
+    start_check_with(adapter(connection.source()).clone(), connection)
 }
 
 /// `start_check` with the adapter given.
@@ -248,13 +238,6 @@ pub(crate) fn start_check_with(
     let connection = connection.clone();
     let check = async move { ProviderRuntime::inspect(adapter, &connection).await };
     (checking, check.boxed())
-}
-
-pub fn providers_response_from_runtimes(runtimes: &[ProviderRuntime]) -> ProvidersResponse {
-    ProvidersResponse {
-        current_os: current_os(),
-        providers: runtimes.iter().map(ProviderRuntime::info_owned).collect(),
-    }
 }
 
 async fn build_provider_info(

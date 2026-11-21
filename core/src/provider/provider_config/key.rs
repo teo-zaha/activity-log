@@ -83,60 +83,12 @@ impl ProviderConfigKey {
         }
     }
 
-    pub const fn required_string(name: &'static str) -> Self {
-        Self::required(name, ProviderConfigValueType::String)
-    }
-
-    pub const fn required_bool(name: &'static str) -> Self {
-        Self::required(name, ProviderConfigValueType::Bool)
-    }
-
-    pub const fn required_int(name: &'static str) -> Self {
-        Self::required(name, ProviderConfigValueType::Int)
-    }
-
-    pub const fn required_password(name: &'static str) -> Self {
-        Self::required(name, ProviderConfigValueType::Password)
-    }
-
-    pub const fn required_email(name: &'static str) -> Self {
-        Self::required(name, ProviderConfigValueType::Email)
-    }
-
-    pub const fn required_url(name: &'static str) -> Self {
-        Self::required(name, ProviderConfigValueType::Url)
-    }
-
-    pub const fn optional_string(name: &'static str) -> Self {
-        Self::optional(name, ProviderConfigValueType::String)
-    }
-
-    pub const fn optional_bool(name: &'static str) -> Self {
-        Self::optional(name, ProviderConfigValueType::Bool)
-    }
-
-    pub const fn optional_int(name: &'static str) -> Self {
-        Self::optional(name, ProviderConfigValueType::Int)
-    }
-
-    pub const fn optional_password(name: &'static str) -> Self {
-        Self::optional(name, ProviderConfigValueType::Password)
-    }
-
-    pub const fn optional_email(name: &'static str) -> Self {
-        Self::optional(name, ProviderConfigValueType::Email)
-    }
-
-    pub const fn optional_url(name: &'static str) -> Self {
-        Self::optional(name, ProviderConfigValueType::Url)
-    }
-
-    /// This key with `label` for people: `optional_string("GIT_DIRS").labelled("Git Dirs")`.
+    /// This key with `label` for people: `optional("GIT_DIRS", String).labelled("Git Dirs")`.
     pub const fn labelled(self, label: &'static str) -> Self {
         Self { label, ..self }
     }
 
-    /// This key as a list of its value type: `optional_string("GIT_DIRS").list_of()`.
+    /// This key as a list of its value type: `optional("GIT_DIRS", String).list_of()`.
     pub const fn list_of(self) -> Self {
         Self {
             shape: ProviderConfigShape::List(self.value_type()),

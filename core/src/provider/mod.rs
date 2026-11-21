@@ -17,9 +17,14 @@ pub mod system;
 #[cfg(test)]
 mod tests;
 
-use std::{sync::Arc, time::Duration};
+use std::{
+    sync::{Arc, LazyLock},
+    time::Duration,
+};
 
-use crate::model::SupportedOs;
+use strum::IntoEnumIterator;
+
+use crate::model::{Source, SupportedOs};
 
 use self::{
     calendar::CalendarProvider, git::GitProvider, gitlab::GitLabProvider, jira::JiraProvider,
@@ -41,11 +46,15 @@ pub(crate) fn http_client_builder() -> reqwest::ClientBuilder {
     builder
 }
 
+/// Declares a provider kind's adapter: its source, the OSes it runs on, optionally its typed
+/// settings (`config: GitLabConfig`, which its startup check gets as its third argument) and its
+/// day cache (`cache: CachePolicy::api()`), its startup check, its collection, and any other
+/// `ProviderAdapter` method.
 #[macro_export]
 macro_rules! provider {
     (
-        $provider:ident($source:expr, $supported_os:expr, $config:ty $(, cache: $cache:expr)?) {
-            async fn startup_check(&self, $startup_os:ident, $startup_ctx:ident) $startup_body:block
+        $provider:ident($source:expr, $supported_os:expr $(, config: $config:ty)? $(, cache: $cache:expr)?) {
+            async fn startup_check(&self, $startup_os:ident, $startup_ctx:ident $(, $startup_config:ident)?) $startup_body:block
             async fn collect(&self, $collect_os:ident, $collect_options:ident, $collect_ctx:ident) $collect_body:block
             $($rest:tt)*
         }
@@ -61,9 +70,11 @@ macro_rules! provider {
                 $supported_os
             }
 
-            fn config_binding(&self) -> Option<$crate::provider::provider_config::ConfigBinding> {
-                Some(<$config>::binding())
-            }
+            $(
+                fn config_binding(&self) -> Option<$crate::provider::provider_config::ConfigBinding> {
+                    Some(<$config>::binding())
+                }
+            )?
 
             $(
                 fn cache_policy(&self) -> Option<$crate::cache::CachePolicy> {
@@ -81,54 +92,22 @@ macro_rules! provider {
             > {
                 let $startup_os = current_os;
                 let $startup_ctx = context;
-                Box::pin(async move { $startup_body })
-            }
-
-            fn collect(
-                &self,
-                current_os: $crate::model::SupportedOs,
-                options: $crate::model::CollectOptions,
-                context: $crate::provider::provider_context::ProviderContext,
-            ) -> futures::future::BoxFuture<'_, anyhow::Result<Vec<$crate::model::ActivityEntry>>>
-            {
-                let $collect_os = current_os;
-                let $collect_options = options;
-                let $collect_ctx = context;
-                Box::pin(async move { $collect_body })
-            }
-
-            $($rest)*
-        }
-    };
-    (
-        $provider:ident($source:expr, $supported_os:expr) {
-            async fn startup_check(&self, $startup_os:ident, $startup_ctx:ident) $startup_body:block
-            async fn collect(&self, $collect_os:ident, $collect_options:ident, $collect_ctx:ident) $collect_body:block
-            $($rest:tt)*
-        }
-    ) => {
-        pub struct $provider;
-
-        impl $crate::provider::provider_adapter::ProviderAdapter for $provider {
-            fn id(&self) -> $crate::model::Source {
-                $source
-            }
-
-            fn supported_os(&self) -> &'static [$crate::model::SupportedOs] {
-                $supported_os
-            }
-
-            fn startup_check(
-                &self,
-                current_os: $crate::model::SupportedOs,
-                context: $crate::provider::provider_context::ProviderContext,
-            ) -> futures::future::BoxFuture<
-                '_,
-                $crate::provider::provider_check_result::ProviderCheckResult,
-            > {
-                let $startup_os = current_os;
-                let $startup_ctx = context;
-                Box::pin(async move { $startup_body })
+                Box::pin(async move {
+                    // The runtime resolves the settings before it checks, and checks only
+                    // what resolved; a context it did not resolve says why.
+                    $(
+                        let $startup_config = match $startup_ctx.config::<$config>() {
+                            Ok(config) => config,
+                            Err(err) => {
+                                return $crate::provider::provider_check_result::ProviderCheckResult::unavailable_as(
+                                    $crate::model::ProviderProblem::NotConfigured,
+                                    format!("{err:#}"),
+                                );
+                            }
+                        };
+                    )?
+                    $startup_body
+                })
             }
 
             fn collect(
@@ -149,15 +128,33 @@ macro_rules! provider {
     };
 }
 
-pub fn provider_registry() -> Vec<Arc<dyn ProviderAdapter>> {
-    vec![
-        Arc::new(GitProvider),
-        Arc::new(GitLabProvider),
-        Arc::new(JiraProvider),
-        Arc::new(OutlookProvider),
-        Arc::new(SystemProvider),
-        Arc::new(CalendarProvider),
-    ]
+/// Every kind's adapter, in `Source` order.
+static REGISTRY: LazyLock<Vec<Arc<dyn ProviderAdapter>>> = LazyLock::new(|| {
+    Source::iter()
+        .map(|source| -> Arc<dyn ProviderAdapter> {
+            match source {
+                Source::Git => Arc::new(GitProvider),
+                Source::Gitlab => Arc::new(GitLabProvider),
+                Source::Jira => Arc::new(JiraProvider),
+                Source::Outlook => Arc::new(OutlookProvider),
+                Source::System => Arc::new(SystemProvider),
+                Source::Calendar => Arc::new(CalendarProvider),
+            }
+        })
+        .collect()
+});
+
+/// Every kind's adapter, in `Source` order.
+pub fn provider_registry() -> &'static [Arc<dyn ProviderAdapter>] {
+    &REGISTRY
+}
+
+/// The adapter of `source`; every kind has one.
+pub fn adapter(source: &Source) -> &'static Arc<dyn ProviderAdapter> {
+    let index = Source::iter()
+        .position(|kind| kind == *source)
+        .expect("`Source::iter` yields every kind");
+    &REGISTRY[index]
 }
 
 pub fn current_os() -> SupportedOs {

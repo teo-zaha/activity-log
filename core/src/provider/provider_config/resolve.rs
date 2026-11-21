@@ -26,19 +26,6 @@ impl ConfigBinding {
     }
 }
 
-#[derive(Debug, Clone)]
-pub struct EmptyConfig;
-
-impl ProviderConfigResolve for EmptyConfig {
-    fn requirements() -> &'static [ProviderConfigKey] {
-        &[]
-    }
-
-    fn from_config(_config: &ProviderConfig) -> Result<Self> {
-        Ok(Self)
-    }
-}
-
 #[macro_export]
 macro_rules! provider_config {
     (
