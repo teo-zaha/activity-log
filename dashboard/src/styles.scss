@@ -131,9 +131,11 @@ html.dark {
   --text-secondary: #3d4756; // ~8.5:1 on white
   --text-tertiary: #5c6878; // ~5.2:1 on white
 
-  // The logo's blue (`favicon.svg`'s tile; the app icon's lower stop is `--brand-deep`), white
-  // on it. Fixed in every theme; light and dark take their accent fill from it.
+  // The logo's blues, white on them, fixed in every theme: `favicon.svg`'s tile (`--brand`) and
+  // the app icon's gradient (`--brand-bright` to `--brand-deep`). Light's accent and Dark's
+  // primary button are `--brand`; both draw the brand mark as the app icon's gradient.
   --brand: #1d4ed8;
+  --brand-bright: #2563eb;
   --brand-deep: #1e40af;
   --brand-fg: #ffffff;
 
@@ -306,7 +308,7 @@ html[data-theme='light'],
 [data-theme-option='light'],
 html[data-theme='dark'],
 [data-theme-option='dark'] {
-  --brand-mark-from: var(--brand);
+  --brand-mark-from: var(--brand-bright);
   --brand-mark-to: var(--brand-deep);
   --brand-mark-fg: var(--brand-fg);
 }
@@ -327,7 +329,7 @@ html[data-theme='green'],
   --text-secondary: #2a5430;
   --text-tertiary: #456d4d;
 
-  --accent: #27732b;
+  --accent: #257129;
   --accent-hover: #1b5e20;
   --accent-fg: #ffffff;
 
@@ -385,7 +387,7 @@ html[data-theme='lilac'],
   --text-secondary: #4a2e8a;
   --text-tertiary: #6d4fa7;
 
-  --accent: #6d3bee;
+  --accent: #6934e8;
   --accent-hover: #5a28d8;
   --accent-fg: #ffffff;
 
@@ -443,7 +445,7 @@ html[data-theme='dim'],
   --text-secondary: #b0becb;
   --text-tertiary: #9da9b7;
 
-  --accent: #5aa2f7;
+  --accent: #64adff;
   --accent-hover: #6cb6ff;
   --accent-fg: var(--bg);
 
@@ -501,7 +503,7 @@ html[data-theme='solarized'],
   --text-secondary: #40565c;
   --text-tertiary: #546466;
 
-  --accent: #1767a5;
+  --accent: #1163a1;
   --accent-hover: #105086;
   --accent-fg: #ffffff;
 

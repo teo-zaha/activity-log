@@ -8,11 +8,15 @@
 // The accent reads too. What is drawn on an accent fill (a primary button, Material's filled
 // buttons and switches, the selected day, the active day's pill) takes its `-fg` token, which
 // reaches 4.5:1 on the fill and on its hover; the brand mark's icon reaches 3:1 on both ends of
-// its tile. The accent itself, as text (links, Add source, the info tone's badges and pills),
-// reaches 4.5:1 on `--bg`, `--surface`, `--surface-alt` and its own info tint; as an icon or a
-// focus ring (the active view's icon on `--accent-soft`, a hovered row), 3:1. A token a theme
-// does not declare comes from the dark block (`html.dark`, for a dark theme) or `:root`, resolved
-// with the theme's own values, as the browser does on `html`.
+// its tile. The accent itself is text in places (links, Add source, the Timeline's Today label on
+// `--accent-soft`, today's number on the day index's rail, log scopes on their level's tint, the
+// info tone), so it reaches 4.5:1 on every surface, on `--accent-soft` and on each tint it is
+// drawn on, which also covers it as an icon or a focus ring.
+//
+// Tokens are read as the app's `html` gets them: `html[data-theme='…']`'s rules, then the dark
+// block's (`html.dark`) for a theme in `DARK_THEMES`, then `:root`'s, with `var()` and
+// `color-mix()` resolved in the theme. The settings' theme swatches
+// (`[data-theme-option='…']`) are left out.
 // Run with `node --test scripts/`.
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
@@ -36,11 +40,16 @@ const ACCENT_FILLS = [
 ]
 /** The brand mark's tile, both ends of its gradient, under its mark (an icon). */
 const BRAND_MARK = ['--brand-mark-from', '--brand-mark-to']
-const ACCENT_TEXT_ON = ['--bg', '--surface', '--surface-alt']
-const ACCENT_ICON_ON = ['--surface-hover']
-/** The info tone's tint behind accent text: `ui.status-tone($mix: 10%)` over `--surface`, as the
- * collection status and the feedback line draw it. */
-const INFO_TONE_MIX = 0.1
+/** `--surface-hover` is also under the day index's rail (`--rail-fill`, 85% of it). */
+const ACCENT_TEXT_ON = ['--bg', '--surface', '--surface-alt', '--surface-hover']
+/** Tints accent text is drawn on, mixed in `srgb` over a surface: the info tone
+ * (`ui.status-tone($mix: 10%)`, the collection status and the feedback line) and the log rows of
+ * a warning or an error (`settings-logs-pane.component.scss`), whose scope is accent text. */
+const ACCENT_TEXT_TINTS = [
+  { tint: '--accent', mix: 0.1, over: '--surface', what: 'the info tone' },
+  { tint: '--status-warn', mix: 0.06, over: '--surface-alt', what: 'a warning log row' },
+  { tint: '--status-error', mix: 0.07, over: '--surface-alt', what: 'an error log row' },
+]
 
 /** Each top-level rule's selectors and the custom properties it declares. Comments are left out. */
 function rules(scss) {
@@ -117,24 +126,33 @@ const RULES = rules(STYLES)
 const offered = [...THEME_SERVICE.matchAll(/\{ id: '([\w-]+)', label: /g)].map(match => match[1])
 const dark = /const DARK_THEMES: Theme\[\] = \[([^\]]*)\]/.exec(THEME_SERVICE)?.[1] ?? ''
 const darkThemes = [...dark.matchAll(/'([\w-]+)'/g)].map(match => match[1])
-/** Each theme's own block, `[data-theme-option='…']`. */
-const themes = new Map(offered.map(theme => [theme, declaredBy(`[data-theme-option='${theme}']`)]))
+/** What each theme's own rules declare on the app's `html`, `html[data-theme='…']`. */
+const themes = new Map(offered.map(theme => [theme, declaredBy(`html[data-theme='${theme}']`)]))
 /** Every dark theme's `html` carries `.dark` (`ThemeService`), so the dark block's tokens apply
  * to it where its own block does not declare them; then `:root`'s. */
 const darkClass = declaredBy('html.dark')
 const root = declaredBy(':root')
+/** The theme `:root` is: its rule names that theme's swatch too. */
+const rootTheme = RULES.filter(rule => rule.selectors.includes(':root'))
+  .flatMap(rule => rule.selectors)
+  .map(selector => /^\[data-theme-option='([\w-]+)'\]$/.exec(selector)?.[1])
+  .find(Boolean)
 
-test('the app offers themes, and each has a block of tokens', () => {
+test('the app offers themes, and each but the :root one declares its own on html', () => {
   assert.ok(offered.length > 1, 'THEMES lists the themes')
-  for (const theme of offered) assert.ok(themes.has(theme), `${theme} has a token block`)
+  assert.ok(rootTheme && offered.includes(rootTheme), ':root is one of the themes')
+  for (const theme of offered.filter(theme => theme !== rootTheme)) {
+    for (const name of [...TEXT, ...SURFACES, '--accent', '--accent-fg']) {
+      assert.ok(themes.get(theme)?.has(name), `html[data-theme='${theme}'] declares ${name}`)
+    }
+  }
 })
 
 for (const theme of offered) {
   test(`${theme}: text reaches ${AA_NORMAL_TEXT}:1 on every surface and keeps its order`, () => {
-    const tokens = themes.get(theme)
     const colour = name => {
-      const rgb = channels(tokens?.get(name) ?? '')
-      assert.ok(rgb, `${theme} ${name} is a #rrggbb colour, not ${tokens?.get(name)}`)
+      const rgb = resolve(theme, name)
+      assert.ok(rgb, `${theme} ${name} resolves to a colour`)
       return rgb
     }
     for (const surface of SURFACES) {
@@ -176,14 +194,14 @@ for (const theme of offered) {
     }
     reaches(
       accent,
-      mix(accent, INFO_TONE_MIX, surface),
+      colour('--accent-soft', surface),
       AA_NORMAL_TEXT,
-      `--accent as text on its info tint`
+      '--accent as text on --accent-soft'
     )
-    for (const on of ACCENT_ICON_ON) {
-      reaches(accent, colour(on), AA_NON_TEXT, `--accent as an icon on ${on}`)
+    for (const { tint, mix: part, over, what } of ACCENT_TEXT_TINTS) {
+      const tinted = mix(colour(tint), part, colour(over))
+      reaches(accent, tinted, AA_NORMAL_TEXT, `--accent as text on ${what}`)
     }
-    reaches(accent, colour('--accent-soft', surface), AA_NON_TEXT, '--accent on --accent-soft')
     for (const end of BRAND_MARK) {
       reaches(colour('--brand-mark-fg'), colour(end), AA_NON_TEXT, `--brand-mark-fg on ${end}`)
     }
