@@ -1,4 +1,5 @@
 import {
+  type AnimationCallbackEvent,
   Component,
   ElementRef,
   type Signal,
@@ -15,6 +16,7 @@ import { LiveAnnouncer } from '@angular/cdk/a11y'
 import { resizeObserver } from '@signality/core/observers/resize-observer'
 import { debounced } from '@signality/core/reactivity/debounced'
 import { watcher } from '@signality/core/reactivity/watcher'
+import { injectVirtualizer } from '@tanstack/angular-virtual'
 import { EmptyStateComponent } from '../empty-state/empty-state.component'
 import { ButtonComponent } from '../button/button.component'
 import { ActivityDataService } from '../../services/activity-data.service'
@@ -27,15 +29,35 @@ import { SearchBarComponent } from '../search-bar/search-bar.component'
 import type { EntryUiAdapter } from '../../providers/types'
 import { dayIndexOf } from '../../utils/day-index'
 import { injectMinuteClock } from '../../utils/clock'
-import { dayKeyOf, isDayKey, type DayKey } from '../../utils/local-day'
+import { dayKeyOf, type DayKey } from '../../utils/local-day'
 import { AutoAnimateDirective } from '../auto-animate/auto-animate.directive'
 import { DayIndexComponent } from './day-index/day-index.component'
 import { trackActiveDay } from './active-day'
 import { keepScroll } from './keep-scroll'
 import { timelineEmptyState, timelineEmptyView } from './timeline-empty-state'
-import { TimelineRows } from './timeline-rows'
+import { type TimelineDay, TimelineRows } from './timeline-rows'
 import { indicatorDistance, pullToRefresh, type PullState } from './pull-to-refresh'
 import { TopLayer } from '../../layouts/shell/top-layer.service'
+
+/** The first days rise in as the list is first drawn; later ones, scrolled to, do not. */
+const RISING_DAYS = 6
+
+/** What a day's height is taken to be before it is first drawn, per breakpoint (the styles'). */
+interface DayEstimate {
+  /** Its header and padding. */
+  readonly chrome: number
+  readonly entry: number
+}
+
+function estimateOf(day: TimelineDay | undefined, { chrome, entry }: DayEstimate): number {
+  return chrome + (day?.rows.length ?? 0) * entry
+}
+
+/** A length custom property, in pixels; `fallback` where it is not one. */
+function pixelsOf(style: CSSStyleDeclaration, property: string, fallback: number): number {
+  const value = parseFloat(style.getPropertyValue(property))
+  return Number.isFinite(value) ? value : fallback
+}
 
 @Component({
   selector: 'app-timeline',
@@ -94,22 +116,44 @@ export class TimelineComponent {
   private readonly scroller = viewChild.required<ElementRef<HTMLElement>>('scroller')
   private readonly content = viewChild.required<ElementRef<HTMLElement>>('content')
   private readonly controls = viewChild.required<ElementRef<HTMLElement>>('controls')
+  private readonly list = viewChild<ElementRef<HTMLElement>>('list')
   private readonly sections = viewChildren<ElementRef<HTMLElement>>('daySection')
 
-  /** Scroller height and the sticky day header offset, re-read whenever the scroller resizes. */
+  /**
+   * The scroller's height, the sticky day header's offset and where the list starts in the
+   * scroller's content, re-read whenever the scroller or what is above the list resizes.
+   */
   private readonly viewport = signal(
-    { height: 0, headerTop: 0, overflows: false },
+    { height: 0, headerTop: 0, listTop: 0, overflows: false, estimate: { chrome: 54, entry: 66 } },
     {
       equal: (a, b) =>
-        a.height === b.height && a.headerTop === b.headerTop && a.overflows === b.overflows,
+        a.height === b.height &&
+        a.headerTop === b.headerTop &&
+        a.listTop === b.listTop &&
+        a.overflows === b.overflows &&
+        a.estimate.chrome === b.estimate.chrome &&
+        a.estimate.entry === b.estimate.entry,
     }
   )
+
   /**
-   * Days on or near the screen. Only their lists animate entries coming and going: AutoAnimate
-   * keeps an observer and a timer for every row of a list it animates.
+   * Only the days on or near the screen are drawn, each measured once drawn and estimated until
+   * then (`estimateOf`). A day is drawn whole, its header sticking within it, so a long range
+   * keeps few rows in the document, also while another view shows.
    */
-  protected readonly nearDays = signal<ReadonlySet<DayKey>>(new Set(), {
-    equal: (a, b) => a.size === b.size && [...a].every(day => b.has(day)),
+  protected readonly virtualDays = injectVirtualizer<HTMLElement, HTMLElement>(() => {
+    const days = this.days()
+    const { headerTop, listTop, estimate } = this.viewport()
+    return {
+      scrollElement: this.scroller(),
+      count: days.length,
+      estimateSize: index => estimateOf(days[index], estimate),
+      getItemKey: index => days[index]?.key ?? index,
+      overscan: 2,
+      scrollMargin: listTop,
+      // A day scrolled to lands under the sticky search bar, as its header sticks there.
+      scrollPaddingStart: headerTop,
+    }
   })
 
   /** The side day index, from the oldest to the newest day the list shows. */
@@ -133,7 +177,7 @@ export class TimelineComponent {
   protected readonly activeDay = trackActiveDay({
     scroller: this.scroller,
     sections: this.sections,
-    days: computed(() => this.selection.groupedByDay().map(group => group.date)),
+    days: computed(() => this.days().map(day => day.date)),
     viewport: this.viewport,
     enabled: this.showDayIndex,
     attached: this.kept.attached,
@@ -149,39 +193,47 @@ export class TimelineComponent {
     const measure = (): void => {
       const scroller = this.scroller().nativeElement
       if (!scroller.isConnected) return
-      const headerTop = parseFloat(getComputedStyle(this.host).getPropertyValue('--day-header-top'))
+      const style = getComputedStyle(this.host)
+      const list = this.list()?.nativeElement
       this.viewport.set({
         height: scroller.clientHeight,
-        headerTop: Number.isFinite(headerTop) ? headerTop : 0,
+        headerTop: pixelsOf(style, '--day-header-top', 0),
+        estimate: {
+          chrome: pixelsOf(style, '--day-chrome-estimate', 54),
+          entry: pixelsOf(style, '--entry-estimate', 66),
+        },
+        listTop: list
+          ? list.getBoundingClientRect().top -
+            scroller.getBoundingClientRect().top +
+            scroller.scrollTop
+          : 0,
         overflows: scroller.scrollHeight > scroller.clientHeight + 1,
       })
     }
     this.announceSettled()
     afterNextRender(measure)
-    // The content box changes size with the list, the scroller with the window.
-    resizeObserver([this.scroller, this.content], measure)
-
-    // Hand-written: the sections change with the list, and Signality's `intersectionObserver`
-    // takes a fixed list of targets.
-    afterRenderEffect(onCleanup => {
+    // The content box changes size with the list, the scroller with the window, and the filter
+    // above the list with its text size.
+    resizeObserver([this.scroller, this.content, this.controls], measure)
+    // Each drawn day is measured, and observed for the rows AutoAnimate or a collection adds.
+    afterRenderEffect(() => {
       const sections = this.sections()
-      const near = new Set<DayKey>()
-      const observer = new IntersectionObserver(
-        records => {
-          for (const record of records) {
-            const day = record.target.getAttribute('data-day')
-            if (day === null || !isDayKey(day)) continue
-            if (record.isIntersecting) near.add(day)
-            else near.delete(day)
-          }
-          this.nearDays.set(new Set(near))
-        },
-        // Half a screen above and below, so a day animates before it scrolls in.
-        { root: this.scroller().nativeElement, rootMargin: '50% 0px' }
-      )
-      for (const section of sections) observer.observe(section.nativeElement)
-      onCleanup(() => observer.disconnect())
+      for (const section of sections) this.virtualDays.measureElement(section.nativeElement)
+      if (sections.length > 0) this.risen = true
     })
+  }
+
+  /** Whether the list was drawn with days: the days drawn after that do not rise in. */
+  private risen = false
+
+  /** `(animate.enter)` of a day: the first days rise in, without a lasting fill. */
+  protected rise(event: AnimationCallbackEvent, index: number): void {
+    if (this.risen || index >= RISING_DAYS) return
+    const element = event.target
+    element.classList.add('day-rise')
+    void Promise.allSettled(element.getAnimations().map(animation => animation.finished)).then(() =>
+      element.classList.remove('day-rise')
+    )
   }
 
   /**
@@ -236,8 +288,12 @@ export class TimelineComponent {
     void this.data.collectShownRange()
   }
 
+  /** The active day is under the line, so it is drawn. */
   protected focusFirstEntry(day: DayKey): void {
-    this.activeDay.sectionOf(day)?.querySelector<HTMLElement>('.entry')?.focus()
+    this.sections()
+      .find(section => section.nativeElement.dataset['day'] === day)
+      ?.nativeElement.querySelector<HTMLElement>('.entry')
+      ?.focus()
   }
 
   protected selectEntry(entry: EntryUiAdapter): void {

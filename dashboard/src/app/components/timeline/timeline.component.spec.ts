@@ -17,6 +17,7 @@ import {
   SEARCH_URL_DELAY_MS,
 } from '../../services/activity-view-state.service'
 import { activityLog, meetingWeightOf } from '../../testing/activity-fixtures'
+import { addDaysToKey } from '../../utils/local-day'
 import { stubLayoutObservers } from '../../testing/observers'
 import { BackendFailure } from '../../services/backend/backend-failure'
 import { failureOf } from '../../services/failure'
@@ -124,14 +125,37 @@ function twoDays(activity: TimelineActivityMock): void {
   ])
 }
 
+/**
+ * Gives the scroller a 600 px tall box and each day 200 px, as jsdom lays nothing out: the virtual
+ * list draws the days that fit in its scroller's height, and none in a scroller without one.
+ */
+function stubViewport(): void {
+  vi.spyOn(Element.prototype, 'clientHeight', 'get').mockReturnValue(600)
+  vi.spyOn(Element.prototype, 'clientWidth', 'get').mockReturnValue(800)
+  vi.spyOn(HTMLElement.prototype, 'offsetHeight', 'get').mockReturnValue(200)
+}
+
 /** Makes every element report a list taller than its viewport. */
 function stubOverflow(): void {
   vi.spyOn(Element.prototype, 'scrollHeight', 'get').mockReturnValue(2000)
-  vi.spyOn(Element.prototype, 'clientHeight', 'get').mockReturnValue(600)
+}
+
+/** `count` days with one Git commit each, newest first, from 18 May 2026 back. */
+function manyDays(activity: TimelineActivityMock, count: number): void {
+  const [git] = activityLog.entries.map(createEntryAdapter)
+  activity.groupedByDay.set(
+    Array.from({ length: count }, (_, index) => ({
+      date: addDaysToKey('2026-05-18', -index),
+      entries: [git!],
+    }))
+  )
 }
 
 describe('TimelineComponent', () => {
-  beforeEach(() => stubLayoutObservers())
+  beforeEach(() => {
+    stubLayoutObservers()
+    stubViewport()
+  })
   afterEach(() => {
     vi.restoreAllMocks()
     vi.unstubAllGlobals()
@@ -457,124 +481,23 @@ describe('TimelineComponent', () => {
     expect(document.activeElement).toBe(screen.getByRole('button', { name: /open jira event/i }))
   })
 
-  it('corrects a jump while the days around it are drawn', async () => {
-    stubOverflow()
+  it('draws only the days near the screen, each saying where it is in the list', async () => {
     const { activity } = mockActivity()
-    twoDays(activity)
-    const { fixture } = await render(TimelineComponent, {
-      providers: servicesOf(activity),
-    })
-    const rail = await screen.findByRole('slider')
-    const host = fixture.nativeElement as HTMLElement
-    const scroller = host.querySelector<HTMLElement>('.timeline-scroll')!
-    const target = host.querySelector<HTMLElement>('[data-day="2026-05-17"]')!
-    let scrollTop = 0
-    Object.defineProperty(scroller, 'scrollTop', {
-      get: () => scrollTop,
-      set: (value: number) => (scrollTop = Math.max(0, value)),
-    })
-    // The target sits 1000 px down until the jump draws the day above it, 120 px taller than
-    // its estimate.
-    let grown = 0
-    vi.spyOn(Element.prototype, 'getBoundingClientRect').mockImplementation(function (
-      this: Element
-    ) {
-      return new DOMRect(0, this === target ? 1000 + grown - scrollTop : 0, 100, 100)
-    })
-    const headerTop = parseFloat(getComputedStyle(host).getPropertyValue('--day-header-top')) || 0
+    manyDays(activity, 60)
 
-    rail.focus()
-    await userEvent.keyboard('{End}')
-    expect(scrollTop).toBe(1000 - headerTop)
+    await render(TimelineComponent, { providers: servicesOf(activity) })
 
-    grown = 120
-    await vi.waitFor(() => expect(scrollTop).toBe(1120 - headerTop))
-  })
-
-  it('reads the active day from where the days are, not from the last one that crossed', async () => {
-    stubOverflow()
-    // The observer of the line under the day header (the one with a negative margin).
-    type Crossing = (records: { target: Element | null; isIntersecting: boolean }[]) => void
-    let crossed: Crossing | undefined
-    vi.stubGlobal(
-      'IntersectionObserver',
-      class {
-        constructor(callback: Crossing, options?: IntersectionObserverInit) {
-          if (options?.rootMargin?.startsWith('-')) crossed = callback
-        }
-        observe(): void {}
-        disconnect(): void {}
-      }
+    const feed = screen.getByRole('feed', { name: 'Activity by day' })
+    const days = screen.getAllByRole('article')
+    expect(days.length).toBeGreaterThan(0)
+    expect(days.length).toBeLessThan(60)
+    expect(days.map(day => day.getAttribute('aria-posinset'))).toEqual(
+      days.map((_, index) => String(index + 1))
     )
-    const { activity } = mockActivity()
-    twoDays(activity)
-    const { fixture } = await render(TimelineComponent, {
-      providers: servicesOf(activity),
-    })
-    const rail = await screen.findByRole('slider')
-    const host = fixture.nativeElement as HTMLElement
-    const first = host.querySelector('[data-day="2026-05-18"]')
-    const second = host.querySelector('[data-day="2026-05-17"]')
-    // Each day is 500 px tall below 40 px of padding; the scroller's top is at 0.
-    let scrollTop = 0
-    vi.spyOn(Element.prototype, 'getBoundingClientRect').mockImplementation(function (
-      this: Element
-    ) {
-      const index = this === first ? 0 : this === second ? 1 : -1
-      return index < 0
-        ? new DOMRect(0, 0, 100, 0)
-        : new DOMRect(0, 40 + index * 500 - scrollTop, 100, 500)
-    })
-    await vi.waitFor(() => expect(crossed).toBeDefined())
-
-    scrollTop = 800
-    crossed?.([{ target: second, isIntersecting: true }])
-    await vi.waitFor(() =>
-      expect(rail.getAttribute('aria-valuetext')).toBe('Sunday, 17 May 2026, 1 event')
-    )
-
-    // Flung back to the top: the first day never crossed the line, which is in the padding now.
-    scrollTop = 0
-    crossed?.([{ target: second, isIntersecting: false }])
-    await vi.waitFor(() =>
-      expect(rail.getAttribute('aria-valuetext')).toBe('Monday, 18 May 2026, 1 event')
-    )
-  })
-
-  it('makes the last day active at the end of the list, though it never reaches the line', async () => {
-    stubOverflow()
-    const { activity } = mockActivity()
-    twoDays(activity)
-    const { fixture } = await render(TimelineComponent, {
-      providers: servicesOf(activity),
-    })
-    const rail = await screen.findByRole('slider')
-    const host = fixture.nativeElement as HTMLElement
-    const scroller = host.querySelector<HTMLElement>('.timeline-scroll')!
-    const first = host.querySelector('[data-day="2026-05-18"]')
-    const second = host.querySelector('[data-day="2026-05-17"]')
-    // The first day is 1700 px tall, the last 200 px: at the end (1400) its top is at 340, far
-    // below the line under the header.
-    let scrollTop = 0
-    vi.spyOn(scroller, 'scrollTop', 'get').mockImplementation(() => scrollTop)
-    vi.spyOn(Element.prototype, 'getBoundingClientRect').mockImplementation(function (
-      this: Element
-    ) {
-      if (this === first) return new DOMRect(0, 40 - scrollTop, 100, 1700)
-      if (this === second) return new DOMRect(0, 1740 - scrollTop, 100, 200)
-      return new DOMRect(0, 0, 100, 0)
-    })
-
-    scrollTop = 1000
-    scroller.dispatchEvent(new Event('scroll'))
-    await fixture.whenStable()
-    expect(rail.getAttribute('aria-valuetext')).toBe('Monday, 18 May 2026, 1 event')
-
-    scrollTop = 1400
-    scroller.dispatchEvent(new Event('scroll'))
-    await vi.waitFor(() =>
-      expect(rail.getAttribute('aria-valuetext')).toBe('Sunday, 17 May 2026, 1 event')
-    )
+    expect(days.every(day => day.getAttribute('aria-setsize') === '60')).toBe(true)
+    expect(feed.contains(days[0]!)).toBe(true)
+    // The summary counts every day, drawn or not.
+    expect(screen.getByText('60 events across 60 days')).toBeTruthy()
   })
 
   it('moves "Today" to the next day at midnight', async () => {

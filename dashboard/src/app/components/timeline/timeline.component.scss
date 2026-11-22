@@ -81,24 +81,19 @@
 // ── Day groups ───────────────────────────────────────────────────────────────
 
 // Padding, not margin, and a header without a negative top margin (it would collapse through
-// the section): sections tile the list and each starts at its header, so the day index's
-// tracking line just under the sticky header always crosses exactly one section.
-//
-// Days off screen skip style, layout and paint, so long ranges stay quick to scroll and filter.
-// Until a day is first drawn it takes the height its entries would (`--day-entries`, set per
-// day); after that, the height it had. The inline padding keeps the day header's 4 px overhang
-// inside the paint clip that skipping brings.
+// the section): days tile the list, so each one's measured height is the room it takes and
+// each starts at its header. The inline padding keeps the day header's 4 px overhang inside.
+.timeline {
+  box-sizing: border-box;
+}
+
 .day-group {
   margin-inline: -4px;
   padding: 0 4px 18px;
-  content-visibility: auto;
-  contain-intrinsic-block-size: auto
-    calc(var(--day-chrome-estimate) + var(--day-entries, 1) * var(--entry-estimate));
 }
 
-// Only the first days rise in, and without a lasting fill: a finished animation kept on every
-// day makes each frame of a long range slow.
-.day-group:nth-child(-n + 6) {
+// Only the first days rise in, as the list is first drawn (`rise`), and without a lasting fill.
+.day-group.day-rise {
   animation: u-rise 0.32s var(--ease-out) backwards;
 }
 
