@@ -533,6 +533,12 @@ The docs say so plainly.
    - It returns the state and, when done, the result in the agent projection (below).
    - It is authorized against the **current** policy.
    - An unknown handle, an expired request and a request the agent may no longer see all get the same `not_found`.
+7. **Reason and sources** (A2UI evaluation, 2026-11-22). `request_write` carries, beside its `WriteRequest`:
+   - `reason: Option<String>`: plain text, never Markdown, capped like other text fields (500), shown with control and bidirectional characters made visible;
+   - `sources: Vec<EntryRef>`, at most 20, each an entry's `(source, connection, id)`.
+
+   Core resolves `sources` against the agent's projection when it prepares the draft and again when the draft is opened. Refs that are unknown or no longer visible are dropped and counted ("2 sources no longer available"). The draft's DTO carries core's titles and times for the resolved entries, never a title or link from the agent, so the calendar highlight and "Sources it used" (section 7) can point only at entries that exist and the agent may see. Both are saved with the draft like the rest of the request.
+   - Note: `WriteRequest` is shared by every origin, so these sit on `request_write`, not in `WriteRequest` as the evaluation worded it. `EntryRef` is a new name; `AgentEntry` (below) shows no `id` in its example fields and needs one for an agent to name an entry.
 
 #### What the agent can read
 
@@ -692,6 +698,7 @@ The UI follows the direction mix recorded in [open-decisions-design.md](../open-
   - **Comment…**, **Move to…**, **Assign to me**, **Log time…**.
   - Each action shows only when the connection allows it. When the token lacks the scope, it is disabled with the reason.
   - Opening a link needs a desktop command that opens only URLs core built (`WorkItem.url`): the app's only opener is `tauri-plugin-opener` called from Rust by `open_url`, and the webview gets no general one (decided, Q2 in `generic-read-step.md`).
+  - `open_url` is called only from a direct user activation in the app (a click or a key press on the control), never from a binding, an effect, a timer, a stream message or a deep link: A2UI's `requiresUserActivation` rule, applied to our one opener (A2UI evaluation, 2026-11-22). It is likely true already; a dashboard test pins it. Rust cannot see the activation, so the core-built URL check stays the backend's part.
 - **New item:** a button in the Work items view and an entry action ("Create ticket from this…" prefills the summary and description). The form comes from `DescribeCreate`: connection, project, type, then the type's fields.
 - **Log time:**
   - Opened from one entry, a selection of entries (multi-select in the day and week views and on the timeline), or a work item. The prefill comes from section 4.
@@ -704,10 +711,12 @@ The UI follows the direction mix recorded in [open-decisions-design.md](../open-
 - **Drafts and the Review view (Q1, Q7, Q10, Q13, Q18):**
   - A draft is a write prepared but not written, from the agent or from you: every write dialog has "Save for later". Both kinds share one store, the 7-day expiry, a fresh preview when opened and the same confirm, and each is marked by origin.
   - The Review view in the Work group lists them as C's cards (what, where, why, who asked; Review and Discard), with the badge on its nav item. "Review" is the name everywhere.
+    - "Who asked" on an agent draft ("You asked: …") is text the agent supplied, sent in `request_write` like its reason (section 5, item 7). It is shown in the "Text from the agent" styling, never as app chrome. A draft you saved for later shows "Saved by you", drawn by the app from `origin` (A2UI evaluation, 2026-11-22).
   - Opening a draft shows C's draft screen: its sources highlighted on the calendar, the agent's reason labelled as model text (plain, no links), "Sources it used", and the re-checked preview, then Discard, Edit and the named confirm.
   - Edit opens the regular write dialog filled in; saving replaces the draft. Discard leaves an audit line in Logs (what, origin, when). A draft whose fresh preview is refused becomes a grey "no longer valid" card with its reason as a typed kind; only Edit and Discard remain.
   - Without an agent: "No agent connected · Set up" in Review, linking to the AI access setting. Agent drafts, and the agent's confirmed writes in the timeline, carry a "from agent" badge.
   - Deferred with C's docked tray: the agent activity feed, the agent status line and Pause.
+  - Deferred beside it, still open (A2UI evaluation, 2026-11-22): rich read-only results in the agent host. If wanted, a plain MCP App comes first: a fixed `ui://` view we ship, fed by typed tool output, under the host's CSP. It never offers a confirm, for the reason elicitation is not used (section 5).
 - **Confirmation, one pattern for every write:**
   - The dialog shows the preview core rendered: connection label, target key and title, each field as it will be sent, any recent-write warning, and a warning for writes others will see ("Comments notify watchers").
   - The confirm button names the effect ("Create in Work Jira", "Log 1h30m on ABC-123"); it is never a generic "OK".
@@ -791,6 +800,7 @@ Phase 0, 1a and the agent policy of 1b are planned in detail in [generic-read-st
 - The desktop's agent socket or pipe (private folder or owner-only DACL, peer check, frame limits) and single instance.
 - `activity-log mcp` (stdio, `rmcp` pinned) as a thin adapter: `search`, `get_item`, `activity`, `time_report`.
 - Agent response types and the recursive projection (required before the transport ships). `agent_allow` and the policy intersection already land in 1a.
+- Tool schemas from the Rust types (A2UI evaluation, 2026-11-22): each tool's input and output schema (`structuredContent`) is derived from `AgentRequest` and the agent response types, the one source of truth, as ts-rs is for the dashboard. Each tool also gives a text fallback for hosts without structured output. Check first whether `rmcp`'s pinned features already derive schemas (its `schemars` use) before adding anything. The test "Tool schemas generated from the same types" below already asks for the first part.
 - Limits at the socket.
 - The audit file with its lock (no agent writes yet).
 - Docs: adding the server to an agent host, and the boundary (shell, PTY, file access and UI automation defeat it).
@@ -917,6 +927,13 @@ Each later phase adds its new actions to the MCP tools under the same rules.
 
 5. **No Host check** on the local API server; the DNS-rebinding exposure of today's activity routes is accepted.
 6. **Further decisions** (the UI direction mix: A's backbone with C's calendar look and review cards, B's ⌘K later; saved agent drafts, generic read step for Jira and GitLab together, AI access select per connection, naming, shortcuts, approved `rmcp` and `tauri-plugin-single-instance`) are in [open-decisions-design.md](../open-decisions-design.md); the UI decisions of 2026-11-21 (Q1–Q18) settle what that mix takes from each mockup, and section 7 applies them.
+7. **No agent-generated UI** (2026-11-22, after an evaluation of A2UI). Agent-generated UI (A2UI, MCP Apps views composed by the agent) is not used. The agent sends typed requests; the desktop draws every agent surface from core DTOs, so the agent cannot shape the screen you confirm on. Revisit if one of these becomes a decision:
+   - an in-app agent conversation, where the app itself calls a model and its answers should be composed screens; then only read-only answer surfaces with a locked app catalog (no `openUrl`, no Markdown, no inputs), and confirmation stays on the app-drawn screen;
+   - rich read-only views in the agent host, once a plain MCP App with a fixed view (section 7, Deferred) proves too rigid;
+   - Activity Log as a remote agent for other orchestrators (A2A), whose UI channel would likely be A2UI.
+
+   Any of these also needs an `@a2ui/angular` whose peer range includes the dashboard's Angular major, renderer packages at 1.x with a stated compatibility policy, and ideally a Rust SDK or stable conformance suites.
+   - Placed here rather than in `open-decisions-design.md`: that file records one question round of 2026-11-17 and has no dated entries to add to.
 
 ### Still open
 
