@@ -286,4 +286,16 @@ describe('the reader’s place in the timeline', () => {
 
     expect(Math.abs((topOf(read.key) ?? Infinity) - read.top)).toBeLessThan(1.5)
   })
+
+  it('keeps the focus on an entry as the list scrolls far away from it', async () => {
+    await openTimeline()
+    const entry = scroller().querySelector<HTMLElement>('.entry')!
+    entry.focus()
+
+    await scrollTo(scroller().scrollHeight)
+    await frames(4)
+
+    expect(document.activeElement).toBe(entry)
+    expect(entry.isConnected).toBe(true)
+  })
 })

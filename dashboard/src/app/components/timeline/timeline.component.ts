@@ -16,7 +16,8 @@ import { LiveAnnouncer } from '@angular/cdk/a11y'
 import { resizeObserver } from '@signality/core/observers/resize-observer'
 import { debounced } from '@signality/core/reactivity/debounced'
 import { watcher } from '@signality/core/reactivity/watcher'
-import { injectVirtualizer } from '@tanstack/angular-virtual'
+import { defaultRangeExtractor, injectVirtualizer } from '@tanstack/angular-virtual'
+import { listener } from '@signality/core/browser/listener'
 import { EmptyStateComponent } from '../empty-state/empty-state.component'
 import { ButtonComponent } from '../button/button.component'
 import { ActivityDataService } from '../../services/activity-data.service'
@@ -29,7 +30,7 @@ import { SearchBarComponent } from '../search-bar/search-bar.component'
 import type { EntryUiAdapter } from '../../providers/types'
 import { dayIndexOf } from '../../utils/day-index'
 import { injectMinuteClock } from '../../utils/clock'
-import { dayKeyOf, type DayKey } from '../../utils/local-day'
+import { dayKeyOf, isDayKey, type DayKey } from '../../utils/local-day'
 import { AutoAnimateDirective } from '../auto-animate/auto-animate.directive'
 import { DayIndexComponent } from './day-index/day-index.component'
 import { type DayPositions, trackActiveDay } from './active-day'
@@ -62,6 +63,8 @@ function dayAt(days: readonly TimelineDay[], index: number): TimelineDay {
 interface DrawnDay {
   readonly day: TimelineDay
   readonly index: number
+  /** The room above it for the days not drawn between it and the day drawn before. */
+  readonly gap: number
 }
 
 /** The virtual list's own correction for days measured above the screen: `keepPlace` keeps it. */
@@ -159,12 +162,21 @@ export class TimelineComponent {
     const days = this.days()
     const { headerTop, listTop } = this.viewport()
     const entry = this.isPhone() ? ENTRY_ESTIMATE.phone : ENTRY_ESTIMATE.wide
+    const focused = this.focusedDay()
+    const kept = focused === null ? -1 : days.findIndex(day => day.date === focused)
     return {
       scrollElement: this.scroller(),
       count: days.length,
       estimateSize: (index): number => DAY_CHROME_ESTIMATE + dayAt(days, index).rows.length * entry,
       getItemKey: (index): string => dayAt(days, index).key,
       overscan: 2,
+      // The day holding focus stays drawn wherever the list is scrolled, so focus stays on it.
+      rangeExtractor: (range): number[] => {
+        const indexes = defaultRangeExtractor(range)
+        return kept < 0 || indexes.includes(kept)
+          ? indexes
+          : [...indexes, kept].sort((a, b) => a - b)
+      },
       scrollMargin: listTop,
       // A day scrolled to lands under the sticky search bar, as its header sticks there.
       scrollPaddingStart: headerTop,
@@ -178,10 +190,17 @@ export class TimelineComponent {
    */
   protected readonly drawn = computed<readonly DrawnDay[]>(() => {
     const days = this.days()
-    return this.virtualDays
-      .getVirtualItems()
-      .flatMap(({ index }) => (index < days.length ? [{ day: dayAt(days, index), index }] : []))
+    let end = this.virtualDays.options().scrollMargin
+    return this.virtualDays.getVirtualItems().flatMap(item => {
+      if (item.index >= days.length) return []
+      const gap = item.start - end
+      end = item.end
+      return [{ day: dayAt(days, item.index), index: item.index, gap }]
+    })
   })
+
+  /** The day the focus is in, kept drawn (`rangeExtractor`); null with focus elsewhere. */
+  private readonly focusedDay = signal<DayKey | null>(null)
 
   /** The side day index, from the oldest to the newest day the list shows. */
   protected readonly dayIndex = computed(() =>
@@ -256,8 +275,14 @@ export class TimelineComponent {
     followFeedKeys({
       scroller: this.scroller,
       count: () => this.days().length,
+      indexOf: article =>
+        this.drawn().find(drawn => drawn.day.date === article.dataset['day'])?.index ?? null,
       scrollTo: index => this.positions.scrollTo(index),
     })
+    listener(this.scroller, 'focusin', (event: FocusEvent) => this.followFocus(event.target))
+    listener(this.scroller, 'focusout', (event: FocusEvent) =>
+      this.followFocus(event.relatedTarget)
+    )
     afterNextRender(measure)
     // The content box changes size with the list, the scroller with the window, and the filter
     // above the list with its text size.
@@ -269,6 +294,12 @@ export class TimelineComponent {
       for (const section of sections) this.virtualDays.measureElement(section.nativeElement)
       if (sections.length > 0) this.risen = true
     })
+  }
+
+  /** The day of the element focus went to, if it is one of the list's. */
+  private followFocus(target: EventTarget | null): void {
+    const day = target instanceof Element ? target.closest('article')?.dataset['day'] : undefined
+    this.focusedDay.set(day !== undefined && isDayKey(day) ? day : null)
   }
 
   /** Whether the list was drawn with days: the days drawn after that do not rise in. */
