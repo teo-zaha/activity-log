@@ -34,6 +34,7 @@ import { AutoAnimateDirective } from '../auto-animate/auto-animate.directive'
 import { DayIndexComponent } from './day-index/day-index.component'
 import { type DayPositions, trackActiveDay } from './active-day'
 import { keepPlace, type PlacePositions } from './keep-place'
+import { followFeedKeys } from './feed-keys'
 import { trackAttachment } from './attachment'
 import { timelineEmptyState, timelineEmptyView } from './timeline-empty-state'
 import { type TimelineDay, TimelineRows } from './timeline-rows'
@@ -238,6 +239,12 @@ export class TimelineComponent {
     this.announceSettled()
     // A new navigation shows the list from its top, Back and Forward where it was left.
     restoresScroll(this.scroller)
+    // Page Down and Page Up step through the days, as a feed's articles.
+    followFeedKeys({
+      scroller: this.scroller,
+      count: () => this.days().length,
+      scrollTo: index => this.positions.scrollTo(index),
+    })
     // A collection or a filter that changes the days above keeps the day read where it is.
     keepPlace({
       scroller: this.scroller,

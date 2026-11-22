@@ -520,6 +520,23 @@ describe('TimelineComponent', () => {
     })
   })
 
+  it('moves focus between the days with Page Down and Page Up, as a feed does', async () => {
+    const { activity } = mockActivity()
+    twoDays(activity)
+    await render(TimelineComponent, { providers: servicesOf(activity) })
+    const [first, second] = screen.getAllByRole('article')
+    screen.getByRole('button', { name: /open jira event/i }).focus()
+
+    await userEvent.keyboard('{PageDown}')
+    expect(document.activeElement).toBe(second)
+
+    await userEvent.keyboard('{PageUp}')
+    expect(document.activeElement).toBe(first)
+    // Nothing comes before the first day.
+    await userEvent.keyboard('{PageUp}')
+    expect(document.activeElement).toBe(first)
+  })
+
   it('draws only the days near the screen, each saying where it is in the list', async () => {
     const { activity } = mockActivity()
     manyDays(activity, 60)
