@@ -83,6 +83,14 @@
 // Padding, not margin, and a header without a negative top margin (it would collapse through
 // the section): days tile the list, so each one's measured height is the room it takes and
 // each starts at its header. The inline padding keeps the day header's 4 px overhang inside.
+// The list's height and its top padding are where the virtual list places the days: never eased,
+// also where reduced motion gives every property a near-zero transition (`styles.scss`), which
+// would leave the old value in place for the rest of the frame.
+.timeline,
+.day-group {
+  transition-property: none;
+}
+
 .timeline {
   box-sizing: border-box;
 }
