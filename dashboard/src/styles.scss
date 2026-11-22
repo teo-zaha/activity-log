@@ -131,10 +131,22 @@ html.dark {
   --text-secondary: #3d4756; // ~8.5:1 on white
   --text-tertiary: #5c6878; // ~5.2:1 on white
 
-  // Accent
-  --accent: #3b82f6;
-  --accent-hover: #2563eb;
-  --accent-fg: #ffffff;
+  // The logo's blue (`favicon.svg`'s tile; the app icon's lower stop is `--brand-deep`), white
+  // on it. Fixed in every theme; light and dark take their accent fill from it.
+  --brand: #1d4ed8;
+  --brand-deep: #1e40af;
+  --brand-fg: #ffffff;
+
+  // Accent: the logo's blue, dark enough for white text on it and to read as text itself
+  --accent: var(--brand);
+  --accent-hover: var(--brand-deep);
+  --accent-fg: var(--brand-fg);
+
+  // The brand mark (header, splash): a tile in the theme's accent, deepening toward the text
+  // colour; Light and Dark draw the logo itself (below)
+  --brand-mark-from: var(--accent);
+  --brand-mark-to: color-mix(in srgb, var(--accent) 62%, var(--text-primary));
+  --brand-mark-fg: var(--accent-fg);
 
   // Primary button (defaults to accent)
   --btn-primary: var(--accent);
@@ -231,15 +243,16 @@ html.dark,
   --text-secondary: #959fa9;
   --text-tertiary: #848d98;
 
-  // Accent
+  // Accent: light enough to read as text on the dark surfaces, so what is drawn on it is dark
   --accent: #58a6ff;
   --accent-hover: #79b8ff;
-  --accent-fg: #ffffff;
+  --accent-fg: var(--bg);
 
-  // Primary button (defaults to accent)
-  --btn-primary: var(--accent);
-  --btn-primary-hover: var(--accent-hover);
-  --btn-primary-fg: var(--accent-fg);
+  // Primary button: the logo's blue, as in the light theme; the accent above is too light for
+  // white text, and the logo's blue too dark to read as text on these surfaces
+  --btn-primary: var(--brand);
+  --btn-primary-hover: var(--brand-deep);
+  --btn-primary-fg: var(--brand-fg);
 
   // Error
   --error-bg: #3b0f0f;
@@ -287,6 +300,17 @@ html.dark,
   --canvas-glow: color-mix(in srgb, var(--accent) 6%, transparent);
 }
 
+// Light and Dark draw the brand mark as the logo itself, the app icon's gradient. Not in the dark
+// block: `html.dark` marks every dark theme, and the others tint the mark with their accent.
+html[data-theme='light'],
+[data-theme-option='light'],
+html[data-theme='dark'],
+[data-theme-option='dark'] {
+  --brand-mark-from: var(--brand);
+  --brand-mark-to: var(--brand-deep);
+  --brand-mark-fg: var(--brand-fg);
+}
+
 // ── Green ─────────────────────────────────────────────────────────────────────
 html[data-theme='green'],
 [data-theme-option='green'] {
@@ -303,7 +327,7 @@ html[data-theme='green'],
   --text-secondary: #2a5430;
   --text-tertiary: #456d4d;
 
-  --accent: #2e7d32;
+  --accent: #27732b;
   --accent-hover: #1b5e20;
   --accent-fg: #ffffff;
 
@@ -361,8 +385,8 @@ html[data-theme='lilac'],
   --text-secondary: #4a2e8a;
   --text-tertiary: #6d4fa7;
 
-  --accent: #7c4dff;
-  --accent-hover: #651fff;
+  --accent: #6d3bee;
+  --accent-hover: #5a28d8;
   --accent-fg: #ffffff;
 
   --btn-primary: var(--accent);
@@ -419,9 +443,9 @@ html[data-theme='dim'],
   --text-secondary: #b0becb;
   --text-tertiary: #9da9b7;
 
-  --accent: #539bf5;
+  --accent: #5aa2f7;
   --accent-hover: #6cb6ff;
-  --accent-fg: #ffffff;
+  --accent-fg: var(--bg);
 
   --btn-primary: var(--accent);
   --btn-primary-hover: var(--accent-hover);
@@ -477,8 +501,8 @@ html[data-theme='solarized'],
   --text-secondary: #40565c;
   --text-tertiary: #546466;
 
-  --accent: #268bd2;
-  --accent-hover: #1a6fb0;
+  --accent: #1767a5;
+  --accent-hover: #105086;
   --accent-fg: #ffffff;
 
   --btn-primary: var(--accent);
@@ -537,7 +561,7 @@ html[data-theme='midnight'],
 
   --accent: #6e8eff;
   --accent-hover: #8ca4ff;
-  --accent-fg: #ffffff;
+  --accent-fg: var(--bg);
 
   --btn-primary: var(--accent);
   --btn-primary-hover: var(--accent-hover);
@@ -602,11 +626,11 @@ html[data-theme='mocha'],
 
   --accent: #b4befe;
   --accent-hover: #c8d0fe;
-  --accent-fg: #1e1e2e;
+  --accent-fg: var(--bg);
 
   --btn-primary: #f9e2af;
   --btn-primary-hover: #fcecc8;
-  --btn-primary-fg: #1e1e2e;
+  --btn-primary-fg: var(--bg);
 
   --error-bg: #302028;
   --error-fg: #f38ba8;
