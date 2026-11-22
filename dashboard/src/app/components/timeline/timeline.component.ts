@@ -38,20 +38,28 @@ import { timelineEmptyState, timelineEmptyView } from './timeline-empty-state'
 import { type TimelineDay, TimelineRows } from './timeline-rows'
 import { indicatorDistance, pullToRefresh, type PullState } from './pull-to-refresh'
 import { TopLayer } from '../../layouts/shell/top-layer.service'
+import { BreakpointState } from '../../services/breakpoint-state.service'
 import { restoresScroll } from '../../services/views-scroller.service'
 
 /** The first days rise in as the list is first drawn; later ones, scrolled to, do not. */
 const RISING_DAYS = 6
 
-/** What a day's height is taken to be before it is first drawn, per breakpoint (the styles'). */
-interface DayEstimate {
-  /** Its header and padding. */
-  readonly chrome: number
-  readonly entry: number
+/** A day's header and padding, before the day is first drawn and measured. */
+const DAY_CHROME_ESTIMATE = 54
+/** An entry's row before it is first drawn; on a phone its title wraps to two lines. */
+const ENTRY_ESTIMATE = { wide: 66, phone: 74 } as const
+
+/** The day the virtual list asks about: it asks only for indexes below the count it was given. */
+function dayAt(days: readonly TimelineDay[], index: number): TimelineDay {
+  const day = days[index]
+  if (day === undefined) throw new RangeError(`No day ${index} of ${days.length}`)
+  return day
 }
 
-function estimateOf(day: TimelineDay | undefined, { chrome, entry }: DayEstimate): number {
-  return chrome + (day?.rows.length ?? 0) * entry
+/** A day drawn, with where the virtual list places it. */
+interface DrawnDay {
+  readonly day: TimelineDay
+  readonly index: number
 }
 
 /** A length custom property, in pixels; `fallback` where it is not one. */
@@ -114,6 +122,7 @@ export class TimelineComponent {
   )
 
   private readonly host = inject<ElementRef<HTMLElement>>(ElementRef).nativeElement
+  private readonly isPhone = inject(BreakpointState).phone
   private readonly scroller = viewChild.required<ElementRef<HTMLElement>>('scroller')
   private readonly content = viewChild.required<ElementRef<HTMLElement>>('content')
   private readonly controls = viewChild.required<ElementRef<HTMLElement>>('controls')
@@ -125,36 +134,47 @@ export class TimelineComponent {
    * scroller's content, re-read whenever the scroller or what is above the list resizes.
    */
   private readonly viewport = signal(
-    { height: 0, headerTop: 0, listTop: 0, overflows: false, estimate: { chrome: 54, entry: 66 } },
+    { height: 0, headerTop: 0, listTop: 0, overflows: false },
     {
       equal: (a, b) =>
         a.height === b.height &&
         a.headerTop === b.headerTop &&
         a.listTop === b.listTop &&
-        a.overflows === b.overflows &&
-        a.estimate.chrome === b.estimate.chrome &&
-        a.estimate.entry === b.estimate.entry,
+        a.overflows === b.overflows,
     }
   )
 
   /**
    * Only the days on or near the screen are drawn, each measured once drawn and estimated until
-   * then (`estimateOf`). A day is drawn whole, its header sticking within it, so a long range
-   * keeps few rows in the document, also while another view shows.
+   * then (`DAY_CHROME_ESTIMATE`, `ENTRY_ESTIMATE`). A day is drawn whole, its header sticking
+   * within it, so a long range keeps few rows in the document, also while another view shows. A
+   * day drawn with other rows is another item (`TimelineDay.key`), measured afresh.
    */
   protected readonly virtualDays = injectVirtualizer<HTMLElement, HTMLElement>(() => {
     const days = this.days()
-    const { headerTop, listTop, estimate } = this.viewport()
+    const { headerTop, listTop } = this.viewport()
+    const entry = this.isPhone() ? ENTRY_ESTIMATE.phone : ENTRY_ESTIMATE.wide
     return {
       scrollElement: this.scroller(),
       count: days.length,
-      estimateSize: index => estimateOf(days[index], estimate),
-      getItemKey: index => days[index]?.key ?? index,
+      estimateSize: index => DAY_CHROME_ESTIMATE + dayAt(days, index).rows.length * entry,
+      getItemKey: index => dayAt(days, index).key,
       overscan: 2,
       scrollMargin: listTop,
       // A day scrolled to lands under the sticky search bar, as its header sticks there.
       scrollPaddingStart: headerTop,
     }
+  })
+
+  /**
+   * The days drawn. The document keeps a day's elements by its date as its rows change, so
+   * AutoAnimate animates them and the focus on an entry stays.
+   */
+  protected readonly drawn = computed<readonly DrawnDay[]>(() => {
+    const days = this.days()
+    return this.virtualDays
+      .getVirtualItems()
+      .flatMap(({ index }) => (index < days.length ? [{ day: dayAt(days, index), index }] : []))
   })
 
   /** The side day index, from the oldest to the newest day the list shows. */
@@ -199,10 +219,6 @@ export class TimelineComponent {
       this.viewport.set({
         height: scroller.clientHeight,
         headerTop: pixelsOf(style, '--day-header-top', 0),
-        estimate: {
-          chrome: pixelsOf(style, '--day-chrome-estimate', 54),
-          entry: pixelsOf(style, '--entry-estimate', 66),
-        },
         listTop: list
           ? list.getBoundingClientRect().top -
             scroller.getBoundingClientRect().top +
