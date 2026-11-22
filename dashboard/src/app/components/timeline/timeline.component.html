@@ -69,87 +69,105 @@
     } @else {
       <!-- Announced once the filter settles (`announceSettled`), not on every key. -->
       <p class="timeline-summary">{{ summary() }}</p>
-      <div class="timeline">
-        @for (day of days(); track day.date) {
-          <section
-            #daySection
-            class="day-group"
-            [attr.data-day]="day.date"
-            [style.--day-entries]="day.rows.length"
-            [attr.aria-label]="day.label"
-          >
-            <header class="day-header">
-              <h3 class="day-label">
-                @if (day.relative) {
-                  <span class="day-relative">{{ day.relative }}</span>
-                }
-                {{ day.label }}
-              </h3>
-              <span class="day-count">{{ day.count }}</span>
-            </header>
-            <ol
-              class="entries"
-              [appAutoAnimate]="kept.attached() && nearDays().has(day.date)"
-              [appAutoAnimatePauseOn]="viewState.searchQuery()"
+      <!-- Only the days near the screen are drawn (`virtualDays`): the padding stands for the
+           days above them, the height for the whole list. A feed, so each day says where it is. -->
+      @let drawn = virtualDays.getVirtualItems();
+      @let listTop = virtualDays.options().scrollMargin;
+      <div
+        #list
+        class="timeline"
+        role="feed"
+        aria-label="Activity by day"
+        [attr.aria-busy]="data.isLoading()"
+        [style.height.px]="virtualDays.getTotalSize()"
+        [style.padding-top.px]="(drawn[0]?.start ?? listTop) - listTop"
+      >
+        @for (item of drawn; track item.key) {
+          @let day = days()[item.index];
+          @if (day) {
+            <article
+              #daySection
+              class="day-group"
+              (animate.enter)="rise($event, item.index)"
+              [attr.data-index]="item.index"
+              [attr.data-day]="day.date"
+              [attr.aria-label]="day.label"
+              [attr.aria-posinset]="item.index + 1"
+              [attr.aria-setsize]="days().length"
             >
-              @for (row of day.rows; track row.entry.trackKey) {
-                <li>
-                  <button
-                    type="button"
-                    class="entry"
-                    (click)="selectEntry(row.entry)"
-                    [attr.aria-label]="row.ariaLabel"
-                  >
-                    <time class="entry-time" [attr.datetime]="row.entry.timestamp">{{
-                      row.entry.timeLabel
-                    }}</time>
-                    <span class="entry-rail" aria-hidden="true">
-                      <span class="entry-dot" [attr.data-src]="row.entry.styleKey"></span>
-                    </span>
-                    <span class="entry-body">
-                      <span class="entry-title">{{ row.entry.title }}</span>
-                      <span class="entry-meta">
-                        <!-- What app-source-badge draws, without its components: one per row. -->
-                        <span class="badge" [attr.data-src]="row.entry.badge.source">
-                          @if (row.logoUrl) {
-                            <img class="icon" [src]="row.logoUrl" alt="" aria-hidden="true" />
-                          } @else {
-                            <span class="icon u-glyph" aria-hidden="true" translate="no">{{
-                              row.entry.badge.icon
-                            }}</span>
+              <header class="day-header">
+                <h3 class="day-label">
+                  @if (day.relative) {
+                    <span class="day-relative">{{ day.relative }}</span>
+                  }
+                  {{ day.label }}
+                </h3>
+                <span class="day-count">{{ day.count }}</span>
+              </header>
+              <ol
+                class="entries"
+                [appAutoAnimate]="kept.attached()"
+                [appAutoAnimatePauseOn]="viewState.searchQuery()"
+              >
+                @for (row of day.rows; track row.entry.trackKey) {
+                  <li>
+                    <button
+                      type="button"
+                      class="entry"
+                      (click)="selectEntry(row.entry)"
+                      [attr.aria-label]="row.ariaLabel"
+                    >
+                      <time class="entry-time" [attr.datetime]="row.entry.timestamp">{{
+                        row.entry.timeLabel
+                      }}</time>
+                      <span class="entry-rail" aria-hidden="true">
+                        <span class="entry-dot" [attr.data-src]="row.entry.styleKey"></span>
+                      </span>
+                      <span class="entry-body">
+                        <span class="entry-title">{{ row.entry.title }}</span>
+                        <span class="entry-meta">
+                          <!-- What app-source-badge draws, without its components: one per row. -->
+                          <span class="badge" [attr.data-src]="row.entry.badge.source">
+                            @if (row.logoUrl) {
+                              <img class="icon" [src]="row.logoUrl" alt="" aria-hidden="true" />
+                            } @else {
+                              <span class="icon u-glyph" aria-hidden="true" translate="no">{{
+                                row.entry.badge.icon
+                              }}</span>
+                            }
+                            <span class="label">{{ row.entry.badge.label }}</span>
+                            @if (row.entry.badge.split; as split) {
+                              <span class="split" [attr.data-src]="split.source">{{
+                                split.label
+                              }}</span>
+                            }
+                          </span>
+                          @if (row.busy) {
+                            <span [class]="row.busy.className">{{ row.busy.label }}</span>
                           }
-                          <span class="label">{{ row.entry.badge.label }}</span>
-                          @if (row.entry.badge.split; as split) {
-                            <span class="split" [attr.data-src]="split.source">{{
-                              split.label
-                            }}</span>
+                          @if (row.entry.joinUrl) {
+                            <span
+                              class="u-glyph online-mark"
+                              title="Online meeting"
+                              aria-hidden="true"
+                              translate="no"
+                              >videocam</span
+                            >
+                          }
+                          @if (row.entry.meta) {
+                            <span class="entry-meta-text">{{ row.entry.meta }}</span>
                           }
                         </span>
-                        @if (row.busy) {
-                          <span [class]="row.busy.className">{{ row.busy.label }}</span>
-                        }
-                        @if (row.entry.joinUrl) {
-                          <span
-                            class="u-glyph online-mark"
-                            title="Online meeting"
-                            aria-hidden="true"
-                            translate="no"
-                            >videocam</span
-                          >
-                        }
-                        @if (row.entry.meta) {
-                          <span class="entry-meta-text">{{ row.entry.meta }}</span>
-                        }
                       </span>
-                    </span>
-                    <span class="u-glyph entry-chevron" aria-hidden="true" translate="no"
-                      >chevron_right</span
-                    >
-                  </button>
-                </li>
-              }
-            </ol>
-          </section>
+                      <span class="u-glyph entry-chevron" aria-hidden="true" translate="no"
+                        >chevron_right</span
+                      >
+                    </button>
+                  </li>
+                }
+              </ol>
+            </article>
+          }
         }
       </div>
     }

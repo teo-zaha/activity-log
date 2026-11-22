@@ -97,7 +97,10 @@ async function openTimeline(
   backend.activityResponse = log
   backend.collectResponse = log
   const app = await openApp(`/timeline?${RANGE}${query}`, { backend })
-  await expect.poll(() => document.querySelectorAll('app-timeline .day-group').length).toBe(DAYS)
+  // The virtual list draws the days near the screen, and says how many there are.
+  await expect
+    .poll(() => document.querySelector('app-timeline .day-group')?.getAttribute('aria-setsize'))
+    .toBe(String(DAYS))
   await expect.poll(activeDay).toBe(labelOf(0))
   return app
 }
