@@ -87,6 +87,7 @@
           <article
             #daySection
             class="day-group"
+            tabindex="-1"
             (animate.enter)="rise($event, index)"
             [attr.data-index]="index"
             [attr.data-day]="day.date"
