@@ -25,6 +25,7 @@
     "@angular/router": "catalog:",
     "@formkit/auto-animate": "catalog:",
     "@signality/core": "catalog:",
+    "@tanstack/angular-virtual": "catalog:",
     "@tauri-apps/api": "catalog:",
     "rxjs": "catalog:",
     "tslib": "catalog:"

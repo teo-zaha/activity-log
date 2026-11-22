@@ -45,6 +45,9 @@ catalogs:
     '@signality/core':
       specifier: 0.5.0
       version: 0.5.0
+    '@tanstack/angular-virtual':
+      specifier: 6.1.12
+      version: 6.1.12
     '@tauri-apps/api':
       specifier: ^2.12.4
       version: 2.12.4
@@ -144,6 +147,9 @@ importers:
       '@signality/core':
         specifier: 'catalog:'
         version: 0.5.0(0cfef47fb16354c3201072548670a261)
+      '@tanstack/angular-virtual':
+        specifier: 'catalog:'
+        version: 6.1.12(@angular/core@22.2.4(@angular/compiler@22.2.4)(rxjs@7.8.2))
       '@tauri-apps/api':
         specifier: 'catalog:'
         version: 2.12.4
@@ -1471,6 +1477,14 @@ packages:
 
   '@standard-schema/spec@1.1.0':
     resolution: {integrity: sha512-l2aFy5jALhniG5HgqrD6jXLi/rUWrKvqN/qJx6yoJsgKhblVd+iqqU4RCXavm/jPityDo5TCvKMnpjKnOriy0w==}
+
+  '@tanstack/angular-virtual@6.1.12':
+    resolution: {integrity: sha512-Udga32sGZ9lSlAesEmvf7V5F4XTtS40f5aZosiK1y06qVEL9dc6VkmqQhU5HngTVSCZaadPFEygBKqaTxzZUqA==}
+    peerDependencies:
+      '@angular/core': '>=20.0.0'
+
+  '@tanstack/virtual-core@3.19.11':
+    resolution: {integrity: sha512-/5iHb0RHBvj8Di59FDs4ESNm45jls33aZAi4zccVXZjc/6ZvwQP6nzEYeT6weXjTf9E6/vrp2JhYWRyO+ZP13A==}
 
   '@tauri-apps/api@2.12.4':
     resolution: {integrity: sha512-pVmfis+4zT8H0Qhp3xPZx9Ju7kpzvA6rr/PSJPyuwfvucTQ8sVt61NYU9KMkK703UFlYadFmjKA4HhybOtN0gg==}
@@ -4074,6 +4088,13 @@ snapshots:
       tslib: 2.9.1
 
   '@standard-schema/spec@1.1.0': {}
+
+  '@tanstack/angular-virtual@6.1.12(@angular/core@22.2.4(@angular/compiler@22.2.4)(rxjs@7.8.2))':
+    dependencies:
+      '@angular/core': 22.2.4(@angular/compiler@22.2.4)(rxjs@7.8.2)
+      '@tanstack/virtual-core': 3.19.11
+
+  '@tanstack/virtual-core@3.19.11': {}
 
   '@tauri-apps/api@2.12.4': {}
 
