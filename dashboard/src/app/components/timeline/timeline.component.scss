@@ -11,9 +11,6 @@
   --day-header-top: 64px;
   --day-index-width: 42px;
   --day-index-gap: 4px;
-  // A day's height before it is first drawn: its header and padding, and one row per entry.
-  --day-chrome-estimate: 54px;
-  --entry-estimate: 66px;
 }
 
 // A column, so the list (or its empty state) fills the height under the filter field.
@@ -504,8 +501,6 @@
   :host {
     --day-header-top: 48px;
     --day-index-width: 22px;
-    // Titles wrap to two lines here.
-    --entry-estimate: 74px;
   }
 
   .timeline-wrap {

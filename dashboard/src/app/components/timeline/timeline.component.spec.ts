@@ -481,6 +481,45 @@ describe('TimelineComponent', () => {
     expect(document.activeElement).toBe(screen.getByRole('button', { name: /open jira event/i }))
   })
 
+  describe('a day whose rows change', () => {
+    async function renderDay(): Promise<{
+      activity: TimelineActivityMock
+      gainRow: () => Promise<void>
+    }> {
+      const { activity } = mockActivity()
+      const [git, jira] = activityLog.entries.map(createEntryAdapter)
+      activity.groupedByDay.set([{ date: '2026-05-18', entries: [git!] }])
+      const { fixture } = await render(TimelineComponent, { providers: servicesOf(activity) })
+      return {
+        activity,
+        gainRow: async () => {
+          activity.groupedByDay.set([{ date: '2026-05-18', entries: [jira!, git!] }])
+          await fixture.whenStable()
+        },
+      }
+    }
+
+    it('keeps its list, so AutoAnimate animates the row it gains', async () => {
+      const { gainRow } = await renderDay()
+      const list = document.querySelector('.day-group ol')
+
+      await gainRow()
+
+      expect(document.querySelector('.day-group ol')).toBe(list)
+      expect(list?.querySelectorAll('.entry')).toHaveLength(2)
+    })
+
+    it('keeps the focus on an entry as its day gains a row', async () => {
+      const { gainRow } = await renderDay()
+      const entry = screen.getByRole('button', { name: /open git event/i })
+      entry.focus()
+
+      await gainRow()
+
+      expect(document.activeElement).toBe(entry)
+    })
+  })
+
   it('draws only the days near the screen, each saying where it is in the list', async () => {
     const { activity } = mockActivity()
     manyDays(activity, 60)
