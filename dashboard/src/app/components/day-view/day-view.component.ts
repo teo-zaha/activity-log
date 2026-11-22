@@ -1,4 +1,4 @@
-import { Component, ElementRef, afterNextRender, computed, inject, viewChild } from '@angular/core'
+import { Component, ElementRef, computed, inject, viewChild } from '@angular/core'
 import { MatIconModule } from '@angular/material/icon'
 import { IconButtonComponent } from '../button/icon-button.component'
 import { ButtonComponent } from '../button/button.component'
@@ -32,6 +32,7 @@ import { CalendarHintComponent } from '../calendar/calendar-hint/calendar-hint.c
 import { collectedDays } from '../calendar/collected-days'
 import { injectCalendarZoom } from '../calendar-zoom'
 import { NavigationMotionService } from '../../navigation-motion'
+import { restoresScroll } from '../../services/views-scroller.service'
 import { KeyTagComponent } from '../shortcut/key-tag.component'
 import { ShortcutDirective } from '../shortcut/shortcut.directive'
 
@@ -73,11 +74,8 @@ export class DayViewComponent {
   protected readonly zoom = injectCalendarZoom(this.scrollEl, this.gridEl)
 
   constructor() {
-    afterNextRender({
-      write: () => {
-        this.scrollEl().nativeElement.scrollTop = DEFAULT_SCROLL_HOUR * this.viewState.hourHeight()
-      },
-    })
+    // A new navigation shows the grid from the default hour, Back and Forward where it was left.
+    restoresScroll(this.scrollEl, () => DEFAULT_SCROLL_HOUR * this.viewState.hourHeight())
   }
 
   protected readonly gridHeight = computed(() => gridHeight(this.viewState.hourHeight()))

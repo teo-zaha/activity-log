@@ -33,11 +33,12 @@ import { dayKeyOf, type DayKey } from '../../utils/local-day'
 import { AutoAnimateDirective } from '../auto-animate/auto-animate.directive'
 import { DayIndexComponent } from './day-index/day-index.component'
 import { trackActiveDay } from './active-day'
-import { keepScroll } from './keep-scroll'
+import { trackAttachment } from './attachment'
 import { timelineEmptyState, timelineEmptyView } from './timeline-empty-state'
 import { type TimelineDay, TimelineRows } from './timeline-rows'
 import { indicatorDistance, pullToRefresh, type PullState } from './pull-to-refresh'
 import { TopLayer } from '../../layouts/shell/top-layer.service'
+import { restoresScroll } from '../../services/views-scroller.service'
 
 /** The first days rise in as the list is first drawn; later ones, scrolled to, do not. */
 const RISING_DAYS = 6
@@ -168,7 +169,8 @@ export class TimelineComponent {
     () => this.dayIndex().length > 0 && this.viewport().overflows
   )
 
-  protected readonly kept = keepScroll(this.scroller)
+  /** False while the router keeps the list out of the document. */
+  protected readonly attached = trackAttachment(this.scroller)
 
   protected readonly activeDay = trackActiveDay({
     scroller: this.scroller,
@@ -179,7 +181,7 @@ export class TimelineComponent {
     },
     viewport: this.viewport,
     enabled: this.showDayIndex,
-    attached: this.kept.attached,
+    attached: this.attached,
   })
 
   /** A pull at the top of the list collects the range on screen again, as Collect does. */
@@ -210,6 +212,8 @@ export class TimelineComponent {
       })
     }
     this.announceSettled()
+    // A new navigation shows the list from its top, Back and Forward where it was left.
+    restoresScroll(this.scroller)
     afterNextRender(measure)
     // The content box changes size with the list, the scroller with the window, and the filter
     // above the list with its text size.

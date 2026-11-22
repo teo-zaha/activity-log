@@ -3,6 +3,7 @@
 // scrolled to, which day is active and what a finger pulling it does, which only a layout engine
 // and its input pipeline can tell.
 import { LiveAnnouncer } from '@angular/cdk/a11y'
+import { Location } from '@angular/common'
 import { TestBed } from '@angular/core/testing'
 import type { ActivityLog, GitEntry } from '../../generated/activity'
 import { afterEach, describe, expect, it, vi } from 'vitest'
@@ -110,7 +111,7 @@ describe('the timeline in a browser', () => {
     await frames()
   })
 
-  it('keeps where the list was scrolled to over a trip to the week view', async () => {
+  it('is where it was left on Back from the week view, kept out of the document meanwhile', async () => {
     const { router } = await openTimeline()
     const timeline = document.querySelector('app-timeline')
     await scrollTo(1500)
@@ -121,13 +122,41 @@ describe('the timeline in a browser', () => {
     await router.navigateByUrl(`/week/${NEWEST}?${RANGE}`)
     await frames()
     expect(timeline?.isConnected).toBe(false)
-    await router.navigateByUrl(`/timeline?${RANGE}`)
-    await frames()
+    TestBed.inject(Location).back()
+    await expect.poll(() => document.querySelector('app-timeline')?.isConnected).toBe(true)
 
     expect(document.querySelector('app-timeline')).toBe(timeline)
     expect(scrolled).toBeGreaterThan(1000)
+    await expect.poll(() => scroller().scrollTop).toBe(scrolled)
+    await expect.poll(activeDay).toBe(active)
+    // The days drawn are those at the position, not at the top it came back at.
+    const drawn = [...document.querySelectorAll<HTMLElement>('app-timeline .day-group')]
+    expect(drawn[0]?.dataset['day']).not.toBe(days[0])
+  })
+
+  it('shows its top for a new navigation to it', async () => {
+    const { router } = await openTimeline()
+    await scrollTo(1500)
+
+    await router.navigateByUrl(`/week/${NEWEST}?${RANGE}`)
+    await frames()
+    await router.navigateByUrl(`/timeline?${RANGE}`)
+
+    await expect.poll(() => scroller().scrollTop).toBe(0)
+    await expect.poll(activeDay).toBe(labelOf(0))
+  })
+
+  it('stays where it is as the filter is typed, which replaces the history entry', async () => {
+    const { router } = await openTimeline()
+    await scrollTo(1500)
+    const scrolled = scroller().scrollTop
+
+    // Every entry matches, so the list keeps its days.
+    TestBed.inject(ActivityViewStateService).setSearchQuery('Change')
+    await expect.poll(() => router.url).toContain('q=Change')
+    for (let i = 0; i < 4; i++) await frames()
+
     expect(scroller().scrollTop).toBe(scrolled)
-    expect(activeDay()).toBe(active)
   })
 
   it('makes the day under the header active as the list scrolls', async () => {
