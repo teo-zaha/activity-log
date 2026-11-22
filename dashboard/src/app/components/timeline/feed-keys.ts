@@ -9,6 +9,8 @@ export interface FeedKeysOptions {
   readonly scroller: Signal<ElementRef<HTMLElement>>
   /** How many articles the feed has, drawn or not. */
   readonly count: () => number
+  /** Where a drawn article is in the feed; null for an element that is none of its articles. */
+  readonly indexOf: (article: HTMLElement) => number | null
   /** Brings the article of `index` to the top of the screen, drawing it. */
   readonly scrollTo: (index: number) => void
 }
@@ -23,7 +25,7 @@ function articleAt(root: HTMLElement, index: number): HTMLElement | null {
  * feed pattern has it: an article not drawn yet is scrolled to first, then focused once drawn.
  * Unmodified keys only; the page's own Page Down and Page Up still scroll outside the feed.
  */
-export function followFeedKeys({ scroller, count, scrollTo }: FeedKeysOptions): void {
+export function followFeedKeys({ scroller, count, indexOf, scrollTo }: FeedKeysOptions): void {
   const injector = inject(Injector)
   listener(scroller, 'keydown', (event: KeyboardEvent) => {
     const step = STEPS[event.key]
@@ -32,8 +34,8 @@ export function followFeedKeys({ scroller, count, scrollTo }: FeedKeysOptions): 
     }
     const article =
       event.target instanceof Element ? event.target.closest<HTMLElement>('article') : null
-    const index = Number(article?.dataset['index'])
-    if (article === null || !Number.isInteger(index)) return
+    const index = article === null ? null : indexOf(article)
+    if (index === null) return
     const next = index + step
     if (next < 0 || next >= count()) return
     event.preventDefault()

@@ -69,9 +69,9 @@
     } @else {
       <!-- Announced once the filter settles (`announceSettled`), not on every key. -->
       <p class="timeline-summary">{{ summary() }}</p>
-      <!-- Only the days near the screen are drawn (`virtualDays`): the padding stands for the
-           days above them, the height for the whole list. A feed, so each day says where it is. -->
-      @let listTop = virtualDays.options().scrollMargin;
+      <!-- Only the days near the screen are drawn (`virtualDays`), and the day holding focus: a
+           day's top margin stands for the days not drawn above it, the height for the whole list.
+           A feed, so each day says where it is. -->
       <div
         #list
         class="timeline"
@@ -79,7 +79,6 @@
         aria-label="Activity by day"
         [attr.aria-busy]="data.isLoading()"
         [style.height.px]="virtualDays.getTotalSize()"
-        [style.padding-top.px]="(virtualDays.getVirtualItems()[0]?.start ?? listTop) - listTop"
       >
         @for (drawnDay of drawn(); track drawnDay.day.date) {
           @let day = drawnDay.day;
@@ -88,6 +87,7 @@
             #daySection
             class="day-group"
             tabindex="-1"
+            [style.margin-top.px]="drawnDay.gap"
             (animate.enter)="rise($event, index)"
             [attr.data-index]="index"
             [attr.data-day]="day.date"
