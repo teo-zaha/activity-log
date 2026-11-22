@@ -146,6 +146,40 @@ describe('the timeline in a browser', () => {
     await expect.poll(activeDay).toBe(labelOf(0))
   })
 
+  it('keeps the day read in place as a collection adds rows to the days above it', async () => {
+    const { backend } = await openTimeline()
+    await scrollTo(1500)
+    const read = days[4]!
+    const top = (): number =>
+      document.querySelector(`[data-day="${read}"]`)!.getBoundingClientRect().top -
+      scroller().getBoundingClientRect().top
+    const before = top()
+    expect(before).toBeLessThan(scroller().clientHeight)
+
+    // Six more entries on each of the two newest days, both above the screen.
+    const added = [days[0]!, days[1]!].flatMap(day =>
+      Array.from({ length: 6 }, (_, index) => commit(day, 6 + index))
+    )
+    const grown: ActivityLog = {
+      ...log,
+      summary: {
+        ...log.summary,
+        connections: [
+          { connection: { source: 'git', name: 'default' }, count: entries.length + added.length },
+        ],
+      },
+      entries: [...added, ...entries],
+    }
+    backend.activityResponse = grown
+    backend.publish()
+    await expect
+      .poll(() => document.querySelector('app-timeline .timeline-summary')?.textContent)
+      .toContain(`${entries.length + added.length} events`)
+    for (let i = 0; i < 4; i++) await frames()
+
+    expect(Math.abs(top() - before)).toBeLessThan(1)
+  })
+
   it('stays where it is as the filter is typed, which replaces the history entry', async () => {
     const { router } = await openTimeline()
     await scrollTo(1500)

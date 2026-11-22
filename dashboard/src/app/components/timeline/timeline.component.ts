@@ -32,7 +32,8 @@ import { injectMinuteClock } from '../../utils/clock'
 import { dayKeyOf, type DayKey } from '../../utils/local-day'
 import { AutoAnimateDirective } from '../auto-animate/auto-animate.directive'
 import { DayIndexComponent } from './day-index/day-index.component'
-import { trackActiveDay } from './active-day'
+import { type DayPositions, trackActiveDay } from './active-day'
+import { keepPlace, type PlacePositions } from './keep-place'
 import { trackAttachment } from './attachment'
 import { timelineEmptyState, timelineEmptyView } from './timeline-empty-state'
 import { type TimelineDay, TimelineRows } from './timeline-rows'
@@ -192,13 +193,20 @@ export class TimelineComponent {
   /** False while the router keeps the list out of the document. */
   protected readonly attached = trackAttachment(this.scroller)
 
+  private readonly dayKeys = computed(() => this.days().map(day => day.date))
+
+  /** Where the virtual list places the days, measured or estimated. */
+  private readonly positions: DayPositions & PlacePositions = {
+    indexAt: offset => this.virtualDays.getVirtualItemForOffset(offset)?.index ?? null,
+    startOf: index => this.virtualDays.measurementsCache()[index]?.start ?? null,
+    scrollTo: index => this.virtualDays.scrollToIndex(index, { align: 'start' }),
+    scrollToOffset: offset => this.virtualDays.scrollToOffset(offset),
+  }
+
   protected readonly activeDay = trackActiveDay({
     scroller: this.scroller,
-    days: computed(() => this.days().map(day => day.date)),
-    positions: {
-      indexAt: offset => this.virtualDays.getVirtualItemForOffset(offset)?.index ?? null,
-      scrollTo: index => this.virtualDays.scrollToIndex(index, { align: 'start' }),
-    },
+    days: this.dayKeys,
+    positions: this.positions,
     viewport: this.viewport,
     enabled: this.showDayIndex,
     attached: this.attached,
@@ -230,6 +238,14 @@ export class TimelineComponent {
     this.announceSettled()
     // A new navigation shows the list from its top, Back and Forward where it was left.
     restoresScroll(this.scroller)
+    // A collection or a filter that changes the days above keeps the day read where it is.
+    keepPlace({
+      scroller: this.scroller,
+      days: this.dayKeys,
+      positions: this.positions,
+      line: () => this.viewport().headerTop,
+      attached: this.attached,
+    })
     afterNextRender(measure)
     // The content box changes size with the list, the scroller with the window, and the filter
     // above the list with its text size.
