@@ -168,16 +168,15 @@ export class TimelineComponent {
     () => this.dayIndex().length > 0 && this.viewport().overflows
   )
 
-  protected readonly kept = keepScroll({
-    scroller: this.scroller,
-    sections: this.sections,
-    headerTop: () => this.viewport().headerTop,
-  })
+  protected readonly kept = keepScroll(this.scroller)
 
   protected readonly activeDay = trackActiveDay({
     scroller: this.scroller,
-    sections: this.sections,
     days: computed(() => this.days().map(day => day.date)),
+    positions: {
+      indexAt: offset => this.virtualDays.getVirtualItemForOffset(offset)?.index ?? null,
+      scrollTo: index => this.virtualDays.scrollToIndex(index, { align: 'start' }),
+    },
     viewport: this.viewport,
     enabled: this.showDayIndex,
     attached: this.kept.attached,

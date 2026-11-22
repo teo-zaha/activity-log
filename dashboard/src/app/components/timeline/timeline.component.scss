@@ -24,6 +24,9 @@
   flex-direction: column;
   overflow-y: auto;
   overscroll-behavior-y: contain;
+  // The virtual list keeps the days on screen still as days above it are measured; the browser's
+  // own anchoring would move them a second time.
+  overflow-anchor: none;
   // Room for the scrollbar is kept from the start, so the list does not shift sideways when
   // a long range makes it appear or a filter makes it go.
   scrollbar-gutter: stable;
