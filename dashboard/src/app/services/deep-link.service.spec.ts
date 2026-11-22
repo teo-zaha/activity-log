@@ -42,6 +42,20 @@ describe('DeepLinkService', () => {
     expect(collect).not.toHaveBeenCalled()
   })
 
+  it('leaves the view on screen where it is for a link that opens something over it', async () => {
+    const { links, router } = await setup()
+    const navigate = vi.spyOn(router, 'navigateByUrl')
+
+    await links.open('activity-log://week/2026-11-10?event=git%2Fdefault%2Fabc')
+    await links.open('activity-log://day/2026-11-16?settings=general')
+
+    // The first keeps the week where it is; the second is another view, shown from its start.
+    expect(navigate.mock.calls.map(([, extras]) => extras?.scroll)).toEqual([
+      'manual',
+      'after-transition',
+    ])
+  })
+
   it('opens a plain path and collects the range it names', async () => {
     const { links, router, collect } = await setup()
 
