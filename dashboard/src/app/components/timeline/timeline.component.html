@@ -106,7 +106,7 @@
               </header>
               <ol
                 class="entries"
-                [appAutoAnimate]="kept.attached()"
+                [appAutoAnimate]="attached()"
                 [appAutoAnimatePauseOn]="viewState.searchQuery()"
               >
                 @for (row of day.rows; track row.entry.trackKey) {

@@ -1,7 +1,7 @@
 import { Component, ElementRef, viewChild } from '@angular/core'
 import { render } from '@testing-library/angular'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { keepScroll } from './keep-scroll'
+import { trackAttachment } from './attachment'
 
 /** A `ResizeObserver` that reports only when a spec says so. */
 class FakeResizeObserver {
@@ -41,73 +41,67 @@ class FakeResizeObserver {
   }
 }
 
-@Component({
-  template: `<div #scroller class="scroller"></div>`,
-})
+@Component({ template: `<div #scroller class="scroller"></div>` })
 class ScrollHost {
   readonly scroller = viewChild.required<ElementRef<HTMLElement>>('scroller')
-  readonly kept = keepScroll(this.scroller)
+  readonly attached = trackAttachment(this.scroller)
 }
 
-/** A scroller whose position sticks, as jsdom's does not. */
-function scrollable(element: HTMLElement): void {
-  let top = 0
-  Object.defineProperty(element, 'scrollTop', {
-    get: () => top,
-    set: (value: number) => (top = value),
-  })
-}
-
-describe('keepScroll', () => {
+describe('trackAttachment', () => {
   afterEach(() => {
     FakeResizeObserver.all.length = 0
     vi.unstubAllGlobals()
-    vi.restoreAllMocks()
   })
 
   async function renderHost(): Promise<{ host: ScrollHost; element: HTMLElement }> {
     vi.stubGlobal('ResizeObserver', FakeResizeObserver)
     const { fixture } = await render(ScrollHost)
     await fixture.whenStable()
-    const element = fixture.componentInstance.scroller().nativeElement
-    scrollable(element)
-    return { host: fixture.componentInstance, element }
+    return {
+      host: fixture.componentInstance,
+      element: fixture.componentInstance.scroller().nativeElement,
+    }
   }
 
-  it('puts the scroll position back when the list comes back into the document', async () => {
+  it('follows the scroller out of the document and back', async () => {
     const { host, element } = await renderHost()
     const observer = FakeResizeObserver.observing(element)
     const parent = element.parentElement!
-    const animationEnd = vi.fn()
-    element.addEventListener('animationend', animationEnd)
-    const scrolledTo: number[] = []
-    element.addEventListener('scroll', () => scrolledTo.push(element.scrollTop))
-    element.scrollTop = 300
-    element.dispatchEvent(new Event('scroll'))
 
     element.remove()
     observer.report()
-    expect(host.kept.attached()).toBe(false)
-    // Out of the document the scroller is reset, and what it reports then is not kept.
-    element.scrollTop = 0
-    element.dispatchEvent(new Event('scroll'))
+    expect(host.attached()).toBe(false)
 
     parent.append(element)
     observer.report()
-    expect(element.scrollTop).toBe(300)
-    expect(host.kept.attached()).toBe(true)
-    expect(animationEnd).toHaveBeenCalledOnce()
-    // The virtual list hears where the scroller is.
-    expect(scrolledTo).toEqual([300, 0, 300])
+    expect(host.attached()).toBe(true)
   })
 
-  it('leaves a list in the document where it is', async () => {
-    const { host, element } = await renderHost()
-    element.scrollTop = 300
+  it('has the list read where the scroller is, and AutoAnimate measure, once it is back', async () => {
+    const { element } = await renderHost()
+    const observer = FakeResizeObserver.observing(element)
+    const parent = element.parentElement!
+    const scroll = vi.fn()
+    const animationEnd = vi.fn()
+    element.addEventListener('scroll', scroll)
+    element.addEventListener('animationend', animationEnd)
+
+    element.remove()
+    observer.report()
+    parent.append(element)
+    observer.report()
+
+    expect(scroll).toHaveBeenCalledOnce()
+    expect(animationEnd).toHaveBeenCalledOnce()
+  })
+
+  it('sends nothing while the scroller stays in the document', async () => {
+    const { element } = await renderHost()
+    const scroll = vi.fn()
+    element.addEventListener('scroll', scroll)
 
     FakeResizeObserver.observing(element).report()
 
-    expect(element.scrollTop).toBe(300)
-    expect(host.kept.attached()).toBe(true)
+    expect(scroll).not.toHaveBeenCalled()
   })
 })

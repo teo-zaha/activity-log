@@ -13,9 +13,11 @@ import {
   type RouterStateSnapshot,
   type Routes,
   TitleStrategy,
+  withInMemoryScrolling,
   withNavigationErrorHandler,
   withRouterConfig,
 } from '@angular/router'
+import { ViewportScroller } from '@angular/common'
 import { ViewUnavailableComponent } from './components/view-unavailable/view-unavailable.component'
 import { VIEW_LABELS } from './models/nav'
 import type { ShortcutScope } from './models/shortcuts'
@@ -25,6 +27,7 @@ import { provideNavigationMotion } from './navigation-motion'
 import { NoticeService } from './services/notice.service'
 import { failureWhile } from './services/failure'
 import { SHORTCUT_SCOPE } from './services/shortcut.service'
+import { ViewsScroller } from './services/views-scroller.service'
 import { type CalendarView, VIEW_PATHS, viewCommands } from './utils/app-url'
 import { isDayKey, longDayLabel, todayKey } from './utils/local-day'
 
@@ -170,13 +173,15 @@ export class TimelineReuseStrategy extends BaseRouteReuseStrategy {
 
 /**
  * The router as the app runs it. Navigations keep the query unless they name a parameter, so the
- * range and the settings stay when the view or the day changes.
+ * range and the settings stay when the view or the day changes. Back and Forward show a view
+ * where its history entry left it, a new navigation where it starts (`ViewsScroller`).
  */
 export function provideAppRouter(): (Provider | EnvironmentProviders)[] {
   return [
     provideRouter(
       APP_ROUTES,
       withRouterConfig({ defaultQueryParamsHandling: 'merge' }),
+      withInMemoryScrolling({ scrollPositionRestoration: 'enabled' }),
       // A view's code failed to load (an app update, a dropped dev server): say so and stay.
       withNavigationErrorHandler(error =>
         inject(NoticeService).show({
@@ -186,6 +191,7 @@ export function provideAppRouter(): (Provider | EnvironmentProviders)[] {
       )
     ),
     { provide: TitleStrategy, useClass: AppTitleStrategy },
+    { provide: ViewportScroller, useExisting: ViewsScroller },
     { provide: RouteReuseStrategy, useClass: TimelineReuseStrategy },
     provideNavigationMotion(),
   ]

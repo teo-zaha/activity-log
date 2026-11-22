@@ -271,12 +271,15 @@ export class ActivityViewStateService {
   /**
    * Navigates as `step` says: a view or a day is a new entry, typing and ranges replace the one
    * shown, and the settings and details record how many entries they took, keeping the other's.
+   * Only a new view starts at its start; the others keep the view where it is.
    */
   private go(commands: string[], queryParams: AppQueryParams, step: HistoryStep): Promise<boolean> {
     const extras: NavigationExtras = {
       queryParams,
       replaceUrl: step.kind !== 'push' && (step.kind === 'replace' || step.replace),
       state: this.stateFor(step),
+      // Only a new view shows from where it starts (`ViewsScroller`); the rest keep it in place.
+      scroll: step.kind === 'push' && step.view === 'new' ? 'after-transition' : 'manual',
     }
     return this.router.navigate(commands, extras)
   }
@@ -294,7 +297,12 @@ export class ActivityViewStateService {
 
   private showDay(day: DayKey): void {
     const view = this.currentView()
-    void this.go(viewCommands(view === 'list' ? 'day' : view, day), {}, PUSH)
+    // Another day of the calendar view on screen keeps its hour; from the timeline it is a new view.
+    void this.go(
+      viewCommands(view === 'list' ? 'day' : view, day),
+      {},
+      view === 'list' ? PUSH : DAY_STEP
+    )
   }
 
   private setRange(from: DayKey | null, to: DayKey | null): Promise<boolean> {
@@ -461,9 +469,13 @@ interface HistoryDepths {
 
 const NO_DEPTHS: HistoryDepths = { detailDepth: 0, settingsDepth: 0 }
 
-/** How a navigation treats history: a new entry, the entry shown, or a layer's own entries. */
+/**
+ * How a navigation treats history: a new entry, the entry shown, or a layer's own entries. A new
+ * entry shows a `new` view from where it starts, or keeps the `same` view (another day of a
+ * calendar view) where it is.
+ */
 type HistoryStep =
-  | { readonly kind: 'push' }
+  | { readonly kind: 'push'; readonly view: 'new' | 'same' }
   | { readonly kind: 'replace' }
   | {
       readonly kind: 'layer'
@@ -472,7 +484,8 @@ type HistoryStep =
       readonly replace: boolean
     }
 
-const PUSH: HistoryStep = { kind: 'push' }
+const PUSH: HistoryStep = { kind: 'push', view: 'new' }
+const DAY_STEP: HistoryStep = { kind: 'push', view: 'same' }
 const REPLACE: HistoryStep = { kind: 'replace' }
 
 /** The depths a history entry's state records; an entry the app did not write records none. */
