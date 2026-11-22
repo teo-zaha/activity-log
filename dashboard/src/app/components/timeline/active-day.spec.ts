@@ -1,9 +1,9 @@
-import { Component, signal, viewChild, viewChildren, type ElementRef } from '@angular/core'
+import { Component, signal, viewChild, type ElementRef } from '@angular/core'
 import { render } from '@testing-library/angular'
-import { beforeEach, describe, expect, it } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { stubLayoutObservers } from '../../testing/observers'
 import type { DayKey } from '../../utils/local-day'
-import { dayAt, slideLine, trackActiveDay, type ScrollMetrics } from './active-day'
+import { slideLine, trackActiveDay, type DayPositions, type ScrollMetrics } from './active-day'
 
 describe('slideLine', () => {
   // A 600 px screen with the line 42 px down, over a list 2000 px tall: the last 558 px slide.
@@ -40,96 +40,105 @@ describe('slideLine', () => {
   })
 })
 
-describe('dayAt', () => {
-  const bottoms = [100, 300, 600]
-  const bottomOf = (index: number): number => bottoms[index] ?? 0
+const DAYS: readonly DayKey[] = ['2026-05-18', '2026-05-17', '2026-05-16']
+/** Each day 500 px tall, the list 40 px below the scroller's top. */
+const DAY_HEIGHT = 500
+const LIST_TOP = 40
 
-  it('is the first day above the first section', () => {
-    expect(dayAt(3, bottomOf, -10)).toBe(0)
-  })
-
-  it('is the section that reaches below the line', () => {
-    expect(dayAt(3, bottomOf, 50)).toBe(0)
-    expect(dayAt(3, bottomOf, 100)).toBe(1)
-    expect(dayAt(3, bottomOf, 599)).toBe(2)
-  })
-
-  it('is the last day past the last section', () => {
-    expect(dayAt(3, bottomOf, 1000)).toBe(2)
-  })
-
-  it('is none without sections', () => {
-    expect(dayAt(0, bottomOf, 0)).toBe(-1)
-  })
-
-  it('reads few sections of a long list', () => {
-    let reads = 0
-    const index = dayAt(
-      1000,
-      i => {
-        reads++
-        return (i + 1) * 100
-      },
-      54_321
-    )
-
-    expect(index).toBe(543)
-    expect(reads).toBeLessThanOrEqual(11)
-  })
-})
-
-const DAYS: readonly DayKey[] = ['2026-05-18', '2026-05-17']
-
-/** Two days' sections in a scroller; jsdom lays nothing out, so every box is empty. */
-@Component({
-  template: `<div #scroller>
-    @for (day of days; track day) {
-      <section #daySection [attr.data-day]="day"></section>
-    }
-  </div>`,
-})
+/** A scroller over three days, placed as a virtual list would place them. */
+@Component({ template: `<div #scroller></div>` })
 class TrackedList {
-  readonly days = DAYS
   readonly attached = signal(true)
-  private readonly scroller = viewChild.required<ElementRef<HTMLElement>>('scroller')
-  private readonly sections = viewChildren<ElementRef<HTMLElement>>('daySection')
+  readonly scrolledTo = vi.fn<(index: number) => void>()
+  readonly positions: DayPositions = {
+    indexAt: offset =>
+      Math.min(DAYS.length - 1, Math.max(0, Math.floor((offset - LIST_TOP) / DAY_HEIGHT))),
+    scrollTo: index => this.scrolledTo(index),
+  }
+  readonly scroller = viewChild.required<ElementRef<HTMLElement>>('scroller')
   readonly active = trackActiveDay({
     scroller: this.scroller,
-    sections: this.sections,
     days: signal(DAYS),
+    positions: this.positions,
     viewport: signal({ height: 600, headerTop: 40 }),
     enabled: signal(true),
     attached: this.attached,
   })
 }
 
+/** A scroller whose position sticks and whose list is 1540 px tall, as jsdom's is not. */
+function scrollable(element: HTMLElement): (top: number) => void {
+  let scrollTop = 0
+  Object.defineProperty(element, 'scrollTop', { get: () => scrollTop })
+  Object.defineProperty(element, 'clientHeight', { get: () => 600 })
+  Object.defineProperty(element, 'scrollHeight', { get: () => LIST_TOP + DAYS.length * DAY_HEIGHT })
+  return top => {
+    scrollTop = top
+    element.dispatchEvent(new Event('scroll'))
+  }
+}
+
 describe('trackActiveDay', () => {
   beforeEach(() => stubLayoutObservers())
 
-  it('keeps the day while the list is out of the document, where every box reads empty', async () => {
-    const { fixture, container } = await render(TrackedList)
+  async function renderList(): Promise<{ list: TrackedList; scrollTo: (top: number) => void }> {
+    const { fixture } = await render(TrackedList)
     const list = fixture.componentInstance
-    const scroller = container.querySelector('div')!
+    return { list, scrollTo: scrollable(list.scroller().nativeElement) }
+  }
+
+  it('is the day under the line below the sticky header', async () => {
+    const { list, scrollTo } = await renderList()
     expect(list.active.day()).toBe('2026-05-18')
 
-    // Out of the document every section's box is empty, which reads as the list's end.
-    list.attached.set(false)
-    scroller.dispatchEvent(new Event('scroll'))
-    expect(list.active.day()).toBe('2026-05-18')
-
-    list.attached.set(true)
-    scroller.dispatchEvent(new Event('scroll'))
+    // The line runs 42 px below the top: at 500 it is 502 down, in the second day.
+    scrollTo(500)
     expect(list.active.day()).toBe('2026-05-17')
   })
 
-  it('finds a jumped-to day’s section by its day', async () => {
-    const { fixture, container } = await render(TrackedList)
-    const { active } = fixture.componentInstance
+  it('makes the last day active at the end of the list, where the line slides down', async () => {
+    const { list, scrollTo } = await renderList()
 
-    active.jumpTo('2026-05-17')
+    scrollTo(LIST_TOP + DAYS.length * DAY_HEIGHT - 600)
 
-    expect(active.day()).toBe('2026-05-17')
-    expect(active.sectionOf('2026-05-17')).toBe(container.querySelectorAll('section')[1])
-    expect(active.sectionOf('2026-05-16')).toBeUndefined()
+    expect(list.active.day()).toBe('2026-05-16')
+  })
+
+  it('keeps the day while the list is out of the document, where its scroller reads empty', async () => {
+    const { list, scrollTo } = await renderList()
+    scrollTo(500)
+
+    list.attached.set(false)
+    scrollTo(0)
+    expect(list.active.day()).toBe('2026-05-17')
+
+    list.attached.set(true)
+    scrollTo(0)
+    expect(list.active.day()).toBe('2026-05-18')
+  })
+
+  it('scrolls to a jumped-to day and keeps it until the user scrolls', async () => {
+    const { list, scrollTo } = await renderList()
+    const scroller = list.scroller().nativeElement
+
+    list.active.jumpTo('2026-05-17')
+    expect(list.scrolledTo).toHaveBeenCalledWith(1)
+    expect(list.active.day()).toBe('2026-05-17')
+
+    // The jump's own scroll keeps it; a wheel releases it.
+    scrollTo(0)
+    expect(list.active.day()).toBe('2026-05-17')
+    scroller.dispatchEvent(new WheelEvent('wheel'))
+    scrollTo(0)
+    expect(list.active.day()).toBe('2026-05-18')
+  })
+
+  it('jumps nowhere for a day the list does not show', async () => {
+    const { list } = await renderList()
+
+    list.active.jumpTo('2026-05-01')
+
+    expect(list.scrolledTo).not.toHaveBeenCalled()
+    expect(list.active.day()).toBe('2026-05-18')
   })
 })
