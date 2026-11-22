@@ -6,6 +6,7 @@ import {
   deepLinkPath,
   parseAppUrl,
   queryParamsOf,
+  sameView,
   viewCommands,
 } from '../utils/app-url'
 import { todayKey } from '../utils/local-day'
@@ -24,13 +25,18 @@ export class DeepLinkService {
   /**
    * Shows what `link` names: an `activity-log:` URL or an app path. A link to no view is ignored
    * (false). Only the query parameters the dashboard knows are kept; a link with a range collects
-   * it, as opening the app on that URL would.
+   * it, as opening the app on that URL would. A link to the view on screen, opening details or
+   * settings over it, leaves it where it is scrolled to; another view shows from its start.
    */
   async open(link: string): Promise<boolean> {
     const target = this.resolve(link)
     if (target === null) return false
-    const navigated = await this.router.navigateByUrl(target)
-    const { from, to } = parseAppUrl(target) ?? DEFAULT_LOCATION
+    const location = parseAppUrl(target) ?? DEFAULT_LOCATION
+    const shown = parseAppUrl(this.router.parseUrl(this.router.url))
+    const navigated = await this.router.navigateByUrl(target, {
+      scroll: shown !== null && sameView(shown, location) ? 'manual' : 'after-transition',
+    })
+    const { from, to } = location
     if (navigated && from && to) void this.data.collect(from, to)
     return navigated
   }

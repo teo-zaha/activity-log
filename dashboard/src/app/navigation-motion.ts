@@ -12,7 +12,7 @@ import {
 import { Router, type UrlTree } from '@angular/router'
 import { listener, setupSync } from '@signality/core/browser/listener'
 import { routerListener } from '@signality/core/router/router-listener'
-import { type AppLocation, dayOf, isCalendarView, parseAppUrl } from './utils/app-url'
+import { type AppLocation, isCalendarView, parseAppUrl, sameView } from './utils/app-url'
 
 /**
  * How the screen changes between two URLs; `none` keeps it still. `switch` cross-fades between
@@ -45,9 +45,8 @@ function pageDepth(location: AppLocation): number {
 export function navigationMotion(from: UrlTree, to: UrlTree): NavigationMotion {
   const [before, after] = [parseAppUrl(from), parseAppUrl(to)]
   if (before === null || after === null) return 'none'
-  const sameView = before.view === after.view && dayOf(before) === dayOf(after)
   const tabSwitch = (before.settings === null) !== (after.settings === null)
-  if (sameView && !tabSwitch) {
+  if (sameView(before, after) && !tabSwitch) {
     const [depthBefore, depthAfter] = [pageDepth(before), pageDepth(after)]
     if (depthAfter > depthBefore) return 'page-in'
     if (depthAfter < depthBefore) return 'page-out'

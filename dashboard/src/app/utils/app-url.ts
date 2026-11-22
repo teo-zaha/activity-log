@@ -60,6 +60,11 @@ export function dayOf(location: AppLocation): DayKey | null {
   return location.view === 'list' ? null : location.day
 }
 
+/** Whether two locations show the same view on the same day, whatever lies over it. */
+export function sameView(a: AppLocation, b: AppLocation): boolean {
+  return a.view === b.view && dayOf(a) === dayOf(b)
+}
+
 /** Query parameters as navigations set them: `null` removes one. */
 export interface AppQueryParams {
   readonly q?: string | null
