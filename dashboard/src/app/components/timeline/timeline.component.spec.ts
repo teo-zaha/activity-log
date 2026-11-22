@@ -492,7 +492,7 @@ describe('TimelineComponent', () => {
       const { fixture } = await render(TimelineComponent, { providers: servicesOf(activity) })
       return {
         activity,
-        gainRow: async () => {
+        gainRow: async (): Promise<void> => {
           activity.groupedByDay.set([{ date: '2026-05-18', entries: [jira!, git!] }])
           await fixture.whenStable()
         },

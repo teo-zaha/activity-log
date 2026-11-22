@@ -33,7 +33,7 @@ import { dayKeyOf, type DayKey } from '../../utils/local-day'
 import { AutoAnimateDirective } from '../auto-animate/auto-animate.directive'
 import { DayIndexComponent } from './day-index/day-index.component'
 import { type DayPositions, trackActiveDay } from './active-day'
-import { keepPlace, type PlacePositions } from './keep-place'
+import { type KeptPlace, keepPlace } from './keep-place'
 import { followFeedKeys } from './feed-keys'
 import { trackAttachment } from './attachment'
 import { timelineEmptyState, timelineEmptyView } from './timeline-empty-state'
@@ -63,6 +63,9 @@ interface DrawnDay {
   readonly day: TimelineDay
   readonly index: number
 }
+
+/** The virtual list's own correction for days measured above the screen: `keepPlace` keeps it. */
+const NO_ADJUSTMENT = (): boolean => false
 
 /** A length custom property, in pixels; `fallback` where it is not one. */
 function pixelsOf(style: CSSStyleDeclaration, property: string, fallback: number): number {
@@ -159,12 +162,13 @@ export class TimelineComponent {
     return {
       scrollElement: this.scroller(),
       count: days.length,
-      estimateSize: index => DAY_CHROME_ESTIMATE + dayAt(days, index).rows.length * entry,
-      getItemKey: index => dayAt(days, index).key,
+      estimateSize: (index): number => DAY_CHROME_ESTIMATE + dayAt(days, index).rows.length * entry,
+      getItemKey: (index): string => dayAt(days, index).key,
       overscan: 2,
       scrollMargin: listTop,
       // A day scrolled to lands under the sticky search bar, as its header sticks there.
       scrollPaddingStart: headerTop,
+      onChange: (): void => this.place.changed(),
     }
   })
 
@@ -197,11 +201,9 @@ export class TimelineComponent {
   private readonly dayKeys = computed(() => this.days().map(day => day.date))
 
   /** Where the virtual list places the days, measured or estimated. */
-  private readonly positions: DayPositions & PlacePositions = {
+  private readonly positions: DayPositions = {
     indexAt: offset => this.virtualDays.getVirtualItemForOffset(offset)?.index ?? null,
-    startOf: index => this.virtualDays.measurementsCache()[index]?.start ?? null,
     scrollTo: index => this.virtualDays.scrollToIndex(index, { align: 'start' }),
-    scrollToOffset: offset => this.virtualDays.scrollToOffset(offset),
   }
 
   protected readonly activeDay = trackActiveDay({
@@ -212,6 +214,9 @@ export class TimelineComponent {
     enabled: this.showDayIndex,
     attached: this.attached,
   })
+
+  /** The reader's place, kept as the days change (`keepPlace`). */
+  private readonly place: KeptPlace
 
   /** A pull at the top of the list collects the range on screen again, as Collect does. */
   protected readonly pull = this.pullToCollect()
@@ -237,21 +242,21 @@ export class TimelineComponent {
       })
     }
     this.announceSettled()
-    // A new navigation shows the list from its top, Back and Forward where it was left.
-    restoresScroll(this.scroller)
+    // The row read stays where it is as what is above it changes; a new navigation shows the
+    // list from its top, Back and Forward that row where it was left.
+    this.place = keepPlace({
+      scroller: this.scroller,
+      days: this.days,
+      startOf: index => this.virtualDays.measurementsCache()[index]?.start ?? null,
+      sections: this.sections,
+      line: () => this.viewport().headerTop,
+    })
+    restoresScroll(this.scroller, () => 0, this.place)
     // Page Down and Page Up step through the days, as a feed's articles.
     followFeedKeys({
       scroller: this.scroller,
       count: () => this.days().length,
       scrollTo: index => this.positions.scrollTo(index),
-    })
-    // A collection or a filter that changes the days above keeps the day read where it is.
-    keepPlace({
-      scroller: this.scroller,
-      days: this.dayKeys,
-      positions: this.positions,
-      line: () => this.viewport().headerTop,
-      attached: this.attached,
     })
     afterNextRender(measure)
     // The content box changes size with the list, the scroller with the window, and the filter
@@ -260,6 +265,7 @@ export class TimelineComponent {
     // Each drawn day is measured, and observed for the rows AutoAnimate or a collection adds.
     afterRenderEffect(() => {
       const sections = this.sections()
+      this.virtualDays().shouldAdjustScrollPositionOnItemSizeChange = NO_ADJUSTMENT
       for (const section of sections) this.virtualDays.measureElement(section.nativeElement)
       if (sections.length > 0) this.risen = true
     })

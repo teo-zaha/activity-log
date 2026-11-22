@@ -8,13 +8,30 @@ import {
   inject,
 } from '@angular/core'
 
+/**
+ * What a view says of where it is beyond the pixels: a list whose content changes between leaving
+ * and coming back (the Timeline, as a collection comes in) shows again the row it was at.
+ */
+export interface ScrollPlaces {
+  /** Where the view is now, as a way back to it; null where the pixels say it all. */
+  save(): (() => boolean) | null
+}
+
 /** A view whose scroller the router saves and restores, see `restoresScroll`. */
 interface ScrolledView {
   readonly scroller: () => HTMLElement
   /** How far down a new navigation shows it: the top, or the calendar's default hour. */
   readonly start: () => number
+  readonly places: ScrollPlaces | null
   /** Drawn at least once: its scroller is there and as tall as its content. */
   drawn: boolean
+}
+
+/** A way back to a place, and the view it belongs to. */
+interface WayBack {
+  readonly view: ScrolledView
+  /** Shows the place; false where it is gone, and the pixels are shown instead. */
+  readonly back: () => boolean
 }
 
 /**
@@ -27,6 +44,11 @@ interface ScrolledView {
  * view where it starts: the Timeline at its top, a calendar at its default hour. A navigation
  * that keeps the view where it is says so (`scroll: 'manual'`, `ActivityViewStateService`).
  *
+ * A view with places (`ScrollPlaces`) also saves where it is beyond the pixels, tied to the very
+ * position the router keeps: the router hands that same array back on Back and Forward, and the
+ * place is shown in place of its pixels while it is there. A position the router made anew (a new
+ * navigation's `[0, 0]`) has none.
+ *
  * The router asks once the navigation has ended, which may be before the view it put in is drawn
  * (a view's code loads, or its first render comes later): the position then waits for that draw.
  * Only the views' scrollers are kept: the details and the settings are layers over the view,
@@ -38,6 +60,8 @@ export class ViewsScroller extends ViewportScroller {
   private readonly views: ScrolledView[] = []
   /** The position asked for while the view that came last was not drawn yet. */
   private waiting: [number, number] | null = null
+  /** The places saved with the positions the router keeps, as long as it keeps them. */
+  private readonly ways = new WeakMap<[number, number], WayBack>()
 
   /** Follows `view` until the returned function is called, as it is destroyed. */
   add(view: ScrolledView): () => void {
@@ -53,14 +77,17 @@ export class ViewsScroller extends ViewportScroller {
     view.drawn = true
     const position = this.waiting ?? [0, 0]
     this.waiting = null
-    if (this.shown() === view) show(view, position)
+    if (this.shown() === view) this.show(view, position)
   }
 
   override getScrollPosition(): [number, number] {
     const view = this.shown()
     if (view === undefined) return [0, 0]
     const scroller = view.scroller()
-    return [scroller.scrollLeft, scroller.scrollTop - view.start()]
+    const position: [number, number] = [scroller.scrollLeft, scroller.scrollTop - view.start()]
+    const back = view.places?.save() ?? null
+    if (back !== null) this.ways.set(position, { view, back })
+    return position
   }
 
   override scrollToPosition(position: [number, number]): void {
@@ -69,7 +96,17 @@ export class ViewsScroller extends ViewportScroller {
       return
     }
     const view = this.shown()
-    if (view !== undefined) show(view, position)
+    if (view !== undefined) this.show(view, position)
+  }
+
+  /** Shows `view` at the place saved with `position`, else at its pixels. */
+  private show(view: ScrolledView, position: [number, number]): void {
+    const way = this.ways.get(position)
+    if (way?.view === view && way.back()) return
+    const [left, top] = position
+    const scroller = view.scroller()
+    scroller.scrollLeft = left
+    scroller.scrollTop = view.start() + top
   }
 
   /** The app's URLs have no fragments, so there is nothing to scroll to (`anchorScrolling` off). */
@@ -90,22 +127,23 @@ export class ViewsScroller extends ViewportScroller {
   }
 }
 
-function show(view: ScrolledView, [left, top]: [number, number]): void {
-  const scroller = view.scroller()
-  scroller.scrollLeft = left
-  scroller.scrollTop = view.start() + top
-}
-
 /**
  * Has the router save and restore where the view's `scroller` is scrolled to, per history entry
- * (`ViewsScroller`). Shown first at `start` pixels down, as a new navigation shows it again.
+ * (`ViewsScroller`). Shown first at `start` pixels down, as a new navigation shows it again; with
+ * `places`, Back and Forward show the place saved, where it is still there.
  */
 export function restoresScroll(
   scroller: Signal<ElementRef<HTMLElement>>,
-  start: () => number = () => 0
+  start: () => number = () => 0,
+  places: ScrollPlaces | null = null
 ): void {
   const views = inject(ViewsScroller)
-  const view: ScrolledView = { scroller: () => scroller().nativeElement, start, drawn: false }
+  const view: ScrolledView = {
+    scroller: () => scroller().nativeElement,
+    start,
+    places,
+    drawn: false,
+  }
   inject(DestroyRef).onDestroy(views.add(view))
   afterNextRender({ write: () => views.drawn(view) })
 }
