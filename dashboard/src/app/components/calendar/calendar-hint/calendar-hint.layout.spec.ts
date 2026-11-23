@@ -1,7 +1,8 @@
 /// <reference types="@vitest/browser-playwright" />
 // The hint of an empty calendar view in a real browser (`ng test --configuration layout`,
-// Chromium): its frosted layer covers the visible grid and nothing above it, whatever the grid is
-// scrolled to, and the hint sits in its middle, which only a layout engine can tell.
+// Chromium): its frosted layer covers the visible day columns and nothing above or beside them
+// (the hour labels stay sharp), whatever the grid is scrolled to, and the hint sits in their
+// middle, which only a layout engine can tell.
 import { TestBed } from '@angular/core/testing'
 import { describe, expect, it } from 'vitest'
 import { page } from 'vitest/browser'
@@ -38,17 +39,25 @@ async function open(url: string, view: View, width = 1280, height = 800): Promis
   return scroller
 }
 
-/** The part of the grid on screen: the scroller's box below its sticky header. */
-function visibleGrid(view: View, scroller: HTMLElement): DOMRect {
+/**
+ * The part of the day columns on screen: from the first column's left edge to the last one's
+ * right edge, below the scroller's sticky header.
+ */
+function visibleColumns(view: View, scroller: HTMLElement): DOMRect {
+  const columns = [...document.querySelectorAll(`${view} .day-col`)].map(column =>
+    column.getBoundingClientRect()
+  )
+  if (columns.length === 0) throw new Error(`${view} has day columns`)
   const box = scroller.getBoundingClientRect()
   const header = document.querySelector(`${view} .cal-sticky-header`)?.getBoundingClientRect()
   const top = header ? header.bottom : box.top
-  return new DOMRect(box.left, top, scroller.clientWidth, box.top + scroller.clientHeight - top)
+  const [left, right] = [columns[0].left, columns[columns.length - 1].right]
+  return new DOMRect(left, top, right - left, box.top + scroller.clientHeight - top)
 }
 
-/** How far the layer is from the visible grid, and the hint from its middle, in px. */
+/** How far the layer is from the visible day columns, and the hint from their middle, in px. */
 function placement(view: View, scroller: HTMLElement): Record<string, number> {
-  const grid = visibleGrid(view, scroller)
+  const grid = visibleColumns(view, scroller)
   const layer = element(`${view} .cal-hint-layer`).getBoundingClientRect()
   const hint = element(`${view} app-calendar-hint`).getBoundingClientRect()
   return {
@@ -68,6 +77,19 @@ function expectInPlace(view: View, scroller: HTMLElement): void {
   for (const [side, most] of Object.entries(IN_PLACE)) {
     expect(off[side], side).toBeLessThanOrEqual(most)
   }
+  expectHoursClear(view)
+}
+
+/** The hour labels lie beside the layer, never under it: they stay sharp. */
+function expectHoursClear(view: View): void {
+  const layer = element(`${view} .cal-hint-layer`).getBoundingClientRect()
+  const hours = element(`${view} app-calendar-hours`).getBoundingClientRect()
+  expect(layer.left).toBeGreaterThanOrEqual(hours.right - 0.5)
+  const label = document.elementFromPoint(
+    hours.left + hours.width / 2,
+    layer.top + layer.height / 2
+  )
+  expect(element(`${view} .cal-hint-layer`).contains(label)).toBe(false)
 }
 
 /** What a click at the middle of `rect` lands on. */
@@ -76,7 +98,7 @@ function hitAt(rect: DOMRect): Element | null {
 }
 
 describe('the calendar hint in a browser', APP_RENDER_TEST, () => {
-  it('covers the visible week below its day headers, the hint in its middle, at any scroll', async () => {
+  it('covers the visible days of the week below their headers, the hint in their middle, at any scroll', async () => {
     const scroller = await open(WEEK, 'app-week-view')
     expectInPlace('app-week-view', scroller)
 
@@ -98,15 +120,15 @@ describe('the calendar hint in a browser', APP_RENDER_TEST, () => {
     expect(previous.contains(hitAt(previous.getBoundingClientRect()))).toBe(true)
     expect(headers.contains(hitAt(headers.getBoundingClientRect()))).toBe(true)
 
-    // The grid's corner, away from the hint: the layer takes the click.
-    const grid = visibleGrid('app-week-view', scroller)
+    // The columns' corner, away from the hint: the layer takes the click.
+    const grid = visibleColumns('app-week-view', scroller)
     const corner = document.elementFromPoint(grid.left + 8, grid.bottom - 8)
     expect(corner).toBe(layer)
     const button = element('app-week-view app-calendar-hint button')
     expect(button.contains(hitAt(button.getBoundingClientRect()))).toBe(true)
   })
 
-  it('covers the whole visible day, without a header, at any scroll', async () => {
+  it('covers the visible day’s column, without a header, at any scroll', async () => {
     const scroller = await open(DAY, 'app-day-view')
     expectInPlace('app-day-view', scroller)
 

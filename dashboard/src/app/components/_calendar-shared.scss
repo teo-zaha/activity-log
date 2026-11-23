@@ -124,13 +124,14 @@ $text-inset: 4px;
 }
 
 // The layer an empty view's hint lies on, hung below the sticky header (its containing block,
-// which stays at the top of the scroller): it covers the visible grid, whatever the scroll,
-// frosts it, takes the pointer from it and centres the hint.
-@mixin hint-layer {
+// which stays at the top of the scroller): it covers the visible day columns, whatever the
+// scroll, frosts them, takes the pointer from them and centres the hint; the hour labels beside
+// them stay sharp. `$right` is the columns' inset from the grid's right edge.
+@mixin hint-layer($right: 0) {
   position: absolute;
   top: 100%;
-  left: 0;
-  right: 0;
+  left: var(--cal-gutter);
+  right: $right;
   height: calc(100cqh - 100%);
   display: flex;
   align-items: center;

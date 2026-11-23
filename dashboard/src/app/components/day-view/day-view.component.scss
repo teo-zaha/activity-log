@@ -1,5 +1,8 @@
 @use '../calendar-shared' as cal;
 
+// The room around the day's events column in the grid.
+$grid-inset: 18px;
+
 :host {
   @include cal.host;
 }
@@ -54,7 +57,7 @@
 }
 
 .cal-hint-layer {
-  @include cal.hint-layer;
+  @include cal.hint-layer($right: $grid-inset);
 }
 
 // ── All-day banner row: sticky above the grid ─────────────────────────────────
@@ -70,15 +73,15 @@
   position: relative;
   display: grid;
   grid-template-columns: var(--cal-gutter) 1fr;
-  padding: 18px 18px 18px 0;
+  padding: $grid-inset $grid-inset $grid-inset 0;
 }
 
 .events-col {
   position: absolute;
   left: var(--cal-gutter);
-  right: 18px;
-  top: 18px;
-  bottom: 18px;
+  right: $grid-inset;
+  top: $grid-inset;
+  bottom: $grid-inset;
 }
 
 // The day's one column fills the events area.
