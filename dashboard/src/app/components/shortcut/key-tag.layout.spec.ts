@@ -4,9 +4,17 @@
 // what holds it or lies over another control. Only a layout engine can tell.
 import { afterEach, describe, expect, it } from 'vitest'
 import { page } from 'vitest/browser'
+import { createEntryAdapter } from '../../providers/provider-adapter'
+import { activityLog } from '../../testing/activity-fixtures'
 import { openApp } from '../../testing/app'
 
 const RANGE = 'from=2026-05-17&to=2026-05-18'
+
+const [git, jira] = activityLog.entries.map(entry => createEntryAdapter(entry))
+const key = (entry: { trackKey: string } | undefined): string =>
+  encodeURIComponent(entry?.trackKey ?? '')
+/** The first of a group of two overlapping events: the stepper, the group's back and close. */
+const GROUP = `/day/2026-05-18?${RANGE}&events=${key(git)}&events=${key(jira)}&event=${key(git)}`
 
 /** Two frames: what a change lays out and what observes it has run. */
 async function frames(): Promise<void> {
@@ -27,20 +35,31 @@ function tags(): { tag: HTMLElement; control: HTMLElement }[] {
   })
 }
 
-/** Where every control of the header, the sidebar and the views is, by its place in the page. */
+const shownTags = (): { tag: HTMLElement; control: HTMLElement }[] =>
+  tags().filter(({ tag }) => getComputedStyle(tag).visibility === 'visible')
+
+/** What can be clicked, typed in or followed, on screen. */
+function interactive(): HTMLElement[] {
+  return [
+    ...document.querySelectorAll<HTMLElement>(
+      'button, a[href], input, select, textarea, [role="button"], [role="link"], [role="tab"]'
+    ),
+  ].filter(element => {
+    const rect = element.getBoundingClientRect()
+    return rect.width > 1 && rect.height > 1 && getComputedStyle(element).visibility !== 'hidden'
+  })
+}
+
+/** Where every control is, by its place in the page. */
 function controls(): Map<string, string> {
   const boxes = new Map<string, string>()
-  document
-    .querySelectorAll<HTMLElement>(
-      'app-header button, app-sidebar a, app-sidebar button, main button, main input'
+  interactive().forEach((element, index) => {
+    const rect = element.getBoundingClientRect()
+    boxes.set(
+      `${index} ${element.tagName.toLowerCase()}.${element.className}`,
+      [rect.left, rect.top, rect.width, rect.height].join(' ')
     )
-    .forEach((element, index) => {
-      const rect = element.getBoundingClientRect()
-      boxes.set(
-        `${index} ${element.tagName.toLowerCase()}.${element.className}`,
-        [rect.left, rect.top, rect.width, rect.height].join(' ')
-      )
-    })
+  })
   return boxes
 }
 
@@ -56,13 +75,19 @@ const overlaps = (a: DOMRect, b: DOMRect): boolean =>
   a.top < b.bottom - 0.5 &&
   b.top < a.bottom - 0.5
 
-/** Each shown tag that a clipping ancestor or the window cuts, or that lies over another control. */
+const nameOf = (element: HTMLElement): string =>
+  element.getAttribute('aria-label') ?? `${element.tagName.toLowerCase()}.${element.className}`
+
+/**
+ * Each shown tag that a clipping ancestor or the window cuts, or that lies over another control,
+ * tagged or not, of the same layer: what an open layer covers (`inert` under it) is behind it.
+ */
 function misplaced(): string[] {
-  const shown = tags().filter(({ tag }) => getComputedStyle(tag).visibility === 'visible')
   const window = new DOMRect(0, 0, innerWidth, innerHeight)
-  return shown.flatMap(({ tag, control }) => {
+  const others = interactive()
+  return shownTags().flatMap(({ tag, control }) => {
     const rect = tag.getBoundingClientRect()
-    const name = `${tag.textContent} on ${control.getAttribute('aria-label') ?? control.className}`
+    const name = `${tag.textContent} on ${nameOf(control)}`
     const problems: string[] = []
     if (!within(rect, window)) problems.push(`${name}: cut by the window`)
     for (let box = tag.parentElement; box && box !== document.body; box = box.parentElement) {
@@ -74,15 +99,28 @@ function misplaced(): string[] {
         problems.push(`${name}: cut by ${box.tagName.toLowerCase()}.${box.className}`)
       }
     }
-    for (const other of shown) {
-      if (other.control !== control && overlaps(rect, other.control.getBoundingClientRect())) {
-        problems.push(
-          `${name}: over ${other.control.getAttribute('aria-label') ?? other.control.className}`
-        )
+    const inert = tag.closest('[inert]') !== null
+    for (const other of others) {
+      const related = other === control || other.contains(control) || control.contains(other)
+      if (related || (other.closest('[inert]') !== null) !== inert) continue
+      if (overlaps(rect, other.getBoundingClientRect()) && onTopUnder(rect, other)) {
+        problems.push(`${name}: over ${nameOf(other)}`)
       }
     }
     return problems
   })
+}
+
+/**
+ * Whether `other` is what shows where it meets `rect` (a tag, which takes no pointer): not
+ * something under a panel, such as the details' backdrop.
+ */
+function onTopUnder(rect: DOMRect, other: HTMLElement): boolean {
+  const box = other.getBoundingClientRect()
+  const x = (Math.max(rect.left, box.left) + Math.min(rect.right, box.right)) / 2
+  const y = (Math.max(rect.top, box.top) + Math.min(rect.bottom, box.bottom)) / 2
+  const hit = document.elementFromPoint(x, y)
+  return hit !== null && other.contains(hit)
 }
 
 /** Where the controls are once the page has stopped moving (fonts, the collection coming in). */
@@ -98,48 +136,75 @@ async function settledControls(): Promise<Map<string, string>> {
   }
 }
 
+/** Holds Shift until every tag that shows a key here does. */
+async function reveal(): Promise<void> {
+  shift('keydown')
+  // Past Shift at rest, which shows already.
+  await expect
+    .poll(() => shownTags().filter(({ tag }) => !tag.classList.contains('is-resting')).length, {
+      timeout: 3_000,
+    })
+    .toBeGreaterThan(0)
+  await new Promise(resolve => setTimeout(resolve, 200))
+  await frames()
+}
+
 describe('the key tags in a browser', () => {
   afterEach(() => shift('keyup'))
 
-  for (const size of [
+  const pages: { name: string; url: string; ready: string; tagged: readonly string[] }[] = [
+    {
+      name: 'the Work week view',
+      url: `/workweek/2026-05-18?${RANGE}`,
+      ready: '.today-btn',
+      tagged: ['Collect activity', 'Previous week', 'Next week'],
+    },
+    {
+      name: 'the Day view',
+      url: `/day/2026-05-18?${RANGE}`,
+      ready: '.today-btn',
+      tagged: ['Collect activity', 'Previous day', 'Next day'],
+    },
+    {
+      name: 'a group’s event in the details',
+      url: GROUP,
+      ready: 'app-event-detail .flyout-stepper',
+      tagged: ['Next event', 'Close event details'],
+    },
+    {
+      name: 'the Timeline',
+      url: `/timeline?${RANGE}`,
+      ready: 'app-search-bar app-key-tag',
+      tagged: ['Filter activity', 'Collect activity'],
+    },
+  ]
+  const sizes = [
     { name: 'a desktop window', width: 1440, height: 960 },
     { name: 'the rail', width: 880, height: 800 },
     { name: 'a phone', width: 402, height: 800 },
-  ]) {
-    it(`shows them over their controls, moving and cutting nothing, in ${size.name}`, async () => {
-      await page.viewport(size.width, size.height)
-      await openApp(`/workweek/2026-05-18?${RANGE}`)
-      await expect
-        .poll(() => document.querySelector('.today-btn'), { timeout: 10_000 })
-        .not.toBeNull()
-      const before = await settledControls()
-      expect(tags().length).toBeGreaterThan(4)
+  ]
 
-      shift('keydown')
-      await expect
-        .poll(() => tags().every(({ tag }) => getComputedStyle(tag).visibility === 'visible'))
-        .toBe(true)
-      await frames()
+  for (const size of sizes) {
+    for (const shown of pages) {
+      it(`shows them over their controls, moving and cutting nothing: ${shown.name}, ${size.name}`, async () => {
+        await page.viewport(size.width, size.height)
+        await openApp(shown.url)
+        await expect
+          .poll(() => document.querySelector(shown.ready), { timeout: 10_000 })
+          .not.toBeNull()
+        const before = await settledControls()
 
-      expect(controls()).toEqual(before)
-      expect(misplaced()).toEqual([])
-    })
+        await reveal()
+
+        const tagged = shownTags().map(
+          ({ control }) =>
+            control.getAttribute('aria-label') ??
+            control.querySelector('input')?.getAttribute('aria-label')
+        )
+        for (const name of shown.tagged) expect(tagged).toContain(name)
+        expect(controls()).toEqual(before)
+        expect(misplaced()).toEqual([])
+      })
+    }
   }
-
-  it('shows the filter’s tag inside the field, as the Timeline’s other controls keep still', async () => {
-    await page.viewport(1440, 960)
-    await openApp(`/timeline?${RANGE}`)
-    await expect
-      .poll(() => document.querySelector('app-search-bar app-key-tag'), { timeout: 10_000 })
-      .not.toBeNull()
-    const before = await settledControls()
-
-    shift('keydown')
-    const tag = document.querySelector<HTMLElement>('app-search-bar app-key-tag')
-    await expect.poll(() => tag && getComputedStyle(tag).visibility).toBe('visible')
-    await frames()
-
-    expect(controls()).toEqual(before)
-    expect(misplaced()).toEqual([])
-  })
 })
