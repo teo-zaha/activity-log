@@ -17,9 +17,8 @@
   },
   "bundle": {
     "windows": {
+      "allowDowngrades": false,
       "nsis": {
-        "headerImage": "installer/nsis-header.bmp",
-        "sidebarImage": "installer/nsis-sidebar.bmp",
         "template": "installer/installer.nsi",
         "installerHooks": "installer/hooks.nsh",
         "installerIcon": "installer/installer.ico",

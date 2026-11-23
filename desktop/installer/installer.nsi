@@ -52,6 +52,12 @@ ${StrLoc}
 !include "{{installer_hooks}}"
 {{/if}}
 
+; >>> activity-log: the pages below are `one-click.nsh`'s, which `hooks.nsh` includes
+!ifndef ACTIVITY_LOG_ONE_CLICK
+  !error "bundle.windows.nsis.installerHooks must be desktop/installer/hooks.nsh"
+!endif
+; <<< activity-log
+
 !define WEBVIEW2APPGUID "{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}"
 
 !define MANUFACTURER "{{manufacturer}}"
@@ -182,9 +188,10 @@ VIAddVersionKey "ProductVersion" "${VERSION}"
 !define MUI_LANGDLL_REGISTRY_VALUENAME "Installer Language"
 
 ; Installer pages, must be ordered as they appear
-; 1. Welcome Page
-!define MUI_PAGE_CUSTOMFUNCTION_PRE SkipIfPassive
-!insertmacro MUI_PAGE_WELCOME
+; >>> activity-log: one click, no wizard: no Welcome page. `one-click.nsh` draws the window and
+; its pages; its first page refuses a downgrade when a newer version is installed.
+!insertmacro ACTIVITY_LOG_INSTALLER_UI
+; <<< activity-log
 
 ; 2. License Page (if defined)
 !if "${LICENSE}" != ""
@@ -297,7 +304,10 @@ Function PageReinstall
   ; of this function because we need to populate some variables
   ; related to current installed version if detected and whether
   ; we are downgrading or not.
-  ${If} $PassiveMode = 1
+  ; >>> activity-log: one click asks nothing: every mode takes the passive path, and the dialog
+  ; below is never shown (`PageLeaveReinstall` updates in place). Was: ${If} $PassiveMode = 1
+  ${If} 1 = 1
+  ; <<< activity-log
     Call PageLeaveReinstall
   ${Else}
     nsDialogs::Create 1018
@@ -352,6 +362,13 @@ Function PageLeaveReinstall
   ${If} $UpdateMode = 1
     Goto reinst_done
   ${EndIf}
+
+  ; >>> activity-log: the one-click window updates an existing install in place, as `/UPDATE`
+  ; does; passive mode keeps Tauri's choice below
+  ${If} $PassiveMode <> 1
+    Goto reinst_done
+  ${EndIf}
+  ; <<< activity-log
 
   ; $R0 holds whether same(0)/upgrading(1)/downgrading(-1) version
   ; $R1 holds the radio buttons state:
@@ -426,8 +443,15 @@ Function PageLeaveReinstall
   reinst_done:
 FunctionEnd
 
+; >>> activity-log: when Activity Log is open, a page asks to close it before installing
+; (Tauri's check in the Install section stays, for silent and passive installs)
+Page custom ActivityLog.AppOpenPage ActivityLog.AppOpenLeave
+; <<< activity-log
+
 ; 5. Choose install directory page
-!define MUI_PAGE_CUSTOMFUNCTION_PRE SkipIfPassive
+; >>> activity-log: no folder choice in any mode (`/D=` still sets it). Was: SkipIfPassive
+!define MUI_PAGE_CUSTOMFUNCTION_PRE Skip
+; <<< activity-log
 !insertmacro MUI_PAGE_DIRECTORY
 
 ; 6. Start menu shortcut page
@@ -441,22 +465,15 @@ Var AppStartMenuFolder
 !insertmacro MUI_PAGE_STARTMENU Application $AppStartMenuFolder
 
 ; 7. Installation page
+; >>> activity-log: the progress screen, then "Starting Activity Log…" and the app, or the failure
+!define MUI_PAGE_CUSTOMFUNCTION_SHOW ActivityLog.InstFilesShow
+!define MUI_PAGE_CUSTOMFUNCTION_LEAVE ActivityLog.InstFilesLeave
+; <<< activity-log
 !insertmacro MUI_PAGE_INSTFILES
 
-; 8. Finish page
-;
-; Don't auto jump to finish page after installation page,
-; because the installation page has useful info that can be used debug any issues with the installer.
-!define MUI_FINISHPAGE_NOAUTOCLOSE
-; Use show readme button in the finish page as a button create a desktop shortcut
-!define MUI_FINISHPAGE_SHOWREADME
-!define MUI_FINISHPAGE_SHOWREADME_TEXT "$(createDesktop)"
-!define MUI_FINISHPAGE_SHOWREADME_FUNCTION CreateOrUpdateDesktopShortcut
-; Show run app after installation.
-!define MUI_FINISHPAGE_RUN
-!define MUI_FINISHPAGE_RUN_FUNCTION RunMainBinary
-!define MUI_PAGE_CUSTOMFUNCTION_PRE SkipIfPassive
-!insertmacro MUI_PAGE_FINISH
+; >>> activity-log: no Finish page: the progress screen closes by itself and opens the app
+; (`RunMainBinary`), and there is no desktop shortcut to offer
+; <<< activity-log
 
 Function RunMainBinary
   nsis_tauri_utils::RunAsUser "$INSTDIR\${MAINBINARYNAME}.exe" ""
@@ -466,45 +483,20 @@ FunctionEnd
 ; 1. Confirm uninstall page
 Var DeleteAppDataCheckbox
 Var DeleteAppDataCheckboxState
-!define /ifndef WS_EX_LAYOUTRTL         0x00400000
-!define MUI_PAGE_CUSTOMFUNCTION_SHOW un.ConfirmShow
-Function un.ConfirmShow ; Add add a `Delete app data` check box
-  ; $1 inner dialog HWND
-  ; $2 window DPI
-  ; $3 style
-  ; $4 x
-  ; $5 y
-  ; $6 width
-  ; $7 height
-  FindWindow $1 "#32770" "" $HWNDPARENT ; Find inner dialog
-  System::Call "user32::GetDpiForWindow(p r1) i .r2"
-  ${If} $(^RTL) = 1
-    StrCpy $3 "${__NSD_CheckBox_EXSTYLE} | ${WS_EX_LAYOUTRTL}"
-    IntOp $4 50 * $2
-  ${Else}
-    StrCpy $3 "${__NSD_CheckBox_EXSTYLE}"
-    IntOp $4 0 * $2
-  ${EndIf}
-  IntOp $5 100 * $2
-  IntOp $6 400 * $2
-  IntOp $7 25 * $2
-  IntOp $4 $4 / 96
-  IntOp $5 $5 / 96
-  IntOp $6 $6 / 96
-  IntOp $7 $7 / 96
-  System::Call 'user32::CreateWindowEx(i r3, w "${__NSD_CheckBox_CLASS}", w "$(deleteAppData)", i ${__NSD_CheckBox_STYLE}, i r4, i r5, i r6, i r7, p r1, i0, i0, i0) i .s'
-  Pop $DeleteAppDataCheckbox
-  SendMessage $HWNDPARENT ${WM_GETFONT} 0 0 $1
-  SendMessage $DeleteAppDataCheckbox ${WM_SETFONT} $1 1
-FunctionEnd
-!define MUI_PAGE_CUSTOMFUNCTION_LEAVE un.ConfirmLeave
-Function un.ConfirmLeave
-  SendMessage $DeleteAppDataCheckbox ${BM_GETCHECK} 0 0 $DeleteAppDataCheckboxState
-FunctionEnd
-!define MUI_PAGE_CUSTOMFUNCTION_PRE un.SkipIfPassive
-!insertmacro MUI_UNPAGE_CONFIRM
+; >>> activity-log: one question, "Also delete my settings and cached activity", on
+; `one-click.nsh`'s page (`un.ActivityLog.ConfirmPage` sets the two variables above, as Tauri's
+; `un.ConfirmShow` and `un.ConfirmLeave` did on MUI's confirm page), then, when Activity Log is
+; open, a page that closes it
+!insertmacro ACTIVITY_LOG_UNINSTALLER_UI
+UninstPage custom un.ActivityLog.ConfirmPage un.ActivityLog.ConfirmLeave
+UninstPage custom un.ActivityLog.AppOpenPage un.ActivityLog.AppOpenLeave
+; <<< activity-log
 
 ; 2. Uninstalling Page
+; >>> activity-log: the same progress screen as the installer's
+!define MUI_PAGE_CUSTOMFUNCTION_SHOW un.ActivityLog.InstFilesShow
+!define MUI_PAGE_CUSTOMFUNCTION_LEAVE un.ActivityLog.InstFilesLeave
+; <<< activity-log
 !insertmacro MUI_UNPAGE_INSTFILES
 
 ;Languages
@@ -574,9 +566,10 @@ Function .onInit
   ; Abort downgrades if they are disabled, in the modes that skip the reinstall page choice:
   ; silent, passive and update
   !if "${ALLOWDOWNGRADES}" == "false"
-  ${If} ${Silent}
-  ${OrIf} $PassiveMode = 1
-  ${OrIf} $UpdateMode = 1
+  ; >>> activity-log: no mode shows the reinstall page, so check in every mode. Was:
+  ; ${If} ${Silent} ${OrIf} $PassiveMode = 1 ${OrIf} $UpdateMode = 1
+  ${If} 1 = 1
+  ; <<< activity-log
     ; Compare with the same installation the reinstall page would: a WiX one first
     Call FindWixInstall
     ${If} $R6 != ""
@@ -584,10 +577,21 @@ Function .onInit
     ${Else}
       ReadRegStr $R0 SHCTX "${UNINSTKEY}" "DisplayVersion"
     ${EndIf}
+    ; >>> activity-log: the installed version, for the refusal below
+    StrCpy $R1 $R0
+    ; <<< activity-log
     nsis_tauri_utils::SemverCompare "${VERSION}" $R0
     Pop $R0
     ; If downgrading
     ${If} $R0 = -1
+      ; >>> activity-log: the one-click window refuses on its first page, which names the
+      ; installed version (`ActivityLog.DowngradePage`), in place of a message box
+      ${IfNot} ${Silent}
+      ${AndIf} $PassiveMode <> 1
+        StrCpy $ActivityLog.NewerVersion $R1
+        Return
+      ${EndIf}
+      ; <<< activity-log
       ${If} ${Silent}
         System::Call 'kernel32::AttachConsole(i -1)i.r0'
         ${If} $0 <> 0
@@ -784,12 +788,9 @@ Section Install
     Call CreateOrUpdateStartMenuShortcut
   !insertmacro MUI_STARTMENU_WRITE_END
 
-  ; Create desktop shortcut for silent and passive installers
-  ; because finish page will be skipped
-  ${If} $PassiveMode = 1
-  ${OrIf} ${Silent}
-    Call CreateOrUpdateDesktopShortcut
-  ${EndIf}
+  ; >>> activity-log: no desktop shortcut, in any mode (Tauri made one in silent and passive
+  ; installs, and offered one on the Finish page); uninstalling still removes an old one
+  ; <<< activity-log
 
   !ifmacrodef NSIS_HOOK_POSTINSTALL
     !insertmacro NSIS_HOOK_POSTINSTALL
@@ -1014,25 +1015,5 @@ Function CreateOrUpdateStartMenuShortcut
   !endif
 FunctionEnd
 
-Function CreateOrUpdateDesktopShortcut
-  ; We used to use product name as MAINBINARYNAME
-  ; migrate old shortcuts to target the new MAINBINARYNAME
-  !insertmacro IsShortcutTarget "$DESKTOP\${PRODUCTNAME}.lnk" "$INSTDIR\$OldMainBinaryName"
-  Pop $0
-  ${If} $0 = 1
-    !insertmacro SetShortcutTarget "$DESKTOP\${PRODUCTNAME}.lnk" "$INSTDIR\${MAINBINARYNAME}.exe"
-    Return
-  ${EndIf}
-
-  ; Skip creating shortcut if in update mode or no shortcut mode
-  ; but always create if migrating from wix
-  ${If} $WixMode = 0
-    ${If} $UpdateMode = 1
-    ${OrIf} $NoShortcutMode = 1
-      Return
-    ${EndIf}
-  ${EndIf}
-
-  CreateShortcut "$DESKTOP\${PRODUCTNAME}.lnk" "$INSTDIR\${MAINBINARYNAME}.exe"
-  !insertmacro SetLnkAppUserModelId "$DESKTOP\${PRODUCTNAME}.lnk"
-FunctionEnd
+; >>> activity-log: `CreateOrUpdateDesktopShortcut` removed: there is no desktop shortcut
+; <<< activity-log
