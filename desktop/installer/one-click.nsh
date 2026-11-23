@@ -96,6 +96,7 @@ Var ActivityLog.LogoIcon ; the icons, loaded once at their size here (GUIInit), 
 Var ActivityLog.ErrorIcon
 Var ActivityLog.SmallIcon
 Var ActivityLog.CheckFrame ; the dark checkbox's focus frame (uninstaller)
+Var ActivityLog.Leftovers ; 1 when removing the user's data left something (user-data.nsh)
 
 ; OUT = VALUE pixels at 96 DPI, at the window's DPI.
 !macro AL_PX OUT VALUE
@@ -652,6 +653,36 @@ Var ActivityLog.CheckFrame ; the dark checkbox's focus frame (uninstaller)
       !else
         SendMessage $ActivityLog.Title ${WM_SETTEXT} 0 "STR:$(alUninstalled)"
         SendMessage $1 ${WM_SETTEXT} 0 "STR:"
+        ${If} $ActivityLog.Leftovers = 1
+          ; Some of the user's data stayed (a file in use): say so, list it under Show details,
+          ; and wait for Close (Next, NSIS's "Close" on this last page)
+          SetAutoClose false
+          SendMessage $1 ${WM_SETTEXT} 0 "STR:$(alLeftovers)"
+          System::Call 'user32::GetWindowLongW(p r1, i ${GWL_STYLE}) i .r4'
+          IntOp $4 $4 & 0xFFFFBFFF ; wraps: no SS_ENDELLIPSIS
+          System::Call 'user32::SetWindowLongW(p r1, i ${GWL_STYLE}, i r4)'
+          ${AL_PX} $4 ${AL_LOGO_TOP}
+          ${AL_PX} $5 ${AL_LOGO}
+          IntOp $4 $4 + $5
+          ${AL_PX} $5 ${AL_TITLE_GAP}
+          IntOp $4 $4 + $5
+          ${AL_PX} $5 ${AL_TITLE_HEIGHT}
+          IntOp $4 $4 + $5
+          ${AL_PX} $5 ${AL_TEXT_GAP}
+          IntOp $4 $4 + $5
+          !insertmacro AL_PLACE_TEXT $1 $4 $4
+          ${AL_PX} $5 ${AL_ROW_GAP}
+          IntOp $4 $4 + $5
+          GetDlgItem $1 $0 1004
+          ShowWindow $1 ${SW_HIDE}
+          ShowWindow $ActivityLog.Footer ${SW_HIDE}
+          Push $0
+          Push $4
+          GetDlgItem $1 $HWNDPARENT 1
+          Push $1
+          Call ${UN}ActivityLog.DetailsRow
+          Goto done
+        ${EndIf}
       !endif
       System::Call 'user32::RedrawWindow(p $HWNDPARENT, p 0, p 0, i 0x185)' ; now, children too
       !if "${UN}" == ""
@@ -811,6 +842,8 @@ Var ActivityLog.CheckFrame ; the dark checkbox's focus frame (uninstaller)
   LangString alUninstalling 1033 "Uninstalling $(^Name)"
   LangString alRemoving 1033 "Removing files…"
   LangString alUninstalled 1033 "$(^Name) was uninstalled"
+  LangString alLeftovers 1033 "Some of your settings or cached activity could not be deleted. Show details lists them."
+  LangString alNotRemoved 1033 "Not deleted: "
   LangString alUninstallFailed 1033 "$(^Name) couldn't be uninstalled"
 
   !define AL_UN ""
