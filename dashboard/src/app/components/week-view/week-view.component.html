@@ -122,13 +122,18 @@
       @if (allDay().bars.length) {
         <app-calendar-all-day-row [row]="allDay()" (openEvent)="openEvent($event)" />
       }
-    </div>
 
-    @if (emptyHint(); as hint) {
-      <div class="u-floating-hint">
-        <app-calendar-hint [hint]="hint" (collect)="collectRange($event)" />
-      </div>
-    }
+      <!-- Over the visible grid, below the day headers, which stay usable. -->
+      @if (emptyHint(); as hint) {
+        <div
+          class="cal-hint-layer"
+          animate.enter="hint-layer-enter"
+          animate.leave="hint-layer-leave"
+        >
+          <app-calendar-hint [hint]="hint" (collect)="collectRange($event)" />
+        </div>
+      }
+    </div>
 
     <div class="week-grid" #gridEl [style.height.px]="gridHeight()">
       <app-calendar-hours

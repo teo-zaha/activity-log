@@ -4,9 +4,9 @@ import { ButtonComponent } from '../../button/button.component'
 import { calendarHintText, type CalendarEmptyHint } from '../calendar-empty-hint'
 
 /**
- * The hint of an empty calendar view, in the view's sticky `.u-floating-hint`: a pill with its
- * text, or a card that also names the days on screen or offers to collect this tab's range. Only
- * its text is a live region, never the button.
+ * The hint of an empty calendar view, a card centred on the view's frosted layer over the grid:
+ * its text, the days on screen and what it offers to collect. Only its text is a live region,
+ * never the button.
  */
 @Component({
   selector: 'app-calendar-hint',

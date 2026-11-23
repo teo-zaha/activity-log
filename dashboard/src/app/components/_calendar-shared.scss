@@ -114,11 +114,57 @@ $text-inset: 4px;
 
 @mixin scroll-container {
   flex: 1;
+  // Lets the hint's layer size itself to the visible height (`cqh`) from inside the scroller.
+  container-type: size;
   overflow-y: auto;
   overflow-x: hidden;
   overscroll-behavior-y: contain;
   margin: 0 var(--cal-inset);
   background: transparent;
+}
+
+// The layer an empty view's hint lies on, hung below the sticky header (its containing block,
+// which stays at the top of the scroller): it covers the visible grid, whatever the scroll,
+// frosts it, takes the pointer from it and centres the hint.
+@mixin hint-layer {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  right: 0;
+  height: calc(100cqh - 100%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 12px max(12px, env(safe-area-inset-right)) 12px max(12px, env(safe-area-inset-left));
+  background: color-mix(in srgb, var(--surface) 55%, transparent);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+
+  @supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+    background: color-mix(in srgb, var(--surface) 88%, transparent);
+  }
+
+  @media (prefers-reduced-transparency: reduce) {
+    background: var(--surface);
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+  }
+
+  @media (prefers-reduced-motion: no-preference) {
+    &.hint-layer-enter {
+      animation: hint-layer-in 150ms ease-out;
+    }
+
+    &.hint-layer-leave {
+      animation: hint-layer-in 120ms ease-in reverse;
+    }
+  }
+
+  @keyframes hint-layer-in {
+    from {
+      opacity: 0;
+    }
+  }
 }
 
 @mixin hour-label {

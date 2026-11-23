@@ -184,6 +184,10 @@
   @include cal.scroll-container;
 }
 
+.cal-hint-layer {
+  @include cal.hint-layer;
+}
+
 .week-grid {
   position: relative;
 }
@@ -219,8 +223,3 @@
 }
 
 @include cal.now-label;
-
-// Sits below the sticky day headers.
-.u-floating-hint {
-  top: 76px;
-}

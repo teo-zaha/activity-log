@@ -53,6 +53,10 @@
   @include cal.scroll-container;
 }
 
+.cal-hint-layer {
+  @include cal.hint-layer;
+}
+
 // ── All-day banner row: sticky above the grid ─────────────────────────────────
 
 .cal-sticky-header {

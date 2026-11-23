@@ -1,25 +1,20 @@
-// A pill with the hint's text, or a card where it also names the days on screen or offers to
-// collect this tab's range. It sits in the view's sticky `.u-floating-hint`.
+// A card with the hint's text, the days on screen and what it offers to collect, centred on the
+// view's frosted layer (`cal.hint-layer`).
 :host {
   display: flex;
-  flex-wrap: wrap;
+  flex-direction: column;
   align-items: center;
-  justify-content: center;
-  gap: 8px 12px;
-  max-width: min(560px, calc(100% - 24px));
-  padding: 6px 12px;
+  gap: 10px;
+  max-width: min(560px, 100%);
+  min-width: 0;
+  padding: 12px 16px;
   border: 1px solid var(--hairline);
-  border-radius: 999px;
+  border-radius: var(--radius-sm);
   background: var(--surface);
   box-shadow: var(--control-shadow);
   color: var(--text-tertiary);
   font-size: 12.5px;
-  pointer-events: auto;
-}
-
-:host(:has(.hint-message, button)) {
-  padding: 10px 14px;
-  border-radius: var(--radius-sm);
+  text-align: center;
 }
 
 .hint-text {
@@ -30,7 +25,7 @@
 }
 
 .hint-title {
-  white-space: nowrap;
+  text-wrap: balance;
 }
 
 :host(:has(.hint-message)) .hint-title {
