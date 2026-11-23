@@ -21,8 +21,12 @@ use sha2::{Digest, Sha256};
 use zeroize::{Zeroize, Zeroizing};
 
 use super::{DataKey, StoreKind};
-use crate::provider::provider_config::{
-    ConfigSource, ProviderConfigKey, ProviderConfigValueType, parse_bool,
+use crate::{
+    model::Source,
+    provider::{
+        adapter,
+        provider_config::{ConfigSource, ProviderConfigKey, ProviderConfigValueType, parse_bool},
+    },
 };
 
 #[cfg(test)]
@@ -58,9 +62,11 @@ impl KeyId {
 pub struct BindingTag([u8; 4]);
 
 /// The values a kind's secrets are bound to, normalized: for GitLab its server's origin, for
-/// Jira its origin and its `insecure` setting (the `[binds]` keys); for Calendar nothing.
+/// Jira its origin and its `insecure` setting (the `[binds]` keys); for Calendar nothing. It
+/// belongs to its kind: only that kind's fields are sealed or opened with it.
 #[derive(Clone, PartialEq, Eq)]
 pub struct Binding {
+    source: Source,
     /// `<WIRE_NAME>=<normalized value>`, in declaration order.
     components: Vec<String>,
 }
@@ -69,8 +75,9 @@ pub struct Binding {
 /// opened, so the secret is never sent.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum BindingError {
-    /// A URL binding key whose value is no address with a scheme, host and port (unset
-    /// included).
+    /// A URL binding key whose value is no `http` or `https` address with a host, or one that
+    /// names a user or a password (unset included): the address rules the remote client
+    /// keeps, so what a token is bound to is what it would be sent to.
     NoOrigin { key: &'static str },
     /// A `[binds]` mark on a key of a type nothing binds by.
     Unsupported { key: &'static str },
@@ -88,16 +95,14 @@ impl fmt::Display for BindingError {
 impl std::error::Error for BindingError {}
 
 impl Binding {
-    /// The binding of a connection: each `[binds]` key of `requirements` (its kind's keys), in
+    /// The binding of a connection of `source`: each `[binds]` key its kind declares, in
     /// declaration order, with its value in `values` normalized. A URL counts as its origin as
     /// `url` parses it (scheme and host lowercased, a host as ASCII, IPv6 in brackets, the port
     /// always written: `https://gitlab.example.com:443`); a bool as every reader reads it,
     /// unset or unreadable meaning `false`.
-    pub fn of(
-        requirements: &[ProviderConfigKey],
-        values: &dyn ConfigSource,
-    ) -> Result<Self, BindingError> {
-        let components = requirements
+    pub fn of(source: &Source, values: &dyn ConfigSource) -> Result<Self, BindingError> {
+        let components = adapter(source)
+            .config_requirements()
             .iter()
             .filter(|key| key.binds)
             .map(|key| {
@@ -105,7 +110,15 @@ impl Binding {
                 normalized(*key, value.as_deref()).map(|value| format!("{}={value}", key.name))
             })
             .collect::<Result<_, _>>()?;
-        Ok(Self { components })
+        Ok(Self {
+            source: source.clone(),
+            components,
+        })
+    }
+
+    /// Whether `field` is one of this binding's kind.
+    fn holds(&self, field: ProviderConfigKey) -> bool {
+        adapter(&self.source).config_requirements().contains(&field)
     }
 
     pub fn tag(&self) -> BindingTag {
@@ -122,7 +135,10 @@ impl Binding {
 
 impl fmt::Debug for Binding {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_tuple("Binding").field(&self.components).finish()
+        f.debug_struct("Binding")
+            .field("source", &self.source)
+            .field("components", &self.components)
+            .finish()
     }
 }
 
@@ -141,9 +157,14 @@ fn normalized(key: ProviderConfigKey, value: Option<&str>) -> Result<String, Bin
     }
 }
 
-/// `scheme://host:port`, the port always written; path, query and fragment left out.
+/// `scheme://host:port`, the port always written; path, query and fragment left out. Only an
+/// `http` or `https` address without a user name or password has one.
 fn origin(value: &str) -> Option<String> {
     let url = url::Url::parse(value.trim()).ok()?;
+    let credentials = !url.username().is_empty() || url.password().is_some();
+    if !matches!(url.scheme(), "http" | "https") || credentials {
+        return None;
+    }
     let host = url.host()?;
     let port = url.port_or_known_default()?;
     Some(format!("{}://{host}:{port}", url.scheme()))
@@ -202,6 +223,9 @@ pub enum Unopenable {
     OtherAddress,
     /// The key and the binding match, and still it does not open: edited or damaged.
     Damaged,
+    /// The field is not one of the binding's kind: a caller's mistake, never a file's, and
+    /// nothing is decrypted.
+    OtherKind,
 }
 
 /// Why nothing was sealed.
@@ -211,6 +235,8 @@ pub enum SealError {
     NotASecret,
     /// An empty secret is no secret; a cleared field is unset.
     Empty,
+    /// The field is not one of the binding's kind.
+    OtherKind,
     /// The cipher refused (more associated data than AES-SIV takes).
     Cipher,
 }
@@ -220,6 +246,7 @@ impl fmt::Display for SealError {
         f.write_str(match self {
             Self::NotASecret => "only secrets are sealed",
             Self::Empty => "an empty secret is not sealed",
+            Self::OtherKind => "the field is not one of the binding's kind",
             Self::Cipher => "the cipher refused the value",
         })
     }
@@ -312,6 +339,9 @@ pub fn seal(
     if !field.is_secret() {
         return Err(SealError::NotASecret);
     }
+    if !binding.holds(field) {
+        return Err(SealError::OtherKind);
+    }
     if secret.is_empty() {
         return Err(SealError::Empty);
     }
@@ -319,12 +349,13 @@ pub fn seal(
     let tag = binding.tag();
     let header = header(store, key_id, tag);
     // Room for the IV up front, so the plaintext is never copied to a grown buffer; it is
-    // overwritten by its ciphertext in place.
-    let mut payload = Vec::with_capacity(secret.len() + IV_LEN);
+    // overwritten by its ciphertext in place, and wiped if the cipher refuses.
+    let mut payload = Zeroizing::new(Vec::with_capacity(secret.len() + IV_LEN));
     payload.extend_from_slice(secret.as_bytes());
     cipher(key)
-        .encrypt_in_place(associated_data(&header, field, binding), &mut payload)
+        .encrypt_in_place(associated_data(&header, field, binding), &mut *payload)
         .map_err(|_| SealError::Cipher)?;
+    let payload = std::mem::take(&mut *payload);
     let text = format!("{header}:{}", URL_SAFE_NO_PAD.encode(&payload));
     Ok(SealedValue {
         text,
@@ -343,6 +374,9 @@ pub fn open(
     field: ProviderConfigKey,
     binding: &Binding,
 ) -> Result<Zeroizing<String>, Unopenable> {
+    if !binding.holds(field) {
+        return Err(Unopenable::OtherKind);
+    }
     if KeyId::of(key) != value.key_id {
         return Err(Unopenable::OtherKey);
     }

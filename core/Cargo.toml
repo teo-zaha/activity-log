@@ -14,12 +14,17 @@ test-support = []
 real-store-tests = []
 
 [dependencies]
+# `aes-siv`'s own `zeroize` feature leaves its parts' alone: these lines only unify the
+# features, so the AES key schedules, the CMAC state and the CTR state are wiped on drop too.
+aes = { version = "=0.9.4", default-features = false, features = ["zeroize"] }
 aes-siv = { version = "=0.8.0", default-features = false, features = ["alloc", "zeroize"] }
 anyhow.workspace = true
 base64 = "0.23"
+calcard = { version = "0.3", default-features = false }
 chrono.workspace = true
 chrono-tz.workspace = true
-calcard = { version = "0.3", default-features = false }
+cmac = { version = "=0.8.0", default-features = false, features = ["zeroize"] }
+ctr = { version = "=0.10.1", default-features = false, features = ["zeroize"] }
 futures.workspace = true
 getrandom = "0.4"
 gix = "0.90"

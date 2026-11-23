@@ -959,12 +959,15 @@ dependencies = [
 name = "core"
 version = "1.0.0"
 dependencies = [
+ "aes",
  "aes-siv",
  "anyhow",
  "base64 0.23.1",
  "calcard",
  "chrono",
  "chrono-tz",
+ "cmac",
+ "ctr",
  "futures",
  "getrandom 0.4.3",
  "gix",
@@ -1391,6 +1394,7 @@ dependencies = [
  "const-oid",
  "crypto-common 0.2.2",
  "ctutils",
+ "zeroize",
 ]
 
 [[package]]
