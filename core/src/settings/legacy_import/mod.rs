@@ -12,11 +12,14 @@ use std::path::{Path, PathBuf};
 
 use self::{
     files::{EnvFound, LegacyFile, Read, Unreadable},
-    marker::{MARKER, Marker, Record, marker_beside},
+    marker::{MARKER, Marker, Record, given_up_toml, marker_beside},
     plan::Plan,
     v0_0_7::LegacyValues,
 };
-use super::{ConfigFile, EditError, Precondition, write::edit_config_recorded};
+use super::{
+    ConfigFile, EditError, Precondition,
+    write::{edit_config_recorded, record_beside},
+};
 use crate::{
     diagnostics,
     model::{
@@ -54,10 +57,9 @@ impl Place {
     /// (`--config`, `explicit`, or `ACTIVITY_LOG_CONFIG`), the dev profile, or no settings
     /// location.
     pub fn for_front_end(front_end: FrontEnd, explicit: Option<&Path>) -> Option<Self> {
-        if explicit.is_some()
-            || crate::platform::dirs::env_path("ACTIVITY_LOG_CONFIG").is_some()
-            || profile::current() != Profile::Installed
-        {
+        let chosen =
+            explicit.is_some() || crate::platform::dirs::env_path("ACTIVITY_LOG_CONFIG").is_some();
+        if !runs_with(chosen, profile::current()) {
             return None;
         }
         let config = ConfigFile::resolve_path(None)?;
@@ -97,6 +99,12 @@ impl Place {
     }
 }
 
+/// Whether an import runs at all: only on the default config path (`chosen`: none given with
+/// `--config` or `ACTIVITY_LOG_CONFIG`) and the installed profile.
+fn runs_with(chosen: bool, profile: Profile) -> bool {
+    !chosen && profile == Profile::Installed
+}
+
 /// The API server never imports: finding 0.0.7's settings and no `config.toml`, it says how
 /// to import them.
 pub fn hint(place: &Place) {
@@ -109,7 +117,10 @@ pub fn hint(place: &Place) {
         .filter(|path| path.is_file())
         .cloned()
         .or_else(|| match place.env_from.as_deref().map(files::find_env) {
-            Some(EnvFound::Found(path)) => Some(path),
+            Some(EnvFound::Found { path, bytes }) => match files::read_env(&bytes) {
+                Read::Values { values, .. } => values.sets_any().then_some(path),
+                Read::Unreadable(_) => None,
+            },
             _ => None,
         });
     if let Some(path) = found {
@@ -123,9 +134,37 @@ pub fn hint(place: &Place) {
     }
 }
 
-/// The one import, where it is due: what it did, also logged, or `None` when nothing was due,
-/// found, or written (another program wrote the settings first).
-pub async fn import_once(place: &Place, secrets: &Secrets) -> Option<LegacyImportReportDto> {
+/// What [`give_up`] did.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum GiveUp {
+    GaveUp,
+    /// No import was due here: nothing was written.
+    NotDue,
+}
+
+/// Gives the import up where it is due: the marker says so, and 0.0.7's settings are never
+/// imported, so a command may write `config.toml` meanwhile.
+pub fn give_up(place: &Place) -> Result<GiveUp, EditError> {
+    if !place.is_due() {
+        return Ok(GiveUp::NotDue);
+    }
+    let marker = given_up_toml(&crate::utils::now_iso());
+    record_beside(&place.config, MARKER, marker.as_bytes())?;
+    diagnostics::info(
+        SCOPE,
+        "The import of Activity Log 0.0.7's settings was given up",
+    );
+    Ok(GiveUp::GaveUp)
+}
+
+/// The one import, where it is due: what it did, also logged, or `None` when nothing was due or
+/// found, or another program wrote the settings first. The key is read with `interaction`: the
+/// desktop's start asks without a dialog, and with one only when the user asks for the import.
+pub async fn import_once(
+    place: &Place,
+    secrets: &Secrets,
+    interaction: Interaction,
+) -> Option<LegacyImportReportDto> {
     if !place.is_due() {
         return None;
     }
@@ -133,7 +172,8 @@ pub async fn import_once(place: &Place, secrets: &Secrets) -> Option<LegacyImpor
     let (used, values) = match chosen.used {
         Chosen::Values(file, values) => (file, values),
         Chosen::Unreadable(file, why) => {
-            let message = format!("Activity Log 0.0.7's {file} could not be imported: {why}");
+            let message =
+                format!("Activity Log 0.0.7's {file} could not be imported: {why}. {GIVES_UP}");
             diagnostics::warn(SCOPE, &message);
             return Some(LegacyImportReportDto::Unreadable {
                 file: dto(&file),
@@ -151,7 +191,7 @@ pub async fn import_once(place: &Place, secrets: &Secrets) -> Option<LegacyImpor
     let sealing = match plan.connections.iter().any(plan::Planned::has_secret) {
         false => None,
         // A new config holds no sealed value, so no key it could have been made with.
-        true => match secrets.sealer(Interaction::Allowed, |_| 0).await {
+        true => match secrets.sealer(interaction, |_| 0).await {
             Ok(sealer) => Some(sealer),
             Err(err) => {
                 let store = match err.kind() {
@@ -159,7 +199,7 @@ pub async fn import_once(place: &Place, secrets: &Secrets) -> Option<LegacyImpor
                     StoreErrorKind::Refused | StoreErrorKind::Failed => LegacyStoreWait::Refused,
                 };
                 let message = format!(
-                    "Importing Activity Log 0.0.7's sources from {used} waits for the secure store, since they bring a token: {err}"
+                    "Importing Activity Log 0.0.7's sources from {used} waits for the secure store, since they bring a token: {err}. {GIVES_UP}"
                 );
                 diagnostics::warn(SCOPE, &message);
                 return Some(LegacyImportReportDto::Postponed {
@@ -185,6 +225,7 @@ pub async fn import_once(place: &Place, secrets: &Secrets) -> Option<LegacyImpor
         skipped: Vec::new(),
     };
     let invalid_wsl_repos = plan.invalid_wsl_repos;
+    let withheld_wsl = plan.withheld_wsl.clone();
     let written = tokio::task::spawn_blocking(move || {
         edit_config_recorded(
             &config,
@@ -213,14 +254,8 @@ pub async fn import_once(place: &Place, secrets: &Secrets) -> Option<LegacyImpor
             );
             return None;
         }
-        Ok(Err(err)) => {
-            diagnostics::warn(SCOPE, format!("Importing 0.0.7's settings failed: {err}"));
-            return None;
-        }
-        Err(err) => {
-            diagnostics::warn(SCOPE, format!("Importing 0.0.7's settings stopped: {err}"));
-            return None;
-        }
+        Ok(Err(err)) => return Some(failed(&used, &err)),
+        Err(err) => return Some(failed(&used, &err)),
     };
     if let Err(err) = recorded {
         diagnostics::warn(
@@ -237,6 +272,15 @@ pub async fn import_once(place: &Place, secrets: &Secrets) -> Option<LegacyImpor
         field: v0_0_7::WSL_GIT_DIRS.to_string(),
         reason: LegacySkipReason::InvalidWslRepo,
     }));
+    skipped.extend(
+        withheld_wsl
+            .into_iter()
+            .map(|(field, reason)| LegacyImportSkipDto {
+                connection: None,
+                field: field.to_string(),
+                reason,
+            }),
+    );
     for skip in &skipped {
         diagnostics::warn(SCOPE, skip_line(skip));
     }
@@ -261,6 +305,22 @@ pub async fn import_once(place: &Place, secrets: &Secrets) -> Option<LegacyImpor
         skipped,
         message,
     })
+}
+
+/// What a pending import's report adds: a `config.toml` written meanwhile ends it.
+const GIVES_UP: &str = "Adding a source before then gives the import up.";
+
+/// The import due and not done: its write failed (a busy lock, a location that keeps no file
+/// private, a seal that did not check), and it is tried again at the next start.
+fn failed(used: &LegacyFile, err: &dyn std::fmt::Display) -> LegacyImportReportDto {
+    let message = format!(
+        "Importing Activity Log 0.0.7's sources from {used} failed: {err}. It is tried again at the next start. {GIVES_UP}"
+    );
+    diagnostics::warn(SCOPE, &message);
+    LegacyImportReportDto::Failed {
+        file: dto(used),
+        message,
+    }
 }
 
 /// Which legacy file the import reads.
@@ -289,16 +349,18 @@ fn choose(place: &Place) -> Option<Choice> {
             (file, read)
         })
     });
+    let env_file = |path| LegacyFile {
+        source: LegacySource::Env,
+        path,
+    };
     let env = match place.env_from.as_deref().map(files::find_env) {
-        Some(EnvFound::Found(path)) => {
-            let read = files::read_env(&path);
-            Some((
-                LegacyFile {
-                    source: LegacySource::Env,
-                    path,
-                },
-                read,
-            ))
+        Some(EnvFound::Found { path, bytes }) => match files::read_env(&bytes) {
+            // A project's own `.env` (a database address, say) is no settings file of 0.0.7's.
+            Read::Values { values, .. } if !values.sets_any() => None,
+            read => Some((env_file(path), read)),
+        },
+        Some(EnvFound::Unreadable(path, kind)) => {
+            Some((env_file(path), Read::Unreadable(Unreadable::Io(kind))))
         }
         Some(EnvFound::NotOwned(path)) => {
             diagnostics::warn(
@@ -387,6 +449,9 @@ fn skip_line(skip: &LegacyImportSkipDto) -> String {
         LegacySkipReason::Invalid => "today's settings do not accept it",
         LegacySkipReason::NoAddress => "it has no server address to be bound to",
         LegacySkipReason::InvalidWslRepo => "it is not Distro:/absolute/path",
+        LegacySkipReason::ReadsEnvironment => {
+            "its line refers to a variable, which the import never reads"
+        }
     };
     match &skip.connection {
         Some(connection) => format!("{connection}: {} was not imported: {why}", skip.field),

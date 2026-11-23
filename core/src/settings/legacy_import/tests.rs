@@ -4,16 +4,18 @@ use std::{
     sync::Arc,
 };
 
-use super::{Place, hint, import_once, marker::MARKER};
+use super::{Place, hint, import_once, marker::MARKER, runs_with};
 use crate::{
     diagnostics,
     model::{LegacyImportReportDto, LegacySkipReason, LegacySource, LegacyStoreWait, Source},
+    profile::Profile,
     provider::{
         connection::{StoredSecret, StoredValue},
         current_os,
     },
     secrets::{
-        DataKey, FrontEnd, MemoryStore, SecretStore, Secrets, StoreCall, StoreErrorKind, StoreKind,
+        DataKey, FrontEnd, Interaction, MemoryStore, SecretStore, Secrets, StoreCall,
+        StoreErrorKind, StoreKind,
     },
     settings::ConfigFile,
 };
@@ -120,7 +122,9 @@ async fn settings_are_imported_once_and_the_legacy_file_is_left_alone() {
     let modified = fs::metadata(&legacy).unwrap().modified().unwrap();
     let (secrets, os, _) = secrets(FrontEnd::Desktop, true, &fixture.root);
 
-    let report = import_once(&fixture.place, &secrets).await.unwrap();
+    let report = import_once(&fixture.place, &secrets, Interaction::Allowed)
+        .await
+        .unwrap();
     let LegacyImportReportDto::Imported {
         file,
         unused,
@@ -149,7 +153,10 @@ async fn settings_are_imported_once_and_the_legacy_file_is_left_alone() {
     assert_eq!(fs::read(&legacy).unwrap(), before);
     assert_eq!(fs::metadata(&legacy).unwrap().modified().unwrap(), modified);
 
-    assert_eq!(import_once(&fixture.place, &secrets).await, None);
+    assert_eq!(
+        import_once(&fixture.place, &secrets, Interaction::Allowed).await,
+        None
+    );
     assert_eq!(fixture.config().unwrap(), text);
 }
 
@@ -160,21 +167,30 @@ async fn an_import_runs_only_where_it_is_due() {
     let (secrets, _, _) = secrets(FrontEnd::Desktop, true, Path::new("/nonexistent"));
 
     let nothing = Fixture::new();
-    assert_eq!(import_once(&nothing.place, &secrets).await, None);
+    assert_eq!(
+        import_once(&nothing.place, &secrets, Interaction::Allowed).await,
+        None
+    );
     assert_eq!(nothing.config(), None);
 
     let empty = Fixture::new();
     empty.settings(gitlab_settings());
     fs::create_dir_all(empty.place.config.parent().unwrap()).unwrap();
     fs::write(&empty.place.config, "").unwrap();
-    assert_eq!(import_once(&empty.place, &secrets).await, None);
+    assert_eq!(
+        import_once(&empty.place, &secrets, Interaction::Allowed).await,
+        None
+    );
     assert_eq!(empty.config().unwrap(), "");
 
     let marked = Fixture::new();
     marked.settings(gitlab_settings());
     fs::create_dir_all(marked.place.config.parent().unwrap()).unwrap();
     fs::write(marked.marker(), "release = \"0.0.7\"\n").unwrap();
-    assert_eq!(import_once(&marked.place, &secrets).await, None);
+    assert_eq!(
+        import_once(&marked.place, &secrets, Interaction::Allowed).await,
+        None
+    );
     assert_eq!(marked.config(), None);
 
     // A config path given, or the dev profile: no place at all.
@@ -189,7 +205,7 @@ async fn settings_json_wins_only_when_it_sets_a_key() {
     let env = both.env("GITLAB_USER=from-env\n");
     let (secrets, _, _) = secrets(FrontEnd::Cli, true, &both.root);
     let Some(LegacyImportReportDto::Imported { file, unused, .. }) =
-        import_once(&both.place, &secrets).await
+        import_once(&both.place, &secrets, Interaction::Allowed).await
     else {
         panic!("not imported");
     };
@@ -201,7 +217,7 @@ async fn settings_json_wins_only_when_it_sets_a_key() {
     unset.settings(serde_json::json!({ "GITLAB_USER": null, "GITLAB_URL": " ", "OTHER": "x" }));
     unset.env("GITLAB_USER=from-env\n");
     let Some(LegacyImportReportDto::Imported { file, unused, .. }) =
-        import_once(&unset.place, &secrets).await
+        import_once(&unset.place, &secrets, Interaction::Allowed).await
     else {
         panic!("not imported");
     };
@@ -217,7 +233,9 @@ async fn the_desktop_waits_for_its_store() {
     let missing = Fixture::new();
     missing.settings(gitlab_settings());
     let (secrets_none, _, file) = secrets(FrontEnd::Desktop, false, &missing.root);
-    let report = import_once(&missing.place, &secrets_none).await.unwrap();
+    let report = import_once(&missing.place, &secrets_none, Interaction::Allowed)
+        .await
+        .unwrap();
     assert!(
         matches!(
             report,
@@ -236,7 +254,9 @@ async fn the_desktop_waits_for_its_store() {
     refused.settings(gitlab_settings());
     let (secrets, os, _) = secrets(FrontEnd::Desktop, true, &refused.root);
     os.fail_next(StoreCall::Read, StoreErrorKind::Refused);
-    let report = import_once(&refused.place, &secrets).await.unwrap();
+    let report = import_once(&refused.place, &secrets, Interaction::Allowed)
+        .await
+        .unwrap();
     assert!(matches!(
         report,
         LegacyImportReportDto::Postponed {
@@ -247,14 +267,14 @@ async fn the_desktop_waits_for_its_store() {
     assert_eq!(refused.config(), None);
     // The next start imports.
     assert!(matches!(
-        import_once(&refused.place, &secrets).await,
+        import_once(&refused.place, &secrets, Interaction::Allowed).await,
         Some(LegacyImportReportDto::Imported { .. })
     ));
 
     let no_token = Fixture::new();
     no_token.settings(serde_json::json!({ "GITLAB_USER": "me" }));
     assert!(matches!(
-        import_once(&no_token.place, &secrets_none).await,
+        import_once(&no_token.place, &secrets_none, Interaction::Allowed).await,
         Some(LegacyImportReportDto::Imported { .. })
     ));
 }
@@ -266,7 +286,7 @@ async fn the_cli_falls_back_to_the_key_file_but_not_past_a_refusal() {
     fallback.settings(gitlab_settings());
     let (secrets_file, _, file) = secrets(FrontEnd::Cli, false, &fallback.root);
     assert!(matches!(
-        import_once(&fallback.place, &secrets_file).await,
+        import_once(&fallback.place, &secrets_file, Interaction::Allowed).await,
         Some(LegacyImportReportDto::Imported { .. })
     ));
     let config = ConfigFile::load(&fallback.place.config).unwrap();
@@ -281,7 +301,7 @@ async fn the_cli_falls_back_to_the_key_file_but_not_past_a_refusal() {
     let (secrets, os, _) = secrets(FrontEnd::Cli, true, &refused.root);
     os.fail_next(StoreCall::Read, StoreErrorKind::Refused);
     assert!(matches!(
-        import_once(&refused.place, &secrets).await,
+        import_once(&refused.place, &secrets, Interaction::Allowed).await,
         Some(LegacyImportReportDto::Postponed {
             store: LegacyStoreWait::Refused,
             ..
@@ -308,7 +328,8 @@ async fn a_config_another_process_wrote_first_wins() {
     );
     let gate = os.hold_reads();
     let place = fixture.place.clone();
-    let import = tokio::spawn(async move { import_once(&place, &secrets).await });
+    let import =
+        tokio::spawn(async move { import_once(&place, &secrets, Interaction::Allowed).await });
     tokio::time::sleep(std::time::Duration::from_millis(50)).await;
     let theirs = "[[git]]\nname = \"theirs\"\nlabel = \"Theirs\"\n";
     fs::create_dir_all(fixture.place.config.parent().unwrap()).unwrap();
@@ -333,7 +354,9 @@ async fn what_is_left_out_is_reported_without_values() {
         "UNKNOWN_KEY": "unknown-value-0000",
     }));
     let (secrets, os, _) = secrets(FrontEnd::Desktop, true, &fixture.root);
-    let report = import_once(&fixture.place, &secrets).await.unwrap();
+    let report = import_once(&fixture.place, &secrets, Interaction::Allowed)
+        .await
+        .unwrap();
     let LegacyImportReportDto::Imported { skipped, .. } = &report else {
         panic!("{report:?}");
     };
@@ -379,7 +402,7 @@ async fn an_unreadable_settings_json_imports_nothing() {
     fixture.settings(serde_json::json!({ "GITLAB_URL": { "nested": URL } }));
     let (secrets, _, _) = secrets(FrontEnd::Desktop, true, &fixture.root);
     assert!(matches!(
-        import_once(&fixture.place, &secrets).await,
+        import_once(&fixture.place, &secrets, Interaction::Allowed).await,
         Some(LegacyImportReportDto::Unreadable { .. })
     ));
     assert_eq!(fixture.config(), None);
@@ -407,4 +430,134 @@ fn the_api_hint_names_the_file_and_writes_nothing() {
     fs::write(&fixture.place.config, "").unwrap();
     hint(&fixture.place);
     assert_eq!(said(&legacy), 1);
+}
+
+/// Only the default config path of the installed profile imports: a path given (`--config`,
+/// `ACTIVITY_LOG_CONFIG`) or the dev profile never does.
+#[test]
+fn only_the_default_path_of_the_installed_profile_imports() {
+    assert!(runs_with(false, Profile::Installed));
+    assert!(!runs_with(true, Profile::Installed));
+    assert!(!runs_with(false, Profile::Dev));
+    assert!(!runs_with(true, Profile::Dev));
+}
+
+/// A project's `.env` that sets none of 0.0.7's settings is no legacy file: nothing is
+/// written, and no marker uses up the import.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_dotenv_without_0_0_7s_settings_imports_nothing() {
+    let fixture = Fixture::new();
+    fixture.env("DATABASE_URL=postgres://db.example.test/app\n");
+    let (secrets, _, _) = secrets(FrontEnd::Cli, true, &fixture.root);
+    assert_eq!(
+        import_once(&fixture.place, &secrets, Interaction::Allowed).await,
+        None
+    );
+    assert_eq!(fixture.config(), None);
+    assert!(!fixture.marker().exists());
+}
+
+/// A `.env` whose token refers to a variable never brings the environment's value: the token
+/// is left out and reported, and nothing of the variable reaches the file or a log line.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_dotenv_token_that_refers_to_the_environment_is_left_out() {
+    // SAFETY: a name only this test uses.
+    unsafe { std::env::set_var("ACTIVITY_LOG_TEST_SECRET", "glpat-environment-0000") };
+    let fixture = Fixture::new();
+    fixture.env(
+        "GITLAB_URL=http://collector.example.test\nGITLAB_TOKEN=${ACTIVITY_LOG_TEST_SECRET}\n",
+    );
+    let (secrets, os, _) = secrets(FrontEnd::Cli, true, &fixture.root);
+    let Some(LegacyImportReportDto::Imported { skipped, .. }) =
+        import_once(&fixture.place, &secrets, Interaction::Allowed).await
+    else {
+        panic!("not imported");
+    };
+    assert_eq!(skipped.len(), 1);
+    assert_eq!(skipped[0].field, "GITLAB_TOKEN");
+    assert_eq!(skipped[0].reason, LegacySkipReason::ReadsEnvironment);
+    assert_eq!(
+        skipped[0].connection.as_ref().map(|id| id.source.clone()),
+        Some(Source::Gitlab)
+    );
+    // No token, so no key was read.
+    assert_eq!(os.calls().reads, 0);
+    let config = ConfigFile::load(&fixture.place.config).unwrap();
+    assert_eq!(sealed_store(&config, Source::Gitlab, "GITLAB_TOKEN"), None);
+    let said = fixture.config().unwrap()
+        + &diagnostics::entries()
+            .iter()
+            .map(|entry| entry.message.clone())
+            .collect::<String>();
+    assert!(!said.contains("glpat-environment-0000"));
+}
+
+/// A write that fails leaves the import due and says so: the report is `failed`, nothing and
+/// no marker is written, and the next start tries again.
+#[cfg(unix)]
+#[tokio::test(flavor = "multi_thread")]
+async fn a_failed_write_is_reported_and_tried_again() {
+    use std::os::unix::fs::PermissionsExt;
+
+    let fixture = Fixture::new();
+    fixture.settings(serde_json::json!({ "GITLAB_USER": "me" }));
+    let folder = fixture.place.config.parent().unwrap().to_path_buf();
+    fs::create_dir_all(&folder).unwrap();
+    // A folder other accounts may write to keeps no file private.
+    fs::set_permissions(&folder, fs::Permissions::from_mode(0o777)).unwrap();
+    let (secrets, _, _) = secrets(FrontEnd::Desktop, true, &fixture.root);
+    let report = import_once(&fixture.place, &secrets, Interaction::Never).await;
+    assert!(
+        matches!(report, Some(LegacyImportReportDto::Failed { .. })),
+        "{report:?}"
+    );
+    assert_eq!(fixture.config(), None);
+    assert!(!fixture.marker().exists());
+
+    fs::set_permissions(&folder, fs::Permissions::from_mode(0o700)).unwrap();
+    assert!(matches!(
+        import_once(&fixture.place, &secrets, Interaction::Never).await,
+        Some(LegacyImportReportDto::Imported { .. })
+    ));
+}
+
+/// The desktop's start reads the key without a dialog, creating it included.
+#[tokio::test(flavor = "multi_thread")]
+async fn the_start_asks_the_store_without_a_dialog() {
+    let fixture = Fixture::new();
+    fixture.settings(gitlab_settings());
+    let (secrets, os, _) = secrets(FrontEnd::Desktop, true, &fixture.root);
+    assert!(matches!(
+        import_once(&fixture.place, &secrets, Interaction::Never).await,
+        Some(LegacyImportReportDto::Imported { .. })
+    ));
+    assert!(!os.read_interactions().is_empty());
+    assert!(
+        os.read_interactions()
+            .iter()
+            .chain(&os.create_interactions())
+            .all(|interaction| *interaction == Interaction::Never)
+    );
+}
+
+/// Giving the import up writes the marker and no config; no import runs after it.
+#[tokio::test(flavor = "multi_thread")]
+async fn an_import_given_up_never_runs() {
+    let fixture = Fixture::new();
+    fixture.settings(gitlab_settings());
+    assert_eq!(
+        super::give_up(&fixture.place).unwrap(),
+        super::GiveUp::GaveUp
+    );
+    assert_eq!(fixture.config(), None);
+    assert!(fixture.marker().is_file());
+    let (secrets, _, _) = secrets(FrontEnd::Desktop, true, &fixture.root);
+    assert_eq!(
+        import_once(&fixture.place, &secrets, Interaction::Allowed).await,
+        None
+    );
+    assert_eq!(
+        super::give_up(&fixture.place).unwrap(),
+        super::GiveUp::NotDue
+    );
 }

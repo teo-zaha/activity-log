@@ -400,3 +400,53 @@ fn a_first_command_imports_0_0_7s_dotenv_once() {
     assert!(!stderr(&again).contains("Imported"), "{}", stderr(&again));
     assert_eq!(fs::read_to_string(&config).unwrap(), written);
 }
+
+/// While 0.0.7's import waits (here no key can be kept: the key file's folder is open to
+/// every account), a command that would write `config.toml` is refused, so the import is not
+/// given up by accident; one that only reads runs. `config skip-import` gives it up on purpose.
+#[cfg(unix)]
+#[test]
+fn a_waiting_import_holds_back_commands_that_write_the_settings() {
+    use std::os::unix::fs::PermissionsExt;
+
+    let dir = tempfile::tempdir().unwrap();
+    let open = dir.path().join("open");
+    fs::create_dir(&open).unwrap();
+    fs::set_permissions(&open, fs::Permissions::from_mode(0o777)).unwrap();
+    fs::write(
+        dir.path().join(".env"),
+        "GITLAB_URL=https://gitlab.example.test\nGITLAB_TOKEN=glpat-test-0000\n",
+    )
+    .unwrap();
+    let run = |args: &[&str]| {
+        cli(dir.path())
+            .env("ACTIVITY_LOG_SECRET_KEY_FILE", open.join("secret.key"))
+            .env_remove("ACTIVITY_LOG_PROFILE")
+            .args(args)
+            .stdin(Stdio::null())
+            .output()
+            .unwrap()
+    };
+    let path = run(&["config", "path"]);
+    let config = std::path::PathBuf::from(String::from_utf8_lossy(&path.stdout).trim());
+
+    let refused = run(&["sources", "add", "system"]);
+    assert_eq!(refused.status.code(), Some(1), "{}", stderr(&refused));
+    assert!(
+        stderr(&refused).contains("skip-import"),
+        "{}",
+        stderr(&refused)
+    );
+    assert!(!config.exists());
+
+    let listed = run(&["sources"]);
+    assert!(listed.status.success(), "{}", stderr(&listed));
+    assert!(!config.exists());
+
+    let skipped = run(&["config", "skip-import"]);
+    assert!(skipped.status.success(), "{}", stderr(&skipped));
+    assert!(config.with_file_name("legacy-import.toml").is_file());
+    let added = run(&["sources", "add", "system"]);
+    assert!(added.status.success(), "{}", stderr(&added));
+    assert!(!fs::read_to_string(&config).unwrap().contains("gitlab"));
+}

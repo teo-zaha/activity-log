@@ -13,7 +13,6 @@ import { RECONNECT_DELAYS_MS } from './services/runtime-state/push-state-source'
 import { MockBackendTransport, provideMockBackend } from './testing/activity-fixtures'
 import { provideDashboardDates } from './utils/date-adapter'
 import { BackendFailure } from './services/backend/backend-failure'
-import { failure } from './services/failure'
 import { NoticeService } from './services/notice.service'
 import { APP_RENDER_TEST } from './testing/timeouts'
 
@@ -79,7 +78,7 @@ describe('AppComponent', APP_RENDER_TEST, () => {
     const notices = TestBed.inject(NoticeService)
     notices.show({
       origin: 'import',
-      failure: failure('Imported 3 sources; 1 of its values was left out'),
+      info: 'Imported 3 sources; 1 of its values was left out',
       action: { kind: 'openSettings', selection: 'logs' },
     })
     await fixture.whenStable()

@@ -3,11 +3,15 @@
 //! `ProviderConfig`'s `list` and `bool`, `parse_config_list`, `encode_config_list`,
 //! `parse_bool` and the Windows `parse_wsl_repo`. Today's helpers of the same names may change;
 //! these must not. Two departures, both the import's own rules: a blank value is unset (0.0.7
-//! sent it on and failed later), and the process environment is never read.
+//! sent it on and failed later), and nothing comes from the process environment: 0.0.7 let a
+//! variable win over its `.env` and filled `$VAR` references in from it, while the import reads
+//! no variable and leaves out a `.env` setting that refers to one (`files::read_env`).
 
 use std::collections::BTreeMap;
 
 use serde_json::Value as JsonValue;
+
+use crate::model::LegacySkipReason;
 
 #[cfg(test)]
 mod tests;
@@ -94,18 +98,38 @@ pub(super) fn read_store_provider_config(
     Ok(values)
 }
 
-/// The values a legacy file gives, read as 0.0.7's `ProviderConfig` read them.
+/// The values a legacy file gives, read as 0.0.7's `ProviderConfig` read them, and the keys of
+/// 0.0.7 it set but the import leaves out, with why.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
-pub(super) struct LegacyValues(BTreeMap<String, Option<String>>);
+pub(super) struct LegacyValues {
+    values: BTreeMap<String, Option<String>>,
+    withheld: BTreeMap<&'static str, LegacySkipReason>,
+}
 
 impl LegacyValues {
     pub(super) fn new(values: BTreeMap<String, Option<String>>) -> Self {
-        Self(values)
+        Self {
+            values,
+            withheld: BTreeMap::new(),
+        }
+    }
+
+    /// Leaves `key` out, a key 0.0.7 read; any other is not imported anyway.
+    pub(super) fn withhold(&mut self, key: &str, reason: LegacySkipReason) {
+        if let Some(key) = KEYS.iter().find(|known| **known == key) {
+            self.values.remove(*key);
+            self.withheld.insert(key, reason);
+        }
+    }
+
+    /// Why `key` was left out, if it was.
+    pub(super) fn withheld(&self, key: &str) -> Option<LegacySkipReason> {
+        self.withheld.get(key).copied()
     }
 
     /// The text of `key`; an explicit `null`, an absent key and a blank value are unset.
     pub(super) fn get(&self, key: &str) -> Option<&str> {
-        self.0
+        self.values
             .get(key)
             .and_then(Option::as_deref)
             .filter(|value| !value.trim().is_empty())
@@ -121,15 +145,21 @@ impl LegacyValues {
         self.get(key).and_then(parse_bool).unwrap_or(false)
     }
 
-    /// Whether any key 0.0.7 read is set by these rules: a file that sets none gives nothing
-    /// to prefer it for (Q12).
+    /// Whether `key` is set by these rules, or was set and left out.
+    pub(super) fn mentions(&self, key: &str) -> bool {
+        self.get(key).is_some() || self.withheld(key).is_some()
+    }
+
+    /// Whether any key 0.0.7 read is set by these rules (or set and left out): a file that
+    /// sets none gives nothing to prefer it for (Q12), and a `.env` that sets none is no
+    /// settings file of 0.0.7's.
     pub(super) fn sets_any(&self) -> bool {
-        KEYS.iter().any(|key| self.get(key).is_some())
+        KEYS.iter().any(|key| self.mentions(key))
     }
 
     /// The keys 0.0.7 did not read, by name only.
     pub(super) fn unknown_keys(&self) -> Vec<&str> {
-        self.0
+        self.values
             .keys()
             .map(String::as_str)
             .filter(|key| !KEYS.contains(key))

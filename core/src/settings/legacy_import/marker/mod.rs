@@ -7,7 +7,7 @@ use std::path::Path;
 
 use toml_edit::{Array, ArrayOfTables, DocumentMut, Table, value};
 
-use crate::model::{LegacyImportSkipDto, LegacySkipReason, LegacySource};
+use crate::model::{LegacyImportSkipDto, LegacySource};
 
 #[cfg(test)]
 mod tests;
@@ -33,10 +33,7 @@ impl Record {
         let mut doc = DocumentMut::new();
         doc["release"] = value(RELEASE);
         doc["at"] = value(&self.at);
-        doc["used"] = value(match self.used {
-            LegacySource::Settings => "settings",
-            LegacySource::Env => "env",
-        });
+        doc["used"] = value(wire_name(&self.used));
         doc["path"] = value(&self.path);
         doc["found_unused"] = value(self.found_unused.iter().collect::<Array>());
         doc["imported"] = value(self.imported.iter().collect::<Array>());
@@ -47,17 +44,31 @@ impl Record {
                 table["connection"] = value(connection.to_string());
             }
             table["field"] = value(&skip.field);
-            table["reason"] = value(match skip.reason {
-                LegacySkipReason::Invalid => "invalid",
-                LegacySkipReason::NoAddress => "noAddress",
-                LegacySkipReason::InvalidWslRepo => "invalidWslRepo",
-            });
+            table["reason"] = value(wire_name(&skip.reason));
             skipped.push(table);
         }
         if !skipped.is_empty() {
             doc["skipped"] = toml_edit::Item::ArrayOfTables(skipped);
         }
         doc.to_string()
+    }
+}
+
+/// The marker of an import given up on purpose (`activity-log config skip-import`): nothing
+/// was imported, and nothing will be.
+pub(super) fn given_up_toml(at: &str) -> String {
+    let mut doc = DocumentMut::new();
+    doc["release"] = value(RELEASE);
+    doc["at"] = value(at);
+    doc["given_up"] = value(true);
+    doc.to_string()
+}
+
+/// A unit variant's name as the contract spells it.
+fn wire_name(variant: &impl serde::Serialize) -> String {
+    match serde_json::to_value(variant) {
+        Ok(serde_json::Value::String(name)) => name,
+        _ => unreachable!("a unit variant serializes as its name"),
     }
 }
 

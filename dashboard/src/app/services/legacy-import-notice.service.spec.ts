@@ -3,9 +3,11 @@ import { describe, expect, it, vi } from 'vitest'
 import type { LegacyFileDto, LegacyImportReportDto } from '../generated/activity'
 import { ActivityBackendClient } from './backend/backend-client'
 import { BackendFailure } from './backend/backend-failure'
+import type { NoticeAction } from './failure'
 import { RuntimeEnvironmentService } from './backend/runtime-environment.service'
 import { LegacyImportNoticeService, legacyImportNotice } from './legacy-import-notice.service'
 import { NoticeService } from './notice.service'
+import { ToastService } from './toast.service'
 
 const file: LegacyFileDto = { source: 'settings', path: '/x/settings.json' }
 
@@ -18,7 +20,7 @@ function imported(skipped: Imported['skipped']): Imported {
     imported: [{ source: 'gitlab', name: 'gitlab' }],
     skipped,
     message: 'Imported 1 sources',
-  } satisfies LegacyImportReportDto
+  }
 }
 
 describe('legacyImportNotice', () => {
@@ -27,7 +29,7 @@ describe('legacyImportNotice', () => {
     expect(legacyImportNotice(imported([]))).toBeNull()
   })
 
-  it('opens the source a value was left out of', () => {
+  it('shows left-out values as news, not a failure, opening the source they were for', () => {
     const notice = legacyImportNotice(
       imported([
         { field: 'WSL_GIT_DIRS', reason: 'invalidWslRepo' },
@@ -38,7 +40,7 @@ describe('legacyImportNotice', () => {
         },
       ])
     )
-    expect(notice?.origin).toBe('import')
+    expect(notice && 'failure' in notice).toBe(false)
     expect(notice?.action).toEqual({ kind: 'openSettings', selection: 'gitlab/gitlab' })
   })
 
@@ -49,32 +51,44 @@ describe('legacyImportNotice', () => {
     expect(notice?.action).toEqual({ kind: 'openSettings', selection: 'logs' })
   })
 
-  it('offers the settings for an import that waits or could not read its file', () => {
-    for (const report of [
-      { kind: 'postponed', file, store: 'unavailable', message: 'waits' },
-      { kind: 'unreadable', file, message: 'could not be read' },
-    ] satisfies LegacyImportReportDto[]) {
-      expect(legacyImportNotice(report)?.action).toEqual({
-        kind: 'openSettings',
-        selection: 'home',
-      })
-    }
+  it('offers the import with the keychain asking where it was refused or failed', () => {
+    const waits = (report: LegacyImportReportDto): NoticeAction | undefined =>
+      legacyImportNotice(report)?.action
+    expect(waits({ kind: 'postponed', file, store: 'refused', message: 'waits' })).toEqual({
+      kind: 'importLegacy',
+    })
+    expect(waits({ kind: 'failed', file, message: 'failed' })).toEqual({ kind: 'importLegacy' })
+    expect(waits({ kind: 'postponed', file, store: 'unavailable', message: 'waits' })).toEqual({
+      kind: 'openSettings',
+      selection: 'home',
+    })
+    expect(waits({ kind: 'unreadable', file, message: 'could not be read' })).toBeUndefined()
   })
 })
 
 describe('LegacyImportNoticeService', () => {
   function setup(
     isTauri: boolean,
-    take: () => Promise<LegacyImportReportDto | null>
-  ): { takeLegacyImportReport: ReturnType<typeof vi.fn>; notices: NoticeService } {
+    take: () => Promise<LegacyImportReportDto | null>,
+    importNow: () => Promise<LegacyImportReportDto | null> = () => Promise.resolve(null)
+  ): {
+    takeLegacyImportReport: ReturnType<typeof vi.fn>
+    notices: NoticeService
+    success: ReturnType<typeof vi.fn>
+  } {
     const takeLegacyImportReport = vi.fn(take)
+    const success = vi.fn()
     TestBed.configureTestingModule({
       providers: [
         { provide: RuntimeEnvironmentService, useValue: { isTauri: (): boolean => isTauri } },
-        { provide: ActivityBackendClient, useValue: { takeLegacyImportReport } },
+        {
+          provide: ActivityBackendClient,
+          useValue: { takeLegacyImportReport, importLegacySettings: vi.fn(importNow) },
+        },
+        { provide: ToastService, useValue: { success } },
       ],
     })
-    return { takeLegacyImportReport, notices: TestBed.inject(NoticeService) }
+    return { takeLegacyImportReport, notices: TestBed.inject(NoticeService), success }
   }
 
   it('shows the desktop report as a notice', async () => {
@@ -99,5 +113,23 @@ describe('LegacyImportNoticeService', () => {
     expect(notices.current()).toBeNull()
     expect(warn).toHaveBeenCalled()
     warn.mockRestore()
+  })
+
+  it('confirms an import the user asked for, and shows one refused again', async () => {
+    const answers: (LegacyImportReportDto | null)[] = [
+      imported([]),
+      { kind: 'postponed', file, store: 'refused', message: 'waits' },
+    ]
+    const { notices, success } = setup(
+      true,
+      () => Promise.resolve(null),
+      () => Promise.resolve(answers.shift() ?? null)
+    )
+    const service = TestBed.inject(LegacyImportNoticeService)
+    await service.importNow()
+    expect(success).toHaveBeenCalledWith('Imported 1 sources')
+    expect(notices.current()).toBeNull()
+    await service.importNow()
+    expect(notices.current()?.action).toEqual({ kind: 'importLegacy' })
   })
 })

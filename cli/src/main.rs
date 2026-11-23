@@ -164,6 +164,9 @@ enum ConfigCommand {
     /// Edit the config file in $VISUAL or $EDITOR. The editor gets a private copy, which is
     /// saved when it changed and the file did not change meanwhile.
     Edit,
+    /// Give up importing Activity Log 0.0.7's settings, which waits (for the keychain, or a file
+    /// to be fixed): commands that write the settings then work again.
+    SkipImport,
 }
 
 #[tokio::main]
@@ -191,18 +194,86 @@ async fn main() -> ExitCode {
     }
 }
 
+/// What a command does with 0.0.7's settings before it runs.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Import {
+    /// It reads or writes no source (`config path`, `config skip-import`).
+    None,
+    /// It reads the sources: the import runs first, and one that waits leaves it be.
+    Reads,
+    /// It writes `config.toml`, which would give up an import that waits: it is refused then.
+    Writes,
+}
+
+impl Import {
+    fn of(command: Option<&Command>) -> Self {
+        match command {
+            Some(Command::Config {
+                action: ConfigCommand::Path | ConfigCommand::SkipImport,
+            }) => Self::None,
+            Some(Command::Config {
+                action: ConfigCommand::Edit,
+            })
+            | Some(Command::Sources { action: Some(_) }) => Self::Writes,
+            None | Some(Command::Sources { action: None }) => Self::Reads,
+        }
+    }
+}
+
+/// A command that writes the settings while 0.0.7's import is due and not done: the import's
+/// own lines said why.
+#[derive(Debug)]
+struct ImportWaits;
+
+impl std::fmt::Display for ImportWaits {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(
+            "Activity Log 0.0.7's sources are not imported yet, and this command would write config.toml, which gives the import up. Run any `activity-log` command again once the keychain can answer (or the file is fixed) to import them, or give the import up with `activity-log config skip-import`.",
+        )
+    }
+}
+
+impl std::error::Error for ImportWaits {}
+
 /// 0.0.7's sources, imported once on the default config path. What it says goes to standard
-/// error: its warnings as they are logged, and the line naming what it imported.
-async fn import_legacy(config: Option<&Path>) {
+/// error: its warnings as they are logged, and the line naming what it imported. A command that
+/// writes the settings is refused while the import waits ([`ImportWaits`]).
+async fn import_legacy(config: Option<&Path>, import: Import) -> Result<()> {
+    if import == Import::None {
+        return Ok(());
+    }
     let Some(place) = legacy_import::Place::for_front_end(FrontEnd::Cli, config) else {
-        return;
+        return Ok(());
     };
     let secrets = Secrets::cli(ConfigFile::resolve_path(config).as_deref());
-    if let Some(LegacyImportReportDto::Imported { message, .. }) =
-        legacy_import::import_once(&place, &secrets).await
-    {
-        let _ = writeln!(io::stderr(), "{message}");
+    match legacy_import::import_once(&place, &secrets, Interaction::Allowed).await {
+        Some(LegacyImportReportDto::Imported { message, .. }) => {
+            let _ = writeln!(io::stderr(), "{message}");
+            Ok(())
+        }
+        Some(
+            LegacyImportReportDto::Postponed { .. }
+            | LegacyImportReportDto::Unreadable { .. }
+            | LegacyImportReportDto::Failed { .. },
+        ) if import == Import::Writes => Err(ImportWaits.into()),
+        Some(_) | None => Ok(()),
     }
+}
+
+/// `config skip-import`: the marker that gives 0.0.7's import up, where it is due.
+fn skip_import(config: Option<&Path>) -> Result<()> {
+    let mut status = Status::stdout();
+    let given_up = match legacy_import::Place::for_front_end(FrontEnd::Cli, config) {
+        Some(place) => legacy_import::give_up(&place)?,
+        None => legacy_import::GiveUp::NotDue,
+    };
+    match given_up {
+        legacy_import::GiveUp::GaveUp => {
+            status.say("The import of Activity Log 0.0.7's settings was given up")?
+        }
+        legacy_import::GiveUp::NotDue => status.say("No import of 0.0.7's settings is due")?,
+    }
+    Ok(())
 }
 
 fn fatal(err: &anyhow::Error) -> ExitCode {
@@ -214,15 +285,7 @@ fn fatal(err: &anyhow::Error) -> ExitCode {
 async fn run(cli: Cli) -> Result<ExitCode> {
     let config = cli.config.as_deref();
     // Every command that reads the sources first imports 0.0.7's, where that is due.
-    let path_only = matches!(
-        cli.command,
-        Some(Command::Config {
-            action: ConfigCommand::Path
-        })
-    );
-    if !path_only {
-        import_legacy(config).await;
-    }
+    import_legacy(config, Import::of(cli.command.as_ref())).await?;
     match cli.command {
         None => return collect(&cli.collect, config).await,
         Some(Command::Sources { action: None }) => list_sources(config).await?,
@@ -235,6 +298,9 @@ async fn run(cli: Cli) -> Result<ExitCode> {
         Some(Command::Config {
             action: ConfigCommand::Edit,
         }) => edit_in_editor(config)?,
+        Some(Command::Config {
+            action: ConfigCommand::SkipImport,
+        }) => skip_import(config)?,
     }
     Ok(ExitCode::SUCCESS)
 }

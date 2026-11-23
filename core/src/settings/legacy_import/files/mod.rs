@@ -9,6 +9,7 @@ use std::{
 };
 
 use super::v0_0_7::{LegacyValues, StoreRefusal, read_store_provider_config};
+use crate::model::LegacySkipReason;
 pub use crate::model::LegacySource;
 use crate::platform::{dirs, private_file};
 
@@ -87,13 +88,21 @@ pub(super) fn settings_json_path() -> Option<PathBuf> {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(super) enum EnvFound {
     None,
-    Found(PathBuf),
+    /// The user's own `.env`, read from the very handle its owner was judged on.
+    Found {
+        path: PathBuf,
+        bytes: Vec<u8>,
+    },
     /// The first `.env` up the walk belongs to another account (or its owner cannot be told):
     /// it is not read, and the walk stops there, as 0.0.7's would have.
     NotOwned(PathBuf),
+    /// It could not be opened or read.
+    Unreadable(PathBuf, io::ErrorKind),
 }
 
-/// The first regular file named `.env` from `start` up to the root, a link followed.
+/// The first regular file named `.env` from `start` up to the root, a link followed. It is
+/// opened once: its owner is judged on that handle and its bytes read through it, so no other
+/// file can take its place in between.
 pub(super) fn find_env(start: &Path) -> EnvFound {
     let Some(path) = start
         .ancestors()
@@ -102,9 +111,23 @@ pub(super) fn find_env(start: &Path) -> EnvFound {
     else {
         return EnvFound::None;
     };
-    match private_file::owned_by_user(&path) {
-        Ok(true) => EnvFound::Found(path),
-        Ok(false) | Err(_) => EnvFound::NotOwned(path),
+    let mut file = match std::fs::File::open(&path) {
+        Ok(file) => file,
+        Err(err) => return EnvFound::Unreadable(path, err.kind()),
+    };
+    match file.metadata() {
+        Ok(meta) if meta.is_file() => {}
+        Ok(_) => return EnvFound::Unreadable(path, io::ErrorKind::InvalidInput),
+        Err(err) => return EnvFound::Unreadable(path, err.kind()),
+    }
+    match private_file::owned_by_user(&file) {
+        Ok(true) => {}
+        Ok(false) | Err(_) => return EnvFound::NotOwned(path),
+    }
+    let mut bytes = Vec::new();
+    match io::Read::read_to_end(&mut file, &mut bytes) {
+        Ok(_) => EnvFound::Found { path, bytes },
+        Err(err) => EnvFound::Unreadable(path, err.kind()),
     }
 }
 
@@ -129,15 +152,14 @@ pub(super) fn read_settings(path: &Path) -> Option<Read> {
 
 /// A `.env` as text pairs, the first of a repeated key winning, as 0.0.7's `dotenv()` set them
 /// (it never replaced a variable it had set). Parsed by `dotenvy`, the parser 0.0.7 used,
-/// without touching the process environment.
-pub(super) fn read_env(path: &Path) -> Read {
-    let lines = match dotenvy::from_path_iter(path) {
-        Ok(lines) => lines,
-        Err(err) => return Read::Unreadable(Unreadable::Io(io_kind(&err))),
-    };
+/// without touching the process environment. `dotenvy` still fills `$VAR` and `${VAR}` in from
+/// the process environment, which a `.env` from anywhere (a cloned project) could use to send
+/// one of its secrets to a server it names: a setting whose line refers to a variable is left
+/// out ([`LegacySkipReason::ReadsEnvironment`]), whatever its value came to.
+pub(super) fn read_env(bytes: &[u8]) -> Read {
     let mut values = std::collections::BTreeMap::new();
     let mut stopped = false;
-    for line in lines {
+    for line in dotenvy::from_read_iter(bytes) {
         match line {
             Ok((key, value)) => {
                 values.entry(key).or_insert(Some(value));
@@ -150,10 +172,55 @@ pub(super) fn read_env(path: &Path) -> Read {
             Err(err) => return Read::Unreadable(Unreadable::Io(io_kind(&err))),
         }
     }
-    Read::Values {
-        values: LegacyValues::new(values),
-        stopped,
+    let mut values = LegacyValues::new(values);
+    for key in referring_keys(&String::from_utf8_lossy(bytes)) {
+        values.withhold(&key, LegacySkipReason::ReadsEnvironment);
     }
+    Read::Values { values, stopped }
+}
+
+/// The keys of a `.env` whose value holds a `$` that `dotenvy` would read as a variable: one not
+/// escaped by a backslash and outside single quotes, a value spanning lines included. It errs
+/// towards finding one (a `$` in a trailing comment counts), never towards missing one.
+fn referring_keys(text: &str) -> std::collections::BTreeSet<String> {
+    let mut keys = std::collections::BTreeSet::new();
+    let mut lines = text.lines();
+    while let Some(line) = lines.next() {
+        let line = line.trim_start();
+        let line = line.strip_prefix("export ").unwrap_or(line).trim_start();
+        if line.starts_with('#') {
+            continue;
+        }
+        let Some((key, value)) = line.split_once('=') else {
+            continue;
+        };
+        let key = key.trim().to_string();
+        let (mut single, mut double, mut escaped) = (false, false, false);
+        let mut value = value.to_string();
+        loop {
+            for c in value.chars() {
+                match c {
+                    _ if escaped => escaped = false,
+                    '\\' if !single => escaped = true,
+                    '\'' if !double => single = !single,
+                    '"' if !single => double = !double,
+                    '$' if !single => {
+                        keys.insert(key.clone());
+                    }
+                    _ => {}
+                }
+            }
+            // A quote left open goes on to the next line.
+            if !(single || double) {
+                break;
+            }
+            match lines.next() {
+                Some(next) => value = next.to_string(),
+                None => break,
+            }
+        }
+    }
+    keys
 }
 
 fn io_kind(err: &dotenvy::Error) -> io::ErrorKind {

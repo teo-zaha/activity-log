@@ -77,7 +77,7 @@ impl Staging {
     }
 }
 
-pub(super) fn owned_by_user(_path: &Path) -> io::Result<bool> {
+pub(super) fn owned_by_user(_file: &fs::File) -> io::Result<bool> {
     Ok(false)
 }
 

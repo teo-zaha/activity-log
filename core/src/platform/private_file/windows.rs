@@ -429,14 +429,9 @@ fn delete(handle: &OwnedHandle) -> io::Result<()> {
     }
 }
 
-pub(super) fn owned_by_user(path: &Path) -> io::Result<bool> {
-    let handle = open(
-        path,
-        FILE_GENERIC_READ.0,
-        FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
-        OPEN_EXISTING,
-        Default::default(),
-    )?;
+pub(super) fn owned_by_user(file: &File) -> io::Result<bool> {
+    // Opened for reading, which includes `READ_CONTROL`.
+    let handle = OwnedHandle::from(file.try_clone()?);
     let sid = user_sid()?;
     with_security(&handle, |owner, _, _| Ok(sid_string(owner)? == sid))
 }

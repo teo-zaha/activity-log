@@ -262,9 +262,9 @@ impl Drop for Staging {
     }
 }
 
-pub(super) fn owned_by_user(path: &Path) -> io::Result<bool> {
+pub(super) fn owned_by_user(file: &fs::File) -> io::Result<bool> {
     use std::os::unix::fs::MetadataExt;
-    Ok(fs::metadata(path)?.uid() == unsafe { libc::geteuid() })
+    Ok(file.metadata()?.uid() == unsafe { libc::geteuid() })
 }
 
 pub(super) fn readable_by_others(path: &Path) -> io::Result<bool> {

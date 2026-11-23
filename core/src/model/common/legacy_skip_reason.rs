@@ -12,4 +12,7 @@ pub enum LegacySkipReason {
     NoAddress,
     /// A `WSL_GIT_DIRS` item that is not `Distro:/absolute/path`.
     InvalidWslRepo,
+    /// A `.env` line that refers to a variable (`$VAR`, `${VAR}`), which 0.0.7 filled in from
+    /// its environment: the import reads none.
+    ReadsEnvironment,
 }

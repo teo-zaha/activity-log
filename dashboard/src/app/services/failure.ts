@@ -36,21 +36,33 @@ export function refusedAs(failure: Failure, kind: BackendFailureKind): boolean {
   return failure.kind === 'backend' && failure.cause.kind === kind
 }
 
+/** What the snackbar shows: a failure, or news that is none (`InfoNotice`). */
+export type Notice = FailureNotice | InfoNotice
+
 /**
  * A failure of an action that has no place of its own to show it, by the action it belongs to,
  * and what its button does besides dismissing it.
  */
-export interface Notice {
+export interface FailureNotice {
   readonly origin: 'export' | 'view' | 'settings' | 'recheck' | 'import'
   readonly failure: Failure
   readonly action?: NoticeAction
 }
 
-/** A notice's button that does something: it opens the settings at `selection`. */
-export interface NoticeAction {
-  readonly kind: 'openSettings'
-  readonly selection: SettingsSelection
+/** News with something to do and nothing failed: 0.0.7's settings imported, values left out. */
+export interface InfoNotice {
+  readonly origin: 'import'
+  readonly info: string
+  readonly action: NoticeAction
 }
+
+/**
+ * A notice's button that does something: it opens the settings at `selection`, or imports
+ * 0.0.7's settings with the keychain allowed to ask.
+ */
+export type NoticeAction =
+  | { readonly kind: 'openSettings'; readonly selection: SettingsSelection }
+  | { readonly kind: 'importLegacy' }
 
 /**
  * A failure thrown where only an `Error` can go, such as a resource loader: its `failure` is the

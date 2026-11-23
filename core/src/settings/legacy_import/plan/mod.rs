@@ -45,6 +45,13 @@ impl Planned {
         }
     }
 
+    /// `legacy` reported as left out where the file set it and the import withheld it.
+    fn note_withheld(&mut self, values: &LegacyValues, legacy: &'static str) {
+        if let Some(reason) = values.withheld(legacy) {
+            self.skipped.push((legacy, reason));
+        }
+    }
+
     /// `raw` normalized for `key`, or left out with why.
     fn take(&mut self, legacy: &'static str, key: ProviderConfigKey, raw: Submitted<'_>) {
         match normalize(key, raw) {
@@ -75,12 +82,13 @@ impl Planned {
     }
 }
 
-/// The connections to add, in file order, and the `WSL_GIT_DIRS` items no connection was made
-/// from.
+/// The connections to add, in file order, the `WSL_GIT_DIRS` items no connection was made
+/// from, and the WSL keys left out (they name no one connection).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(super) struct Plan {
     pub(super) connections: Vec<Planned>,
     pub(super) invalid_wsl_repos: usize,
+    pub(super) withheld_wsl: Vec<(&'static str, LegacySkipReason)>,
 }
 
 /// The connections `values` stand for on `os`; `wsl_distros` is asked only on Windows with
@@ -98,12 +106,10 @@ pub(super) fn plan(
         (v0_0_7::GITLAB_TOKEN, GITLAB_TOKEN),
         (v0_0_7::GITLAB_USER, GITLAB_USER),
     ];
-    if gitlab
-        .iter()
-        .any(|(legacy, _)| values.get(legacy).is_some())
-    {
+    if gitlab.iter().any(|(legacy, _)| values.mentions(legacy)) {
         let mut planned = Planned::new(Source::Gitlab, ConnectionLocation::Local);
         for (legacy, key) in gitlab {
+            planned.note_withheld(values, legacy);
             if let Some(raw) = text(legacy) {
                 planned.take(legacy, key, raw);
             }
@@ -113,8 +119,11 @@ pub(super) fn plan(
     }
 
     let jira_keys = [v0_0_7::JIRA_URL, v0_0_7::JIRA_TOKEN, v0_0_7::JIRA_INSECURE];
-    if jira_keys.iter().any(|legacy| values.get(legacy).is_some()) {
+    if jira_keys.iter().any(|legacy| values.mentions(legacy)) {
         let mut planned = Planned::new(Source::Jira, ConnectionLocation::Local);
+        for legacy in jira_keys {
+            planned.note_withheld(values, legacy);
+        }
         for (legacy, key) in [
             (v0_0_7::JIRA_URL, JIRA_URL),
             (v0_0_7::JIRA_TOKEN, JIRA_TOKEN),
@@ -136,14 +145,25 @@ pub(super) fn plan(
     }
 
     let mut git = Planned::new(Source::Git, ConnectionLocation::Local);
+    git.note_withheld(values, v0_0_7::GIT_DIRS);
     if let Some(dirs) = values.list(v0_0_7::GIT_DIRS) {
         git.take(v0_0_7::GIT_DIRS, GIT_DIRS, Submitted::List(&dirs));
     }
     connections.push(git);
 
     let mut invalid_wsl_repos = 0;
+    let mut withheld_wsl = Vec::new();
     if os == SupportedOs::Windows {
-        let searched = values.list(v0_0_7::WSL_DISTROS).unwrap_or_else(wsl_distros);
+        for legacy in [v0_0_7::WSL_DISTROS, v0_0_7::WSL_GIT_DIRS] {
+            if let Some(reason) = values.withheld(legacy) {
+                withheld_wsl.push((legacy, reason));
+            }
+        }
+        // A list left out searches nothing: the registry's would be a guess at what it said.
+        let searched = match values.withheld(v0_0_7::WSL_DISTROS) {
+            Some(_) => Vec::new(),
+            None => values.list(v0_0_7::WSL_DISTROS).unwrap_or_else(wsl_distros),
+        };
         let mut repos = BTreeMap::<String, Vec<String>>::new();
         let mut repo_only = Vec::new();
         for spec in values.list(v0_0_7::WSL_GIT_DIRS).unwrap_or_default() {
@@ -186,5 +206,6 @@ pub(super) fn plan(
     Plan {
         connections,
         invalid_wsl_repos,
+        withheld_wsl,
     }
 }

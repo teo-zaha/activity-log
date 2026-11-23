@@ -69,6 +69,11 @@ export class ActivityBackendClient {
     return this.transport.call(BackendOperations.takeLegacyImportReport, undefined)
   }
 
+  /** Imports 0.0.7's settings now, where that is still due, the keychain allowed to ask. */
+  importLegacySettings(): Promise<LegacyImportReportDto | null> {
+    return this.transport.call(BackendOperations.importLegacySettings, undefined)
+  }
+
   /** Opens an http(s) link outside the app, in whichever shell the dashboard runs. */
   openUrl(url: string): Promise<void> {
     return this.transport.openUrl(url)

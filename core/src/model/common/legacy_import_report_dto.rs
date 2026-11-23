@@ -37,4 +37,10 @@ pub enum LegacyImportReportDto {
         file: LegacyFileDto,
         message: String,
     },
+    /// Writing `config.toml` failed (a busy lock, a location that keeps no file private, a
+    /// sealed value that did not check); nothing was written, and a later start tries again.
+    Failed {
+        file: LegacyFileDto,
+        message: String,
+    },
 }

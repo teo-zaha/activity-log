@@ -127,6 +127,20 @@ pub fn edit_config<T>(
     edit_config_with(lock(path)?, precondition, sealing, change)
 }
 
+/// `bytes` written owner-only beside the config file under `name`, under its lock, the file
+/// itself left as it is.
+pub(in crate::settings) fn record_beside(
+    path: &Path,
+    name: &str,
+    bytes: &[u8],
+) -> Result<(), EditError> {
+    let locked = lock(path)?;
+    locked.folder.replace(name, bytes).map_err(|err| match err {
+        ReplaceError::Unprotectable { location } => EditError::Unprotectable { location },
+        err @ ReplaceError::Failed { .. } => EditError::Internal(anyhow!(err)),
+    })
+}
+
 /// [`edit_config`], then, once the file is published and with the lock still held, `record`'s
 /// bytes written owner-only beside it under `name`: a record no other writer may see without
 /// the file. The edit stands whatever the record's write gives, which is returned beside it.

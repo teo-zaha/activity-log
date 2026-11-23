@@ -42,6 +42,7 @@ macro_rules! app_commands {
             commands::clear_logs,
             deep_link::take_launch_deep_link,
             legacy_import::take_legacy_import_report,
+            legacy_import::import_legacy_settings,
             window_chrome::attach_maximize_button
         ]
     };

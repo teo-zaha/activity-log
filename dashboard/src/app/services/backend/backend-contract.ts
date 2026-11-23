@@ -131,6 +131,11 @@ export const BackendOperations = {
     label: 'Importing 0.0.7 settings',
     tauri: DESKTOP_COMMANDS.takeLegacyImportReport,
   }),
+  /** The import of 0.0.7's settings again, the keychain allowed to ask; the user chose it. */
+  importLegacySettings: command<void, LegacyImportReportDto | null>({
+    label: 'Importing 0.0.7 settings',
+    tauri: DESKTOP_COMMANDS.importLegacySettings,
+  }),
   /** Opens a web link in the default browser; the browser opens links itself. */
   openUrl: command<string, void>({ label: 'Open link', tauri: DESKTOP_COMMANDS.openUrl }),
   clearLogs: command<void, void>({

@@ -1157,6 +1157,21 @@ mat-card {
   }
 }
 
+// A notice that is no failure (0.0.7's settings imported, some values left out): the success
+// toast's surface, edged and its button drawn in the accent.
+.info-notice {
+  --mat-snack-bar-container-color: var(--surface);
+  --mat-snack-bar-supporting-text-color: var(--text-primary);
+  --mat-snack-bar-button-color: var(--accent);
+
+  .mat-mdc-snackbar-surface {
+    border: 1px solid var(--hairline);
+    border-left: 3px solid var(--accent);
+    border-radius: 12px !important;
+    box-shadow: var(--panel-shadow-strong);
+  }
+}
+
 // Every notice, its action included, keeps clear of the screen's safe area: Material's 8 px margin
 // plus the inset, which is 0 on the desktop. Below it, it keeps clear of what else holds the
 // bottom of the screen: the phone's bottom bar and the collection's pill or card
