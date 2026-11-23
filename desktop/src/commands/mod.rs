@@ -78,7 +78,7 @@ pub(crate) async fn check_provider_config(
     request: ProviderConfigSaveRequestDto,
 ) -> Result<Vec<ProviderConfigFieldIssueDto>, BackendError> {
     let base = state.snapshots.base(
-        request.based_on.as_deref(),
+        &request.based_on,
         &request.connection,
         &touched_fields(&request),
     );
@@ -101,7 +101,7 @@ pub(crate) async fn save_provider_config(
     let precondition = state
         .snapshots
         .base(
-            request.based_on.as_deref(),
+            &request.based_on,
             &request.connection,
             &touched_fields(&request),
         )
@@ -140,7 +140,7 @@ pub(crate) async fn remove_connection(
     } = request;
     let precondition = state
         .snapshots
-        .base(based_on.as_deref(), &connection, &[])
+        .base(&based_on, &connection, &[])
         .precondition()
         .map_err(|conflict| unknown_base_refusal(&state, conflict))?;
     let removed = connection.clone();

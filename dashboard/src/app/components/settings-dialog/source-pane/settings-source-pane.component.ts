@@ -247,7 +247,6 @@ export class SettingsSourcePaneComponent {
     )
   }
 
-  /** What the user changed, against the settings on screen; null before they are loaded. */
   /** The revision of the snapshot on screen, which a removal is based on. */
   private readonly snapshotRevision = computed(() =>
     this.config.hasValue() ? this.config.value().revision : null
@@ -593,14 +592,14 @@ export class SettingsSourcePaneComponent {
 
   protected async removeConnection(): Promise<void> {
     const state = this.connectionState()
-    if (!state || this.removing()) return
     // The source asked about, whatever is shown once the question is answered, as the snapshot
     // on screen showed it.
+    const basedOn = this.snapshotRevision()
+    if (!state || basedOn === null || this.removing()) return
     const {
       key,
       info: { label },
     } = this.provider()
-    const basedOn = this.snapshotRevision() ?? undefined
     const confirmed = await confirmAction(this.dialog, {
       title: `Remove ${label}?`,
       message: 'Its settings are deleted from the config file. You can add it again later.',

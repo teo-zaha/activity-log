@@ -59,6 +59,7 @@ describe('TauriBackendTransport', () => {
     await transport.call(BackendOperations.saveProviderConfig, {
       connection: { source: 'git', name: 'default' },
       values: [],
+      basedOn: 'snapshot',
     })
     await transport.call(BackendOperations.clearLogs, undefined)
 
@@ -66,7 +67,13 @@ describe('TauriBackendTransport', () => {
       { command: 'get_provider_config', args: {} },
       {
         command: 'save_provider_config',
-        args: { request: { connection: { source: 'git', name: 'default' }, values: [] } },
+        args: {
+          request: {
+            connection: { source: 'git', name: 'default' },
+            values: [],
+            basedOn: 'snapshot',
+          },
+        },
       },
       { command: 'clear_logs', args: {} },
     ])

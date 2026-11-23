@@ -12,13 +12,12 @@ fn a_request_is_based_on_the_snapshot_it_names_while_it_is_held() {
     let id = "gitlab/work".parse().unwrap();
     let first = registry.register(file());
 
-    assert!(matches!(registry.base(None, &id, &[]), SaveBase::None));
     assert!(matches!(
-        registry.base(Some(&first), &id, &[]),
+        registry.base(&first, &id, &[]),
         SaveBase::Known(_)
     ));
     assert!(matches!(
-        registry.base(Some(&first), &"gitlab/other".parse().unwrap(), &[]),
+        registry.base(&first, &"gitlab/other".parse().unwrap(), &[]),
         SaveBase::Unknown(_)
     ));
 
@@ -26,7 +25,7 @@ fn a_request_is_based_on_the_snapshot_it_names_while_it_is_held() {
         registry.register(file());
     }
     assert!(matches!(
-        registry.base(Some(&first), &id, &[]),
+        registry.base(&first, &id, &[]),
         SaveBase::Unknown(_)
     ));
 }

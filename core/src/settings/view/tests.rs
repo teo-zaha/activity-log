@@ -56,7 +56,7 @@ fn save(
                 value,
             })
             .collect(),
-        based_on: None,
+        based_on: "snapshot".to_string(),
     }
 }
 
@@ -422,8 +422,10 @@ fn a_save_lists_every_issue_in_request_order_without_the_values() {
         ],
     );
     request.label = Some("  ".to_string());
+    let read = file("[[gitlab]]\nlabel = \"Work\"\n");
+    let base = SaveBase::Known(read.edit_base(&request.connection, &[]).unwrap());
 
-    let issues = check_save(&request, SaveBase::None, None);
+    let issues = check_save(&request, base, None);
 
     assert_eq!(
         issues

@@ -82,6 +82,7 @@ const save = (): Promise<ProviderConfigSaveResponseDto> =>
     connection: { source: 'jira', name: 'default' },
     label: 'Work',
     values: [],
+    basedOn: 'snapshot',
   })
 
 function withJira(status: ProviderInfo['status']): ProviderInfo[] {
@@ -633,6 +634,7 @@ describe('ActivityDataService', () => {
       const removal = TestBed.inject(ConnectionSettings).removeConnection({
         source: 'jira',
         name: 'default',
+        basedOn: 'snapshot',
       })
       backend.saveGate = null
       // A check of Jira, sent after it, is refused: Jira is gone, which the read it brings shows.

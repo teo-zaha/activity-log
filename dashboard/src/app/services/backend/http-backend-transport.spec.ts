@@ -86,6 +86,7 @@ describe('HttpBackendTransport', () => {
       transport.call(BackendOperations.saveProviderConfig, {
         connection: { source: 'git', name: 'default' },
         values: [],
+        basedOn: 'snapshot',
       })
     ).rejects.toBeInstanceOf(BackendFailure)
     http.expectNone(() => true)

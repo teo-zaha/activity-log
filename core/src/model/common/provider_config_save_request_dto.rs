@@ -15,9 +15,7 @@ pub struct ProviderConfigSaveRequestDto {
     #[ts(optional)]
     pub label: Option<String>,
     pub values: Vec<ProviderConfigSaveValueDto>,
-    /// The snapshot `revision` the draft was built from; without it (an older dashboard), the
-    /// save has no precondition.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[ts(optional)]
-    pub based_on: Option<String>,
+    /// The snapshot `revision` the draft was built from: a save of fields another program
+    /// changed since is a conflict.
+    pub based_on: String,
 }

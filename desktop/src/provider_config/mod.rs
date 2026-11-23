@@ -56,23 +56,15 @@ impl SnapshotRegistry {
         revision
     }
 
-    /// What a request for `id` based on `based_on` saw of the `touched` fields; without a
-    /// revision no base, and with one no longer held (or without `id`) an unknown one.
-    pub(crate) fn base(
-        &self,
-        based_on: Option<&str>,
-        id: &ConnectionId,
-        touched: &[FieldId],
-    ) -> SaveBase {
-        let Some(revision) = based_on else {
-            return SaveBase::None;
-        };
+    /// What a request for `id` based on `based_on` saw of the `touched` fields; a revision no
+    /// longer held (or one without `id`) is an unknown base.
+    pub(crate) fn base(&self, based_on: &str, id: &ConnectionId, touched: &[FieldId]) -> SaveBase {
         let file = self
             .held
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
             .iter()
-            .find(|(held, _)| held == revision)
+            .find(|(held, _)| held == based_on)
             .map(|(_, file)| Arc::clone(file));
         match file.and_then(|file| file.edit_base(id, touched)) {
             Some(base) => SaveBase::Known(base),

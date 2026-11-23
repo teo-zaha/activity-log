@@ -435,16 +435,19 @@ fn the_runtime_state_read_is_the_state_event_of_the_same_value() {
     );
 }
 
-/// The pane's check answers each issue at its field, without saving or reading the file.
+/// The pane's check answers each issue at its field, without saving.
 #[test]
 fn a_settings_check_answers_the_issues_at_their_fields() {
+    let text = "[[jira]]\nname = \"work\"\nlabel = \"Work\"\n";
+    let (_dir, path, state) = settings_at(text);
     let request = serde_json::json!({
         "connection": { "source": "jira", "name": "work" },
         "values": [{ "key": "JIRA_URL", "value": "ftp://jira.example.org" }],
+        "basedOn": snapshot_revision(&state),
     });
 
     let issues = invoke(
-        AppState::start(None),
+        state,
         "check_provider_config",
         serde_json::json!({ "request": request }),
     )
@@ -458,6 +461,7 @@ fn a_settings_check_answers_the_issues_at_their_fields() {
             "message": "Enter an http or https address.",
         }])
     );
+    assert_eq!(std::fs::read_to_string(&path).unwrap(), text);
 }
 
 /// A settings file another program can change while the pane shows it.
@@ -570,19 +574,35 @@ fn a_save_on_its_own_snapshot_applies_and_an_unknown_one_is_refused() {
     assert_eq!(refused.kind, BackendErrorKind::Conflict);
 }
 
-/// A removal that names no snapshot, as an older dashboard sends it, still removes.
+/// A save or a removal that names no snapshot is refused before its command runs (Tauri reads
+/// the request), and nothing is written: there is no edit without a precondition.
 #[test]
-fn a_removal_without_a_snapshot_still_removes() {
-    let (_dir, path, state) = settings_at("[[gitlab]]\nlabel = \"Work\"\n");
+fn a_change_that_names_no_snapshot_is_refused_and_writes_nothing() {
+    let text = "[[gitlab]]\nlabel = \"Work\"\n";
+    let (_dir, path, state) = settings_at(text);
+    let connection = serde_json::json!({ "source": "gitlab", "name": "work" });
 
-    invoke(
-        state,
-        "remove_connection",
-        serde_json::json!({ "request": { "source": "gitlab", "name": "work" } }),
-    )
-    .unwrap();
-
-    assert!(!std::fs::read_to_string(&path).unwrap().contains("Work"));
+    for (command, request) in [
+        (
+            "save_provider_config",
+            serde_json::json!({ "connection": connection, "label": "Mine", "values": [] }),
+        ),
+        (
+            "check_provider_config",
+            serde_json::json!({ "connection": connection, "values": [] }),
+        ),
+        ("remove_connection", connection.clone()),
+    ] {
+        let refused = invoke(
+            state.clone(),
+            command,
+            serde_json::json!({ "request": request }),
+        )
+        .unwrap_err();
+        // Tauri's own refusal of the arguments, which the dashboard reads as `internal`.
+        assert!(refused.is_string(), "{command}: {refused}");
+    }
+    assert_eq!(std::fs::read_to_string(&path).unwrap(), text);
 }
 
 /// Astra's re-add probe, as the pane now sends it: another program restored `jira/default`, so

@@ -89,10 +89,10 @@ value: ProviderConfigValueDto | null, };
 
 export type ProviderConfigSaveRequestDto = { connection: ConnectionId, label?: string, values: Array<ProviderConfigSaveValueDto>, 
 /**
- * The snapshot `revision` the draft was built from; without it (an older dashboard), the
- * save has no precondition.
+ * The snapshot `revision` the draft was built from: a save of fields another program
+ * changed since is a conflict.
  */
-basedOn?: string, };
+basedOn: string, };
 
 export type ProviderConfigSaveResponseDto = { snapshot: ProviderConfigSnapshotDto, providersResponse: ProvidersResponse, 
 /**
@@ -120,9 +120,9 @@ wslDistro?: string, };
 export type RemoveConnectionRequestDto = { 
 /**
  * The snapshot `revision` the pane showed: removing a connection another program replaced
- * under the same name is a conflict. Without it, no precondition.
+ * under the same name is a conflict.
  */
-basedOn?: string, source: Source, name: string, };
+basedOn: string, source: Source, name: string, };
 
 export type AddConnectionResponseDto = { created: ConnectionId, snapshot: ProviderConfigSnapshotDto, providersResponse: ProvidersResponse, 
 /**

@@ -99,8 +99,6 @@ pub fn normalize(
 /// What a save or a removal was based on, as the writer's registry of the snapshots it handed
 /// out knows the request's `basedOn`.
 pub enum SaveBase {
-    /// The request named no snapshot (an older dashboard): no precondition, as before.
-    None,
     Known(EditBase),
     /// A snapshot no longer held, or one that did not have the connection.
     Unknown(ConnectionId),
@@ -110,7 +108,6 @@ impl SaveBase {
     /// The precondition the write checks under the lock; an unknown base is a conflict at once.
     pub fn precondition(self) -> Result<Precondition, Conflict> {
         match self {
-            Self::None => Ok(Precondition::None),
             Self::Known(base) => Ok(Precondition::Unchanged(base)),
             Self::Unknown(connection) => Err(Conflict {
                 connection,
