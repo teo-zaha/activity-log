@@ -12,6 +12,7 @@ use crate::{model::ConnectionId, provider::connection::Connection};
 mod edit;
 pub(super) mod instances;
 mod read;
+mod sealing;
 
 #[cfg(test)]
 mod tests;

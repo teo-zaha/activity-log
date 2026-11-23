@@ -225,3 +225,46 @@ fn a_dotenv_file_in_the_working_folder_is_not_read() {
         stderr(&output)
     );
 }
+
+/// A token given on standard input is written sealed with the key file's key, which the CLI
+/// creates, and never as text.
+#[test]
+fn a_token_from_standard_input_is_written_sealed() {
+    use std::io::Write as _;
+
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("config.toml");
+    let key_file = dir.path().join("secret.key");
+    fs::write(
+        &path,
+        "[[gitlab]]\nname = \"work\"\nlabel = \"Work\"\nurl = \"https://gitlab.com\"\n",
+    )
+    .unwrap();
+
+    let mut child = cli(dir.path())
+        .env("ACTIVITY_LOG_SECRET_KEY_FILE", &key_file)
+        .arg("--config")
+        .arg(&path)
+        .args(["sources", "set", "gitlab/work", "token", "-"])
+        .stdin(Stdio::piped())
+        .stdout(Stdio::null())
+        .stderr(Stdio::piped())
+        .spawn()
+        .unwrap();
+    child
+        .stdin
+        .take()
+        .unwrap()
+        .write_all(b"glpat-from-stdin\n")
+        .unwrap();
+    let output = child.wait_with_output().unwrap();
+    assert!(output.status.success(), "{}", stderr(&output));
+
+    let written = fs::read_to_string(&path).unwrap();
+    assert!(!written.contains("glpat-from-stdin"), "{written}");
+    assert!(
+        written.contains("token = { sealed = \"v1:file:"),
+        "{written}"
+    );
+    assert!(key_file.exists());
+}

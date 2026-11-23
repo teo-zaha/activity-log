@@ -202,12 +202,30 @@ pub(crate) fn value_for(
     prompt: &mut dyn Prompt,
 ) -> Result<(ProviderConfigKey, Option<String>)> {
     let key = key(&id.source, field)?;
-    let values = if values.is_empty() {
-        vec![prompt.ask(&format!("{field} for {id}: "), key.is_secret())?]
-    } else {
-        values
+    let values = match values.as_slice() {
+        [] => vec![prompt.ask(&format!("{field} for {id}: "), key.is_secret())?],
+        // A secret from standard input, so it is on no command line.
+        [dash] if key.is_secret() && dash == "-" => vec![read_line()?],
+        _ => {
+            if key.is_secret() {
+                activity_log_core::diagnostics::warn(
+                    "sources",
+                    format!(
+                        "{field} given as an argument is visible to other programs on this computer; leave it out to be asked, or give - to read it from standard input"
+                    ),
+                );
+            }
+            values
+        }
     };
     Ok((key, raw_value(key, &values)?))
+}
+
+/// One line of standard input, without its line ending.
+fn read_line() -> Result<String> {
+    let mut line = String::new();
+    std::io::stdin().read_line(&mut line)?;
+    Ok(line.trim_end_matches(['\n', '\r']).to_string())
 }
 
 /// One line per connection: id, label and status.
@@ -254,6 +272,11 @@ pub(crate) fn fields_of(source: &Source) -> String {
         .map(|key| field_name(source, *key))
         .collect::<Vec<_>>()
         .join(", ")
+}
+
+/// The file's name of `key`, as the commands take it: `GITLAB_TOKEN` is `token`.
+pub(crate) fn field_of(source: &Source, key: ProviderConfigKey) -> String {
+    activity_log_core::settings::field_name(source, key)
 }
 
 pub(crate) fn key(source: &Source, field: &str) -> Result<ProviderConfigKey, SourcesError> {

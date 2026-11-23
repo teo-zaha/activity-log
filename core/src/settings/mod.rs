@@ -25,6 +25,7 @@ mod content_id;
 mod external;
 mod keys;
 mod precondition;
+pub mod startup_seal;
 pub mod view;
 mod write;
 

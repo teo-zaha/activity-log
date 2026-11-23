@@ -557,7 +557,7 @@ async fn an_edit_answers_its_new_connections_checking_even_when_their_checks_end
     published.set(host.subscribe()).unwrap();
 
     let edit = host
-        .edit(Precondition::None, |file| {
+        .edit(Precondition::None, None, |file| {
             file.add(&Source::Calendar, Some("Team"), ConnectionLocation::Local)
         })
         .await
@@ -720,7 +720,7 @@ async fn every_run_ends_once_and_only_runs_end() {
     runs.push(spawned.end().await);
     host.recheck(&jira()).unwrap();
     runs.push(spawned.end().await);
-    host.edit(Precondition::None, |file| {
+    host.edit(Precondition::None, None, |file| {
         file.set(
             &jira(),
             crate::provider::jira::JIRA_URL,
@@ -804,7 +804,7 @@ async fn work_is_handed_over_with_no_lock_held_and_ends_after_it_shows() {
     inner.set(Arc::downgrade(&host.inner)).unwrap();
     host.install(Vec::new(), None);
 
-    host.edit(Precondition::None, |file| {
+    host.edit(Precondition::None, None, |file| {
         file.add(&Source::Jira, Some("Work"), ConnectionLocation::Local)
     })
     .await
@@ -837,7 +837,7 @@ async fn an_edit_whose_caller_went_away_is_still_installed() {
     let (started, has_started) = tokio::sync::oneshot::channel();
     let (release, released) = std::sync::mpsc::channel::<()>();
 
-    let mut edit = Box::pin(host.edit(Precondition::None, move |file| {
+    let mut edit = Box::pin(host.edit(Precondition::None, None, move |file| {
         let _ = started.send(());
         released.recv().unwrap();
         file.add(&Source::Calendar, Some("Team"), ConnectionLocation::Local)
@@ -867,7 +867,10 @@ async fn a_save_that_writes_nothing_installs_what_another_writer_wrote() {
     .unwrap();
     std::fs::write(&path, "[[calendar]]\nlabel = \"Team\"\n").unwrap();
 
-    let edit = host.edit(Precondition::None, |_| Ok(())).await.unwrap();
+    let edit = host
+        .edit(Precondition::None, None, |_| Ok(()))
+        .await
+        .unwrap();
 
     assert_eq!(edit.providers.providers.len(), 1);
     let installed = edit.installed.expect("installed");
@@ -881,7 +884,10 @@ async fn a_save_that_writes_nothing_installs_what_another_writer_wrote() {
     );
 
     let current = host.subscribe().borrow().providers.revision;
-    let unchanged = host.edit(Precondition::None, |_| Ok(())).await.unwrap();
+    let unchanged = host
+        .edit(Precondition::None, None, |_| Ok(()))
+        .await
+        .unwrap();
     assert_eq!(unchanged.installed.expect("current").revision, current);
     assert_eq!(host.subscribe().borrow().providers.revision, current);
 }
@@ -897,7 +903,7 @@ async fn an_edit_without_a_settings_location_fails() {
     )
     .unwrap();
 
-    let refused = host.edit(Precondition::None, |_| Ok(())).await;
+    let refused = host.edit(Precondition::None, None, |_| Ok(())).await;
 
     assert!(matches!(refused, Err(EditError::NoLocation)));
 }
@@ -934,9 +940,11 @@ async fn a_label_rename_starts_no_run_and_keeps_a_degraded_source_degraded() {
     let shown = host.subscribe().borrow().activity.clone();
     let checks = world.checks.load(Ordering::SeqCst);
 
-    host.edit(Precondition::None, |file| file.rename(&jira(), "Renamed"))
-        .await
-        .unwrap();
+    host.edit(Precondition::None, None, |file| {
+        file.rename(&jira(), "Renamed")
+    })
+    .await
+    .unwrap();
     // The fresh checks are recorded with the same accounts.
     until(&host, checked).await;
 
@@ -963,7 +971,7 @@ async fn a_gitlab_url_change_collects_gitlab_alone_again() {
     let (_dir, _path, host, mut spawned) = ready_at(TWO_SOURCES, &world).await;
     let before = world.collected().len();
 
-    host.edit(Precondition::None, |file| {
+    host.edit(Precondition::None, None, |file| {
         file.set(
             &gitlab(),
             crate::provider::gitlab::GITLAB_URL,
@@ -1005,9 +1013,11 @@ async fn a_label_edit_while_a_run_waits_for_a_check_runs_whole_on_the_new_config
     host.collect(march());
     let waiting = shown_run(&host).unwrap();
 
-    host.edit(Precondition::None, |file| file.rename(&jira(), "Renamed"))
-        .await
-        .unwrap();
+    host.edit(Precondition::None, None, |file| {
+        file.rename(&jira(), "Renamed")
+    })
+    .await
+    .unwrap();
     assert!(!host.is_current(waiting));
     gate.add_permits(2);
 
@@ -1046,9 +1056,11 @@ async fn a_label_edit_after_a_failed_run_runs_whole() {
     host.collect(march());
     assert_eq!(spawned.end().await.outcome, RunOutcome::Failed);
 
-    host.edit(Precondition::None, |file| file.rename(&jira(), "Renamed"))
-        .await
-        .unwrap();
+    host.edit(Precondition::None, None, |file| {
+        file.rename(&jira(), "Renamed")
+    })
+    .await
+    .unwrap();
 
     assert_eq!(spawned.end().await.outcome, RunOutcome::Failed);
 }
@@ -1128,7 +1140,7 @@ async fn a_token_edit_shows_nothing_of_the_old_account() {
     world.name(&jira(), "b");
     world.hold_collections(&jira());
 
-    host.edit(Precondition::None, |file| {
+    host.edit(Precondition::None, None, |file| {
         file.set(&jira(), crate::provider::jira::JIRA_TOKEN, Some("b"))
     })
     .await
@@ -1244,9 +1256,11 @@ async fn a_label_edit_whose_check_finds_another_account_collects_the_kind_again(
     world.name(&jira(), "b");
     let collection = world.hold_collections(&jira());
 
-    host.edit(Precondition::None, |file| file.rename(&jira(), "Renamed"))
-        .await
-        .unwrap();
+    host.edit(Precondition::None, None, |file| {
+        file.rename(&jira(), "Renamed")
+    })
+    .await
+    .unwrap();
     until(&host, running).await;
 
     assert_eq!(
@@ -1346,13 +1360,15 @@ async fn an_edit_and_a_reload_install_in_the_order_the_file_was_written() {
     let edit = tokio::spawn({
         let host = host.clone();
         async move {
-            host.edit(Precondition::None, |file| file.rename(&jira(), "Local"))
-                .await
-                .unwrap()
+            host.edit(Precondition::None, None, |file| {
+                file.rename(&jira(), "Local")
+            })
+            .await
+            .unwrap()
         }
     });
     written.reached.acquire().await.unwrap().forget();
-    crate::settings::edit_config(&path, Precondition::None, |file| {
+    crate::settings::edit_config(&path, Precondition::None, None, |file| {
         file.rename(&jira(), "Outside")
     })
     .unwrap();
@@ -1657,7 +1673,7 @@ async fn a_failure_belongs_to_the_account_that_failed() {
     let (_dir, _path, host, _spawned) = ready_at(TWO_SOURCES, &world).await;
     assert_eq!(status(&host, &jira()), ProviderStatus::Degraded);
 
-    host.edit(Precondition::None, |file| {
+    host.edit(Precondition::None, None, |file| {
         file.rename(&jira(), "Same account")
     })
     .await
@@ -1668,7 +1684,7 @@ async fn a_failure_belongs_to_the_account_that_failed() {
     world.failing.lock().unwrap().clear();
     world.name(&jira(), "b");
     world.hold_collections(&jira());
-    host.edit(Precondition::None, |file| {
+    host.edit(Precondition::None, None, |file| {
         file.rename(&jira(), "Other account")
     })
     .await
@@ -1689,8 +1705,8 @@ async fn a_connection_removed_and_added_again_is_collected_again() {
     let id = ConnectionId::new(Source::Git, "this-computer");
     let before = world.collected().len();
 
-    edit_config(&path, Precondition::None, |file| file.remove(&id)).unwrap();
-    edit_config(&path, Precondition::None, |file| {
+    edit_config(&path, Precondition::None, None, |file| file.remove(&id)).unwrap();
+    edit_config(&path, Precondition::None, None, |file| {
         file.add(&Source::Git, None, ConnectionLocation::Local)
     })
     .unwrap();
@@ -1806,7 +1822,7 @@ async fn an_edit_after_shutdown_installs_nothing() {
 
     host.shutdown();
     let refused = host
-        .edit(Precondition::None, |file| {
+        .edit(Precondition::None, None, |file| {
             file.add(&Source::Calendar, Some("Team"), ConnectionLocation::Local)
         })
         .await;
@@ -1836,7 +1852,7 @@ async fn an_edit_written_before_shutdown_installs_nothing_after_it() {
     let edit = tokio::spawn({
         let host = host.clone();
         async move {
-            host.edit(Precondition::None, |file| {
+            host.edit(Precondition::None, None, |file| {
                 file.add(&Source::Calendar, Some("Team"), ConnectionLocation::Local)
             })
             .await
@@ -1904,7 +1920,7 @@ async fn a_config_install_raises_the_authority_and_stamps_both_parts() {
     let before = host.subscribe().borrow().clone();
 
     let edit = host
-        .edit(Precondition::None, |file| {
+        .edit(Precondition::None, None, |file| {
             file.set(
                 &gitlab(),
                 crate::provider::gitlab::GITLAB_URL,

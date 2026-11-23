@@ -367,7 +367,7 @@ export type CollectRequest = { start: string, end: string, };
 
 export type CollectionFailedResponse = { start: string, end: string, error: string, };
 
-export type BackendErrorKind = "noData" | "invalidRequest" | "notFound" | "alreadyExists" | "busy" | "conflict" | "noLocation" | "unprotectable" | "badConfig" | "tooLarge" | "internal";
+export type BackendErrorKind = "noData" | "invalidRequest" | "notFound" | "alreadyExists" | "busy" | "conflict" | "noLocation" | "unprotectable" | "badConfig" | "tooLarge" | "secretStoreUnavailable" | "secretStoreRefused" | "internal";
 
 export type BackendError = { kind: BackendErrorKind, 
 /**
@@ -451,7 +451,7 @@ export type MenuCommand = { generation: number, key: MenuItemKey, };
 export const COLLECT_MAX_DAYS = 3653
 
 /** Every `BackendErrorKind`, for telling a backend error body from any other. */
-export const BACKEND_ERROR_KINDS = ["noData", "invalidRequest", "notFound", "alreadyExists", "busy", "conflict", "noLocation", "unprotectable", "badConfig", "tooLarge", "internal"] as const satisfies readonly BackendErrorKind[]
+export const BACKEND_ERROR_KINDS = ["noData", "invalidRequest", "notFound", "alreadyExists", "busy", "conflict", "noLocation", "unprotectable", "badConfig", "tooLarge", "secretStoreUnavailable", "secretStoreRefused", "internal"] as const satisfies readonly BackendErrorKind[]
 
 /** Every source kind, in the backend's order. */
 export const SOURCES = ["git", "gitlab", "jira", "outlook", "system", "calendar"] as const satisfies readonly Source[]

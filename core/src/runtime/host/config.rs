@@ -15,6 +15,7 @@ use crate::{
     diagnostics,
     model::{InstallReceipt, ProvidersResponse},
     provider::connection::Connection,
+    secrets::Sealer,
     settings::{
         ConfigEditError, ConfigFile, ContentId, EditError, Precondition, edit_config,
         read_config_bytes,
@@ -56,9 +57,12 @@ impl Host {
     /// Edits the config file (see [`edit_config`]) and installs the result. The write and the
     /// install run in a task of their own, so dropping this future never leaves a written file
     /// uninstalled.
+    /// `sealing` is the key an edit that brings a new secret obtained, from this host's
+    /// `Secrets`, before anything is locked (`Secrets::sealer`).
     pub async fn edit<T: Send + 'static>(
         &self,
         precondition: Precondition,
+        sealing: Option<Sealer>,
         change: impl FnOnce(&mut ConfigFile) -> Result<T, ConfigEditError> + Send + 'static,
     ) -> Result<Edit<T>, EditError> {
         let Some(path) = self.inner.path.clone() else {
@@ -67,7 +71,7 @@ impl Host {
         let host = self.clone();
         let (answer, answered) = oneshot::channel();
         tokio::spawn(async move {
-            let _ = answer.send(host.edit_owned(path, precondition, change).await);
+            let _ = answer.send(host.edit_owned(path, precondition, sealing, change).await);
         });
         answered
             .await
@@ -78,6 +82,7 @@ impl Host {
         self,
         path: PathBuf,
         precondition: Precondition,
+        sealing: Option<Sealer>,
         change: impl FnOnce(&mut ConfigFile) -> Result<T, ConfigEditError> + Send + 'static,
     ) -> Result<Edit<T>, EditError> {
         let config = self.inner.config.clone().lock_owned().await;
@@ -87,9 +92,11 @@ impl Host {
             )));
         }
         // The config lock may wait for another process, so it is not taken on an async worker.
-        let edited = tokio::task::spawn_blocking(move || edit_config(&path, precondition, change))
-            .await
-            .map_err(|err| EditError::Internal(anyhow!("Saving the settings failed: {err}")))??;
+        let edited = tokio::task::spawn_blocking(move || {
+            edit_config(&path, precondition, sealing.as_ref(), change)
+        })
+        .await
+        .map_err(|err| EditError::Internal(anyhow!("Saving the settings failed: {err}")))??;
         #[cfg(test)]
         self.pause(|pauses| pauses.after_edit_write.clone()).await;
         for warning in &edited.warnings {

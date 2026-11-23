@@ -28,6 +28,13 @@ pub enum BackendErrorKind {
     BadConfig,
     /// The request is larger than the backend reads.
     TooLarge,
+    /// There is no secure store to seal a new secret with here (the desktop app without a
+    /// keychain or keyring service); nothing was saved. Setting one up helps, trying again
+    /// does not.
+    SecretStoreUnavailable,
+    /// The secure store did not give the key now (a dialog denied, no interaction allowed, a
+    /// failing store); nothing was saved and the edit can be tried again.
+    SecretStoreRefused,
     /// Anything else failed in the backend.
     Internal,
 }

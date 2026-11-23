@@ -46,7 +46,7 @@ async fn settings_commands_that_arrive_together_both_apply() {
     let first = tokio::spawn({
         let state = state.clone();
         async move {
-            update_config(&state, Precondition::None, move |file| {
+            update_config(&state, Precondition::None, None, move |file| {
                 first_loaded.send(()).unwrap();
                 // Gives the second command every chance to read the file before this one saves.
                 let _ = second_has_loaded.recv_timeout(Duration::from_millis(300));
@@ -56,7 +56,7 @@ async fn settings_commands_that_arrive_together_both_apply() {
         }
     });
     first_has_loaded.recv().unwrap();
-    update_config(&state, Precondition::None, move |file| {
+    update_config(&state, Precondition::None, None, move |file| {
         let _ = second_loaded.send(());
         file.rename(&b, "B changed")
     })
@@ -93,7 +93,7 @@ async fn a_save_over_a_file_that_does_not_parse_is_a_bad_config() {
     // Broken after the app read it, as another program could.
     std::fs::write(&path, "[[git]\n").unwrap();
 
-    let refused = update_config(&state, Precondition::None, |file| {
+    let refused = update_config(&state, Precondition::None, None, |file| {
         file.add(
             &activity_log_core::model::Source::Calendar,
             None,
@@ -287,7 +287,7 @@ fn tauri_refuses_a_call_it_cannot_decode_with_a_string() {
 async fn a_save_without_a_settings_location_writes_nothing() {
     let state = AppState::start(None, activity_log_core::secrets::Secrets::none());
 
-    let refused = update_config(&state, Precondition::None, |file| {
+    let refused = update_config(&state, Precondition::None, None, |file| {
         file.rename(&"gitlab/work".parse().unwrap(), "Work")
     })
     .await;
@@ -307,7 +307,7 @@ async fn a_busy_settings_file_is_reported_and_left_alone() {
         activity_log_core::secrets::Secrets::none(),
     );
 
-    let refused = update_config(&state, Precondition::None, |file| {
+    let refused = update_config(&state, Precondition::None, None, |file| {
         file.rename(&"git/this-computer".parse().unwrap(), "Laptop")
     })
     .await;
@@ -325,7 +325,7 @@ async fn config_problems_after_an_edit_reach_the_logs() {
     std::fs::write(&path, "[[gitlab]]\nlabel = \"Edited\"\nurll = \"x\"\n").unwrap();
     let state = AppState::start(Some(path), activity_log_core::secrets::Secrets::none());
 
-    let (_, saved) = update_config(&state, Precondition::None, |file| {
+    let (_, saved) = update_config(&state, Precondition::None, None, |file| {
         file.rename(&"gitlab/edited".parse().unwrap(), "Edited")
     })
     .await
@@ -390,7 +390,7 @@ async fn an_unprotectable_location_is_reported_with_the_agreed_text() {
         activity_log_core::secrets::Secrets::none(),
     );
 
-    let refused = update_config(&state, Precondition::None, |file| {
+    let refused = update_config(&state, Precondition::None, None, |file| {
         file.add(
             &activity_log_core::model::Source::Git,
             None,
@@ -419,7 +419,7 @@ async fn a_save_answers_with_the_added_connection_checking() {
     let state = AppState::start(Some(path), activity_log_core::secrets::Secrets::none());
 
     for label in ["Team", "Home", "Club"] {
-        let (created, saved) = update_config(&state, Precondition::None, move |file| {
+        let (created, saved) = update_config(&state, Precondition::None, None, move |file| {
             file.add(
                 &activity_log_core::model::Source::Calendar,
                 Some(label),

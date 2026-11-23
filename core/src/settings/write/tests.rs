@@ -56,7 +56,7 @@ fn base(path: &Path, connection: &str, touched: &[FieldId]) -> Precondition {
 
 /// Another cooperating writer.
 fn other_writer(path: &Path, change: impl FnOnce(&mut ConfigFile) -> Result<(), ConfigEditError>) {
-    edit_config(path, Precondition::None, change).unwrap();
+    edit_config(path, Precondition::None, None, change).unwrap();
 }
 
 fn conflict(result: Result<impl Sized, EditError>) -> (ConflictKind, Vec<FieldId>) {
@@ -78,7 +78,7 @@ fn two_threads_editing_at_once_both_land() {
             let (path, barrier) = (path.clone(), barrier.clone());
             move || {
                 barrier.wait();
-                edit_config(&path, Precondition::None, |file| {
+                edit_config(&path, Precondition::None, None, |file| {
                     file.add(&Source::Jira, Some("Jira"), ConnectionLocation::Local)
                 })
                 .unwrap();
@@ -88,7 +88,7 @@ fn two_threads_editing_at_once_both_land() {
             let (path, barrier) = (path.clone(), barrier.clone());
             move || {
                 barrier.wait();
-                edit_config(&path, Precondition::None, |file| {
+                edit_config(&path, Precondition::None, None, |file| {
                     file.rename(&id("gitlab/work"), "Company")
                 })
                 .unwrap();
@@ -168,7 +168,7 @@ fn written_bytes_that_do_not_read_back_fail_internally() {
 fn a_file_that_does_not_parse_is_invalid_input() {
     let (_dir, path) = config("[[gitlab]\n");
 
-    let refused = edit_config(&path, Precondition::None, |file| {
+    let refused = edit_config(&path, Precondition::None, None, |file| {
         file.require(&id("gitlab/x"))
     });
 
@@ -178,7 +178,7 @@ fn a_file_that_does_not_parse_is_invalid_input() {
 #[test]
 fn a_rejected_change_writes_nothing() {
     let (_dir, path) = config(WORK);
-    let rejected = edit_config(&path, Precondition::None, |file| {
+    let rejected = edit_config(&path, Precondition::None, None, |file| {
         file.rename(&id("gitlab/nope"), "x")
     });
 
@@ -194,7 +194,7 @@ fn an_edit_of_one_legacy_connection_writes_an_instance_into_that_table_only() {
     let text = "# my settings\n[[gitlab]]\nname = \"work\"\nlabel = \"Work\"\n\n[[gitlab]]\nname = \"oss\"\nlabel = \"OSS\" # public\n\n[[git]]\n";
     let (_dir, path) = config(text);
 
-    let edited = edit_config(&path, Precondition::None, |file| {
+    let edited = edit_config(&path, Precondition::None, None, |file| {
         file.set(&id("gitlab/oss"), GITLAB_USER, Some("me"))
     })
     .unwrap();
@@ -217,7 +217,7 @@ fn an_edit_of_one_legacy_connection_writes_an_instance_into_that_table_only() {
     );
 
     // A second edit keeps the instance.
-    edit_config(&path, Precondition::None, |file| {
+    edit_config(&path, Precondition::None, None, |file| {
         file.set(&id("gitlab/oss"), GITLAB_USER, Some("you"))
     })
     .unwrap();
@@ -230,7 +230,7 @@ fn a_malformed_or_repeated_instance_is_replaced_when_its_connection_is_edited() 
         "[[gitlab]]\nname = \"a\"\ninstance = \"0123456789abcdef\"\n\n[[gitlab]]\nname = \"b\"\ninstance = \"0123456789abcdef\"\n\n[[gitlab]]\nname = \"c\"\ninstance = \"bad\"\n",
     );
 
-    let edited = edit_config(&path, Precondition::None, |file| {
+    let edited = edit_config(&path, Precondition::None, None, |file| {
         file.rename(&id("gitlab/b"), "B")?;
         file.rename(&id("gitlab/c"), "C")
     })
@@ -258,7 +258,7 @@ fn an_unchanged_edit_writes_nothing() {
     let modified = fs::metadata(&path).unwrap().modified().unwrap();
 
     // The label is already "Work": setting it again changes nothing.
-    let edited = edit_config(&path, Precondition::None, |file| {
+    let edited = edit_config(&path, Precondition::None, None, |file| {
         file.rename(&id("gitlab/work"), "Work")
     })
     .unwrap();
@@ -277,7 +277,7 @@ fn an_unchanged_edit_writes_nothing() {
     }
 
     // The next real write replaces it with an owner-only file.
-    edit_config(&path, Precondition::None, |file| {
+    edit_config(&path, Precondition::None, None, |file| {
         file.rename(&id("gitlab/work"), "Company")
     })
     .unwrap();
@@ -295,7 +295,7 @@ fn a_missing_file_and_folder_are_created_private() {
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("nested").join("config.toml");
 
-    edit_config(&path, Precondition::None, |file| {
+    edit_config(&path, Precondition::None, None, |file| {
         file.add(&Source::Gitlab, Some("Work"), ConnectionLocation::Local)
     })
     .unwrap();
@@ -325,7 +325,7 @@ fn a_linked_config_keeps_its_link_and_a_dangling_link_creates_nothing() {
     let link = dir.path().join("config.toml");
     std::os::unix::fs::symlink(&target, &link).unwrap();
 
-    edit_config(&link, Precondition::None, |file| {
+    edit_config(&link, Precondition::None, None, |file| {
         file.rename(&id("gitlab/work"), "Company")
     })
     .unwrap();
@@ -335,7 +335,7 @@ fn a_linked_config_keeps_its_link_and_a_dangling_link_creates_nothing() {
 
     let dangling = dir.path().join("dangling.toml");
     std::os::unix::fs::symlink(dir.path().join("missing.toml"), &dangling).unwrap();
-    let failed = edit_config(&dangling, Precondition::None, |file| {
+    let failed = edit_config(&dangling, Precondition::None, None, |file| {
         file.add(&Source::Git, None, ConnectionLocation::Local)
     });
     match failed {
@@ -359,7 +359,7 @@ fn a_folder_others_can_write_to_cannot_keep_the_settings() {
     fs::set_permissions(&shared, fs::Permissions::from_mode(0o1777)).unwrap();
     let path = shared.join("config.toml");
 
-    let refused = edit_config(&path, Precondition::None, |file| {
+    let refused = edit_config(&path, Precondition::None, None, |file| {
         file.add(&Source::Git, None, ConnectionLocation::Local)
     });
 
@@ -383,7 +383,7 @@ mod preconditions {
         let (_dir, path) = config(WORK);
         let base = base(&path, "gitlab/work", &[FieldId::Label]);
 
-        edit_config(&path, base, |file| {
+        edit_config(&path, base, None, |file| {
             file.rename(&id("gitlab/work"), "Company")
         })
         .unwrap();
@@ -408,14 +408,14 @@ mod preconditions {
             file.set(&added, GITLAB_TOKEN, Some("one"))
         });
 
-        let refused = edit_config(&path, stale, |file| {
+        let refused = edit_config(&path, stale, None, |file| {
             file.rename(&id("gitlab/work"), "Company")
         });
         assert_eq!(conflict(refused), (ConflictKind::Replaced, Vec::new()));
         assert!(!read(&path).contains("Company"));
 
         let fresh = base(&path, "gitlab/work", &[FieldId::Label]);
-        edit_config(&path, fresh, |file| {
+        edit_config(&path, fresh, None, |file| {
             file.rename(&id("gitlab/work"), "Company")
         })
         .unwrap();
@@ -429,7 +429,7 @@ mod preconditions {
         // Outside the protocol, so the table stays without an instance.
         fs::write(&path, format!("{WORK}user = \"someone\"\n")).unwrap();
 
-        let refused = edit_config(&path, stale, |file| {
+        let refused = edit_config(&path, stale, None, |file| {
             file.set(&id("gitlab/work"), GITLAB_USER, Some("me"))
         });
 
@@ -451,7 +451,7 @@ mod preconditions {
             file.set(&added, GITLAB_TOKEN, Some("one"))
         });
 
-        let refused = edit_config(&path, stale, |file| {
+        let refused = edit_config(&path, stale, None, |file| {
             file.rename(&id("gitlab/work"), "Company")
         });
 
@@ -471,7 +471,7 @@ mod preconditions {
             file.set(&id("gitlab/work"), GITLAB_TOKEN, Some("two"))
         });
 
-        let refused = edit_config(&path, stale, |file| {
+        let refused = edit_config(&path, stale, None, |file| {
             file.rename(&id("gitlab/work"), "Company")
         });
 
@@ -487,11 +487,11 @@ mod preconditions {
         let first = base(&path, "gitlab/work", &[FieldId::Label]);
         let second = base(&path, "gitlab/work", &[FieldId::Label]);
 
-        edit_config(&path, first, |file| {
+        edit_config(&path, first, None, |file| {
             file.rename(&id("gitlab/work"), "First")
         })
         .unwrap();
-        let refused = edit_config(&path, second, |file| {
+        let refused = edit_config(&path, second, None, |file| {
             file.rename(&id("gitlab/work"), "Second")
         });
 
@@ -502,11 +502,11 @@ mod preconditions {
 
         let third = base(&path, "gitlab/work", &[FieldId::Label]);
         let fourth = base(&path, "gitlab/work", &[FieldId::Label]);
-        edit_config(&path, third, |file| {
+        edit_config(&path, third, None, |file| {
             file.rename(&id("gitlab/work"), "Third")
         })
         .unwrap();
-        let refused = edit_config(&path, fourth, |file| {
+        let refused = edit_config(&path, fourth, None, |file| {
             file.rename(&id("gitlab/work"), "Fourth")
         });
         assert_eq!(
@@ -527,7 +527,7 @@ mod preconditions {
                 .map(drop)
         });
 
-        let refused = edit_config(&path, stale, |file| file.remove(&id("gitlab/work")));
+        let refused = edit_config(&path, stale, None, |file| file.remove(&id("gitlab/work")));
 
         assert_eq!(conflict(refused), (ConflictKind::Replaced, Vec::new()));
         assert_eq!(value(&path, "gitlab/work", "GITLAB_URL"), None);
@@ -540,7 +540,7 @@ mod preconditions {
         let stale = base(&path, "gitlab/work", &[FieldId::Label]);
         other_writer(&path, |file| file.remove(&id("gitlab/work")));
 
-        let refused = edit_config(&path, stale, |file| {
+        let refused = edit_config(&path, stale, None, |file| {
             file.rename(&id("gitlab/work"), "Company")
         });
 
@@ -555,7 +555,7 @@ mod preconditions {
         // Outside the protocol, so only the value differs.
         fs::write(&path, format!("{WORK}user = \"someone\"\n")).unwrap();
 
-        edit_config(&path, stale, |file| {
+        edit_config(&path, stale, None, |file| {
             file.rename(&id("gitlab/work"), "Company")
         })
         .unwrap();
@@ -580,7 +580,7 @@ mod preconditions {
                 .map(drop)
         });
 
-        let refused = edit_config(&path, stale, |file| {
+        let refused = edit_config(&path, stale, None, |file| {
             file.rename(&id("git/this-computer"), "Laptop")
         });
 
@@ -598,8 +598,9 @@ mod preconditions {
                 Some("https://other.example.com"),
             )
         });
-        let Err(err) = edit_config(&path, stale, |file| file.rename(&id("gitlab/work"), "x"))
-        else {
+        let Err(err) = edit_config(&path, stale, None, |file| {
+            file.rename(&id("gitlab/work"), "x")
+        }) else {
             panic!("expected a conflict");
         };
         // The edit gave the table its instance, so the legacy base no longer matches.
@@ -616,8 +617,9 @@ mod preconditions {
                 Some("https://third.example.com"),
             )
         });
-        let Err(err) = edit_config(&path, stale, |file| file.rename(&id("gitlab/work"), "x"))
-        else {
+        let Err(err) = edit_config(&path, stale, None, |file| {
+            file.rename(&id("gitlab/work"), "x")
+        }) else {
             panic!("expected a conflict");
         };
         let message = err.message(Some("Work"));
@@ -640,7 +642,7 @@ mod preconditions {
         )
         .unwrap();
 
-        let refused = edit_config_with(locked, stale, |file| {
+        let refused = edit_config_with(locked, stale, None, |file| {
             file.set(
                 &id("gitlab/work"),
                 GITLAB_URL,
@@ -669,7 +671,7 @@ mod review {
         other_writer(&path, |file| file.remove(&id("outlook/outlook")));
         assert!(load(&path).edit_base(&id("outlook/outlook"), &[]).is_some());
 
-        let refused = edit_config(&path, stale, |file| {
+        let refused = edit_config(&path, stale, None, |file| {
             file.rename(&id("outlook/outlook"), "Other")
         });
 
@@ -687,7 +689,7 @@ mod review {
         let stale = base(&path, "outlook/outlook", &[FieldId::Label]);
         other_writer(&path, |file| file.remove(&id("outlook/outlook")));
 
-        let refused = edit_config(&path, stale, |file| {
+        let refused = edit_config(&path, stale, None, |file| {
             file.rename(&id("outlook/outlook"), "Other")
         });
 
@@ -705,7 +707,7 @@ mod review {
             let (_dir, path) = config(text);
             let modified = fs::metadata(&path).unwrap().modified().unwrap();
 
-            edit_config(&path, Precondition::None, |file| {
+            edit_config(&path, Precondition::None, None, |file| {
                 file.rename(&id("gitlab/work"), "Work")?;
                 file.set(&id("gitlab/work"), GITLAB_USER, Some("me"))?;
                 file.set(&id("gitlab/work"), GITLAB_TOKEN, None)
@@ -723,7 +725,7 @@ mod review {
     fn a_change_keeps_comments_and_line_endings() {
         let (_dir, path) = config("[[gitlab]]\r\nname = \"work\"\r\nlabel = 'Work' # preserve\r\n");
 
-        edit_config(&path, Precondition::None, |file| {
+        edit_config(&path, Precondition::None, None, |file| {
             file.rename(&id("gitlab/work"), "Company")
         })
         .unwrap();
@@ -741,7 +743,7 @@ mod review {
     fn a_remove_leaves_siblings_whose_ids_do_not_move() {
         let (_dir, path) = config("[[gitlab]]\nlabel = \"One\"\n\n[[gitlab]]\nlabel = \"Two\"\n");
 
-        edit_config(&path, Precondition::None, |file| {
+        edit_config(&path, Precondition::None, None, |file| {
             file.remove(&id("gitlab/one"))
         })
         .unwrap();
@@ -757,7 +759,7 @@ mod review {
             "[[gitlab]]\nlabel = \"Work\"\n\n[[gitlab]]\nlabel = \"Work\"\n\n[[gitlab]]\nlabel = \"Work\"\n",
         );
 
-        edit_config(&path, Precondition::None, |file| {
+        edit_config(&path, Precondition::None, None, |file| {
             file.remove(&id("gitlab/work"))
         })
         .unwrap();
@@ -822,7 +824,7 @@ mod review {
         fs::create_dir(&first).unwrap();
         fs::write(&path, "[[git]]\n").unwrap();
 
-        edit_config_with(locked, Precondition::None, |file| {
+        edit_config_with(locked, Precondition::None, None, |file| {
             file.rename(&id("gitlab/work"), "Company")
         })
         .unwrap();
@@ -843,7 +845,7 @@ mod recheck {
         #[cfg(unix)]
         let inode = std::os::unix::fs::MetadataExt::ino(&fs::metadata(&path).unwrap());
 
-        edit_config(&path, Precondition::None, |file| {
+        edit_config(&path, Precondition::None, None, |file| {
             file.rename(&id("gitlab/work"), "Work")?;
             file.set(&id("gitlab/work"), GITLAB_USER, Some("me"))?;
             file.set(&id("gitlab/work"), GITLAB_TOKEN, None)?;
@@ -880,7 +882,187 @@ mod recheck {
         let written = read(&path);
         assert!(!written.contains("key = 7"), "{written}");
         assert!(load(&path).connections().warnings.is_empty(), "{written}");
-        let refused = edit_config(&path, stale, |file| file.rename(&id("gitlab/work"), "x"));
+        let refused = edit_config(&path, stale, None, |file| {
+            file.rename(&id("gitlab/work"), "x")
+        });
         assert_eq!(conflict(refused), (ConflictKind::Replaced, Vec::new()));
+    }
+}
+
+mod sealing {
+    use super::{config, id, load, read};
+    use crate::{
+        provider::{
+            connection::{StoredSecret, StoredValue},
+            gitlab::{GITLAB_TOKEN, GITLAB_URL},
+        },
+        secrets::{
+            DataKey, KEY_LEN, Sealer, StoreKind,
+            sealed::{Binding, SealedValue, seal},
+        },
+        settings::{ConfigEditError, Precondition, edit_config},
+    };
+
+    use super::super::{EditError, check_sealed};
+
+    fn sealer(byte: u8) -> Sealer {
+        Sealer::for_tests(
+            StoreKind::Os,
+            DataKey::from_slice(&[byte; KEY_LEN]).unwrap(),
+        )
+    }
+
+    const GITLAB: &str =
+        "[[gitlab]]\nname = \"work\"\nlabel = \"Work\"\nurl = \"https://gitlab.example.test\"\n";
+
+    fn sealed_token(path: &std::path::Path) -> SealedValue {
+        let file = load(path);
+        let connection = file
+            .connections()
+            .connections
+            .into_iter()
+            .find(|connection| connection.id == id("gitlab/work"))
+            .unwrap();
+        match connection.values().get_stored("GITLAB_TOKEN") {
+            Some(StoredValue::Sealed(StoredSecret::Sealed(value))) => value.clone(),
+            other => panic!("{other:?}"),
+        }
+    }
+
+    /// A new secret is written sealed, and opens for the binding its table names; the plain
+    /// secrets the file held already are sealed in the same pass, without an instance for
+    /// their tables.
+    #[test]
+    fn a_new_secret_is_sealed_and_so_is_old_plain_text() {
+        let (_dir, path) = config(&format!(
+            "{GITLAB}\n[[calendar]]\nname = \"feed\"\nlabel = \"Feed\"\nics_url = \"https://calendar.example.test/private.ics\"\n"
+        ));
+        let sealer = sealer(1);
+        edit_config(&path, Precondition::None, Some(&sealer), |file| {
+            file.set(&id("gitlab/work"), GITLAB_TOKEN, Some("glpat-test-0000"))
+        })
+        .unwrap();
+
+        let text = read(&path);
+        assert!(!text.contains("glpat-test-0000"), "{text}");
+        assert!(!text.contains("private.ics"), "{text}");
+        let token = sealed_token(&path);
+        let file = load(&path);
+        let values = file
+            .connections()
+            .connections
+            .into_iter()
+            .find(|connection| connection.id == id("gitlab/work"))
+            .unwrap();
+        let binding = Binding::of(values.source(), values.values()).unwrap();
+        assert_eq!(
+            sealer
+                .open(&token, GITLAB_TOKEN, &binding)
+                .unwrap()
+                .as_str(),
+            "glpat-test-0000"
+        );
+        // Sealing what was there touched no table: the feed got no instance.
+        let feed_table = text.split("[[calendar]]").nth(1).unwrap();
+        assert!(!feed_table.contains("instance"), "{text}");
+    }
+
+    /// An edit without a key (a label, a removal) seals nothing: plain text stays plain.
+    #[test]
+    fn an_unrelated_edit_seals_nothing() {
+        let (_dir, path) = config(&format!("{GITLAB}token = \"glpat-test-0000\"\n"));
+        edit_config(&path, Precondition::None, None, |file| {
+            file.rename(&id("gitlab/work"), "Company")
+        })
+        .unwrap();
+        assert!(read(&path).contains("token = \"glpat-test-0000\""));
+    }
+
+    /// A new address for a sealed token needs the token again: it is refused without it, and
+    /// written with it.
+    #[test]
+    fn a_new_address_for_a_sealed_token_needs_the_token() {
+        let (_dir, path) = config(GITLAB);
+        let sealer = sealer(1);
+        edit_config(&path, Precondition::None, Some(&sealer), |file| {
+            file.set(&id("gitlab/work"), GITLAB_TOKEN, Some("glpat-test-0000"))
+        })
+        .unwrap();
+        let before = read(&path);
+
+        let refused = edit_config(&path, Precondition::None, None, |file| {
+            file.set(
+                &id("gitlab/work"),
+                GITLAB_URL,
+                Some("https://other.example.test"),
+            )
+        })
+        .err()
+        .unwrap();
+        assert!(matches!(
+            refused,
+            EditError::Rejected(ConfigEditError::BindingChanged {
+                secret: "GITLAB_TOKEN",
+                ..
+            })
+        ));
+        assert_eq!(read(&path), before);
+
+        // Another spelling of the same origin is no change of address.
+        edit_config(&path, Precondition::None, None, |file| {
+            file.set(
+                &id("gitlab/work"),
+                GITLAB_URL,
+                Some("https://GitLab.example.test:443/"),
+            )
+        })
+        .unwrap();
+
+        edit_config(&path, Precondition::None, Some(&sealer), |file| {
+            file.set(
+                &id("gitlab/work"),
+                GITLAB_URL,
+                Some("https://other.example.test"),
+            )?;
+            file.set(&id("gitlab/work"), GITLAB_TOKEN, Some("glpat-test-0001"))
+        })
+        .unwrap();
+        assert_ne!(sealed_token(&path).as_str(), "");
+    }
+
+    /// Before anything is published, every value the key sealed is opened from the bytes
+    /// about to be written: one that would not open (its address edited under it) fails.
+    #[test]
+    fn a_sealed_value_that_would_not_open_is_never_written() {
+        let sealer = sealer(1);
+        let binding = Binding::of(
+            &crate::model::Source::Gitlab,
+            &crate::provider::connection::ConnectionValues::new(
+                [(
+                    "GITLAB_URL".to_string(),
+                    Some("https://gitlab.example.test".to_string()),
+                )]
+                .into(),
+            ),
+        )
+        .unwrap();
+        let value = seal(
+            &DataKey::from_slice(&[1; KEY_LEN]).unwrap(),
+            StoreKind::Os,
+            GITLAB_TOKEN,
+            &binding,
+            "glpat-test-0000",
+        )
+        .unwrap();
+        let path = std::path::Path::new("config.toml");
+        let good = format!("{GITLAB}token = {{ sealed = \"{}\" }}\n", value.as_str());
+        assert!(check_sealed(path, good.as_bytes(), &sealer).is_ok());
+        let moved = good.replace("gitlab.example.test", "evil.example.test");
+        assert!(matches!(
+            check_sealed(path, moved.as_bytes(), &sealer),
+            Err(EditError::Internal(_))
+        ));
+        // A value another key sealed is not this writer's to open.
+        assert!(check_sealed(path, moved.as_bytes(), &self::sealer(2)).is_ok());
     }
 }

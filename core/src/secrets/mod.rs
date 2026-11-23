@@ -113,6 +113,75 @@ pub enum FreshKey<'a> {
 pub struct KeyCreation<'a> {
     slot: &'a Arc<Slot>,
     creator: &'a dyn KeyCreator,
+    interaction: Interaction,
+}
+
+/// The key a writer seals new secrets with, and the store that holds it; read fresh for the
+/// one edit it is for.
+pub struct Sealer {
+    store: StoreKind,
+    key: DataKey,
+}
+
+impl Sealer {
+    /// A sealer over `key`, for tests of the writers.
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn for_tests(store: StoreKind, key: DataKey) -> Self {
+        Self { store, key }
+    }
+
+    pub fn store(&self) -> StoreKind {
+        self.store
+    }
+
+    pub fn seal(
+        &self,
+        field: crate::provider::provider_config::ProviderConfigKey,
+        binding: &sealed::Binding,
+        secret: &str,
+    ) -> Result<sealed::SealedValue, sealed::SealError> {
+        sealed::seal(&self.key, self.store, field, binding, secret)
+    }
+
+    /// Whether `value` was sealed with this key.
+    pub fn sealed(&self, value: &sealed::SealedValue) -> bool {
+        value.store() == self.store && value.key_id() == sealed::KeyId::of(&self.key)
+    }
+
+    pub fn open(
+        &self,
+        value: &sealed::SealedValue,
+        field: crate::provider::provider_config::ProviderConfigKey,
+        binding: &sealed::Binding,
+    ) -> Result<zeroize::Zeroizing<String>, sealed::Unopenable> {
+        sealed::open(value, &self.key, field, binding)
+    }
+}
+
+impl std::fmt::Debug for Sealer {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Sealer")
+            .field("store", &self.store)
+            .finish_non_exhaustive()
+    }
+}
+
+/// The desktop app without an OS store, or a CLI held to it: no store to seal with.
+fn no_store() -> StoreError {
+    StoreError::unavailable(anyhow!(
+        "There is no keychain or other secure store on this computer; install or start a keyring service (GNOME Keyring, KWallet, KeePassXC)"
+    ))
+}
+
+/// The CLI's fallback to the key file, said once per process.
+fn warn_falling_back(err: &StoreError) {
+    static SAID: std::sync::Once = std::sync::Once::new();
+    SAID.call_once(|| {
+        crate::diagnostics::warn(
+            "secrets",
+            format!("No keychain ({err}): secrets are protected by a key file instead"),
+        );
+    });
 }
 
 /// A store for a handle: the store and its key-creation lock.
@@ -326,17 +395,97 @@ impl Secrets {
     /// deleted or replaced is noticed before anything is sealed with it. What it finds is held
     /// for readers too.
     pub async fn fresh_key(&self, kind: StoreKind) -> Result<FreshKey<'_>, StoreError> {
+        self.fresh_key_with(kind, Interaction::Allowed).await
+    }
+
+    /// [`Self::fresh_key`], a dialog allowed or not; a creation it leads to asks the same.
+    pub async fn fresh_key_with(
+        &self,
+        kind: StoreKind,
+        interaction: Interaction,
+    ) -> Result<FreshKey<'_>, StoreError> {
         let slot = self.slot_ref(kind)?;
-        match slot.store.read(Interaction::Allowed).await? {
+        let read = slot.store.read(interaction).await;
+        if kind == StoreKind::Os {
+            self.record_os(read.as_ref().map(drop));
+        }
+        match read? {
             Lookup::Found(key) => {
                 slot.hold(&key);
                 Ok(FreshKey::Found(key))
             }
             Lookup::Absent => Ok(match slot.store.creator() {
-                Some(creator) => FreshKey::Absent(KeyCreation { slot, creator }),
+                Some(creator) => FreshKey::Absent(KeyCreation {
+                    slot,
+                    creator,
+                    interaction,
+                }),
                 None => FreshKey::AbsentReadOnly,
             }),
         }
+    }
+
+    /// The key a writer seals new secrets with, read again from the store this front end
+    /// seals with (`secrets/choice`), and created there over a definite absence: then
+    /// `orphans(kind)` counts the file's values sealed with that store, which no key here
+    /// opens any more, and one warning says how many must be entered again. Where the OS
+    /// store is missing the CLI falls back to the key file, saying so once; the desktop app
+    /// does not, and nothing falls back over a refusal.
+    pub async fn sealer(
+        &self,
+        interaction: Interaction,
+        orphans: impl Fn(StoreKind) -> usize,
+    ) -> Result<Sealer, StoreError> {
+        let choice = self.0.choice;
+        let store = match choice.decided() {
+            Decided::File(_) => StoreKind::File,
+            Decided::Nothing(_) => return Err(no_store()),
+            Decided::OsFirst => match self.sealer_in(StoreKind::Os, interaction, &orphans).await {
+                Err(err) if err.kind() == StoreErrorKind::Unavailable => {
+                    match choice.os_unavailable() {
+                        Decided::File(_) => {
+                            warn_falling_back(&err);
+                            StoreKind::File
+                        }
+                        Decided::Nothing(_) | Decided::OsFirst => return Err(err),
+                    }
+                }
+                sealed => return sealed,
+            },
+        };
+        self.sealer_in(store, interaction, &orphans).await
+    }
+
+    async fn sealer_in(
+        &self,
+        store: StoreKind,
+        interaction: Interaction,
+        orphans: &impl Fn(StoreKind) -> usize,
+    ) -> Result<Sealer, StoreError> {
+        let key = match self.fresh_key_with(store, interaction).await? {
+            FreshKey::Found(key) => key,
+            FreshKey::Absent(creation) => {
+                creation
+                    .create(|| {
+                        let count = orphans(store);
+                        if count > 0 {
+                            crate::diagnostics::warn(
+                                "secrets",
+                                format!(
+                                    "config.toml has {count} secret(s) sealed with a key this computer does not have; a new key is created and those secrets must be entered again here"
+                                ),
+                            );
+                        }
+                    })
+                    .await?
+            }
+            FreshKey::AbsentReadOnly => {
+                return Err(StoreError::failed(anyhow!(
+                    "This program only reads the key file"
+                )));
+            }
+        };
+        Ok(Sealer { store, key })
     }
 
     fn slot(&self, kind: StoreKind) -> Result<Arc<Slot>, StoreError> {
@@ -369,14 +518,14 @@ impl KeyCreation<'_> {
         })
         .await
         .unwrap_or_else(|err| Err(StoreError::failed(anyhow!("Locking stopped: {err}"))))?;
-        if let Lookup::Found(key) = slot.store.read(Interaction::Allowed).await? {
+        if let Lookup::Found(key) = slot.store.read(self.interaction).await? {
             slot.hold(&key);
             return Ok(key);
         }
         before_creating();
         let key = DataKey::generate()?;
         let created = self.creator.create_if_absent(&key).await?;
-        let stored = match slot.store.read(Interaction::Allowed).await? {
+        let stored = match slot.store.read(self.interaction).await? {
             Lookup::Found(stored) => stored,
             Lookup::Absent => {
                 return Err(StoreError::failed(anyhow!(

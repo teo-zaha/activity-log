@@ -317,3 +317,129 @@ async fn a_read_only_store_offers_no_creation() {
     assert_eq!(file.calls().creates, 0);
     assert!(!lock.parent().unwrap().exists());
 }
+
+/// Stores in memory for `front_end`: an OS store and a key file, each with a lock folder.
+struct Stores {
+    os: Arc<MemoryStore>,
+    file: Arc<MemoryStore>,
+    secrets: Secrets,
+    _dir: TempDir,
+}
+
+fn stores(front_end: FrontEnd) -> Stores {
+    let dir = tempdir().unwrap();
+    let os = Arc::new(MemoryStore::new(StoreKind::Os));
+    let file = Arc::new(MemoryStore::new(StoreKind::File));
+    let secrets = Secrets::with_stores(
+        front_end,
+        Some((
+            os.clone() as Arc<dyn SecretStore>,
+            Some(dir.path().join("os").join("secret-key.lock")),
+        )),
+        (
+            file.clone() as Arc<dyn SecretStore>,
+            Some(dir.path().join("file").join("secret.key.lock")),
+        ),
+    );
+    Stores {
+        os,
+        file,
+        secrets,
+        _dir: dir,
+    }
+}
+
+/// A writer seals with the OS store, read again; a key is made only over a definite absence,
+/// and `orphans` is asked only then, for that store.
+#[tokio::test]
+async fn a_writer_seals_with_the_os_store() {
+    let s = stores(FrontEnd::Desktop);
+    let asked = std::sync::Mutex::new(Vec::new());
+    let sealer = s
+        .secrets
+        .sealer(Interaction::Allowed, |store| {
+            asked.lock().unwrap().push(store);
+            0
+        })
+        .await
+        .unwrap();
+    assert_eq!(sealer.store(), StoreKind::Os);
+    assert_eq!(*asked.lock().unwrap(), [StoreKind::Os]);
+    assert_eq!(s.os.calls().creates, 1);
+    // The next writer reads it again and makes none.
+    s.secrets.sealer(Interaction::Allowed, |_| 0).await.unwrap();
+    assert_eq!(s.os.calls().creates, 1);
+    // The first: fresh, under the lock, read back; the second: fresh.
+    assert_eq!(s.os.calls().reads, 4);
+    assert_eq!(s.file.calls(), StoreCalls::default());
+}
+
+/// Only where the OS store is missing does the CLI fall back to the key file; the desktop app
+/// never does, and a refusal is never a reason to.
+#[tokio::test]
+async fn only_the_cli_falls_back_and_only_without_an_os_store() {
+    let cli = stores(FrontEnd::Cli);
+    cli.os
+        .fail_next(StoreCall::Read, StoreErrorKind::Unavailable);
+    let sealer = cli
+        .secrets
+        .sealer(Interaction::Allowed, |_| 0)
+        .await
+        .unwrap();
+    assert_eq!(sealer.store(), StoreKind::File);
+    assert_eq!(cli.file.calls().creates, 1);
+
+    let desktop = stores(FrontEnd::Desktop);
+    desktop
+        .os
+        .fail_next(StoreCall::Read, StoreErrorKind::Unavailable);
+    let err = desktop
+        .secrets
+        .sealer(Interaction::Allowed, |_| 0)
+        .await
+        .unwrap_err();
+    assert_eq!(err.kind(), StoreErrorKind::Unavailable);
+    assert_eq!(desktop.file.calls(), StoreCalls::default());
+
+    for kind in [StoreErrorKind::Refused, StoreErrorKind::Failed] {
+        let cli = stores(FrontEnd::Cli);
+        cli.os.fail_next(StoreCall::Read, kind);
+        let err = cli
+            .secrets
+            .sealer(Interaction::Allowed, |_| 0)
+            .await
+            .unwrap_err();
+        assert_eq!(err.kind(), kind);
+        assert_eq!(cli.file.calls(), StoreCalls::default());
+        assert_eq!(cli.os.calls().creates, 0);
+    }
+}
+
+/// Without any store to seal with (the desktop app without an OS store) nothing is asked.
+#[tokio::test]
+async fn the_desktop_without_an_os_store_has_nothing_to_seal_with() {
+    let file = Arc::new(MemoryStore::new(StoreKind::File));
+    let secrets = Secrets::with_stores(
+        FrontEnd::Desktop,
+        None,
+        (file.clone() as Arc<dyn SecretStore>, None),
+    );
+    let err = secrets
+        .sealer(Interaction::Allowed, |_| 0)
+        .await
+        .unwrap_err();
+    assert_eq!(err.kind(), StoreErrorKind::Unavailable);
+    assert_eq!(file.calls(), StoreCalls::default());
+}
+
+/// A pass without dialogs asks the store without them, creation included.
+#[tokio::test]
+async fn a_pass_without_dialogs_never_allows_one() {
+    let s = stores(FrontEnd::Desktop);
+    s.secrets.sealer(Interaction::Never, |_| 0).await.unwrap();
+    assert!(
+        s.os.read_interactions()
+            .iter()
+            .all(|interaction| *interaction == Interaction::Never)
+    );
+}

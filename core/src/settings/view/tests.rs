@@ -667,3 +667,42 @@ label = "Unset"
         Some(SecretStoredDto::Sealed { store: os })
     );
 }
+
+/// A new address for a sealed token, without the token, is an issue at the token's field, as
+/// the save would be refused; with the token it is none.
+#[test]
+fn a_new_address_for_a_sealed_token_is_an_issue_at_the_token() {
+    let sealed = "v1:os:2c9b4508:e5add042:Z6q9UyLkNkvLurag57DDwPh66TvP6jkJwkov3dxk6g";
+    let read = file(&format!(
+        "[[gitlab]]\nlabel = \"Work\"\nname = \"work\"\nurl = \"https://gitlab.example.test\"\ntoken = {{ sealed = \"{sealed}\" }}\n"
+    ));
+    let id = "gitlab/work".parse::<ConnectionId>().unwrap();
+    let base = || SaveBase::Known(read.edit_base(&id, &[]).unwrap());
+
+    let moved = save(
+        "gitlab/work",
+        vec![("GITLAB_URL", text("https://other.example.test"))],
+    );
+    let issues = check_save(&moved, base(), Some(&read));
+    assert_eq!(
+        issues
+            .iter()
+            .map(|issue| (issue.field.clone(), issue.problem))
+            .collect::<Vec<_>>(),
+        [(
+            ProviderConfigFieldRefDto::Value {
+                key: "GITLAB_TOKEN".to_string()
+            },
+            ProviderConfigIssueKindDto::Invalid
+        )]
+    );
+
+    let with_token = save(
+        "gitlab/work",
+        vec![
+            ("GITLAB_URL", text("https://other.example.test")),
+            ("GITLAB_TOKEN", text("glpat-test-0001")),
+        ],
+    );
+    assert!(check_save(&with_token, base(), Some(&read)).is_empty());
+}

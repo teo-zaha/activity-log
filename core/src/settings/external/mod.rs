@@ -18,7 +18,10 @@ use super::{
     warn_if_shared,
     write::{self, EditError},
 };
-use crate::provider::provider_registry;
+use crate::{
+    provider::provider_registry,
+    secrets::{Sealer, StoreError},
+};
 
 mod editor;
 #[cfg(test)]
@@ -70,9 +73,14 @@ impl std::error::Error for ExternalEditError {
 /// the copy without holding the lock, and publishes the copy if it changed and the file did
 /// not change meanwhile. The copy, the comparison and the publication all go through one
 /// handle to the file's folder.
+///
+/// When the user typed a new secret as plain text, `sealer` is asked for the key before the
+/// lock (a keychain may ask) and every plain secret is sealed; if it gives none the plain text
+/// is published all the same, with a warning: the edit never fails for it.
 pub fn edit_externally(
     path: &Path,
     editor: impl FnOnce(&Path) -> anyhow::Result<()>,
+    sealer: impl FnOnce(&ConfigFile) -> Result<Sealer, StoreError>,
 ) -> Result<ExternalEdit, ExternalEditError> {
     let (folder, path) = write::open_parent(path).map_err(ExternalEditError::Failed)?;
     let name = write::file_name(&path).map_err(ExternalEditError::Failed)?;
@@ -120,6 +128,30 @@ pub fn edit_externally(
         )));
     }
 
+    let mut notes = Vec::new();
+    let sealing = match ConfigFile::parse(&copy_path, &edited) {
+        Ok(typed) => {
+            let before = original
+                .as_deref()
+                .and_then(|bytes| ConfigFile::parse(&path, bytes).ok());
+            if typed.new_plain_secrets(before.as_ref()).is_empty() {
+                None
+            } else {
+                match sealer(&typed) {
+                    Ok(sealer) => Some(sealer),
+                    Err(err) => {
+                        notes.push(format!(
+                            "The new secret is saved as plain text, since no key was given to seal it: {err}"
+                        ));
+                        None
+                    }
+                }
+            }
+        }
+        // Reported as invalid under the lock, as before.
+        Err(_) => None,
+    };
+
     let saved = (|| {
         let locked = write::lock_in(folder, path)?;
         let current = locked.read()?;
@@ -133,11 +165,18 @@ pub fn edit_externally(
             .and_then(|bytes| ConfigFile::parse(&locked.path, bytes).ok());
         let fresh = fresh_instances(original.as_ref(), &file);
         let content = with_fresh_instances(edited, file, &fresh)?;
+        let content = match &sealing {
+            Some(sealer) => sealed_content(&locked.path, content, sealer)?,
+            None => content,
+        };
         let written = locked.write_checked(current.as_deref(), content)?;
         Ok(written.warnings)
     })();
     match saved {
-        Ok(warnings) => Ok(ExternalEdit::Saved { warnings }),
+        Ok(mut warnings) => {
+            warnings.extend(notes);
+            Ok(ExternalEdit::Saved { warnings })
+        }
         Err(err) => Err(keep(err)),
     }
 }
@@ -328,4 +367,23 @@ fn canonical_value(value: &Value) -> String {
             format!("{{{}}}", fields.into_iter().collect::<Vec<_>>().join(","))
         }
     }
+}
+
+/// `content` with every plain secret sealed by `sealer`, its line endings kept, and opened
+/// again from those bytes before they are published.
+fn sealed_content(path: &Path, content: Vec<u8>, sealer: &Sealer) -> Result<Vec<u8>, EditError> {
+    let mut file = ConfigFile::parse(path, &content).map_err(EditError::Invalid)?;
+    let sealed = file.seal_plain(sealer);
+    for (connection, secret) in sealed.unbound {
+        crate::diagnostics::warn(
+            "settings",
+            format!(
+                "{connection}: {} stays plain text until its address is a web address it can be bound to",
+                secret.name
+            ),
+        );
+    }
+    let sealed = write::with_line_endings_of(file.to_string(), Some(&content));
+    write::check_sealed(path, &sealed, sealer)?;
+    Ok(sealed)
 }

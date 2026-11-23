@@ -41,7 +41,12 @@ fn json<T>(status: Status, body: T) -> Answer<T> {
 /// The status an error answers with; its body is the error itself.
 fn status_of(kind: BackendErrorKind) -> Status {
     match kind {
-        BackendErrorKind::NoData | BackendErrorKind::Busy => Status::ServiceUnavailable,
+        // The server never seals, so it never meets the store's kinds; they mean no store
+        // served, now or here.
+        BackendErrorKind::NoData
+        | BackendErrorKind::Busy
+        | BackendErrorKind::SecretStoreUnavailable
+        | BackendErrorKind::SecretStoreRefused => Status::ServiceUnavailable,
         BackendErrorKind::InvalidRequest => Status::BadRequest,
         BackendErrorKind::NotFound => Status::NotFound,
         BackendErrorKind::AlreadyExists | BackendErrorKind::Conflict => Status::Conflict,

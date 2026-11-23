@@ -11,7 +11,7 @@ use activity_log_core::{
     export::render_export,
     model::{CollectOptions, ConnectionId, OutputFormat, Source},
     provider::{connection::ConnectionLocation, inspect_provider_runtimes_with},
-    secrets::Secrets,
+    secrets::{Interaction, Secrets},
     settings::{
         ConfigEditError, ConfigFile, EditError, Editor, ExternalEdit, FieldId, NO_LOCATION,
         Precondition, edit_config, edit_externally, load_connections,
@@ -200,7 +200,7 @@ async fn run(cli: Cli) -> Result<ExitCode> {
         Some(Command::Sources { action: None }) => list_sources(config).await?,
         Some(Command::Sources {
             action: Some(action),
-        }) => change_sources(action, config)?,
+        }) => change_sources(action, config).await?,
         Some(Command::Config {
             action: ConfigCommand::Path,
         }) => Status::stdout().say(&config_path(config)?.display().to_string())?,
@@ -238,11 +238,12 @@ type Change = Box<dyn FnOnce(&mut ConfigFile) -> Result<Option<String>, ConfigEd
 
 /// Asks what it needs first, then edits the file once. A command that showed the user a value
 /// (a question) saves only if the connection is still as it was then.
-fn change_sources(action: SourcesCommand, config: Option<&Path>) -> Result<()> {
+async fn change_sources(action: SourcesCommand, config: Option<&Path>) -> Result<()> {
     let path = config_path(config)?;
     let file = ConfigFile::load(&path)?;
     let connections = file.logged_connections();
     let mut terminal = Terminal;
+    let mut brings_secret = false;
     let (precondition, change): (Precondition, Change) = match action {
         SourcesCommand::Add { kind, label, wsl } => {
             // Checked before the questions, so a refused add asks nothing.
@@ -251,6 +252,7 @@ fn change_sources(action: SourcesCommand, config: Option<&Path>) -> Result<()> {
                 .map_or(ConnectionLocation::Local, ConnectionLocation::Wsl);
             file.clone().add(&kind, label.as_deref(), location)?;
             let values = sources::ask_values(&kind, &mut terminal)?;
+            brings_secret = values.iter().any(|(key, _)| key.is_secret());
             let change: Change = Box::new(move |file| {
                 let id = sources::add(file, &kind, label.as_deref(), wsl, &values)?;
                 Ok(Some(format!("Added {id}")))
@@ -265,12 +267,36 @@ fn change_sources(action: SourcesCommand, config: Option<&Path>) -> Result<()> {
             let id = resolve_connection(&connections, &source)?;
             let asks = values.is_empty();
             let (key, raw) = sources::value_for(&id, &field, values, &mut terminal)?;
-            let precondition = match file.edit_base(&id, &[FieldId::Value(key.name)]) {
+            let mut set = vec![(key, raw)];
+            // A new address (or TLS setting) needs the token sealed for it: asked here.
+            let mut moved = file.clone();
+            moved.set(&id, key, set[0].1.as_deref())?;
+            if let Some((_, secret)) = moved.rebound(&file) {
+                if !std::io::IsTerminal::is_terminal(&io::stdin()) {
+                    anyhow::bail!(
+                        "{id}: {} must be entered again for the new address or TLS setting; run this in a terminal, or set it first with `sources set {id} {} -`",
+                        secret.label,
+                        sources::field_of(&id.source, secret)
+                    );
+                }
+                let field = sources::field_of(&id.source, secret);
+                set.push(sources::value_for(&id, &field, Vec::new(), &mut terminal)?);
+            }
+            brings_secret = set
+                .iter()
+                .any(|(key, raw)| key.is_secret() && raw.is_some());
+            let touched = set
+                .iter()
+                .map(|(key, _)| FieldId::Value(key.name))
+                .collect::<Vec<_>>();
+            let precondition = match file.edit_base(&id, &touched) {
                 Some(base) if asks => Precondition::Unchanged(base),
                 _ => Precondition::None,
             };
             let change: Change = Box::new(move |file| {
-                file.set(&id, key, raw.as_deref())?;
+                for (key, raw) in &set {
+                    file.set(&id, *key, raw.as_deref())?;
+                }
                 Ok(None)
             });
             (precondition, change)
@@ -307,8 +333,18 @@ fn change_sources(action: SourcesCommand, config: Option<&Path>) -> Result<()> {
             .find(|connection| connection.id == *id)
             .map(|connection| connection.label.clone())
     };
-    let edited =
-        edit_config(&path, precondition, change).map_err(|err| edit_failure(err, label))?;
+    // The key is read before the file is locked: the keychain may ask, for as long as it takes.
+    let sealing = match brings_secret {
+        true => Some(
+            Secrets::cli(Some(&path))
+                .sealer(Interaction::Allowed, |store| file.sealed_in(store))
+                .await
+                .map_err(|err| edit_failure(EditError::SecretStore(err), label))?,
+        ),
+        false => None,
+    };
+    let edited = edit_config(&path, precondition, sealing.as_ref(), change)
+        .map_err(|err| edit_failure(err, label))?;
     let mut status = Status::stdout();
     if let Some(message) = edited.value {
         status.say(&message)?;
@@ -327,24 +363,42 @@ fn edit_failure(err: EditError, label: impl Fn(&ConnectionId) -> Option<String>)
         EditError::Conflict(conflict) => label(&conflict.connection),
         _ => None,
     };
-    let message = err.message(label.as_deref());
+    let mut message = err.message(label.as_deref());
+    if let EditError::SecretStore(store) = &err
+        && store.kind() != activity_log_core::secrets::StoreErrorKind::Unavailable
+    {
+        message.push_str(
+            "\nRun it in the desktop session, where the keychain can ask, or set ACTIVITY_LOG_SECRET_STORE=file to keep the key in a file.",
+        );
+    }
     anyhow::Error::new(err).context(message)
 }
 
 fn edit_in_editor(config: Option<&Path>) -> Result<()> {
     let path = config_path(config)?;
     let editor = Editor::from_env();
-    let outcome = edit_externally(&path, |copy| {
-        let status = editor
-            .command()
-            .arg(copy)
-            .status()
-            .map_err(|err| anyhow!("Could not start {}: {err}", editor.name()))?;
-        if !status.success() {
-            anyhow::bail!("{} exited with {status}", editor.name());
-        }
-        Ok(())
-    })?;
+    let outcome = edit_externally(
+        &path,
+        |copy| {
+            let status = editor
+                .command()
+                .arg(copy)
+                .status()
+                .map_err(|err| anyhow!("Could not start {}: {err}", editor.name()))?;
+            if !status.success() {
+                anyhow::bail!("{} exited with {status}", editor.name());
+            }
+            Ok(())
+        },
+        |edited| {
+            // Only for a new plain secret, after the editor closed and before the file is locked.
+            let secrets = Secrets::cli(Some(&path));
+            tokio::task::block_in_place(|| {
+                tokio::runtime::Handle::current()
+                    .block_on(secrets.sealer(Interaction::Allowed, |store| edited.sealed_in(store)))
+            })
+        },
+    )?;
     let mut status = Status::stdout();
     match outcome {
         ExternalEdit::Unchanged => status.say("No changes")?,

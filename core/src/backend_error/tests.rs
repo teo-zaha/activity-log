@@ -111,6 +111,31 @@ fn each_failed_edit_has_its_kind() {
             EditError::Internal(anyhow::anyhow!("disk full")),
             BackendErrorKind::Internal,
         ),
+        (
+            EditError::SecretStore(crate::secrets::StoreError::unavailable(anyhow::anyhow!(
+                "no keychain"
+            ))),
+            BackendErrorKind::SecretStoreUnavailable,
+        ),
+        (
+            EditError::SecretStore(crate::secrets::StoreError::refused(anyhow::anyhow!(
+                "denied"
+            ))),
+            BackendErrorKind::SecretStoreRefused,
+        ),
+        (
+            EditError::SecretStore(crate::secrets::StoreError::failed(anyhow::anyhow!(
+                "broken"
+            ))),
+            BackendErrorKind::SecretStoreRefused,
+        ),
+        (
+            EditError::Rejected(crate::settings::ConfigEditError::BindingChanged {
+                connection: connection(),
+                secret: "GITLAB_TOKEN",
+            }),
+            BackendErrorKind::InvalidRequest,
+        ),
     ];
     for (error, expected) in cases {
         assert_eq!(kind(error), expected);

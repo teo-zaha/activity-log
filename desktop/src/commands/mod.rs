@@ -9,6 +9,7 @@ use activity_log_core::{
     },
     provider::current_os,
     runtime::{answer_collect, answer_recheck},
+    secrets::{Interaction, Sealer},
     settings::{
         ConfigEditError, ConfigFile, Conflict, EditError, Precondition,
         view::{apply_add, apply_save, build_snapshot, check_save, save_changes, touched_fields},
@@ -107,11 +108,15 @@ pub(crate) async fn save_provider_config(
         )
         .precondition()
         .map_err(|conflict| unknown_base_refusal(&state, conflict))?;
-    Ok(
-        update_config(&state, precondition, move |file| apply_save(file, &changes))
-            .await?
-            .1,
-    )
+    let sealing = match changes.brings_secret() {
+        true => Some(sealer(&state).await?),
+        false => None,
+    };
+    Ok(update_config(&state, precondition, sealing, move |file| {
+        apply_save(file, &changes)
+    })
+    .await?
+    .1)
 }
 
 #[tauri::command]
@@ -119,7 +124,7 @@ pub(crate) async fn add_connection(
     state: tauri::State<'_, AppState>,
     request: AddConnectionRequestDto,
 ) -> Result<AddConnectionResponseDto, BackendError> {
-    let (created, saved) = update_config(&state, Precondition::None, move |file| {
+    let (created, saved) = update_config(&state, Precondition::None, None, move |file| {
         apply_add(file, &request)
     })
     .await?;
@@ -144,8 +149,10 @@ pub(crate) async fn remove_connection(
         .precondition()
         .map_err(|conflict| unknown_base_refusal(&state, conflict))?;
     let removed = connection.clone();
-    let (_, saved) =
-        update_config(&state, precondition, move |file| file.remove(&connection)).await?;
+    let (_, saved) = update_config(&state, precondition, None, move |file| {
+        file.remove(&connection)
+    })
+    .await?;
     diagnostics::info("settings", format!("Removed {removed}"));
     Ok(saved)
 }
@@ -158,18 +165,23 @@ pub(crate) async fn remove_connection(
 async fn update_config<T: Send + 'static>(
     state: &AppState,
     precondition: Precondition,
+    sealing: Option<Sealer>,
     change: impl FnOnce(&mut ConfigFile) -> Result<T, ConfigEditError> + Send + 'static,
 ) -> Result<(T, ProviderConfigSaveResponseDto), BackendError> {
-    let edit = state.host.edit(precondition, change).await.map_err(|err| {
-        let err = BackendError::from(err);
-        if matches!(
-            err.kind,
-            BackendErrorKind::Internal | BackendErrorKind::Unprotectable
-        ) {
-            diagnostics::error("settings", &err.message);
-        }
-        err
-    })?;
+    let edit = state
+        .host
+        .edit(precondition, sealing, change)
+        .await
+        .map_err(|err| {
+            let err = BackendError::from(err);
+            if matches!(
+                err.kind,
+                BackendErrorKind::Internal | BackendErrorKind::Unprotectable
+            ) {
+                diagnostics::error("settings", &err.message);
+            }
+            err
+        })?;
     match edit.installed {
         Some(_) => diagnostics::info("settings", "Settings saved, re-running provider checks"),
         // Written, but the app quit before it installed them: no check runs for them now.
@@ -329,4 +341,24 @@ fn web_url(raw: &str) -> Result<Url, BackendError> {
             "Only web links can be opened, not {other}: links"
         ))),
     }
+}
+
+/// The key a save that brings a secret seals it with, read from the OS store before the file
+/// is locked (a dialog can take as long as the user does). The desktop app seals only there:
+/// no store is `secretStoreUnavailable`, a refusal `secretStoreRefused`, the draft kept.
+async fn sealer(state: &AppState) -> Result<Sealer, BackendError> {
+    let path = state.host.config_path().map(Path::to_path_buf);
+    let current = tauri::async_runtime::spawn_blocking(move || load_config(path.as_deref()))
+        .await
+        .ok()
+        .and_then(Result::ok)
+        .flatten();
+    state
+        .host
+        .secrets()
+        .sealer(Interaction::Allowed, |store| {
+            current.as_ref().map_or(0, |file| file.sealed_in(store))
+        })
+        .await
+        .map_err(|err| BackendError::from(EditError::SecretStore(err)))
 }

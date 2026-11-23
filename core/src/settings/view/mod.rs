@@ -145,7 +145,12 @@ pub fn check_save(
     base: SaveBase,
     current: Option<&ConfigFile>,
 ) -> Vec<ProviderConfigFieldIssueDto> {
-    let mut issues = prepare_save(request).err().unwrap_or_default();
+    let prepared = prepare_save(request);
+    let mut issues = match (&prepared, current) {
+        (Err(issues), _) => issues.clone(),
+        (Ok(changes), Some(current)) => rebound_issues(changes, current),
+        (Ok(_), None) => Vec::new(),
+    };
     let conflict = match (base.precondition(), current) {
         (Err(conflict), _) => Some(conflict),
         (Ok(precondition), Some(current)) => check_precondition(current, &precondition).err(),
@@ -154,6 +159,29 @@ pub fn check_save(
     issues.extend(conflict.iter().flat_map(conflict_issues));
     issues
 }
+
+/// A save that changes what a sealed secret is bound to (its server's address, Jira's TLS
+/// setting) without the secret: the issue sits at the secret's field, as the save would be
+/// refused for it.
+fn rebound_issues(changes: &SaveChanges, current: &ConfigFile) -> Vec<ProviderConfigFieldIssueDto> {
+    let mut saved = current.clone();
+    if apply_save(&mut saved, changes).is_err() {
+        return Vec::new();
+    }
+    saved
+        .rebound(current)
+        .map(|(_, secret)| ProviderConfigFieldIssueDto {
+            field: ProviderConfigFieldRefDto::Value {
+                key: secret.name.to_string(),
+            },
+            problem: ProviderConfigIssueKindDto::Invalid,
+            message: REBOUND.to_string(),
+        })
+        .into_iter()
+        .collect()
+}
+
+const REBOUND: &str = "Enter it again for the new address or TLS setting.";
 
 /// A conflict as issues: one per changed field, or one for the connection as a whole.
 pub fn conflict_issues(conflict: &Conflict) -> Vec<ProviderConfigFieldIssueDto> {
@@ -191,6 +219,15 @@ pub struct SaveChanges {
     connection: ConnectionId,
     label: Option<String>,
     values: Vec<(ProviderConfigKey, Option<String>)>,
+}
+
+impl SaveChanges {
+    /// Whether the save brings a secret, which needs the key read before the file is locked.
+    pub fn brings_secret(&self) -> bool {
+        self.values
+            .iter()
+            .any(|(key, value)| key.is_secret() && value.is_some())
+    }
 }
 
 /// The edits of `request`, or `invalidRequest` with its first issue as `{field}: {message}`.

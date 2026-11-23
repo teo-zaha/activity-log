@@ -76,7 +76,8 @@ impl From<ConfigEditError> for BackendError {
             ConfigEditError::SingleInstance(_) => BackendErrorKind::AlreadyExists,
             ConfigEditError::WslOnlyForGit
             | ConfigEditError::EmptyLabel
-            | ConfigEditError::UnknownSetting { .. } => BackendErrorKind::InvalidRequest,
+            | ConfigEditError::UnknownSetting { .. }
+            | ConfigEditError::BindingChanged { .. } => BackendErrorKind::InvalidRequest,
             ConfigEditError::NotATableList(_) => BackendErrorKind::BadConfig,
         };
         Self::new(kind, err.to_string())
@@ -95,6 +96,13 @@ impl From<EditError> for BackendError {
             EditError::Busy => BackendErrorKind::Busy,
             EditError::Conflict(_) | EditError::FileChanged { .. } => BackendErrorKind::Conflict,
             EditError::Unprotectable { .. } => BackendErrorKind::Unprotectable,
+            EditError::SecretStore(ref store) => match store.kind() {
+                crate::secrets::StoreErrorKind::Unavailable => {
+                    BackendErrorKind::SecretStoreUnavailable
+                }
+                crate::secrets::StoreErrorKind::Refused
+                | crate::secrets::StoreErrorKind::Failed => BackendErrorKind::SecretStoreRefused,
+            },
         };
         Self::new(kind, err.to_string())
     }

@@ -40,11 +40,19 @@ fn closing_the_editor_without_a_change_touches_nothing() {
     let modified = fs::metadata(&path).unwrap().modified().unwrap();
     let mut seen = PathBuf::new();
 
-    let outcome = edit_externally(&path, |copy| {
-        seen = copy.to_path_buf();
-        assert_eq!(fs::read_to_string(copy).unwrap(), "[[git]]\n");
-        Ok(())
-    })
+    let outcome = edit_externally(
+        &path,
+        |copy| {
+            seen = copy.to_path_buf();
+            assert_eq!(fs::read_to_string(copy).unwrap(), "[[git]]\n");
+            Ok(())
+        },
+        |_: &crate::settings::ConfigFile| {
+            Err(crate::secrets::StoreError::unavailable(anyhow::anyhow!(
+                "no store in tests"
+            )))
+        },
+    )
     .unwrap();
 
     assert!(matches!(outcome, ExternalEdit::Unchanged));
@@ -60,7 +68,16 @@ fn closing_the_editor_without_a_change_touches_nothing() {
     assert_eq!(folder_names(dir.path()), ["config.toml"]);
 
     let missing = dir.path().join("missing.toml");
-    let outcome = edit_externally(&missing, |_| Ok(())).unwrap();
+    let outcome = edit_externally(
+        &missing,
+        |_| Ok(()),
+        |_: &crate::settings::ConfigFile| {
+            Err(crate::secrets::StoreError::unavailable(anyhow::anyhow!(
+                "no store in tests"
+            )))
+        },
+    )
+    .unwrap();
     assert!(matches!(outcome, ExternalEdit::Unchanged));
     assert!(!missing.exists());
     assert_eq!(folder_names(dir.path()), ["config.toml"]);
@@ -77,7 +94,7 @@ fn instances_follow_the_tables_the_user_changed() {
         &path,
         writes(
             "# mine\n[[gitlab]]\nname = \"marked\"\ninstance = \"00000000000000aa\"\n\n[[gitlab]]\nname = \"legacy\"\nlabel   =   \"Legacy\" # same value\n\n[[gitlab]]\nname = \"edited\"\nlabel = \"Edited again\"\n\n[[gitlab]]\nname = \"pasted\"\ninstance = \"00000000000000aa\"\n",
-        ),
+        ), |_: &crate::settings::ConfigFile| Err(crate::secrets::StoreError::unavailable(anyhow::anyhow!("no store in tests"))),
     )
     .unwrap();
 
@@ -116,6 +133,11 @@ fn a_deleted_instance_line_makes_a_new_lifetime() {
     edit_externally(
         &path,
         writes("[[gitlab]]\nname = \"work\"\nlabel = \"Work\"\n"),
+        |_: &crate::settings::ConfigFile| {
+            Err(crate::secrets::StoreError::unavailable(anyhow::anyhow!(
+                "no store in tests"
+            )))
+        },
     )
     .unwrap();
 
@@ -123,7 +145,7 @@ fn a_deleted_instance_line_makes_a_new_lifetime() {
     let lines = instance_lines(&written);
     assert_eq!(lines.len(), 1);
     assert_ne!(lines[0], "\"00000000000000aa\"");
-    let refused = edit_config(&path, Precondition::Unchanged(old), |file| {
+    let refused = edit_config(&path, Precondition::Unchanged(old), None, |file| {
         file.rename(&work, "Company")
     });
     assert!(matches!(
@@ -138,10 +160,18 @@ fn a_file_changed_during_the_edit_keeps_the_copy_and_publishes_nothing() {
     let path = dir.path().join("config.toml");
     fs::write(&path, "[[git]]\n").unwrap();
 
-    let kept = edit_externally(&path, |copy| {
-        fs::write(&path, "[[system]]\n")?;
-        Ok(fs::write(copy, "[[jira]]\n")?)
-    })
+    let kept = edit_externally(
+        &path,
+        |copy| {
+            fs::write(&path, "[[system]]\n")?;
+            Ok(fs::write(copy, "[[jira]]\n")?)
+        },
+        |_: &crate::settings::ConfigFile| {
+            Err(crate::secrets::StoreError::unavailable(anyhow::anyhow!(
+                "no store in tests"
+            )))
+        },
+    )
     .unwrap_err();
 
     let message = kept.to_string();
@@ -172,7 +202,16 @@ fn an_invalid_copy_is_kept_with_a_redacted_error() {
     let path = dir.path().join("config.toml");
     fs::write(&path, "[[git]]\n").unwrap();
 
-    let kept = edit_externally(&path, writes("[[gitlab]]\ntoken = \"glpat-SECRET\n")).unwrap_err();
+    let kept = edit_externally(
+        &path,
+        writes("[[gitlab]]\ntoken = \"glpat-SECRET\n"),
+        |_: &crate::settings::ConfigFile| {
+            Err(crate::secrets::StoreError::unavailable(anyhow::anyhow!(
+                "no store in tests"
+            )))
+        },
+    )
+    .unwrap_err();
 
     let message = kept.to_string();
     let ExternalEditError::Kept { copy, cause } = kept else {
@@ -193,16 +232,24 @@ fn an_editor_that_saves_by_rename_does_not_change_the_protection() {
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("config.toml");
 
-    edit_externally(&path, |copy| {
-        let fresh = copy.with_file_name("4913");
-        fs::write(&fresh, "[[git]]\n")?;
-        #[cfg(unix)]
-        {
-            use std::os::unix::fs::PermissionsExt;
-            fs::set_permissions(&fresh, fs::Permissions::from_mode(0o644))?;
-        }
-        Ok(fs::rename(&fresh, copy)?)
-    })
+    edit_externally(
+        &path,
+        |copy| {
+            let fresh = copy.with_file_name("4913");
+            fs::write(&fresh, "[[git]]\n")?;
+            #[cfg(unix)]
+            {
+                use std::os::unix::fs::PermissionsExt;
+                fs::set_permissions(&fresh, fs::Permissions::from_mode(0o644))?;
+            }
+            Ok(fs::rename(&fresh, copy)?)
+        },
+        |_: &crate::settings::ConfigFile| {
+            Err(crate::secrets::StoreError::unavailable(anyhow::anyhow!(
+                "no store in tests"
+            )))
+        },
+    )
     .unwrap();
 
     // A table new in the edited text gets an instance.
@@ -222,7 +269,16 @@ fn a_broken_file_can_be_repaired() {
     let path = dir.path().join("config.toml");
     fs::write(&path, "[[gitlab]\nlabel = \"Work\"\n").unwrap();
 
-    edit_externally(&path, writes("[[gitlab]]\nlabel = \"Work\"\n")).unwrap();
+    edit_externally(
+        &path,
+        writes("[[gitlab]]\nlabel = \"Work\"\n"),
+        |_: &crate::settings::ConfigFile| {
+            Err(crate::secrets::StoreError::unavailable(anyhow::anyhow!(
+                "no store in tests"
+            )))
+        },
+    )
+    .unwrap();
 
     let written = fs::read_to_string(&path).unwrap();
     assert!(written.starts_with("[[gitlab]]\ninstance = "), "{written}");
@@ -241,7 +297,16 @@ fn a_comment_only_edit_is_published_byte_for_byte() {
     .unwrap();
     let edited = "# mine\r\n[[gitlab]]\r\nname = \"work\"\r\ninstance = \"00000000000000aa\"\r\n";
 
-    edit_externally(&path, move |copy| Ok(fs::write(copy, edited)?)).unwrap();
+    edit_externally(
+        &path,
+        move |copy| Ok(fs::write(copy, edited)?),
+        |_: &crate::settings::ConfigFile| {
+            Err(crate::secrets::StoreError::unavailable(anyhow::anyhow!(
+                "no store in tests"
+            )))
+        },
+    )
+    .unwrap();
 
     assert_eq!(fs::read_to_string(&path).unwrap(), edited);
 }
@@ -256,6 +321,11 @@ fn instance_changes_keep_the_rest_of_the_text() {
     edit_externally(
         &path,
         writes("[[git]]\r\n\r\n[[gitlab]] # new\r\nlabel = 'Work'   # mine\r\n"),
+        |_: &crate::settings::ConfigFile| {
+            Err(crate::secrets::StoreError::unavailable(anyhow::anyhow!(
+                "no store in tests"
+            )))
+        },
     )
     .unwrap();
 
@@ -284,7 +354,7 @@ fn legacy_tables_are_compared_by_typed_values() {
 
     edit_externally(
         &path,
-        writes("[[jira]]\nname = \"a\"\nextra = '1'\n\n[[gitlab]]\nname = \"b\"\nextra = [1, 2]\ninstance = \"bad\"\n"),
+        writes("[[jira]]\nname = \"a\"\nextra = '1'\n\n[[gitlab]]\nname = \"b\"\nextra = [1, 2]\ninstance = \"bad\"\n"), |_: &crate::settings::ConfigFile| Err(crate::secrets::StoreError::unavailable(anyhow::anyhow!("no store in tests"))),
     )
     .unwrap();
 
@@ -309,13 +379,22 @@ fn a_dotted_instance_is_replaced_not_rewritten_into_a_key() {
             .unwrap();
         let edited = format!("[[gitlab]]\nname = \"work\"\nuser = \"me\"\n{marker}\n");
 
-        edit_externally(&path, move |copy| Ok(fs::write(copy, edited)?)).unwrap();
+        edit_externally(
+            &path,
+            move |copy| Ok(fs::write(copy, edited)?),
+            |_: &crate::settings::ConfigFile| {
+                Err(crate::secrets::StoreError::unavailable(anyhow::anyhow!(
+                    "no store in tests"
+                )))
+            },
+        )
+        .unwrap();
 
         let written = fs::read_to_string(&path).unwrap();
         let file = ConfigFile::load(&path).unwrap();
         assert!(file.connections().warnings.is_empty(), "{written}");
         assert_eq!(instance_lines(&written).len(), 1, "{written}");
-        let refused = edit_config(&path, Precondition::Unchanged(stale), |file| {
+        let refused = edit_config(&path, Precondition::Unchanged(stale), None, |file| {
             file.rename(&work, "Company")
         });
         assert!(
@@ -323,4 +402,71 @@ fn a_dotted_instance_is_replaced_not_rewritten_into_a_key() {
             "{marker}: {written}"
         );
     }
+}
+
+const TYPED_TOKEN: &str = "[[gitlab]]\nname = \"work\"\nlabel = \"Work\"\nurl = \"https://gitlab.example.test\"\ntoken = \"glpat-test-0000\"\n";
+
+/// A token typed into the file is sealed with the key the sealer gives, asked only then.
+#[test]
+fn a_typed_token_is_sealed_with_the_key() {
+    use crate::secrets::{DataKey, KEY_LEN, Sealer, StoreKind};
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("config.toml");
+    fs::write(&path, "").unwrap();
+    let mut asked = 0;
+    let outcome = edit_externally(&path, writes(TYPED_TOKEN), |_| {
+        asked += 1;
+        Ok(Sealer::for_tests(
+            StoreKind::Os,
+            DataKey::from_slice(&[1; KEY_LEN]).unwrap(),
+        ))
+    })
+    .unwrap();
+    assert!(matches!(outcome, ExternalEdit::Saved { .. }));
+    assert_eq!(asked, 1);
+    let text = fs::read_to_string(&path).unwrap();
+    assert!(!text.contains("glpat-test-0000"), "{text}");
+    assert!(text.contains("token = { sealed = \"v1:os:"), "{text}");
+}
+
+/// A store that gives no key never fails the edit: the token is saved as typed, and a warning
+/// says so.
+#[test]
+fn a_typed_token_without_a_key_is_saved_as_typed_with_a_warning() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("config.toml");
+    fs::write(&path, "").unwrap();
+    let outcome = edit_externally(&path, writes(TYPED_TOKEN), |_| {
+        Err(crate::secrets::StoreError::refused(anyhow::anyhow!(
+            "interaction not allowed"
+        )))
+    })
+    .unwrap();
+    let ExternalEdit::Saved { warnings } = outcome else {
+        panic!("not saved");
+    };
+    assert_eq!(warnings.len(), 1, "{warnings:?}");
+    assert!(
+        fs::read_to_string(&path)
+            .unwrap()
+            .contains("glpat-test-0000")
+    );
+}
+
+/// An edit that types no new secret asks for no key.
+#[test]
+fn an_edit_without_a_new_secret_asks_no_key() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("config.toml");
+    fs::write(&path, TYPED_TOKEN).unwrap();
+    let relabelled = "[[gitlab]]\nname = \"work\"\nlabel = \"Company\"\nurl = \"https://gitlab.example.test\"\ntoken = \"glpat-test-0000\"\n";
+    edit_externally(&path, writes(relabelled), |_| {
+        panic!("no key is needed for a label")
+    })
+    .unwrap();
+    assert!(
+        fs::read_to_string(&path)
+            .unwrap()
+            .contains("glpat-test-0000")
+    );
 }

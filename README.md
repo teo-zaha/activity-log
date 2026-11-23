@@ -396,7 +396,7 @@ Each connection is a TOML array-of-tables entry under its kind, using lowercase 
 [[gitlab]]
 label = "Work GitLab"
 url = "https://gitlab.example.org"
-token = "glpat-example-work"
+token = { sealed = "v1:os:9b2e41c0:5d7a10ef:…" }
 user = "alex"
 
 [[gitlab]]
@@ -435,6 +435,16 @@ Key rules:
 - **Connection names and labels:** A connection's ID is `<kind>/<name>` (for example `gitlab/oss`). When `name` is omitted, it is slugged from `label` (`Work GitLab` → `work-gitlab`) and stays fixed if you later rename the label. Duplicate names are numbered (`work-2`) with a warning.
 - **Private writes and locking:** Because `config.toml` holds tokens, Activity Log writes it atomically through a verified owner-only staging folder under a `config.toml.lock` lock (macOS, Linux, and Windows). Unprotectable locations (FAT, exFAT, network shares, or folders writable by other accounts) are refused before writing.
 - **Live reload:** The desktop app and API server check `config.toml` every 2 seconds (the API also checks before answering collection or provider requests) and install edits once stable for 0.2 seconds. Parse errors log only the line and column—never the file contents—and keep the last valid configuration running.
+
+### Secrets
+
+Tokens and secret links (GitLab and Jira tokens, a calendar's ICS address) are stored in `config.toml` sealed, as `token = { sealed = "v1:…" }`, with one key that lives in the OS keychain (macOS Keychain, Windows Credential Manager, a Secret Service such as GNOME Keyring or KWallet on Linux). A copy of `config.toml` (a backup, a dotfiles repository, a paste into an issue) gives away no token.
+
+- **Where the key lives:** the desktop app keeps it only in the keychain; without one it cannot save a token and says how to set one up. The CLI uses the keychain too, and where there is none (a headless Linux, a CI runner, Docker) a key file, `activity-log/secret.key` in the local data directory, saying so once. `ACTIVITY_LOG_SECRET_STORE=file` forces the key file (over SSH on a Mac, where the keychain cannot ask), `=os` forbids it. The API server never saves tokens. The settings show where the key lives when it is not the keychain.
+- **Bound to the server:** a token opens only for the server address it was entered for (and a Jira token only with the same `insecure` setting), so a file that points it elsewhere never sends it there. Changing the address in the settings or with `sources set` asks for the token again.
+- **Typed by hand:** a token written into the file as plain text still works; it is sealed the next time a token is saved, or at the desktop app's start where the keychain needs no dialog. `config edit` seals a token typed there when it can, and otherwise saves it as typed, with a warning.
+- **Don't sync `config.toml` between computers:** each computer has its own key, so a token entered on one cannot be opened on the other, and the settings ask for it again there. The same happens after the keychain is reset or the key file deleted: enter the tokens again.
+- **On macOS** the keychain asks once whether Activity Log may use its key, after each update of the app (and for the CLI after each new build).
 
 ### Environment variables
 
@@ -498,6 +508,7 @@ activity-log sources add gitlab --label "Work"    # custom label
 activity-log sources add git --wsl NixOS          # WSL Git connection on Windows
 activity-log sources set gitlab/oss url https://oss.example.org
 activity-log sources set gitlab/oss token         # prompt without echo
+activity-log sources set gitlab/oss token -       # read it from standard input
 activity-log sources set git/this-computer dirs ~/Projects ~/work
 activity-log sources unset git/this-computer dirs # restore default
 activity-log sources rename gitlab/oss "Open source"

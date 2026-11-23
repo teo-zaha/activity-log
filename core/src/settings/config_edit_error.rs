@@ -20,6 +20,13 @@ pub enum ConfigEditError {
     },
     /// The kind's entry in the file is not a list of tables (`gitlab = "x"`).
     NotATableList(Source),
+    /// What a connection's sealed secret is bound to (its server's address, Jira's TLS
+    /// setting) changed without the secret: it would not open, so it must be entered again.
+    BindingChanged {
+        connection: ConnectionId,
+        /// The secret's wire name, `GITLAB_TOKEN`.
+        secret: &'static str,
+    },
 }
 
 impl std::fmt::Display for ConfigEditError {
@@ -35,6 +42,10 @@ impl std::fmt::Display for ConfigEditError {
             Self::NotATableList(source) => {
                 write!(f, "`{}` must be a list of tables", source.as_ref())
             }
+            Self::BindingChanged { connection, secret } => write!(
+                f,
+                "{connection}: enter {secret} again for the new address or TLS setting"
+            ),
         }
     }
 }

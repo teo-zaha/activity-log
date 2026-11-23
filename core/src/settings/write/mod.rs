@@ -20,6 +20,7 @@ use crate::{
     platform::private_file::{
         Folder, PrivateFileError, ReplaceError, create_private_folder, open_folder,
     },
+    secrets::Sealer,
     settings::{Conflict, Precondition},
 };
 
@@ -59,6 +60,9 @@ pub enum EditError {
     Invalid(ConfigError),
     /// The location cannot hold private files; nothing was written.
     Unprotectable { location: PathBuf },
+    /// The store this program seals new secrets with gave no key (missing, refusing or
+    /// failing); nothing was read under the lock or written.
+    SecretStore(crate::secrets::StoreError),
     /// Reading, locking or writing failed, or the edit stopped; the file is as it was.
     Internal(anyhow::Error),
 }
@@ -87,6 +91,7 @@ impl std::fmt::Display for EditError {
             Self::Rejected(err) => write!(f, "{err}"),
             Self::Invalid(err) => write!(f, "{err}"),
             Self::Internal(err) => write!(f, "{err:#}"),
+            Self::SecretStore(err) => write!(f, "The secret was not saved: {err}"),
             Self::Unprotectable { location } => write!(
                 f,
                 "{} cannot keep the settings private; choose another location with \
@@ -101,12 +106,18 @@ impl std::error::Error for EditError {}
 
 /// Edits the config file at `path` under the config lock. Callers without a location report
 /// [`EditError::NoLocation`] before this is reached.
+///
+/// `sealing` is the key a writer that brings a new secret read before the lock: then every
+/// secret the file holds as plain text is sealed with it, and before anything is published
+/// each value it sealed is opened from the bytes about to be written, for the binding they
+/// name. A change of what a sealed secret is bound to, without the secret, is refused.
 pub fn edit_config<T>(
     path: &Path,
     precondition: Precondition,
+    sealing: Option<&Sealer>,
     change: impl FnOnce(&mut ConfigFile) -> Result<T, ConfigEditError>,
 ) -> Result<Edited<T>, EditError> {
-    edit_config_with(lock(path)?, precondition, change)
+    edit_config_with(lock(path)?, precondition, sealing, change)
 }
 
 type TryLock<'a> = &'a dyn Fn(&File) -> Result<(), fs::TryLockError>;
@@ -114,17 +125,37 @@ type TryLock<'a> = &'a dyn Fn(&File) -> Result<(), fs::TryLockError>;
 fn edit_config_with<T>(
     locked: Locked,
     precondition: Precondition,
+    sealing: Option<&Sealer>,
     change: impl FnOnce(&mut ConfigFile) -> Result<T, ConfigEditError>,
 ) -> Result<Edited<T>, EditError> {
     let found = locked.read()?;
     let mut file = ConfigFile::parse(&locked.path, found.as_deref().unwrap_or_default())
         .map_err(EditError::Invalid)?;
     let as_read = file.to_string();
+    let before = file.clone();
     precondition::check(&file, &precondition).map_err(EditError::Conflict)?;
     let value = change(&mut file).map_err(EditError::Rejected)?;
+    if let Some((connection, secret)) = file.rebound(&before) {
+        return Err(EditError::Rejected(ConfigEditError::BindingChanged {
+            connection,
+            secret: secret.name,
+        }));
+    }
     // The change was accepted: a failure here is the writer's own.
     file.assign_instances()
         .map_err(|err| EditError::Internal(anyhow!(err).context("Giving connections instances")))?;
+    if let Some(sealer) = sealing {
+        let sealed = file.seal_plain(sealer);
+        for (connection, secret) in sealed.unbound {
+            crate::diagnostics::warn(
+                "settings",
+                format!(
+                    "{connection}: {} stays plain text until its address is a web address it can be bound to",
+                    secret.name
+                ),
+            );
+        }
+    }
     let serialized = file.to_string();
     // An edit that changed nothing keeps the file's own bytes: its spelling, comments and line
     // endings.
@@ -132,6 +163,9 @@ fn edit_config_with<T>(
         Some(found) if serialized == as_read => found.clone(),
         found => with_line_endings_of(serialized, found.as_deref()),
     };
+    if let Some(sealer) = sealing {
+        check_sealed(&locked.path, &content, sealer)?;
+    }
     let written = locked.write_checked(found.as_deref(), content)?;
     Ok(Edited {
         value,
@@ -139,6 +173,21 @@ fn edit_config_with<T>(
         content: written.content,
         warnings: written.warnings,
     })
+}
+
+/// Opens each value `sealer`'s key sealed in `content`, the bytes about to be published, for
+/// the binding that file names: one that does not open fails the edit, and nothing is written.
+pub(super) fn check_sealed(path: &Path, content: &[u8], sealer: &Sealer) -> Result<(), EditError> {
+    let file = ConfigFile::parse(path, content).map_err(|err| {
+        EditError::Internal(anyhow!(err).context("The written settings do not read back"))
+    })?;
+    file.check_opens(sealer)
+        .map_err(|(connection, secret, why)| {
+            EditError::Internal(anyhow!(
+                "{connection}: the sealed {} does not open before it is written ({why:?})",
+                secret.name
+            ))
+        })
 }
 
 /// `text` with CRLF line endings when `found` uses them throughout.

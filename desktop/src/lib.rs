@@ -103,6 +103,12 @@ pub fn run() {
             let path = ConfigFile::resolve_path(None);
             // The one place the app builds its stores of the key.
             let secrets = activity_log_core::secrets::Secrets::desktop(path.as_deref());
+            // Before the host first reads the file, while nothing else asks the keychain.
+            if let Some(path) = &path {
+                tauri::async_runtime::block_on(
+                    activity_log_core::settings::startup_seal::seal_without_asking(path, &secrets),
+                );
+            }
             let (state, run_ends) = AppState::start_following(path, secrets);
             state.host.start_initial_collection();
             // Edits from the CLI apply within a few seconds.

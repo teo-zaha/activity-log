@@ -35,6 +35,9 @@ const CONNECT_AGAIN: Readonly<Record<BackendFailureKind, boolean>> = {
   unprotectable: false,
   badConfig: false,
   tooLarge: false,
+  // A save's answers only: no stream meets them, and connecting again would not help.
+  secretStoreUnavailable: false,
+  secretStoreRefused: false,
 }
 
 /** What the source is doing. */
