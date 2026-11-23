@@ -19,7 +19,9 @@
     "windows": {
       "nsis": {
         "headerImage": "installer/nsis-header.bmp",
-        "sidebarImage": "installer/nsis-sidebar.bmp"
+        "sidebarImage": "installer/nsis-sidebar.bmp",
+        "installerIcon": "installer/installer.ico",
+        "uninstallerIcon": "installer/installer.ico"
       }
     }
   }
