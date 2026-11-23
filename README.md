@@ -427,7 +427,7 @@ Key rules:
 
 ### Environment variables
 
-These optional variables (the CLI and API server also read them from `.env`) control file locations, API port, and cache TTL:
+These optional variables control file locations, API port, and cache TTL. Set them in the shell or service that starts Activity Log (for example `ACTIVITY_LOG_CACHE_DIR=/tmp/al-cache activity-log`); no part of Activity Log reads a `.env` file:
 
 | Variable                 | Description                                                              | Default             |
 | ------------------------ | ------------------------------------------------------------------------ | ------------------- |

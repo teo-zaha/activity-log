@@ -40,8 +40,8 @@ Review the changes on the current branch against `main`. Evaluate each area belo
 
 ## 7 — Security & Config
 
-- No secrets, tokens, or `.env` values committed.
-- Environment variables documented in `.env.example` if new ones were added.
+- No secrets or tokens committed.
+- Environment variables documented in the README's environment variables table if new ones were added.
 
 ## Summary
 
