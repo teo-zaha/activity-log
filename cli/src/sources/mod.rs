@@ -42,8 +42,8 @@ pub(crate) enum SourcesError {
         key: ProviderConfigKey,
         message: String,
     },
-    /// `-` for a secret, and standard input ended or brought an empty line: no value, which
-    /// is never read as clearing it.
+    /// `-` for a secret, and standard input ended or brought a blank line: no value, which is
+    /// never read as clearing it.
     NoInput(ProviderConfigKey),
     /// `--secret` for a kind that keeps none.
     NoSecret(Source),
@@ -237,7 +237,7 @@ pub(crate) fn value_for(
         [] => vec![prompt.ask(&format!("{field} for {id}: "), key.is_secret())?],
         // A secret from standard input, so it is on no command line.
         [dash] if key.is_secret() && dash == "-" => match read_line()? {
-            Some(line) if !line.is_empty() => vec![line],
+            Some(line) if !line.trim().is_empty() => vec![line],
             _ => return Err(SourcesError::NoInput(key).into()),
         },
         _ => {

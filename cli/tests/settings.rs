@@ -288,7 +288,7 @@ fn a_token_from_standard_input_is_written_sealed() {
     assert!(key_file.exists());
 }
 
-/// `-` with nothing on standard input (it ended, or brought an empty line) fails and leaves
+/// `-` with nothing on standard input (it ended, or brought a blank line) fails and leaves
 /// the stored token as it was: only `sources unset` clears it.
 #[test]
 fn no_token_on_standard_input_changes_nothing() {
@@ -298,7 +298,7 @@ fn no_token_on_standard_input_changes_nothing() {
     let text = format!("{WORK_AT}token = \"glpat-stored\"\n");
     fs::write(&path, &text).unwrap();
 
-    for input in [None, Some(&b"\n"[..])] {
+    for input in [None, Some(&b"\n"[..]), Some(&b"  \t \n"[..])] {
         let output = sources_with_input(
             dir.path(),
             &key_file,
