@@ -581,6 +581,12 @@ nix develop .#windows -c pnpm desktop:build:windows  # cross-build Windows NSIS 
 pnpm --dir dashboard exec tauri icon src/favicon.svg -o ../desktop/icons  # regenerate app icons
 ```
 
+The Windows installer's header and sidebar are drawn once per display scale, so they stay sharp on scaled displays; `desktop/installer/hooks.nsh` picks the pair for the window. After changing their design, redraw them all and commit the bitmaps:
+
+```bash
+nix shell nixpkgs#librsvg nixpkgs#imagemagick -c python3 desktop/installer/generate-images.py
+```
+
 ## Coming next
 
 These items are in progress or planned and are not yet part of the current build:
