@@ -31,7 +31,7 @@ mod sources;
 
 use range::{RangePreset, day_range, parse_day, resolve_preset, today};
 use results::connection_results;
-use sources::{Terminal, list_lines, resolve_connection};
+use sources::{SourcesError, Terminal, list_lines, resolve_connection};
 
 /// What the exit status says; the README says it in the same words (a test checks).
 const EXIT_STATUS: &str = "Exit status: 0 when every source was collected or skipped (another OS, not installed, not running, nothing to read); 1 when a source failed (refused, unreachable, timed out, not configured, not permitted, its check or its collection failed), after the export of the others is written, or on any error, an invalid flag or value included.";
@@ -144,6 +144,10 @@ enum SourcesCommand {
         source: String,
         field: String,
         values: Vec<String>,
+        /// The source's secret (a token) saved in the same edit, `-` to read it from standard
+        /// input: a new address needs a sealed token entered again.
+        #[arg(long, value_name = "VALUE|-")]
+        secret: Option<String>,
     },
     /// Remove a value, so its default applies again.
     Unset { source: String, field: String },
@@ -263,21 +267,32 @@ async fn change_sources(action: SourcesCommand, config: Option<&Path>) -> Result
             source,
             field,
             values,
+            secret,
         } => {
             let id = resolve_connection(&connections, &source)?;
             let asks = values.is_empty();
-            let (key, raw) = sources::value_for(&id, &field, values, &mut terminal)?;
-            let mut set = vec![(key, raw)];
+            let mut set = vec![sources::value_for(&id, &field, values, &mut terminal)?];
+            if let Some(secret) = secret {
+                let key = sources::secret_of(&id.source)?;
+                if set[0].0 == key {
+                    return Err(SourcesError::SecretTwice(key).into());
+                }
+                let secret_field = sources::field_of(&id.source, key);
+                set.push(sources::value_for(
+                    &id,
+                    &secret_field,
+                    vec![secret],
+                    &mut terminal,
+                )?);
+            }
             // A new address (or TLS setting) needs the token sealed for it: asked here.
             let mut moved = file.clone();
-            moved.set(&id, key, set[0].1.as_deref())?;
+            for (key, raw) in &set {
+                moved.set(&id, *key, raw.as_deref())?;
+            }
             if let Some((_, secret)) = moved.rebound(&file).into_iter().next() {
                 if !std::io::IsTerminal::is_terminal(&io::stdin()) {
-                    anyhow::bail!(
-                        "{id}: {} must be entered again for the new address or TLS setting; run this in a terminal, or set it first with `sources set {id} {} -`",
-                        secret.label,
-                        sources::field_of(&id.source, secret)
-                    );
+                    return Err(SourcesError::SecretNeeded { id, secret, field }.into());
                 }
                 let field = sources::field_of(&id.source, secret);
                 set.push(sources::value_for(&id, &field, Vec::new(), &mut terminal)?);

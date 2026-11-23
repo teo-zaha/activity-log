@@ -42,6 +42,19 @@ pub(crate) enum SourcesError {
         key: ProviderConfigKey,
         message: String,
     },
+    /// `-` for a secret, and standard input ended or brought an empty line: no value, which
+    /// is never read as clearing it.
+    NoInput(ProviderConfigKey),
+    /// `--secret` for a kind that keeps none.
+    NoSecret(Source),
+    /// `--secret` beside the secret's own field: one value for it is enough.
+    SecretTwice(ProviderConfigKey),
+    /// A change of what a sealed secret is bound to, outside a terminal, without `--secret`.
+    SecretNeeded {
+        id: ConnectionId,
+        secret: ProviderConfigKey,
+        field: String,
+    },
 }
 
 impl std::fmt::Display for SourcesError {
@@ -64,6 +77,24 @@ impl std::fmt::Display for SourcesError {
                 fields_of(source)
             ),
             Self::InvalidValue { key, message } => write!(f, "{}: {message}", key.label),
+            Self::NoInput(key) => write!(
+                f,
+                "{}: nothing was read from standard input, so nothing was saved; `sources unset` clears it",
+                key.label
+            ),
+            Self::NoSecret(source) => write!(f, "{} keeps no secret", source.label()),
+            Self::SecretTwice(key) => {
+                write!(
+                    f,
+                    "{} is the field being set; leave out --secret",
+                    key.label
+                )
+            }
+            Self::SecretNeeded { id, secret, field } => write!(
+                f,
+                "{id}: {} must be entered again for the new address or TLS setting; give it in the same call, as in `sources set {id} {field} <value> --secret -`",
+                secret.label
+            ),
         }
     }
 }
@@ -205,7 +236,10 @@ pub(crate) fn value_for(
     let values = match values.as_slice() {
         [] => vec![prompt.ask(&format!("{field} for {id}: "), key.is_secret())?],
         // A secret from standard input, so it is on no command line.
-        [dash] if key.is_secret() && dash == "-" => vec![read_line()?],
+        [dash] if key.is_secret() && dash == "-" => match read_line()? {
+            Some(line) if !line.is_empty() => vec![line],
+            _ => return Err(SourcesError::NoInput(key).into()),
+        },
         _ => {
             if key.is_secret() {
                 activity_log_core::diagnostics::warn(
@@ -221,11 +255,22 @@ pub(crate) fn value_for(
     Ok((key, raw_value(key, &values)?))
 }
 
-/// One line of standard input, without its line ending.
-fn read_line() -> Result<String> {
+/// One line of standard input, without its line ending; `None` where the input ended.
+fn read_line() -> Result<Option<String>> {
     let mut line = String::new();
-    std::io::stdin().read_line(&mut line)?;
-    Ok(line.trim_end_matches(['\n', '\r']).to_string())
+    if std::io::stdin().read_line(&mut line)? == 0 {
+        return Ok(None);
+    }
+    Ok(Some(line.trim_end_matches(['\n', '\r']).to_string()))
+}
+
+/// The one secret `source` keeps, for `--secret`.
+pub(crate) fn secret_of(source: &Source) -> Result<ProviderConfigKey, SourcesError> {
+    config_keys(source)
+        .iter()
+        .copied()
+        .find(|key| key.is_secret())
+        .ok_or_else(|| SourcesError::NoSecret(source.clone()))
 }
 
 /// One line per connection: id, label and status.

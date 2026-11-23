@@ -441,7 +441,7 @@ Key rules:
 Tokens and secret links (GitLab and Jira tokens, a calendar's ICS address) are stored in `config.toml` sealed, as `token = { sealed = "v1:…" }`, with one key that lives in the OS keychain (macOS Keychain, Windows Credential Manager, a Secret Service such as GNOME Keyring or KWallet on Linux). A copy of `config.toml` (a backup, a dotfiles repository, a paste into an issue) gives away no token.
 
 - **Where the key lives:** the desktop app keeps it only in the keychain; without one it cannot save a token and says how to set one up. The CLI uses the keychain too, and where there is none (a headless Linux, a CI runner, Docker) a key file, `activity-log/secret.key` in the local data directory, saying so once. `ACTIVITY_LOG_SECRET_STORE=file` forces the key file (over SSH on a Mac, where the keychain cannot ask), `=os` forbids it. The API server never saves tokens. The settings show where the key lives when it is not the keychain.
-- **Bound to the server:** a token opens only for the server address it was entered for (and a Jira token only with the same `insecure` setting), so a file that points it elsewhere never sends it there. Changing the address in the settings or with `sources set` asks for the token again.
+- **Bound to the server:** a token opens only for the server address it was entered for (and a Jira token only with the same `insecure` setting), so a file that points it elsewhere never sends it there. Changing the address in the settings or with `sources set` asks for the token again (outside a terminal, give it in the same call with `--secret -`), and a token is saved only once its connection has an address.
 - **Typed by hand:** a token written into the file as plain text still works; it is sealed the next time a token is saved, or at the desktop app's start where the keychain needs no dialog. `config edit` seals a token typed there when it can, and otherwise saves it as typed, with a warning.
 - **Don't sync `config.toml` between computers:** each computer has its own key, so a token entered on one cannot be opened on the other, and the settings ask for it again there. The same happens after the keychain is reset or the key file deleted: enter the tokens again.
 - **On macOS** the keychain asks once whether Activity Log may use its key, after each update of the app (and for the CLI after each new build).
@@ -509,6 +509,7 @@ activity-log sources add git --wsl NixOS          # WSL Git connection on Window
 activity-log sources set gitlab/oss url https://oss.example.org
 activity-log sources set gitlab/oss token         # prompt without echo
 activity-log sources set gitlab/oss token -       # read it from standard input
+activity-log sources set gitlab/oss url https://new.example.org --secret -   # a new address and its token at once
 activity-log sources set git/this-computer dirs ~/Projects ~/work
 activity-log sources unset git/this-computer dirs # restore default
 activity-log sources rename gitlab/oss "Open source"

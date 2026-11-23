@@ -226,38 +226,48 @@ fn a_dotenv_file_in_the_working_folder_is_not_read() {
     );
 }
 
-/// A token given on standard input is written sealed with the key file's key, which the CLI
-/// creates, and never as text.
-#[test]
-fn a_token_from_standard_input_is_written_sealed() {
+/// `sources …` with the key file at `key_file` and `input` on standard input.
+fn sources_with_input(dir: &Path, key_file: &Path, args: &[&str], input: Option<&[u8]>) -> Output {
     use std::io::Write as _;
 
-    let dir = tempfile::tempdir().unwrap();
-    let path = dir.path().join("config.toml");
-    let key_file = dir.path().join("secret.key");
-    fs::write(
-        &path,
-        "[[gitlab]]\nname = \"work\"\nlabel = \"Work\"\nurl = \"https://gitlab.com\"\n",
-    )
-    .unwrap();
-
-    let mut child = cli(dir.path())
-        .env("ACTIVITY_LOG_SECRET_KEY_FILE", &key_file)
+    let mut child = cli(dir)
+        .env("ACTIVITY_LOG_SECRET_KEY_FILE", key_file)
         .arg("--config")
-        .arg(&path)
-        .args(["sources", "set", "gitlab/work", "token", "-"])
-        .stdin(Stdio::piped())
+        .arg(dir.join("config.toml"))
+        .arg("sources")
+        .args(args)
+        .stdin(match input {
+            Some(_) => Stdio::piped(),
+            None => Stdio::null(),
+        })
         .stdout(Stdio::null())
         .stderr(Stdio::piped())
         .spawn()
         .unwrap();
-    child
-        .stdin
-        .take()
-        .unwrap()
-        .write_all(b"glpat-from-stdin\n")
-        .unwrap();
-    let output = child.wait_with_output().unwrap();
+    if let Some(input) = input {
+        child.stdin.take().unwrap().write_all(input).unwrap();
+    }
+    child.wait_with_output().unwrap()
+}
+
+const WORK_AT: &str =
+    "[[gitlab]]\nname = \"work\"\nlabel = \"Work\"\nurl = \"https://gitlab.com\"\n";
+
+/// A token given on standard input is written sealed with the key file's key, which the CLI
+/// creates, and never as text.
+#[test]
+fn a_token_from_standard_input_is_written_sealed() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("config.toml");
+    let key_file = dir.path().join("secret.key");
+    fs::write(&path, WORK_AT).unwrap();
+
+    let output = sources_with_input(
+        dir.path(),
+        &key_file,
+        &["set", "gitlab/work", "token", "-"],
+        Some(b"glpat-from-stdin\n"),
+    );
     assert!(output.status.success(), "{}", stderr(&output));
 
     let written = fs::read_to_string(&path).unwrap();
@@ -267,4 +277,76 @@ fn a_token_from_standard_input_is_written_sealed() {
         "{written}"
     );
     assert!(key_file.exists());
+}
+
+/// `-` with nothing on standard input (it ended, or brought an empty line) fails and leaves
+/// the stored token as it was: only `sources unset` clears it.
+#[test]
+fn no_token_on_standard_input_changes_nothing() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("config.toml");
+    let key_file = dir.path().join("secret.key");
+    let text = format!("{WORK_AT}token = \"glpat-stored\"\n");
+    fs::write(&path, &text).unwrap();
+
+    for input in [None, Some(&b"\n"[..])] {
+        let output = sources_with_input(
+            dir.path(),
+            &key_file,
+            &["set", "gitlab/work", "token", "-"],
+            input,
+        );
+        assert_eq!(output.status.code(), Some(1), "{}", stderr(&output));
+        assert_eq!(fs::read_to_string(&path).unwrap(), text);
+    }
+}
+
+/// A token for a connection without an address is refused, never written as plain text.
+#[test]
+fn a_token_without_an_address_is_refused() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("config.toml");
+    let key_file = dir.path().join("secret.key");
+    let text = "[[gitlab]]\nname = \"new\"\nlabel = \"New\"\n";
+    fs::write(&path, text).unwrap();
+
+    let output = sources_with_input(
+        dir.path(),
+        &key_file,
+        &["set", "gitlab/new", "token", "-"],
+        Some(b"glpat-from-stdin\n"),
+    );
+    assert_eq!(output.status.code(), Some(1), "{}", stderr(&output));
+    assert_eq!(fs::read_to_string(&path).unwrap(), text);
+}
+
+/// Outside a terminal a new address under a sealed token is refused without the token, and
+/// saved with it in the same call (`--secret -`).
+#[test]
+fn a_new_address_takes_the_token_in_the_same_call() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("config.toml");
+    let key_file = dir.path().join("secret.key");
+    fs::write(&path, WORK_AT).unwrap();
+    let sealed = sources_with_input(
+        dir.path(),
+        &key_file,
+        &["set", "gitlab/work", "token", "-"],
+        Some(b"glpat-first\n"),
+    );
+    assert!(sealed.status.success(), "{}", stderr(&sealed));
+    let before = fs::read_to_string(&path).unwrap();
+    let new_url = ["set", "gitlab/work", "url", "https://gitlab.example.test"];
+
+    let refused = sources_with_input(dir.path(), &key_file, &new_url, None);
+    assert_eq!(refused.status.code(), Some(1), "{}", stderr(&refused));
+    assert_eq!(fs::read_to_string(&path).unwrap(), before);
+
+    let with_token = [&new_url[..], &["--secret", "-"]].concat();
+    let saved = sources_with_input(dir.path(), &key_file, &with_token, Some(b"glpat-second\n"));
+    assert!(saved.status.success(), "{}", stderr(&saved));
+    let written = fs::read_to_string(&path).unwrap();
+    assert!(written.contains("https://gitlab.example.test"), "{written}");
+    assert!(!written.contains("glpat-second"), "{written}");
+    assert_ne!(written, before);
 }
