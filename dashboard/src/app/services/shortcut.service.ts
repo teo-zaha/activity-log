@@ -92,9 +92,9 @@ type HandOff =
 
 /**
  * How long Shift is held on its own before the key tags show (`revealKeys`): long enough that a
- * Shift pressed on its way to a letter or a click never flashes them.
+ * Shift on its way to a letter, Tab, a click or the wheel rarely flashes them.
  */
-export const REVEAL_DELAY_MS = 180
+export const REVEAL_DELAY_MS = 400
 
 /** Shift held on its own: `pressed` until `REVEAL_DELAY_MS` passed, then `held`. */
 type ShiftHold = 'none' | 'pressed' | 'held'
@@ -271,6 +271,10 @@ export class ShortcutService {
       })
       // Shift+click is no reveal; captured, so a control that stops the event still ends it.
       listener.capture(this.document, 'pointerdown', () => this.shiftHold.set('none'))
+      // A pointer that moves without Shift says it is up, also when its `keyup` was lost.
+      listener.capture(this.document, 'pointermove', event => {
+        if (!event.shiftKey) this.shiftHold.set('none')
+      })
       // A key let go elsewhere never comes back as `keyup`.
       listener(this.document, 'visibilitychange', () => this.shiftHold.set('none'))
       const view = this.document.defaultView
@@ -420,6 +424,15 @@ export class ShortcutService {
 
   /** How Shift reads here, on the tag that says holding it shows the others. */
   readonly shiftKey = formatShift(this.platform.os)
+
+  /**
+   * Whether holding Shift can show a key tag here: some entry has a key on this platform, in this
+   * build and with the single-key setting. Escape (`layer.close`), the one key left everywhere,
+   * closes only what is open and is alone no reason to hold Shift.
+   */
+  readonly revealable: Signal<boolean> = computed(() =>
+    this.table.some(entry => entry.id !== 'layer.close' && this.chords(entry).length > 0)
+  )
 
   /** How people read `chord` here. */
   format(chord: Chord): string {

@@ -745,6 +745,18 @@ describe('ShortcutService', () => {
     expect(filter()).toBe(false)
   })
 
+  it('tells whether holding Shift can show a key here, Escape alone not counting', async () => {
+    expect((await setup(BROWSER)).revealable()).toBe(true)
+    TestBed.inject(ShortcutPreferences).setCharacterKeys('off')
+    // The browser keeps only Escape then.
+    expect(TestBed.inject(ShortcutService).revealable()).toBe(false)
+    TestBed.resetTestingModule()
+
+    // Off, as the device keeps it; the desktop app keeps its ⌘ chords.
+    expect(localStorage.getItem('character-shortcuts')).toBe('off')
+    expect((await setup({ os: 'mac', build: 'desktop' })).revealable()).toBe(true)
+  })
+
   describe('revealing the key tags: Shift held on its own', () => {
     afterEach(() => {
       vi.useRealTimers()
@@ -801,10 +813,10 @@ describe('ShortcutService', () => {
     it('hides them at another key, a click, and as the window or the page goes away', async () => {
       const shortcuts = await revealing()
       const ends: readonly (() => void)[] = [
-        () => press('R', { shiftKey: true, code: 'KeyR' }),
-        () => document.body.dispatchEvent(new Event('pointerdown', { bubbles: true })),
-        () => window.dispatchEvent(new Event('blur')),
-        () => document.dispatchEvent(new Event('visibilitychange')),
+        (): void => void press('R', { shiftKey: true, code: 'KeyR' }),
+        (): void => void document.body.dispatchEvent(new Event('pointerdown', { bubbles: true })),
+        (): void => void window.dispatchEvent(new Event('blur')),
+        (): void => void document.dispatchEvent(new Event('visibilitychange')),
       ]
       for (const end of ends) {
         holdShift()
@@ -816,6 +828,20 @@ describe('ShortcutService', () => {
         vi.advanceTimersByTime(REVEAL_DELAY_MS)
         expect(shortcuts.revealKeys()).toBe(false)
       }
+    })
+
+    it('hides them at a pointer that moves without Shift, as after a lost keyup', async () => {
+      const shortcuts = await revealing()
+      holdShift()
+      vi.advanceTimersByTime(REVEAL_DELAY_MS)
+      document.body.dispatchEvent(
+        new PointerEvent('pointermove', { bubbles: true, shiftKey: true })
+      )
+      expect(shortcuts.revealKeys()).toBe(true)
+      document.body.dispatchEvent(
+        new PointerEvent('pointermove', { bubbles: true, shiftKey: false })
+      )
+      expect(shortcuts.revealKeys()).toBe(false)
     })
 
     it('shows none while typing, with another modifier, or inside inert content', async () => {
