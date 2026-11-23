@@ -10,6 +10,8 @@ $meeting-row: 16px;
 $meeting-gap: -4px;
 /** From the view's edge to the title and the hour labels, so the grid lines up with the title. */
 $text-inset: 4px;
+/** The line between the week's columns, and between the hour labels and its first column. */
+$column-rule: 1px;
 
 @mixin down($name) {
   @include ui.down($name) {
@@ -126,11 +128,12 @@ $text-inset: 4px;
 // The layer an empty view's hint lies on, hung below the sticky header (its containing block,
 // which stays at the top of the scroller): it covers the visible day columns, whatever the
 // scroll, frosts them, takes the pointer from them and centres the hint; the hour labels beside
-// them stay sharp. `$right` is the columns' inset from the grid's right edge.
-@mixin hint-layer($right: 0) {
+// them stay sharp, and so does `$left-rule`, the line the first column starts with. `$right` is
+// the columns' inset from the grid's right edge.
+@mixin hint-layer($left-rule: 0px, $right: 0) {
   position: absolute;
   top: 100%;
-  left: var(--cal-gutter);
+  left: calc(var(--cal-gutter) + #{$left-rule});
   right: $right;
   height: calc(100cqh - 100%);
   display: flex;

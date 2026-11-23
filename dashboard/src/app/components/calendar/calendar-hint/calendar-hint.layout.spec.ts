@@ -39,19 +39,23 @@ async function open(url: string, view: View, width = 1280, height = 800): Promis
   return scroller
 }
 
+function firstColumn(view: View): HTMLElement {
+  return element(`${view} .day-col`)
+}
+
 /**
- * The part of the day columns on screen: from the first column's left edge to the last one's
- * right edge, below the scroller's sticky header.
+ * The part of the day columns on screen: from past the first column's line beside the hour labels
+ * (its left border) to the last column's right edge, below the scroller's sticky header.
  */
 function visibleColumns(view: View, scroller: HTMLElement): DOMRect {
   const columns = [...document.querySelectorAll(`${view} .day-col`)].map(column =>
     column.getBoundingClientRect()
   )
-  if (columns.length === 0) throw new Error(`${view} has day columns`)
+  const first = firstColumn(view)
   const box = scroller.getBoundingClientRect()
   const header = document.querySelector(`${view} .cal-sticky-header`)?.getBoundingClientRect()
   const top = header ? header.bottom : box.top
-  const [left, right] = [columns[0].left, columns[columns.length - 1].right]
+  const [left, right] = [columns[0].left + first.clientLeft, columns[columns.length - 1].right]
   return new DOMRect(left, top, right - left, box.top + scroller.clientHeight - top)
 }
 
@@ -90,6 +94,20 @@ function expectHoursClear(view: View): void {
     layer.top + layer.height / 2
   )
   expect(element(`${view} .cal-hint-layer`).contains(label)).toBe(false)
+  expectRuleClear(view)
+}
+
+/** The first column's line beside the hour labels lies beside the layer too, where it has one. */
+function expectRuleClear(view: View): void {
+  const layer = element(`${view} .cal-hint-layer`)
+  const column = firstColumn(view)
+  const rule = column.getBoundingClientRect().left
+  const box = layer.getBoundingClientRect()
+  expect(box.left).toBeGreaterThanOrEqual(rule + column.clientLeft - 0.5)
+  if (column.clientLeft === 0) return
+  // The line's first pixel: a point between pixels is read as the next one.
+  const onRule = document.elementFromPoint(rule, box.top + box.height / 2)
+  expect(layer.contains(onRule)).toBe(false)
 }
 
 /** What a click at the middle of `rect` lands on. */
@@ -100,6 +118,8 @@ function hitAt(rect: DOMRect): Element | null {
 describe('the calendar hint in a browser', APP_RENDER_TEST, () => {
   it('covers the visible days of the week below their headers, the hint in their middle, at any scroll', async () => {
     const scroller = await open(WEEK, 'app-week-view')
+    // The week draws a line between the hour labels and its first column.
+    expect(firstColumn('app-week-view').clientLeft).toBeGreaterThan(0)
     expectInPlace('app-week-view', scroller)
 
     for (const top of [0, scroller.scrollHeight]) {

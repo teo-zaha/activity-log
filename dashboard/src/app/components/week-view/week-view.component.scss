@@ -67,7 +67,7 @@
 .time-gutter {
   width: var(--cal-gutter);
   flex-shrink: 0;
-  border-right: 1px solid var(--border-subtle);
+  border-right: cal.$column-rule solid var(--border-subtle);
 }
 
 .day-col-hdr {
@@ -83,7 +83,7 @@
   background: transparent;
   font-family: inherit;
   cursor: pointer;
-  border-left: 1px solid var(--border-subtle);
+  border-left: cal.$column-rule solid var(--border-subtle);
   transition: background 0.12s ease;
   min-width: 0;
 
@@ -185,7 +185,8 @@
 }
 
 .cal-hint-layer {
-  @include cal.hint-layer;
+  // The first column's line beside the hour labels stays sharp.
+  @include cal.hint-layer($left-rule: cal.$column-rule);
 }
 
 .week-grid {
@@ -206,7 +207,7 @@
 .day-col {
   flex: 1;
   position: relative;
-  border-left: 1px solid var(--border-subtle);
+  border-left: cal.$column-rule solid var(--border-subtle);
   min-width: 0;
 
   &.is-today {
