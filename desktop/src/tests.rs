@@ -5,18 +5,16 @@ use activity_log_core::{
     menu::{INSTALL_MENU_COMMAND, UPDATE_MENU_COMMAND},
 };
 use tauri::{
-    Manager, WindowEvent,
+    Manager,
     ipc::{CallbackFn, InvokeBody},
     test::{INVOKE_KEY, MockRuntime, get_ipc_response, mock_builder, mock_context, noop_assets},
     webview::InvokeRequest,
 };
 
 use crate::{
-    app_menu,
-    collection_notice::WindowFocus,
-    commands, deep_link,
+    app_menu, commands, deep_link,
     deep_link::{DeepLinkInbox, Delivery},
-    page_started, window_chrome, window_event,
+    main_window_focused, page_started, window_chrome,
 };
 
 /// Held by every test that logs, reads or clears the process-wide diagnostics log, which tests
@@ -126,25 +124,24 @@ fn a_reloading_main_page_gets_the_links_that_come_meanwhile() {
     assert_eq!(inbox.take(), Some(link()));
 }
 
-/// The main window's focus events reach `WindowFocus`; another window's do not.
+/// The main window's focus is asked of the window itself; without one it is not found, which
+/// `collection_notice` counts as in the background.
 #[test]
-fn the_main_window_s_focus_is_followed() {
-    let app = mock_builder()
-        .manage(WindowFocus::default())
-        .build(mock_context(noop_assets()))
-        .unwrap();
-    let window = |label: &str| {
-        tauri::WebviewWindowBuilder::<MockRuntime, _>::new(&app, label, Default::default())
-            .build()
-            .unwrap()
-    };
-    let (main, other) = (window(deep_link::MAIN_WINDOW), window("other"));
-    let focus = app.state::<WindowFocus>();
+fn the_main_window_s_focus_is_read_from_it() {
+    let app = mock_builder().build(mock_context(noop_assets())).unwrap();
+    let handle = app.handle();
+    assert!(matches!(
+        main_window_focused(handle),
+        Err(tauri::Error::WindowNotFound)
+    ));
 
-    window_event(&main.as_ref().window(), &WindowEvent::Focused(true));
-    assert!(focus.get());
-    window_event(&other.as_ref().window(), &WindowEvent::Focused(false));
-    assert!(focus.get(), "another window's focus says nothing");
-    window_event(&main.as_ref().window(), &WindowEvent::Focused(false));
-    assert!(!focus.get());
+    tauri::WebviewWindowBuilder::<MockRuntime, _>::new(
+        &app,
+        deep_link::MAIN_WINDOW,
+        Default::default(),
+    )
+    .build()
+    .unwrap();
+    // The mock runtime's windows never have focus.
+    assert!(!main_window_focused(handle).unwrap());
 }

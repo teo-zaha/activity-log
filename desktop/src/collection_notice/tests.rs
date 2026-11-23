@@ -27,32 +27,95 @@ fn ended(run: RunId, elapsed: Duration, outcome: RunOutcome) -> RunEnd {
 }
 
 #[test]
-fn only_a_long_run_that_ended_in_the_background_is_told() {
+fn only_a_long_run_that_finished_or_failed_deserves_a_notice() {
     let run = a_run();
     let long = THRESHOLD + Duration::from_secs(1);
     let ready = RunOutcome::Ready { entries: 1234 };
 
     assert_eq!(
-        notice_for(&ended(run, long, ready), false),
+        notice_for(&ended(run, long, ready)),
         Some(Notice {
             title: "Activity collected",
             body: "1234 entries".to_string(),
         })
     );
-    assert!(notice_for(&ended(run, long, RunOutcome::Failed), false).is_some());
-    assert_eq!(notice_for(&ended(run, long, ready), true), None, "watched");
+    assert!(notice_for(&ended(run, long, RunOutcome::Failed)).is_some());
     assert_eq!(
-        notice_for(
-            &ended(run, THRESHOLD - Duration::from_millis(1), ready),
-            false
-        ),
+        notice_for(&ended(run, THRESHOLD - Duration::from_millis(1), ready)),
         None,
         "waited for"
     );
     assert_eq!(
-        notice_for(&ended(run, long, RunOutcome::Stopped), false),
+        notice_for(&ended(run, long, RunOutcome::Stopped)),
         None,
         "replaced"
+    );
+}
+
+/// What `follow` shows for each of `ends`, the window's focus read as `focus` says, and how often
+/// it asked for the focus.
+fn shown_for(
+    ends: impl IntoIterator<Item = RunEnd>,
+    focus: impl Fn() -> tauri::Result<bool>,
+) -> (Vec<&'static str>, usize) {
+    let (sender, ended_runs) = unbounded_channel();
+    for end in ends {
+        sender.send(end).unwrap();
+    }
+    drop(sender);
+    let asked = Arc::new(Mutex::new(0));
+    let shown = Arc::new(Mutex::new(Vec::new()));
+    tauri::async_runtime::block_on(follow(
+        ended_runs,
+        {
+            let asked = asked.clone();
+            move || {
+                *asked.lock().unwrap() += 1;
+                focus()
+            }
+        },
+        |_| true,
+        {
+            let shown = shown.clone();
+            move |notice: Notice| shown.lock().unwrap().push(notice.title)
+        },
+    ));
+    let shown = shown.lock().unwrap().clone();
+    let asked = *asked.lock().unwrap();
+    (shown, asked)
+}
+
+/// The window's focus is asked as a run that deserves a notice ends, never for one that does
+/// not: after shutdown every run ends stopped, and the window may be gone.
+#[test]
+fn a_run_the_focused_window_watched_shows_nothing() {
+    let run = a_run();
+    let long = THRESHOLD * 2;
+    let ends = || {
+        [
+            ended(run, long, RunOutcome::Ready { entries: 3 }),
+            ended(run, long, RunOutcome::Stopped),
+            ended(run, THRESHOLD / 2, RunOutcome::Failed),
+        ]
+    };
+
+    assert_eq!(shown_for(ends(), || Ok(true)), (vec![], 1), "watched");
+    assert_eq!(
+        shown_for(ends(), || Ok(false)),
+        (vec!["Activity collected"], 1),
+        "in the background"
+    );
+}
+
+/// A window whose focus cannot be read counts as in the background.
+#[test]
+fn a_window_whose_focus_cannot_be_read_is_told() {
+    let run = a_run();
+    let failed = ended(run, THRESHOLD * 2, RunOutcome::Failed);
+
+    assert_eq!(
+        shown_for([failed], || Err(tauri::Error::WindowNotFound)),
+        (vec!["Collection failed"], 1)
     );
 }
 
@@ -76,7 +139,7 @@ fn a_run_another_replaced_meanwhile_shows_nothing() {
 
     tauri::async_runtime::block_on(follow(
         ended_runs,
-        || false,
+        || Ok(false),
         {
             let asked = asked.clone();
             let current = current.clone();

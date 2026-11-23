@@ -14,8 +14,7 @@ use std::time::{Duration, Instant};
 
 use activity_log_core::settings::ConfigFile;
 use tauri::{
-    AppHandle, Emitter, Manager, RunEvent, Runtime, WebviewWindow, Window, WindowEvent,
-    webview::PageLoadEvent,
+    AppHandle, Emitter, Manager, RunEvent, Runtime, WebviewWindow, webview::PageLoadEvent,
 };
 use tauri_plugin_notification::NotificationExt;
 
@@ -71,8 +70,6 @@ pub fn run() {
         )
         .manage(app_menu::AppMenu::<tauri::Wry>::default())
         .manage(commands::ExportTurn::default())
-        .manage(collection_notice::WindowFocus::default())
-        .on_window_event(window_event)
         .on_menu_event(|app, event| app_menu::chosen(app, event.id()))
         .on_page_load(|webview, payload| {
             if payload.event() == PageLoadEvent::Started {
@@ -111,7 +108,7 @@ pub fn run() {
                 run_ends,
                 {
                     let app = app_handle.clone();
-                    move || app.state::<collection_notice::WindowFocus>().get()
+                    move || main_window_focused(&app)
                 },
                 move |run| host.is_current(run),
                 move |notice| {
@@ -153,15 +150,12 @@ fn page_started<R: Runtime>(label: &str, app: &AppHandle<R>) {
     }
 }
 
-/// The main window's focus, for `collection_notice`.
-fn window_event<R: Runtime>(window: &Window<R>, event: &WindowEvent) {
-    if window.label() == deep_link::MAIN_WINDOW
-        && let WindowEvent::Focused(focused) = event
-    {
-        window
-            .state::<collection_notice::WindowFocus>()
-            .set(*focused);
-    }
+/// Whether the main window has focus now, for `collection_notice`; `WindowNotFound` once it is
+/// gone.
+fn main_window_focused<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<bool> {
+    app.get_webview_window(deep_link::MAIN_WINDOW)
+        .ok_or(tauri::Error::WindowNotFound)?
+        .is_focused()
 }
 
 /// How long the hidden window waits for the dashboard to show it.

@@ -4,12 +4,12 @@
 //! before it shows anything. Rust decides, not the dashboard: a hidden web view's timers are
 //! held back, which is when this matters.
 
-use std::{
-    sync::atomic::{AtomicBool, Ordering},
-    time::Duration,
-};
+use std::time::Duration;
 
-use activity_log_core::model::{RunEnd, RunId, RunOutcome};
+use activity_log_core::{
+    diagnostics,
+    model::{RunEnd, RunId, RunOutcome},
+};
 use tokio::sync::mpsc::UnboundedReceiver;
 
 #[cfg(test)]
@@ -25,10 +25,10 @@ pub(crate) struct Notice {
     pub(crate) body: String,
 }
 
-/// The notice for a run that ended so, while the window had focus or not; none for a short
-/// run, one the user watched, or one that was stopped (a newer run or shutdown replaced it).
-pub(crate) fn notice_for(end: &RunEnd, focused: bool) -> Option<Notice> {
-    if focused || end.elapsed < THRESHOLD {
+/// The notice a run that ended so deserves if nobody watched it; none for a short run or one
+/// that was stopped (a newer run or shutdown replaced it).
+pub(crate) fn notice_for(end: &RunEnd) -> Option<Notice> {
+    if end.elapsed < THRESHOLD {
         return None;
     }
     match end.outcome {
@@ -47,35 +47,35 @@ pub(crate) fn notice_for(end: &RunEnd, focused: bool) -> Option<Notice> {
     }
 }
 
-/// Whether the main window has focus, as its `Focused` events said; it starts without.
-#[derive(Default)]
-pub(crate) struct WindowFocus(AtomicBool);
-
-impl WindowFocus {
-    pub(crate) fn set(&self, focused: bool) {
-        self.0.store(focused, Ordering::Relaxed);
-    }
-
-    pub(crate) fn get(&self) -> bool {
-        self.0.load(Ordering::Relaxed)
-    }
-}
-
 /// Shows a notice for each run end that deserves one, for the app's life: the host the spawner
 /// lives in outlasts this task, so the ends never close. After shutdown every run ends stopped
-/// and none is current, so it shows nothing more. `is_current` is asked last, so a run that
-/// another replaced meanwhile shows nothing.
+/// and none is current, so it shows nothing more. `focused` (the main window's
+/// `is_focused()`) is asked only for a run that deserves a notice, as it ends, and `is_current`
+/// last, so a run that another replaced meanwhile shows nothing.
 pub(crate) async fn follow(
     mut ends: UnboundedReceiver<RunEnd>,
-    focused: impl Fn() -> bool,
+    focused: impl Fn() -> tauri::Result<bool>,
     is_current: impl Fn(RunId) -> bool,
     mut notify: impl FnMut(Notice),
 ) {
     while let Some(end) = ends.recv().await {
-        if let Some(notice) = notice_for(&end, focused())
+        if let Some(notice) = notice_for(&end)
+            && !has_focus(&focused)
             && is_current(end.run)
         {
             notify(notice);
         }
     }
+}
+
+/// A window whose focus cannot be read (it is gone, or the read failed) counts as in the
+/// background: a notice nobody needed is better than a result nobody hears of.
+fn has_focus(focused: impl Fn() -> tauri::Result<bool>) -> bool {
+    focused().unwrap_or_else(|err| {
+        diagnostics::warn(
+            "desktop",
+            format!("Reading the window's focus failed: {err}"),
+        );
+        false
+    })
 }
