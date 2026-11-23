@@ -35,6 +35,7 @@ libc = "0.2"
 
 [target.'cfg(target_os = "windows")'.dependencies]
 windows = { version = "0.62.2", features = [
+  "Wdk_Storage_FileSystem",
   "Win32_Foundation",
   "Win32_Security",
   "Win32_Security_Authorization",
@@ -42,6 +43,7 @@ windows = { version = "0.62.2", features = [
   "Win32_System_Com",
   "Win32_System_Diagnostics_ToolHelp",
   "Win32_System_EventLog",
+  "Win32_System_IO",
   "Win32_System_JobObjects",
   "Win32_System_Ole",
   "Win32_System_Registry",

@@ -3,8 +3,9 @@
 //! file an editor creates inside inherits only that ACE; the result is read back and checked
 //! before anything is written. Folders are held open without delete sharing, so they cannot be
 //! renamed while in use, and every file opened by path is checked to be the folder's own entry
-//! and no reparse point. A file is published with `SetFileInformationByHandle(FileRenameInfoEx)`
-//! on the handle it was written through, relative to the parent's handle.
+//! and no reparse point. A file is published with `NtSetInformationFile(FileRenameInformationEx)`
+//! on the handle it was written through, relative to the parent's handle: the Win32
+//! `SetFileInformationByHandle` refuses a `RootDirectory` with `ERROR_INVALID_PARAMETER`.
 
 use std::{
     ffi::c_void,
@@ -16,8 +17,17 @@ use std::{
 };
 
 use windows::{
+    Wdk::Storage::FileSystem::{
+        FILE_INFORMATION_CLASS, FILE_RENAME_INFORMATION, FILE_RENAME_INFORMATION_0,
+        FILE_RENAME_POSIX_SEMANTICS, FILE_RENAME_REPLACE_IF_EXISTS, FileRenameInformation,
+        FileRenameInformationEx, NtSetInformationFile,
+    },
     Win32::{
-        Foundation::{HANDLE, HLOCAL, LocalFree},
+        Foundation::{
+            HANDLE, HLOCAL, LocalFree, NTSTATUS, RtlNtStatusToDosError,
+            STATUS_INVALID_DEVICE_REQUEST, STATUS_INVALID_INFO_CLASS, STATUS_INVALID_PARAMETER,
+            STATUS_NOT_SUPPORTED,
+        },
         Security::{
             ACCESS_ALLOWED_ACE, ACE_HEADER, ACL, ACL_SIZE_INFORMATION, AclSizeInformation,
             Authorization::{
@@ -35,14 +45,16 @@ use windows::{
             FILE_DISPOSITION_FLAG_IGNORE_READONLY_ATTRIBUTE, FILE_DISPOSITION_FLAG_POSIX_SEMANTICS,
             FILE_DISPOSITION_INFO, FILE_DISPOSITION_INFO_EX, FILE_DISPOSITION_INFO_EX_FLAGS,
             FILE_FLAG_BACKUP_SEMANTICS, FILE_FLAG_OPEN_REPARSE_POINT, FILE_FLAGS_AND_ATTRIBUTES,
-            FILE_GENERIC_READ, FILE_GENERIC_WRITE, FILE_INFO_BY_HANDLE_CLASS, FILE_NAME_NORMALIZED,
-            FILE_RENAME_INFO, FILE_SHARE_DELETE, FILE_SHARE_MODE, FILE_SHARE_READ,
-            FILE_SHARE_WRITE, FileDispositionInfo, FileDispositionInfoEx, FileRenameInfo,
-            FileRenameInfoEx, GETFINALPATHNAMEBYHANDLE_FLAGS, GetFileInformationByHandle,
+            FILE_GENERIC_READ, FILE_GENERIC_WRITE, FILE_NAME_NORMALIZED, FILE_SHARE_DELETE,
+            FILE_SHARE_MODE, FILE_SHARE_READ, FILE_SHARE_WRITE, FileDispositionInfo,
+            FileDispositionInfoEx, GETFINALPATHNAMEBYHANDLE_FLAGS, GetFileInformationByHandle,
             GetFinalPathNameByHandleW, GetVolumeInformationByHandleW, OPEN_ALWAYS, OPEN_EXISTING,
             SetFileInformationByHandle, VOLUME_NAME_DOS,
         },
-        System::Threading::{GetCurrentProcess, OpenProcessToken},
+        System::{
+            IO::IO_STATUS_BLOCK,
+            Threading::{GetCurrentProcess, OpenProcessToken},
+        },
     },
     core::{HSTRING, PWSTR},
 };
@@ -54,8 +66,6 @@ use super::{
 };
 
 const FILE_PERSISTENT_ACLS: u32 = 0x0000_0008;
-const FILE_RENAME_FLAG_REPLACE_IF_EXISTS: u32 = 0x1;
-const FILE_RENAME_FLAG_POSIX_SEMANTICS: u32 = 0x2;
 const ERROR_FILE_NOT_FOUND: u32 = 2;
 const ERROR_PATH_NOT_FOUND: u32 = 3;
 const ERROR_INVALID_PARAMETER: u32 = 87;
@@ -267,20 +277,7 @@ impl Staging {
                     format!("{name} was not created here"),
                 )
             })?;
-        let flags = FILE_RENAME_FLAG_REPLACE_IF_EXISTS | FILE_RENAME_FLAG_POSIX_SEMANTICS;
-        match rename(
-            file,
-            &self.parent,
-            &self.target_name,
-            FileRenameInfoEx,
-            flags,
-        ) {
-            // Windows before 10 1709 has no FileRenameInfoEx.
-            Err(err) if code(&err) == Some(ERROR_INVALID_PARAMETER) => {
-                rename(file, &self.parent, &self.target_name, FileRenameInfo, 1)
-            }
-            result => result,
-        }
+        rename(file, &self.parent, &self.target_name)
     }
 
     pub(super) fn path(&self) -> &Path {
@@ -667,31 +664,126 @@ fn aces(dacl: *mut ACL) -> io::Result<Option<Vec<AceView>>> {
     Ok(Some(aces))
 }
 
-fn rename(
+/// Statuses of a `FileRenameInformationEx` request that a plain rename may still do: a kernel
+/// without the class (before Windows 10 1607), or a file system without POSIX renames.
+const RENAME_EX_UNSUPPORTED: [NTSTATUS; 4] = [
+    STATUS_INVALID_INFO_CLASS,
+    STATUS_NOT_SUPPORTED,
+    STATUS_INVALID_DEVICE_REQUEST,
+    STATUS_INVALID_PARAMETER,
+];
+
+/// Moves `file` to `name` in the folder `parent`, replacing what is there in one step, by
+/// handles alone: `name` is resolved in `parent`, never by a path. A POSIX rename first, which
+/// also replaces a target others hold open with delete sharing; where that is not offered, a
+/// plain one, which such a target refuses.
+fn rename(file: &OwnedHandle, parent: &OwnedHandle, name: &[u16]) -> io::Result<()> {
+    let posix = FILE_RENAME_INFORMATION_0 {
+        Flags: FILE_RENAME_REPLACE_IF_EXISTS | FILE_RENAME_POSIX_SEMANTICS,
+    };
+    let refused = match set_rename(file, parent, name, FileRenameInformationEx, posix)? {
+        status if succeeded(status) => return Ok(()),
+        status if RENAME_EX_UNSUPPORTED.contains(&status) => status,
+        status => return Err(nt_error(status)),
+    };
+    // From zeroes, so the union's bytes past the flag are set too.
+    let mut plain = FILE_RENAME_INFORMATION_0::default();
+    plain.ReplaceIfExists = true;
+    match set_rename(file, parent, name, FileRenameInformation, plain)? {
+        status if succeeded(status) => Ok(()),
+        status => {
+            let plain = nt_error(status);
+            Err(io::Error::new(
+                plain.kind(),
+                RenameRefused {
+                    posix: nt_error(refused),
+                    plain,
+                },
+            ))
+        }
+    }
+}
+
+/// One rename request: `NtSetInformationFile` with a `FILE_RENAME_INFORMATION` naming `name`
+/// relative to `parent`.
+fn set_rename(
     file: &OwnedHandle,
     parent: &OwnedHandle,
     name: &[u16],
-    class: FILE_INFO_BY_HANDLE_CLASS,
-    flags: u32,
-) -> io::Result<()> {
+    class: FILE_INFORMATION_CLASS,
+    flags: FILE_RENAME_INFORMATION_0,
+) -> io::Result<NTSTATUS> {
+    let too_long = || io::Error::new(io::ErrorKind::InvalidInput, "The file name is too long");
     let name_bytes = std::mem::size_of_val(name);
-    let size = size_of::<FILE_RENAME_INFO>() + name_bytes;
-    // u64 words keep the structure's alignment.
+    let size = size_of::<FILE_RENAME_INFORMATION>() + name_bytes;
+    let name_length = u32::try_from(name_bytes).map_err(|_| too_long())?;
+    let length = u32::try_from(size).map_err(|_| too_long())?;
+    // u64 words: aligned for the structure (8, for its handle), zeroed, and `size` bytes or
+    // more.
     let mut buffer = vec![0u64; size.div_ceil(8)];
-    let info = buffer.as_mut_ptr().cast::<FILE_RENAME_INFO>();
-    unsafe {
-        (*info).Anonymous.Flags = flags;
-        (*info).RootDirectory = raw(parent);
-        (*info).FileNameLength = name_bytes as u32;
+    let info = buffer.as_mut_ptr().cast::<FILE_RENAME_INFORMATION>();
+    let mut status_block = IO_STATUS_BLOCK::default();
+    // SAFETY: `info` points at the start of `buffer`, aligned and large enough for the
+    // structure, which is written whole; `FileName` begins inside it and the buffer holds
+    // `name_bytes` more bytes past the structure's end, so the `name.len()` units copied there
+    // stay inside it. `FileNameLength` counts those bytes (the NT call needs no terminator).
+    // `name` is one checked entry name (`check_name`), as a relative rename needs. Both handles
+    // are borrowed for the call only, which keeps neither; the file was opened for synchronous
+    // I/O, so the call has finished with the buffer and the status block when it returns.
+    let status = unsafe {
+        info.write(FILE_RENAME_INFORMATION {
+            Anonymous: flags,
+            RootDirectory: raw(parent),
+            FileNameLength: name_length,
+            FileName: [0],
+        });
         std::ptr::copy_nonoverlapping(
             name.as_ptr(),
-            std::ptr::addr_of_mut!((*info).FileName).cast::<u16>(),
+            (&raw mut (*info).FileName).cast::<u16>(),
             name.len(),
         );
-        SetFileInformationByHandle(raw(file), class, info.cast_const().cast(), size as u32)
-    }
-    .map_err(win)
+        NtSetInformationFile(
+            raw(file),
+            &mut status_block,
+            info.cast_const().cast(),
+            length,
+            class,
+        )
+    };
+    Ok(status)
 }
+
+/// `NT_SUCCESS`: success and informational statuses are not negative.
+fn succeeded(status: NTSTATUS) -> bool {
+    status.0 >= 0
+}
+
+/// An NT status as the Win32 error it maps to, so its kind is the usual one; a status without
+/// a Win32 counterpart maps to `ERROR_MR_MID_NOT_FOUND` (317), never to success.
+fn nt_error(status: NTSTATUS) -> io::Error {
+    // SAFETY: a pure lookup on a value; nothing is read or written through pointers.
+    let code = unsafe { RtlNtStatusToDosError(status) };
+    io::Error::from_raw_os_error(code as i32)
+}
+
+/// Both renames of [`rename`] were refused.
+#[derive(Debug)]
+struct RenameRefused {
+    posix: io::Error,
+    plain: io::Error,
+}
+
+impl std::fmt::Display for RenameRefused {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "the POSIX rename was refused ({}), and so was the plain rename ({})",
+            self.posix, self.plain
+        )
+    }
+}
+
+impl std::error::Error for RenameRefused {}
 
 /// The current user's SID, as `S-1-5-21-…`.
 fn user_sid() -> io::Result<String> {

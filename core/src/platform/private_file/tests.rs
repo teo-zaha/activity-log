@@ -491,9 +491,50 @@ mod windows {
     use std::{fs, io::Write};
 
     use super::super::{
-        private_staging,
+        open_folder, private_staging,
         windows::{code, win},
     };
+
+    /// A reader holding the target open (with delete sharing, as Rust and most programs open
+    /// files) does not stop the replace: the rename has POSIX semantics.
+    #[test]
+    fn a_target_open_elsewhere_is_replaced() {
+        let dir = tempfile::tempdir().unwrap();
+        let target = dir.path().join("config.toml");
+        fs::write(&target, "old").unwrap();
+        let reader = fs::File::open(&target).unwrap();
+
+        open_folder(dir.path())
+            .unwrap()
+            .replace("config.toml", b"new")
+            .unwrap();
+        drop(reader);
+
+        assert_eq!(fs::read_to_string(&target).unwrap(), "new");
+    }
+
+    /// The staging folder is held open without delete sharing, so it cannot be moved away
+    /// between writing and publishing; the file written through the handle is the one
+    /// published, into the parent's handle.
+    #[test]
+    fn the_staging_folder_cannot_be_moved_away_before_publishing() {
+        let dir = tempfile::tempdir().unwrap();
+        let target = dir.path().join("config.toml");
+        let staging = private_staging(&target).unwrap();
+        let mut file = staging.create("new").unwrap();
+        file.write_all(b"written through the handle").unwrap();
+        drop(file);
+
+        assert!(fs::rename(staging.path(), dir.path().join("moved")).is_err());
+        staging.publish("new").unwrap();
+        drop(staging);
+
+        assert_eq!(
+            fs::read_to_string(&target).unwrap(),
+            "written through the handle"
+        );
+        assert_eq!(fs::read_dir(dir.path()).unwrap().count(), 1);
+    }
 
     /// `config edit` on Windows: once released, the copy can be written in place and replaced
     /// by a rename-save, is read back, and can no longer be published; cleanup removes all.
