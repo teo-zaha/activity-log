@@ -1,0 +1,97 @@
+# Secure secrets: sealed values in `config.toml`, one key in the OS store
+
+Tokens and secret links (`GITLAB_TOKEN`, `JIRA_TOKEN`, `CALENDAR_ICS_URL`) are no longer kept in `config.toml` as plain text. Each one stays in its table, but sealed: `token = { sealed = "v1:os:<kid>:<btag>:<base64url>" }`. One random 512-bit key, the only thing in the OS secure store, opens them all. This is the pattern of Chrome's "Safe Storage" and Electron's `safeStorage`.
+
+## Why sealed values and one key
+
+We weighed one store item per secret, one store item holding a map of every secret, and sealed values in the file with one key in the store. We chose the last for these reasons:
+
+- **One atomic write.** A secret and the table that names it are published by the same owner-only rename (`platform/private_file`), so a crash leaves the old file or the new one. The two other designs write two stores with no transaction between them and must sweep orphans.
+- **What compares stored text keeps working.** Sealing is deterministic (AES-SIV), so `EditBase`/`Precondition`, `ConfigFile::set`'s no-op check, the collection key and `affected_kinds` need no marker generations. A token entered again unchanged, for the same server and setting, seals to the same text. Every other case (another key, another binding, the first seal of plain text) reads as a change, which is the safe direction: a conflict or a check run again, never a missed change.
+- **No dependency on `instance`.** Renaming a connection keeps its secret, removing the table removes it, and a table pasted in `config edit` keeps its token.
+- **One prompt.** On macOS each program sees one Keychain dialog per update, not one per token. The key is 64 bytes, far under Windows' 2,560-byte credential limit.
+- **The key file uses the same format** where no OS store exists.
+
+What we accept: we own a small format (built only from RFC 5297 and RustCrypto, no nonce or padding of our own); losing the key loses every secret at once, and the checks then say to enter them again; a sealed value reveals its length, and that two connections hold the same token under the same binding; the Keychain shows one opaque item, not each token.
+
+## What it protects
+
+A copy of `config.toml` (a backup, a dotfiles repository, a paste into an issue, a synced folder) leaks no token, nothing logs or sends a secret, and the dashboard never receives one. On macOS a program not on the key's access list cannot read it without a dialog naming that program. It does not stop malware the user approves in that dialog (unsigned builds show it after every update, which trains people to allow it), malware that patches a binary the user owns, malware that reads a running process's memory, or malware that drives our own CLI. On Windows and Linux, DPAPI and an unlocked Secret Service give the key to any process of the user without a prompt; there the gain is only that copies of the file are useless. None of this is weaker than plain text, and all of it is stronger for copies.
+
+## The format
+
+- Only an inline table with exactly the key `sealed` is sealed. A string is always plain text, and any other shape is refused with a warning. Nothing sniffs prefixes.
+- The text is `v1:<store>:<kid>:<btag>:<base64url(SIV tag ‖ ciphertext)>`. `store` is `os` or `file`, the store that holds the key. `kid` is the first 8 hex digits of SHA-256(`"activity-log/v1 key id"` ‖ key). `btag` is the first 8 hex digits of SHA-256(`"activity-log/v1 binding"` ‖ the length-prefixed binding components).
+- The cipher is `Aes256Siv` (`aes-siv`) through its multi-header API, so S2V authenticates each part of the associated data separately and no concatenation is ambiguous. The associated data is, in order: `activity-log/v1`; the header `v1:<store>:<kid>:<btag>`; the wire key name (`GITLAB_TOKEN`), so a value moved to another field does not open; one `<WIRE_NAME>=<normalized value>` per binding key of the kind, in declaration order.
+- Opening decides before it decrypts: a `kid` the process has no key for is `OtherKey`; otherwise a `btag` other than the one computed from the file's binding values is `OtherAddress`; otherwise a failed open is `Damaged`. `btag` hashes values that are in the file in clear, and it is authenticated as part of the header, so editing it only turns `OtherAddress` into `Damaged`.
+
+## Binding a token to its server
+
+A GitLab or Jira token opens only for the server origin it was entered for, and a Jira token only with the same `insecure` setting. A file edit that points a token elsewhere leaves it unopened, so it is never sent there; a save through the app or the CLI that changes the binding must bring the token again (the issue sits at the token field), and the CLI prompts for it. The binding keys are declared once, with a `[binds]` mark in `provider_config!`: `GITLAB_URL`, `JIRA_URL` and `JIRA_INSECURE`. Calendar has none: its secret is its own address. A URL binds by its origin as `url` parses it (scheme and host lowercased, IDNA as ASCII, the port always explicit, `https://gitlab.example.com:443`); a bool as `parse_bool` reads it, unset meaning `false`.
+
+`ProviderConfigValueType::Password` stays the one marker of a secret, read only through `ProviderConfigKey::is_secret()`: redaction in `Debug`, the fingerprint, the settings snapshot, the CLI's hidden prompt, sealing, opening and the import. `ProviderConfigKey::binds` is the other declared fact, read only by sealing and by the save path's binding check.
+
+## Where the key lives
+
+`platform/secret_store` holds exactly one item, one OS child per platform under the `imp` alias:
+
+- macOS: the login keychain, a generic password with service `Activity Log` and account `config key` (`security-framework`);
+- Windows: the generic credential `activity-log/config-key`, persisted `CRED_PERSIST_LOCAL_MACHINE`, so a roaming profile does not carry the key to a server (`windows`, `Win32_Security_Credentials`);
+- Linux: the Secret Service's default collection, attributes `application=activity-log` and `purpose=config-key`, through `oo7`'s D-Bus backend directly (its default would pick the Flatpak portal in a sandbox), each call bounded at 5 s.
+
+We use the OS APIs directly rather than `keyring`: `keyring` 3 silently uses a mock store without features and 4 removed its native-store features, and neither it nor `keyring-core` gives a definite absence or a no-prompt mode more easily.
+
+A store answers `Found(key)`, `Absent` or a `StoreError` of kind `Unavailable` (no such store here: no default keychain, `ERROR_NO_SUCH_LOGON_SESSION`, no session bus or Secret Service), `Refused` (it exists but would not give the key now: interaction not allowed over SSH, a cancelled dialog, a dismissed unlock prompt) or `Failed`. `Absent` is definite: the store answered, is usable, and has no such item. A locked collection is not absent, and no key is ever created over anything but `Absent`.
+
+The key file, where it is used, is `secret.key` in a local, non-roaming folder (`%LOCALAPPDATA%\activity-log`, `~/Library/Application Support/activity-log`, `${XDG_DATA_HOME:-~/.local/share}/activity-log`), written owner-only through `platform/private_file` and refused where that folder cannot be kept private. `ACTIVITY_LOG_SECRET_KEY_FILE` overrides its path, for a Docker volume and for tests of built binaries. It follows the same absence and create-if-absent rules.
+
+## Stores per front end
+
+- **The desktop app seals only with the OS store.** Without one a save is refused as `secretStoreUnavailable`, and when the store refuses as `secretStoreRefused`, with the draft kept. It opens values sealed with the key file too, which the CLI may have written, so one shared `config.toml` works in both; it only ever reads the key file and never creates it.
+- **The CLI seals with the OS store, and falls back to the key file only when the OS store is `Unavailable`**, with one warning per process that `sources` and every edit print. A `Refused` store is never a reason to fall back: the edit fails as `secretStoreRefused`, with the hint to run in the desktop session or to set `ACTIVITY_LOG_SECRET_STORE=file`.
+- **The API server never writes the config, so it never seals.** It opens each value from the store that value names, and reports which store new secrets would use by the CLI's rule.
+- **`ACTIVITY_LOG_SECRET_STORE`** chooses where the key lives and configures no source: `os` forbids the CLI's fallback, `file` forces the key file in the CLI and the API (a Mac over SSH, a CI runner where a prompt would hang). The desktop app ignores it outside the dev profile and logs that it did.
+- **The settings show the choice** as `ProvidersResponse.secretStore`, a `SecretStoreInfo` union with one state each for: the OS store in use; the OS store found but refusing at the probe (saves would be `secretStoreRefused` until it answers); the key file in use, because there is no OS store, because it was forced, or because of the dev profile; and no store at all (the desktop without an OS store). It comes from a cheap probe that never prompts, at start and again after a store error. Each secret field in the snapshot shows how it is stored, read from the file alone: sealed with its store, sealed for another server or TLS setting (its `btag` does not match the table's binding, so the settings never say "Stored securely" next to that problem), plain text, or not set.
+
+## Reading
+
+`ConfigFile::connections()` stays free of the store: a secret field holds a `StoredSecret`, `Plain` or `Sealed`, compared by its stored form, and the snapshot, `sources` without checks, `config path` and label edits never touch the store. A connection's values are opened once per check, when `ProviderRuntime` resolves its config, before `STARTUP_CHECK_TIMEOUT` starts, so waiting for a dialog never counts as a slow server. Meanwhile the connection is `checking` with the reason "Waiting for the keychain", bounded by `KEY_WAIT` (120 s). `Secrets`, the per-process handle, holds the store choice and the key once read; concurrent first requests share one attempt, so one dialog appears, and a refusal is not kept. A collection uses only the key already held and never prompts.
+
+An opened value reaches the provider in a `Zeroizing<String>`; zeroizing is best effort, since the token is copied into request headers and TLS buffers we do not own. `OtherKey` and a missing key make the connection `notConfigured` ("This token was saved on another computer, or before this computer's keychain was reset. Enter it again."), `OtherAddress` too ("… saved for another server or TLS setting"), and so does `Damaged`. A `StoreError` is the new problem `secretUnavailable`, which can be checked again; `problem_of` maps it, also when a collection meets one, so it is never `timedOut` or `collectionFailed`. The CLI's `problem_terms` counts it as configured but not working, failing the run.
+
+## Writing
+
+Every writer still goes through `settings::edit_config` or `edit_externally`, now with the caller's `Secrets`:
+
+1. Only when the request carries a new secret value, and before the config lock (a dialog can take as long as the user takes), the writer reads the key from the store again, with interaction allowed; the per-process key is for readers only, so a key another process deleted or replaced is noticed before anything is sealed with it. On a definite `Absent` it takes the key-creation lock (`secret-key.lock` in the OS config folder, else beside the config; beside the key file for the key file's key), reads once more, and, if the file holds values of that store (`os`, or `file` when the key being created is the key file's) whose `kid` matches no key, logs one warning naming their count: they must be entered again here. It then generates 64 random bytes, stores them only if still absent, reads them back through a fresh lookup and compares the bytes with what it generated.
+2. Under the config lock the change seals its new values and refuses a binding change without a new token. Before publishing, it parses the bytes about to be published and opens every sealed value in them, with the binding computed from that output document. A value that does not open fails the edit as `internal`, and nothing is written.
+3. The owner-only publish, as before.
+
+Plain text already in the file, hand-written or from unreleased builds, is still read, and it is sealed only opportunistically: in an edit that already read the key for a new secret, at desktop start before the host first loads (never prompting: Windows, an unlocked Linux collection, or macOS with interaction disabled while nothing else runs), and in `config edit` when the user typed a new plain-text secret. Sealing it never fails an edit and never prompts. An unrelated edit (a label, a list, a removal) never reads the store. When `config edit` meets a new plain-text secret and the store refuses or is missing, the edit publishes that plain text with a warning; it never fails. Sealing marks no table touched, so it backfills no `instance`.
+
+## Dev profile
+
+`ACTIVITY_LOG_PROFILE=dev`, which `api:start`, `api:dev`, `cli:collect` and `desktop:dev` set, gives a development build its own config (`<config dir>/activity-log-dev/config.toml`), cache and key file, and always the key file: the keychain is never touched, so rebuilds never prompt and developers never seal into their real keychain. `--config` and `ACTIVITY_LOG_CONFIG` still choose the config path; the store stays the key file. It is honoured only under `cfg(debug_assertions)`: a release build (the installed app and CLI) ignores the variable and logs one line, so a stray value can never stop it from starting. An unknown value in a debug build is refused at start. A build that uses it says so once at start, and the desktop's window title carries "(dev)". The test scripts do not set it: tests build their own `Secrets` and, for built binaries, point `ACTIVITY_LOG_SECRET_STORE=file`, `ACTIVITY_LOG_SECRET_KEY_FILE` and `ACTIVITY_LOG_CONFIG` at temporary paths. Since `pnpm cli:*` runs with the dev profile, the README shows the installed `activity-log` binary for real use and `pnpm cli:*` for development only.
+
+## Importing 0.0.7's sources once
+
+Activity Log 0.0.7 had no `config.toml`: the desktop kept a Tauri Store `settings.json`, and the CLI and the API read a `.env`. A user upgrading from it would start with no sources, so the first start imports them once, and only when the config path is the default one (no `--config`, `ACTIVITY_LOG_CONFIG` or dev profile), no `config.toml` exists there (an empty one counts, so removing every source never brings them back), no marker exists, and a legacy file is found.
+
+- The reader is 0.0.7's own, ported (`read_store_provider_config`, `parse_config_list`, `parse_bool`, its blank rule), and the tests' expected values are computed through it. Every value then goes through `settings::view::normalize`; one it refuses is skipped and reported, never written. Tokens are sealed and bound as any other.
+- The desktop looks for `settings.json`; the CLI for `settings.json` and for a `.env`, found as 0.0.7 found it (the first regular file walking up from the working directory) by our own finder, which skips a file another account owns, and parsed by `dotenvy::from_path_iter`, which touches no environment. That parser still expands `$VAR` and `${VAR}` references in values from the process environment, as 0.0.7's did; otherwise the process environment is never imported.
+- When the CLI finds both, `settings.json` wins only if its `providerConfig` sets at least one key; otherwise `.env` is used. The report names the file used and the one found but not used.
+- A secret needs the key first. On the desktop a refused or missing store imports nothing, writes no marker, and the import waits for the next start: the desktop writes tokens only into the OS store. The CLI falls back to the key file when the store is unavailable, and imports nothing when it refuses.
+- The tables are added by `edit_config` with a `Precondition::FileAbsent`, so a process that wrote the file first wins and the import is dropped, and a marker, `legacy-import.toml` beside the config, records what was imported and skipped once `config.toml` is published. The legacy files are only read, never written, moved or deleted.
+- The desktop imports, then seals, then builds its host; the CLI imports before it loads connections. The API server never imports; finding a legacy file and no config, it logs that `activity-log sources` imports it once.
+
+## Contract
+
+- `BackendErrorKind` gains `secretStoreUnavailable` and `secretStoreRefused`, mapped in `core/src/backend_error/` from the edit's typed store error. The API answers both with `503` (it never seals, so it never meets them). The dashboard's stream treats neither as a reason to connect again (they only come from saves), and the settings keep the draft for both, offering Save again for a refusal and the way to set up a keyring for a missing store.
+- `ProviderProblem` gains `secretUnavailable`.
+- A secret field's DTO says how it is stored, as above, in place of `secret: true`.
+- `Host::start` and the desktop's `AppState::start` take a `Secrets` handle. Only the binaries' `lib.rs`/`main.rs` build the OS store; the OS store cannot be built when core's `test-support` feature is on, which exports a scriptable `MemoryStore` for every other test. Tests against a real store live behind their own feature or test binary, refuse to run without a CI marker or a custom keychain path, and never touch the developer's login keychain.
+
+## Known limits
+
+- Each computer has its own key, so a `config.toml` synced between computers is not supported for secrets: a token entered on one replaces the value the other could open. The README says not to sync it.
+- The macOS dialog's text, and whether an ad-hoc signed app stays on the access list across an update, are checked by hand before a release. A Developer ID signature would make "Always Allow" survive updates.
