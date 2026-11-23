@@ -28,7 +28,8 @@ trap 'rm -rf "$work"' EXIT
 
 case "${1:-}" in
   check)
-    used=$(pnpm --silent --dir "$here/.." exec tauri --version)
+    # Offline: asks the installed CLI. On Windows its line ends in a carriage return.
+    used=$(pnpm --silent --dir "$here/.." exec tauri --version | tr -d '\r')
     if [ "$used" != "tauri-cli $CLI" ]; then
       echo "installer.nsi was copied for tauri-cli $CLI (tauri-bundler $BUNDLER), the build uses $used:" >&2
       echo "find its tauri-bundler version and run: $0 merge <version>" >&2
@@ -38,17 +39,26 @@ case "${1:-}" in
     ;;
   diff)
     upstream "$BUNDLER" "$work/upstream.nsi"
-    diff -u --label "tauri-bundler $BUNDLER" --label "installer.nsi" "$work/upstream.nsi" "$ours" || true
+    # diff exits 1 when the files differ, which they do; 2 is a failure
+    status=0
+    diff -u --label "tauri-bundler $BUNDLER" --label "installer.nsi" "$work/upstream.nsi" "$ours" || status=$?
+    [ "$status" -le 1 ] || exit "$status"
     ;;
   merge)
     new=${2:?usage: $0 merge VERSION}
     upstream "$BUNDLER" "$work/base.nsi"
     upstream "$new" "$work/new.nsi"
-    if git merge-file -L installer.nsi -L "tauri-bundler $BUNDLER" -L "tauri-bundler $new" \
-      "$ours" "$work/base.nsi" "$work/new.nsi"; then
+    # git merge-file exits with the number of conflicts (at most 127), or negative on an error
+    status=0
+    git merge-file -L installer.nsi -L "tauri-bundler $BUNDLER" -L "tauri-bundler $new" \
+      "$ours" "$work/base.nsi" "$work/new.nsi" || status=$?
+    if [ "$status" -eq 0 ]; then
       echo "Merged tauri-bundler $new without conflicts."
+    elif [ "$status" -le 127 ]; then
+      echo "Merged tauri-bundler $new: resolve the $status conflict(s) marked in $ours." >&2
     else
-      echo "Merged tauri-bundler $new: resolve the conflict markers in $ours." >&2
+      echo "git merge-file failed (exit $status); $ours is unchanged." >&2
+      exit "$status"
     fi
     echo "Then set BUNDLER and CLI in $0 and the versions in the copy's header." >&2
     ;;

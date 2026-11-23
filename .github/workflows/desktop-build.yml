@@ -50,6 +50,12 @@ jobs:
       - name: Install deps
         run: pnpm install --frozen-lockfile
 
+      # The installer is built from our copy of Tauri's NSIS template: it must be the CLI's
+      - name: Check the NSIS template matches the Tauri CLI
+        if: matrix.os == 'windows-latest'
+        shell: bash
+        run: desktop/installer/template.sh check
+
       - name: Build desktop bundle
         run: pnpm desktop:build
 

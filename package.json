@@ -34,7 +34,7 @@
     "dashboard:build:prod": "pnpm run types:generate && pnpm --dir dashboard exec ng build --configuration production",
     "desktop:dev": "pnpm run types:generate && pnpm --dir desktop exec tauri dev",
     "desktop:build": "pnpm run types:generate && pnpm --dir desktop exec tauri build",
-    "desktop:build:windows": "pnpm run types:generate && pnpm --dir desktop exec tauri build --runner cargo-xwin --target x86_64-pc-windows-msvc --bundles nsis",
+    "desktop:build:windows": "desktop/installer/template.sh check && pnpm run types:generate && pnpm --dir desktop exec tauri build --runner cargo-xwin --target x86_64-pc-windows-msvc --bundles nsis",
     "win:check": "cargo xwin clippy --workspace --all-targets --target x86_64-pc-windows-msvc -- -D warnings",
     "win:box:build": "cd infra/windows-vm/packer && packer build windows11-arm.pkr.hcl",
     "win:up": "cd infra/windows-vm && vagrant up",
