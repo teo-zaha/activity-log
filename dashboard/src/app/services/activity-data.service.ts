@@ -309,6 +309,15 @@ export class ActivityDataService {
   }
 
   /**
+   * Makes `range` this tab's own, the URL's `from`/`to`, and collects it, as the range form's
+   * Collect does with the dates it holds: an empty view's Collect.
+   */
+  async collectRange(range: DayRange): Promise<void> {
+    await this.viewState.setRange(range.from, range.to)
+    await this.collectShownRange()
+  }
+
+  /**
    * Runs a source's startup check again; the backend then collects its kind again for the range
    * on screen, which is followed on its own. Resolves once the backend has answered; a refused
    * request rejects, for its caller to show.

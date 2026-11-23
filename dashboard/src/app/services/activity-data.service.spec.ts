@@ -233,6 +233,21 @@ describe('ActivityDataService', () => {
       expect([viewState.dateFrom(), viewState.dateTo()]).toEqual(['2026-05-17', '2026-05-18'])
     })
 
+    it('makes a range this tab’s own and collects it', async () => {
+      const { backend, service, viewState } = openOnRange()
+      await service.initLoad()
+
+      await service.collectRange({ from: '2026-05-10', to: '2026-05-18' })
+
+      // The URL holds this tab's range.
+      expect(TestBed.inject(Location).path()).toMatch(/\?from=2026-05-10&to=2026-05-18$/)
+      expect([viewState.dateFrom(), viewState.dateTo()]).toEqual(['2026-05-10', '2026-05-18'])
+      expect(calls(backend, BackendOperations.collect)).toEqual([
+        range,
+        localDayRange('2026-05-10', '2026-05-18'),
+      ])
+    })
+
     it('keeps the host a command answer showed when an older first pair brings another', async () => {
       const { backend, service } = openOnRange()
       const client = TestBed.inject(ActivityBackendClient)

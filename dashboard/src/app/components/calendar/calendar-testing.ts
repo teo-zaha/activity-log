@@ -5,7 +5,7 @@ import type { ConnectionKey, EntryKey } from '../../providers/connection'
 import type { EntryUiAdapter } from '../../providers/types'
 import { ActivityDataService } from '../../services/activity-data.service'
 import { ActivitySelection, type RangeCoverage } from '../../services/activity-selection.service'
-import { ActivityViewStateService } from '../../services/activity-view-state.service'
+import { ActivityViewStateService, type DayRange } from '../../services/activity-view-state.service'
 import type { CollectionStatus } from '../../services/types'
 import type { ViewMode } from '../../utils/app-url'
 import { DEFAULT_HOUR_HEIGHT } from '../../utils/calendar-zoom'
@@ -41,8 +41,8 @@ export interface FakeCalendarState {
   readonly activeConnections: WritableSignal<Set<ConnectionKey>>
   /** The events and groups the view opened, by key. */
   readonly opened: (EntryKey | readonly EntryKey[])[]
-  /** How often the view collected the range on screen. */
-  readonly collects: () => number
+  /** The ranges the view collected as this tab's own (`ActivityDataService.collectRange`). */
+  readonly collected: readonly DayRange[]
 }
 
 /**
@@ -89,13 +89,13 @@ export function fakeCalendarState(init: CalendarStateInit): FakeCalendarState {
       return Promise.resolve(true)
     },
   } satisfies Partial<ActivityViewStateService>
-  let collects = 0
+  const collected: DayRange[] = []
   const data = {
     isLoading,
     collectionStatus,
     anySourceReady,
-    collectShownRange: (): Promise<void> => {
-      collects += 1
+    collectRange: (range: DayRange): Promise<void> => {
+      collected.push(range)
       return Promise.resolve()
     },
   } satisfies Partial<ActivityDataService>
@@ -119,7 +119,7 @@ export function fakeCalendarState(init: CalendarStateInit): FakeCalendarState {
     anySourceReady,
     activeConnections,
     opened,
-    collects: () => collects,
+    collected,
   }
 }
 

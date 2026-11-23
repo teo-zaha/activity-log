@@ -15,6 +15,7 @@ import { ActivitySelection, type RangeCoverage } from '../../services/activity-s
 import {
   ActivityViewStateService,
   SEARCH_URL_DELAY_MS,
+  type DayRange,
 } from '../../services/activity-view-state.service'
 import { activityLog, meetingWeightOf } from '../../testing/activity-fixtures'
 import { addDaysToKey } from '../../utils/local-day'
@@ -39,6 +40,7 @@ interface TimelineActivityMock {
   openEvent: ReturnType<typeof vi.fn<(key: EntryKey) => Promise<boolean>>>
   rangeCoverage: WritableSignal<RangeCoverage>
   collectShownRange: ReturnType<typeof vi.fn<() => Promise<void> | null>>
+  collectRange: ReturnType<typeof vi.fn<(range: DayRange) => Promise<void>>>
 }
 
 function mockActivity(overrides: { status?: CollectionStatus; query?: string } = {}): {
@@ -65,6 +67,7 @@ function mockActivity(overrides: { status?: CollectionStatus; query?: string } =
       openEvent: vi.fn((_key: EntryKey) => Promise.resolve(true)),
       rangeCoverage: signal<RangeCoverage>({ kind: 'covered' }),
       collectShownRange: vi.fn(() => Promise.resolve()),
+      collectRange: vi.fn((_range: DayRange) => Promise.resolve()),
     },
   }
 }
@@ -89,6 +92,7 @@ function servicesOf(activity: TimelineActivityMock): Provider[] {
     collectionStatus: activity.collectionStatus,
     anySourceReady: activity.anySourceReady,
     collectShownRange: activity.collectShownRange,
+    collectRange: activity.collectRange,
   } satisfies Partial<ActivityDataService>
   return [
     { provide: ActivitySelection, useValue: selection },
@@ -288,7 +292,7 @@ describe('TimelineComponent', () => {
 
     expect(shownEmptyState()).toEqual(emptyWords({ reason: 'notCollected', ...missing }))
     await userEvent.click(screen.getByRole('button', { name: 'Collect 10 May – 17 May 2026' }))
-    expect(activity.collectShownRange).toHaveBeenCalledOnce()
+    expect(activity.collectRange).toHaveBeenCalledExactlyOnceWith(missing.own)
   })
 
   it('asks for a wider range where the collection covers this tab’s range', async () => {

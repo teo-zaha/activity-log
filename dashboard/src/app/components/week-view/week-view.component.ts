@@ -4,7 +4,7 @@ import { IconButtonComponent } from '../button/icon-button.component'
 import { ButtonComponent } from '../button/button.component'
 import { ActivityDataService } from '../../services/activity-data.service'
 import { ActivitySelection } from '../../services/activity-selection.service'
-import { ActivityViewStateService } from '../../services/activity-view-state.service'
+import { ActivityViewStateService, type DayRange } from '../../services/activity-view-state.service'
 import type { EntryKey } from '../../providers/connection'
 import type { EntryUiAdapter } from '../../providers/types'
 import {
@@ -194,8 +194,8 @@ export class WeekViewComponent {
     })
   })
 
-  protected collectOwnRange(): void {
-    void this.data.collectShownRange()
+  protected collectRange(range: DayRange): void {
+    void this.data.collectRange(range)
   }
 
   protected openDay(day: DayKey): void {

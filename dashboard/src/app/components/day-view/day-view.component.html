@@ -97,7 +97,7 @@
 
     @if (emptyHint(); as hint) {
       <div class="u-floating-hint">
-        <app-calendar-hint [hint]="hint" (collect)="collectOwnRange()" />
+        <app-calendar-hint [hint]="hint" (collect)="collectRange($event)" />
       </div>
     }
 

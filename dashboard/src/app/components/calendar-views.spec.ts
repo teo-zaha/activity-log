@@ -9,7 +9,7 @@ import { ActivitySelection } from '../services/activity-selection.service'
 import { ActivityViewStateService } from '../services/activity-view-state.service'
 import { MockBackendTransport, provideMockBackend } from '../testing/activity-fixtures'
 import { calendarHintText } from './calendar/calendar-empty-hint'
-import { shownHint } from './calendar/calendar-testing'
+import { hintWords, shownHint } from './calendar/calendar-testing'
 import { DayViewComponent } from './day-view/day-view.component'
 import { WeekViewComponent } from './week-view/week-view.component'
 
@@ -144,15 +144,19 @@ describe('calendar views over a loaded log', () => {
     expect(screen.getByRole('button', { name: 'Open event: Late handover' })).toBeTruthy()
   })
 
-  it('says a week outside the collected range was not collected', async () => {
+  it('says a week outside the collected range was not collected, and offers to collect back to it', async () => {
     const { viewState } = await load()
     await viewState.openDay('2026-11-09')
 
     await show(WeekViewComponent)
 
-    expect(shownHint()?.title).toBe(
-      calendarHintText({ reason: 'notCollected', unit: 'week', onScreen: null, collect: null })
-        .title
-    )
+    const hint = {
+      reason: 'notCollected',
+      unit: 'week',
+      onScreen: { from: '2026-11-17', to: '2026-11-17' },
+      collect: { from: '2026-11-09', to: '2026-11-17' },
+    } as const
+    expect(shownHint()).toEqual(hintWords(hint))
+    expect(screen.getByRole('button', { name: calendarHintText(hint).action?.label })).toBeTruthy()
   })
 })

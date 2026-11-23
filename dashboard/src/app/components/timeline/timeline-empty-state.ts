@@ -2,7 +2,7 @@ import type { RangeCoverage } from '../../services/activity-selection.service'
 import type { DayRange } from '../../services/activity-view-state.service'
 import { dayRangeLabel } from '../../utils/local-day'
 import {
-  collectOwnRange,
+  collectRange,
   coversText,
   failedReason,
   partlyCollected,
@@ -73,7 +73,7 @@ function timelineText(state: TimelineEmptyState): EmptyText {
       return {
         title: 'This range is not collected',
         message: `${coversText(state.collected)}, not ${dayRangeLabel(state.own.from, state.own.to)}.`,
-        action: collectOwnRange(state.own),
+        action: collectRange(state.own),
       }
     case 'nothingRecorded':
       return {

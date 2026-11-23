@@ -81,7 +81,7 @@ describe('the reasons the Timeline and the calendar views share', () => {
       title: 'Nothing recorded in the collected days',
       message:
         'The activity on screen covers 1 May – 7 May 2026; the rest of 5 May – 17 May 2026 is not collected.',
-      action: { kind: 'collect-own-range', label: 'Collect 5 May – 17 May 2026' },
+      action: { kind: 'collect-range', range: OWN, label: 'Collect 5 May – 17 May 2026' },
     })
   })
 })

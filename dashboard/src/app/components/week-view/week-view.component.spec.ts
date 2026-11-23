@@ -215,27 +215,35 @@ describe('WeekViewComponent', () => {
     expect(state.selectedDay()).toBe('2026-11-19')
   })
 
-  it('says an empty week outside the collection was not collected', async () => {
-    await renderWeek({ day: '2026-11-10', from: '2026-11-16', to: '2026-11-22' })
+  it('says an empty week outside the collection was not collected, and collects back to it', async () => {
+    const { state } = await renderWeek({ day: '2026-11-10', from: '2026-11-16', to: '2026-11-22' })
+    const collect = { from: '2026-11-09', to: '2026-11-22' } as const
     expect(shownHint()).toEqual(
       hintWords({
         reason: 'notCollected',
         unit: 'week',
         onScreen: { from: '2026-11-16', to: '2026-11-22' },
-        collect: null,
+        collect,
       })
     )
+
+    screen.getByRole('button', { name: 'Collect 9 Nov – 22 Nov 2026' }).click()
+    expect(state.collected).toEqual([collect])
   })
 
   it('says a collected week without entries had no activity', async () => {
     await renderWeek({ from: '2026-11-16', to: '2026-11-22' })
-    expect(shownHint()).toEqual(hintWords({ reason: 'noActivity', unit: 'week', whole: true }))
+    expect(shownHint()).toEqual(hintWords({ reason: 'noActivity', unit: 'week', collect: null }))
   })
 
-  it('says only the collected days of a week had no activity', async () => {
+  it('says only the collected days of a week had no activity, and collects the rest', async () => {
     // Only Sunday is collected: nothing happened in it, but the rest of the week was not read.
-    await renderWeek({ from: '2026-11-22', to: '2026-11-29' })
-    expect(shownHint()).toEqual(hintWords({ reason: 'noActivity', unit: 'week', whole: false }))
+    const { state } = await renderWeek({ from: '2026-11-22', to: '2026-11-29' })
+    const collect = { from: '2026-11-16', to: '2026-11-29' } as const
+    expect(shownHint()).toEqual(hintWords({ reason: 'noActivity', unit: 'week', collect }))
+
+    screen.getByRole('button', { name: 'Collect 16 Nov – 29 Nov 2026' }).click()
+    expect(state.collected).toEqual([collect])
   })
 
   it('shows no hint while a collection runs', async () => {
@@ -322,12 +330,6 @@ describe('WeekViewComponent', () => {
     // Only the hint's text is announced; the button is not part of the live region.
     expect(screen.getByRole('status').contains(collect)).toBe(false)
     collect.click()
-    expect(state.collects()).toBe(1)
-  })
-
-  it('offers no collect where this tab’s range holds none of the week', async () => {
-    await renderWeek({ day: '2026-11-10', from: '2026-11-16', to: '2026-11-22' })
-
-    expect(screen.queryByRole('button', { name: /^Collect/ })).toBeNull()
+    expect(state.collected).toEqual([{ from: '2026-11-16', to: '2026-11-22' }])
   })
 })

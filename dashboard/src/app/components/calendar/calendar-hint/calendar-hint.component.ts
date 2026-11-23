@@ -1,4 +1,5 @@
 import { Component, computed, input, output } from '@angular/core'
+import type { DayRange } from '../../../services/activity-view-state.service'
 import { ButtonComponent } from '../../button/button.component'
 import { calendarHintText, type CalendarEmptyHint } from '../calendar-empty-hint'
 
@@ -16,8 +17,8 @@ import { calendarHintText, type CalendarEmptyHint } from '../calendar-empty-hint
 })
 export class CalendarHintComponent {
   readonly hint = input.required<CalendarEmptyHint>()
-  /** Collect this tab's range, as the hint offers. */
-  readonly collect = output()
+  /** Collect the range the hint offers, as this tab's own. */
+  readonly collect = output<DayRange>()
 
   protected readonly text = computed(() => calendarHintText(this.hint()))
 }

@@ -54,13 +54,13 @@
           <button appButton emptyStateAction (click)="viewState.setSearchQuery('')">
             Clear filter
           </button>
-        } @else if (action?.kind === 'collect-own-range') {
+        } @else if (action?.kind === 'collect-range') {
           <button
             appButton
             emptyStateAction
             variant="primary"
             icon="sync"
-            (click)="collectOwnRange()"
+            (click)="collectRange(action.range)"
           >
             {{ action.label }}
           </button>

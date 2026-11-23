@@ -305,7 +305,8 @@ export class ActivityViewStateService {
     )
   }
 
-  private setRange(from: DayKey | null, to: DayKey | null): Promise<boolean> {
+  /** Makes `from`–`to` this tab's range, in place of the current entry. */
+  setRange(from: DayKey | null, to: DayKey | null): Promise<boolean> {
     return this.go([], { from, to }, REPLACE)
   }
 

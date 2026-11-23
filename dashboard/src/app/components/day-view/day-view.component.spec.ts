@@ -158,16 +158,20 @@ describe('DayViewComponent', () => {
     expect(state.opened).toEqual([block.trackKey, bar.trackKey])
   })
 
-  it('says an empty day was not collected when it lies outside the collection', async () => {
-    await renderDay({ day: '2026-11-10', from: '2026-11-16', to: '2026-11-22' })
+  it('says an empty day outside the collection was not collected, and collects back to it', async () => {
+    const { state } = await renderDay({ day: '2026-11-10', from: '2026-11-16', to: '2026-11-22' })
+    const collect = { from: '2026-11-10', to: '2026-11-22' } as const
     expect(shownHint()).toEqual(
       hintWords({
         reason: 'notCollected',
         unit: 'day',
         onScreen: { from: '2026-11-16', to: '2026-11-22' },
-        collect: null,
+        collect,
       })
     )
+
+    screen.getByRole('button', { name: 'Collect 10 Nov – 22 Nov 2026' }).click()
+    expect(state.collected).toEqual([collect])
   })
 
   it('offers to collect this tab’s range where another collection on screen leaves the day out', async () => {
@@ -195,11 +199,11 @@ describe('DayViewComponent', () => {
     // Only the hint's text is announced; the button is not part of the live region.
     expect(screen.getByRole('status').contains(collect)).toBe(false)
     collect.click()
-    expect(state.collects()).toBe(1)
+    expect(state.collected).toEqual([{ from: '2026-11-16', to: '2026-11-22' }])
   })
 
   it('says a collected day without entries had no activity', async () => {
     await renderDay({ day: '2026-11-17', from: '2026-11-16', to: '2026-11-22' })
-    expect(shownHint()).toEqual(hintWords({ reason: 'noActivity', unit: 'day', whole: true }))
+    expect(shownHint()).toEqual(hintWords({ reason: 'noActivity', unit: 'day', collect: null }))
   })
 })

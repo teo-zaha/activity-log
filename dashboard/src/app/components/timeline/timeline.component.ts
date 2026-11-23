@@ -25,6 +25,7 @@ import { ActivitySelection } from '../../services/activity-selection.service'
 import {
   ActivityViewStateService,
   SEARCH_URL_DELAY_MS,
+  type DayRange,
 } from '../../services/activity-view-state.service'
 import { SearchBarComponent } from '../search-bar/search-bar.component'
 import type { EntryUiAdapter } from '../../providers/types'
@@ -363,8 +364,8 @@ export class TimelineComponent {
     })
   }
 
-  protected collectOwnRange(): void {
-    void this.data.collectShownRange()
+  protected collectRange(range: DayRange): void {
+    void this.data.collectRange(range)
   }
 
   /** The active day is under the line, so it is drawn. */

@@ -21,14 +21,18 @@ export type SharedEmptyReason =
   /** Another collection on screen holds part of this tab's range, and nothing in it. */
   | { readonly reason: 'partlyCollected'; readonly collected: DayRange; readonly own: DayRange }
 
-/** Collect this tab's own range (`ActivityDataService.collectShownRange`). */
-export interface CollectOwnRange {
-  readonly kind: 'collect-own-range'
+/**
+ * Collect `range` as this tab's own (`ActivityDataService.collectRange`): this tab's range, or
+ * that range taken out to the days a calendar view shows.
+ */
+export interface CollectRange {
+  readonly kind: 'collect-range'
+  readonly range: DayRange
   readonly label: string
 }
 
 /** What an empty view offers to do about it. */
-export type EmptyAction = { readonly kind: 'clear-search' } | CollectOwnRange
+export type EmptyAction = { readonly kind: 'clear-search' } | CollectRange
 
 /** An empty view's words and action, as its template shows them. */
 export interface EmptyText<Action extends EmptyAction = EmptyAction> {
@@ -71,9 +75,9 @@ export function partlyCollected(coverage: RangeCoverage): SharedEmptyReason | nu
     : null
 }
 
-/** `Collect 10 May – 17 May 2026`: collects this tab's own range. */
-export function collectOwnRange(own: DayRange): CollectOwnRange {
-  return { kind: 'collect-own-range', label: `Collect ${dayRangeLabel(own.from, own.to)}` }
+/** `Collect 10 May – 17 May 2026`: collects `range` as this tab's own. */
+export function collectRange(range: DayRange): CollectRange {
+  return { kind: 'collect-range', range, label: `Collect ${dayRangeLabel(range.from, range.to)}` }
 }
 
 /** `The activity on screen covers 1 May – 7 May 2026` */
@@ -89,7 +93,7 @@ const FAILED_MESSAGE: Readonly<Record<FailedCollectionCause, string>> = {
 }
 
 /** The words of a shared reason. */
-export function sharedEmptyText(reason: SharedEmptyReason): EmptyText<CollectOwnRange> {
+export function sharedEmptyText(reason: SharedEmptyReason): EmptyText<CollectRange> {
   switch (reason.reason) {
     case 'failed':
       return { title: 'No activity loaded', message: FAILED_MESSAGE[reason.cause], action: null }
@@ -109,7 +113,7 @@ export function sharedEmptyText(reason: SharedEmptyReason): EmptyText<CollectOwn
       return {
         title: 'Nothing recorded in the collected days',
         message: `${coversText(reason.collected)}; the rest of ${dayRangeLabel(reason.own.from, reason.own.to)} is not collected.`,
-        action: collectOwnRange(reason.own),
+        action: collectRange(reason.own),
       }
   }
 }

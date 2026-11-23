@@ -5,7 +5,7 @@
   }
 </p>
 @if (text().action; as action) {
-  <button appButton variant="primary" size="sm" icon="sync" (click)="collect.emit()">
+  <button appButton variant="primary" size="sm" icon="sync" (click)="collect.emit(action.range)">
     {{ action.label }}
   </button>
 }

@@ -123,7 +123,7 @@ describe('timelineEmptyView', () => {
       icon: 'date_range',
       title: 'This range is not collected',
       message: 'The activity on screen covers 1 May – 7 May 2026, not 10 May – 17 May 2026.',
-      action: { kind: 'collect-own-range', label: 'Collect 10 May – 17 May 2026' },
+      action: { kind: 'collect-range', range: OWN_APART, label: 'Collect 10 May – 17 May 2026' },
     })
     expect(timelineEmptyView({ reason: 'nothingRecorded' })).toEqual({
       icon: 'event_busy',
@@ -144,7 +144,11 @@ describe('timelineEmptyView', () => {
       timelineEmptyView({ reason: 'partlyCollected', collected: COLLECTED, own: OWN_OVERLAPPING })
     ).toMatchObject({
       icon: 'date_range',
-      action: { kind: 'collect-own-range', label: 'Collect 5 May – 17 May 2026' },
+      action: {
+        kind: 'collect-range',
+        range: OWN_OVERLAPPING,
+        label: 'Collect 5 May – 17 May 2026',
+      },
     })
   })
 })
