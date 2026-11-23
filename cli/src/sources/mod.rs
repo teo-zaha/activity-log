@@ -7,9 +7,7 @@ use activity_log_core::{
     model::{ConnectionId, ProviderInfo, Source},
     provider::{
         connection::{Connection, ConnectionLocation},
-        provider_config::{
-            ProviderConfigKey, ProviderConfigShape, ProviderConfigValueType, parse_config_list,
-        },
+        provider_config::{ProviderConfigKey, ProviderConfigShape, parse_config_list},
     },
     settings::{
         ConfigEditError, ConfigFile, config_keys, field_name, key_for_field,
@@ -155,7 +153,7 @@ pub(crate) fn ask_values(
             (false, _) => format!("{field} ({}, Enter to skip): ", key.shape),
         };
         loop {
-            let answer = prompt.ask(&hint, is_secret(key))?;
+            let answer = prompt.ask(&hint, key.is_secret())?;
             if answer.trim().is_empty() {
                 if key.required {
                     eprintln!("{field} is required");
@@ -205,7 +203,7 @@ pub(crate) fn value_for(
 ) -> Result<(ProviderConfigKey, Option<String>)> {
     let key = key(&id.source, field)?;
     let values = if values.is_empty() {
-        vec![prompt.ask(&format!("{field} for {id}: "), is_secret(key))?]
+        vec![prompt.ask(&format!("{field} for {id}: "), key.is_secret())?]
     } else {
         values
     };
@@ -269,10 +267,6 @@ pub(crate) fn key(source: &Source, field: &str) -> Result<ProviderConfigKey, Sou
             }
         }
     })
-}
-
-fn is_secret(key: ProviderConfigKey) -> bool {
-    key.value_type() == ProviderConfigValueType::Password
 }
 
 /// The stored form of `values` for `key`, checked as every writer checks it: one argument in

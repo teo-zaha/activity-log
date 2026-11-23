@@ -50,6 +50,9 @@ pub struct ProviderConfigKey {
     /// Says which account a connection uses (a server address, a token): a settings save based
     /// on an older value of it is a conflict even when it does not touch it.
     pub account: bool,
+    /// A secret of its kind opens only for this key's value as it was when the secret was
+    /// entered (a token for its server's origin, Jira's `insecure` setting): `[binds]`.
+    pub binds: bool,
 }
 
 impl ProviderConfigKey {
@@ -62,6 +65,13 @@ impl ProviderConfigKey {
         self.shape.value_type()
     }
 
+    /// Whether the key holds a secret (a token, a secret link): never printed, sent or hashed
+    /// into a file name, and stored sealed. The one rule; nothing else compares value types to
+    /// tell.
+    pub const fn is_secret(self) -> bool {
+        matches!(self.value_type(), ProviderConfigValueType::Password)
+    }
+
     /// A required key labelled by its name; [`Self::labelled`] names it for people.
     pub const fn required(name: &'static str, value_type: ProviderConfigValueType) -> Self {
         Self {
@@ -70,6 +80,7 @@ impl ProviderConfigKey {
             required: true,
             shape: ProviderConfigShape::Single(value_type),
             account: false,
+            binds: false,
         }
     }
 
@@ -81,6 +92,7 @@ impl ProviderConfigKey {
             required: false,
             shape: ProviderConfigShape::Single(value_type),
             account: false,
+            binds: false,
         }
     }
 

@@ -26,13 +26,26 @@ impl ConfigBinding {
     }
 }
 
+/// `value` for a `Debug` print, or `<redacted>` when `key` is a secret (`provider_config!`).
+#[doc(hidden)]
+pub fn shown_unless_secret(
+    key: ProviderConfigKey,
+    value: &dyn std::fmt::Debug,
+) -> &dyn std::fmt::Debug {
+    if key.is_secret() {
+        &"<redacted>"
+    } else {
+        value
+    }
+}
+
 #[macro_export]
 macro_rules! provider_config {
     (
         $vis:vis struct $name:ident {
             $(
                 $field_vis:vis $field:ident => $key:ident $label:literal : $vtype:ident
-                    $( = $default:literal )? $( [$account:ident] )?
+                    $( = $default:literal )? $( [ $( $mark:ident ),+ ] )?
             ),* $(,)?
         }
     ) => {
@@ -45,8 +58,10 @@ macro_rules! provider_config {
                     shape: $crate::provider::provider_config::ProviderConfigShape::Single(
                         $crate::provider_config!(@value_type $vtype),
                     ),
-                    account: $crate::provider_config!(@account $( $account )?),
+                    account: $crate::provider_config!(@account $( $( $mark )+ )?),
+                    binds: $crate::provider_config!(@binds $( $( $mark )+ )?),
                 };
+            $( $( $crate::provider_config!(@mark $mark); )+ )?
         )*
 
         #[derive(Clone)]
@@ -55,10 +70,18 @@ macro_rules! provider_config {
         }
 
         impl ::std::fmt::Debug for $name {
-            // `Password` values are tokens and secret links: never printed.
+            // Secrets are never printed.
             fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
                 f.debug_struct(stringify!($name))
-                    $( .field(stringify!($field), $crate::provider_config!(@debug self.$field, $vtype)) )*
+                    $(
+                        .field(
+                            stringify!($field),
+                            $crate::provider::provider_config::shown_unless_secret(
+                                $key,
+                                $crate::provider_config!(@debug self.$field, $vtype),
+                            ),
+                        )
+                    )*
                     .finish()
             }
         }
@@ -92,17 +115,23 @@ macro_rules! provider_config {
     (@value_type Int)      => { $crate::provider::provider_config::ProviderConfigValueType::Int };
     (@value_type Bool)     => { $crate::provider::provider_config::ProviderConfigValueType::Bool };
 
-    // ── Account keys: `url => GITLAB_URL: Url [account]` ─────────────────
+    // ── Marks: `url => GITLAB_URL: Url [account, binds]` ─────────────────
+    // Each mark is one of these; another does not compile.
+    (@mark account) => {};
+    (@mark binds) => {};
     (@account) => { false };
-    (@account account) => { true };
+    (@account account $( $rest:ident )*) => { true };
+    (@account $other:ident $( $rest:ident )*) => { $crate::provider_config!(@account $( $rest )*) };
+    (@binds) => { false };
+    (@binds binds $( $rest:ident )*) => { true };
+    (@binds $other:ident $( $rest:ident )*) => { $crate::provider_config!(@binds $( $rest )*) };
 
     // ── Required inference ────────────────────────────────────────────────
     (@required Bool)                  => { false };
     (@required $vtype:ident , $default:literal) => { false };
     (@required $vtype:ident)          => { true };
 
-    // ── Debug value ───────────────────────────────────────────────────────
-    (@debug $value:expr, Password) => { &"<redacted>" };
+    // ── Debug value (a secret's is never read: `is_secret` above) ────────
     (@debug $value:expr, Url) => { &$crate::provider::provider_config::url_for_debug(&$value) };
     (@debug $value:expr, $vtype:ident) => { &$value };
 

@@ -1366,3 +1366,110 @@ async fn a_check_without_resolved_settings_is_not_configured() {
         );
     }
 }
+
+/// Every kind's config with each secret set to `{marker}-{KEY}` and every other key to a value
+/// of its type.
+fn sample_values(keys: &[ProviderConfigKey], marker: &str) -> ConnectionValues {
+    let sample = |value_type| match value_type {
+        ProviderConfigValueType::Password => unreachable!("secrets get the marker"),
+        ProviderConfigValueType::String => "sample",
+        ProviderConfigValueType::Bool => "true",
+        ProviderConfigValueType::Int => "7",
+        ProviderConfigValueType::Email => "jane@example.test",
+        ProviderConfigValueType::Url => "https://example.test/path",
+    };
+    ConnectionValues::new(
+        keys.iter()
+            .map(|key| {
+                let value = if key.is_secret() {
+                    format!("{marker}-{}", key.name)
+                } else {
+                    sample(key.value_type()).to_string()
+                };
+                let value = match key.shape {
+                    ProviderConfigShape::Single(_) => value,
+                    ProviderConfigShape::List(_) => {
+                        crate::provider::provider_config::encode_config_list(&[value])
+                    }
+                };
+                (key.name.to_string(), Some(value))
+            })
+            .collect(),
+    )
+}
+
+/// The registry's secrets (`ProviderConfigKey::is_secret`, the one rule) never reach a cache
+/// fingerprint, the settings snapshot or a `Debug` print, whichever kind declares them.
+#[test]
+fn no_declared_secret_reaches_a_fingerprint_the_snapshot_or_debug() {
+    let mut secret_kinds = Vec::new();
+    for adapter in provider_registry() {
+        let Some(binding) = adapter.config_binding() else {
+            continue;
+        };
+        let keys = binding.requirements;
+        if !keys.iter().any(|key| key.is_secret()) {
+            continue;
+        }
+        secret_kinds.push(adapter.id());
+        let first = sample_values(keys, "first-secret");
+        let second = sample_values(keys, "second-secret");
+
+        let fingerprint = |values: &ConnectionValues| {
+            ProviderConfig::resolve(values, keys)
+                .fingerprint(keys)
+                .expect("sample URLs are cacheable")
+        };
+        assert_eq!(
+            fingerprint(&first),
+            fingerprint(&second),
+            "{}",
+            adapter.id()
+        );
+
+        let mut context = ProviderContext::resolve(&first, keys);
+        (binding.resolve)(&mut context).expect("sample values resolve");
+        let debug = format!("{context:?}");
+        assert!(!debug.contains("typed: None"), "{debug}");
+        assert!(!debug.contains("first-secret"), "{debug}");
+
+        let connection = Connection::new(
+            ConnectionId {
+                source: adapter.id(),
+                name: "one".to_string(),
+            },
+            "One",
+            ConnectionLocation::default(),
+            first,
+        );
+        let snapshot =
+            crate::settings::view::build_snapshot(&[connection], &current_os(), "r1".to_string());
+        let json = serde_json::to_string(&snapshot).unwrap();
+        assert!(json.contains("\"connection\""), "{json}");
+        assert!(!json.contains("first-secret"), "{json}");
+    }
+    assert_eq!(
+        secret_kinds,
+        [Source::Gitlab, Source::Jira, Source::Calendar]
+    );
+}
+
+/// A secret is bound to its server's origin and to Jira's TLS setting (`[binds]`), and only a
+/// kind with a secret has keys it is bound to.
+#[test]
+fn binding_keys_are_the_server_addresses_and_jiras_tls_setting() {
+    let mut binding = Vec::new();
+    for adapter in provider_registry() {
+        let keys = adapter.config_requirements();
+        let binds: Vec<_> = keys
+            .iter()
+            .filter(|key| key.binds)
+            .map(|key| key.name)
+            .collect();
+        if !binds.is_empty() {
+            assert!(keys.iter().any(|key| key.is_secret()), "{}", adapter.id());
+        }
+        binding.extend(binds);
+    }
+    assert_eq!(binding, ["GITLAB_URL", "JIRA_URL", "JIRA_INSECURE"]);
+}

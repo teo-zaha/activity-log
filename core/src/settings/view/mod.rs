@@ -379,7 +379,7 @@ fn field_value(connection: &Connection, key: ProviderConfigKey) -> ProviderConfi
         .filter(|raw| !raw.trim().is_empty());
     match key.shape {
         ProviderConfigShape::Single(value_type) => {
-            let secret = value_type == ProviderConfigValueType::Password;
+            let secret = key.is_secret();
             ProviderConfigFieldValueDto::Single {
                 value_type: value_type.into(),
                 secret,

@@ -62,15 +62,12 @@ impl ProviderConfig {
     }
 
     /// Stable hash of the non-secret values, used to keep caches of different accounts apart.
-    /// Passwords and tokens are left out so they never influence file names on disk; URLs count
+    /// Secrets are left out so they never influence file names on disk; URLs count
     /// as their endpoint (see [`canonical_endpoint`]). `Err` names a URL setting that holds
     /// credentials, a query or a fragment: such a connection is not cached.
     pub fn fingerprint(&self, requirements: &[ProviderConfigKey]) -> Result<u64, &'static str> {
         let mut text = String::new();
-        for key in requirements
-            .iter()
-            .filter(|key| key.value_type() != ProviderConfigValueType::Password)
-        {
+        for key in requirements.iter().filter(|key| !key.is_secret()) {
             let value = self.values.get(key.name).map(String::as_str).unwrap_or("");
             let value = match key.shape {
                 ProviderConfigShape::Single(ProviderConfigValueType::Url) => {

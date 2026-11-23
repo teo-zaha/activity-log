@@ -10,10 +10,15 @@ use crate::provider::{
     provider_config::{ConfigSource, ProviderConfig, ProviderConfigKey, ProviderConfigResolve},
 };
 
+/// A kind's typed config, as `provider_config!` declares it; its `Debug` redacts secrets.
+trait TypedConfig: Any + Send + Sync + fmt::Debug {}
+
+impl<T: Any + Send + Sync + fmt::Debug> TypedConfig for T {}
+
 #[derive(Clone, Default)]
 pub struct ProviderContext {
     config: ProviderConfig,
-    typed: Option<Arc<dyn Any + Send + Sync>>,
+    typed: Option<Arc<dyn TypedConfig>>,
     connection: Option<Connection>,
     collection_state: Option<CollectionState>,
 }
@@ -22,6 +27,7 @@ impl fmt::Debug for ProviderContext {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("ProviderContext")
             .field("config", &self.config)
+            .field("typed", &self.typed)
             .finish()
     }
 }
@@ -75,8 +81,8 @@ impl ProviderContext {
 
     pub fn config<T: 'static>(&self) -> Result<&T> {
         self.typed
-            .as_ref()
-            .and_then(|any| any.downcast_ref::<T>())
+            .as_deref()
+            .and_then(|typed| (typed as &dyn Any).downcast_ref::<T>())
             .ok_or_else(|| anyhow!("Config not resolved or wrong type"))
     }
 
