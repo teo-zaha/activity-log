@@ -260,13 +260,14 @@ impl Staging {
     }
 }
 
-/// A name is one ordinary entry of a folder: no separator, no `.` or `..`.
+/// A name is one ordinary entry of a folder: no separator, no `.` or `..`, and on Windows one
+/// that Win32 and NT read alike ([`windows_reads_alike`]).
 fn check_name(name: &str) -> io::Result<()> {
     let single = !name.is_empty()
         && name != "."
         && name != ".."
         && !name.contains(['/', '\\', '\0'])
-        && !(cfg!(windows) && name.contains(':'));
+        && (!cfg!(windows) || windows_reads_alike(name));
     if single {
         Ok(())
     } else {
@@ -275,6 +276,33 @@ fn check_name(name: &str) -> io::Result<()> {
             format!("{name:?} is not a file name"),
         ))
     }
+}
+
+/// Whether a Win32 path and the NT calls name the same file by `name`: Win32 drops a trailing
+/// `.` or space and reads a reserved device name (`CON`, `NUL`, `COM1`, … also with an
+/// extension) as the device, while the NT rename takes the name as written; `:` names a
+/// stream.
+#[cfg_attr(not(any(target_os = "windows", test)), allow(dead_code))]
+fn windows_reads_alike(name: &str) -> bool {
+    const DEVICES: [&str; 4] = ["CON", "PRN", "AUX", "NUL"];
+    const NUMBERED: [&str; 2] = ["COM", "LPT"];
+    // Microsoft's list of reserved names includes COM0 and LPT0, and the superscript digits.
+    const DIGITS: [char; 13] = [
+        '0', '1', '2', '3', '4', '5', '6', '7', '8', '9', '\u{b9}', '\u{b2}', '\u{b3}',
+    ];
+    let stem = name.split('.').next().unwrap_or(name).trim_end_matches(' ');
+    let numbered = |prefix: &str| {
+        let mut chars = stem.chars();
+        let start: String = chars.by_ref().take(3).collect();
+        start.eq_ignore_ascii_case(prefix)
+            && chars.next().is_some_and(|digit| DIGITS.contains(&digit))
+            && chars.next().is_none()
+    };
+    let device = DEVICES
+        .iter()
+        .any(|device| stem.eq_ignore_ascii_case(device))
+        || NUMBERED.into_iter().any(numbered);
+    !name.contains(':') && !name.ends_with(['.', ' ']) && !device
 }
 
 /// Whether an existing file can be opened by anyone but its owner (mode bits, ACL entries).

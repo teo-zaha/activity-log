@@ -1,8 +1,40 @@
 use super::{
     Found,
     acl::{self, ADMINISTRATORS, AceView, Expected, FILE_ALL_ACCESS},
-    linux_enforces_permissions, macos_enforces_permissions, removable,
+    linux_enforces_permissions, macos_enforces_permissions, removable, windows_reads_alike,
 };
+
+/// Names Win32 would read as another file or a device are refused on Windows.
+#[test]
+fn only_names_win32_and_nt_read_alike_are_windows_names() {
+    for name in [
+        "config.toml",
+        "config.toml.lock",
+        ".config.toml.0123456789abcdef.staging",
+        "console.txt",
+        "COM10",
+        "LPTX.txt",
+    ] {
+        assert!(windows_reads_alike(name), "{name:?}");
+    }
+    for name in [
+        "config.toml.",
+        "config.toml ",
+        "CON",
+        "con.txt",
+        "Nul",
+        "aux.tar.gz",
+        "PRN ",
+        "NUL .txt",
+        "COM1",
+        "com0",
+        "lpt9.log",
+        "COM\u{b9}",
+        "a:b",
+    ] {
+        assert!(!windows_reads_alike(name), "{name:?}");
+    }
+}
 
 #[test]
 fn only_file_systems_that_enforce_permissions_locally_are_allowed_on_linux() {
@@ -510,11 +542,11 @@ mod linux {
 
 #[cfg(target_os = "windows")]
 mod windows {
-    use std::{fs, io::Write};
+    use std::{fs, io::Write, os::windows::fs::OpenOptionsExt};
 
     use super::super::{
-        open_folder, private_staging,
-        windows::{code, win},
+        ReplaceError, ReplaceStep, open_folder, private_staging,
+        windows::{REFUSE_POSIX_RENAME, RenameRefused, code, win},
     };
 
     /// A reader holding the target open (with delete sharing, as Rust and most programs open
@@ -596,6 +628,65 @@ mod windows {
         drop(staging);
 
         assert!(kept.join("backups").is_dir());
+    }
+
+    /// Where POSIX renames are not offered, the plain rename replaces a target nobody holds
+    /// open.
+    #[test]
+    fn without_posix_renames_a_plain_rename_replaces_the_target() {
+        let dir = tempfile::tempdir().unwrap();
+        let target = dir.path().join("config.toml");
+        fs::write(&target, "old").unwrap();
+
+        REFUSE_POSIX_RENAME.set(true);
+        let replaced = open_folder(dir.path())
+            .unwrap()
+            .replace("config.toml", b"new");
+        REFUSE_POSIX_RENAME.set(false);
+
+        replaced.unwrap();
+        assert_eq!(fs::read_to_string(&target).unwrap(), "new");
+        assert_eq!(fs::read_dir(dir.path()).unwrap().count(), 1);
+    }
+
+    /// A target held open without delete sharing refuses the plain rename too: the failure
+    /// keeps both refusals, and the target stays.
+    #[test]
+    fn a_refused_plain_rename_keeps_both_causes() {
+        let dir = tempfile::tempdir().unwrap();
+        let target = dir.path().join("config.toml");
+        fs::write(&target, "old").unwrap();
+        // FILE_SHARE_READ alone: no delete sharing.
+        let holder = fs::OpenOptions::new()
+            .read(true)
+            .share_mode(1)
+            .open(&target)
+            .unwrap();
+
+        REFUSE_POSIX_RENAME.set(true);
+        let failed = open_folder(dir.path())
+            .unwrap()
+            .replace("config.toml", b"new");
+        REFUSE_POSIX_RENAME.set(false);
+        drop(holder);
+
+        let Err(ReplaceError::Failed {
+            step: ReplaceStep::Publishing,
+            source,
+        }) = failed
+        else {
+            panic!("{failed:?}");
+        };
+        let refused = source
+            .get_ref()
+            .and_then(|inner| inner.downcast_ref::<RenameRefused>())
+            .expect("both refusals");
+        // ERROR_NOT_SUPPORTED, as the hook answers.
+        assert_eq!(code(&refused.posix), Some(50));
+        assert!(code(&refused.plain).is_some(), "{:?}", refused.plain);
+        assert_eq!(source.kind(), refused.plain.kind());
+        assert_eq!(fs::read_to_string(&target).unwrap(), "old");
+        assert_eq!(fs::read_dir(dir.path()).unwrap().count(), 1);
     }
 
     /// `windows` reports Win32 errors as HRESULTs; matching on the Win32 code must still work.

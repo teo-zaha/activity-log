@@ -664,6 +664,14 @@ fn aces(dacl: *mut ACL) -> io::Result<Option<Vec<AceView>>> {
     Ok(Some(aces))
 }
 
+#[cfg(test)]
+thread_local! {
+    /// Answers every POSIX rename as not supported, as a kernel or file system without them
+    /// does, so the plain rename runs.
+    pub(super) static REFUSE_POSIX_RENAME: std::cell::Cell<bool> =
+        const { std::cell::Cell::new(false) };
+}
+
 /// Statuses of a `FileRenameInformationEx` request that a plain rename may still do: a kernel
 /// without the class (before Windows 10 1607), or a file system without POSIX renames.
 const RENAME_EX_UNSUPPORTED: [NTSTATUS; 4] = [
@@ -681,8 +689,16 @@ fn rename(file: &OwnedHandle, parent: &OwnedHandle, name: &[u16]) -> io::Result<
     let posix = FILE_RENAME_INFORMATION_0 {
         Flags: FILE_RENAME_REPLACE_IF_EXISTS | FILE_RENAME_POSIX_SEMANTICS,
     };
-    let refused = match set_rename(file, parent, name, FileRenameInformationEx, posix)? {
-        status if succeeded(status) => return Ok(()),
+    #[cfg(test)]
+    let posix_status = if REFUSE_POSIX_RENAME.get() {
+        STATUS_NOT_SUPPORTED
+    } else {
+        set_rename(file, parent, name, FileRenameInformationEx, posix)?
+    };
+    #[cfg(not(test))]
+    let posix_status = set_rename(file, parent, name, FileRenameInformationEx, posix)?;
+    let refused = match posix_status {
+        status if status.is_ok() => return Ok(()),
         status if RENAME_EX_UNSUPPORTED.contains(&status) => status,
         status => return Err(nt_error(status)),
     };
@@ -690,7 +706,7 @@ fn rename(file: &OwnedHandle, parent: &OwnedHandle, name: &[u16]) -> io::Result<
     let mut plain = FILE_RENAME_INFORMATION_0::default();
     plain.ReplaceIfExists = true;
     match set_rename(file, parent, name, FileRenameInformation, plain)? {
-        status if succeeded(status) => Ok(()),
+        status if status.is_ok() => Ok(()),
         status => {
             let plain = nt_error(status);
             Err(io::Error::new(
@@ -753,24 +769,21 @@ fn set_rename(
     Ok(status)
 }
 
-/// `NT_SUCCESS`: success and informational statuses are not negative.
-fn succeeded(status: NTSTATUS) -> bool {
-    status.0 >= 0
-}
-
 /// An NT status as the Win32 error it maps to, so its kind is the usual one; a status without
 /// a Win32 counterpart maps to `ERROR_MR_MID_NOT_FOUND` (317), never to success.
 fn nt_error(status: NTSTATUS) -> io::Error {
-    // SAFETY: a pure lookup on a value; nothing is read or written through pointers.
+    // SAFETY: a lookup on a value: no pointer is passed. Besides the code it returns it only
+    // writes `status` into this thread's own `LastStatusValue` (in its TEB), which nothing
+    // here reads.
     let code = unsafe { RtlNtStatusToDosError(status) };
     io::Error::from_raw_os_error(code as i32)
 }
 
 /// Both renames of [`rename`] were refused.
 #[derive(Debug)]
-struct RenameRefused {
-    posix: io::Error,
-    plain: io::Error,
+pub(super) struct RenameRefused {
+    pub(super) posix: io::Error,
+    pub(super) plain: io::Error,
 }
 
 impl std::fmt::Display for RenameRefused {
