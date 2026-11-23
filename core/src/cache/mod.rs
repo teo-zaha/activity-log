@@ -28,7 +28,9 @@ use serde::{Deserialize, Serialize};
 use crate::{
     diagnostics,
     model::{ActivityEntry, CollectOptions, ConnectionId},
-    platform::private_file::{Folder, PrivateFileError, create_private_folder, open_folder},
+    platform::private_file::{
+        Folder, PrivateFileError, ReplaceError, create_private_folder, open_folder,
+    },
 };
 
 #[cfg(test)]
@@ -482,11 +484,11 @@ fn store(
 
     match folder.replace(name, &json) {
         Ok(()) => Ok(()),
-        Err(PrivateFileError::Unprotectable { location }) => {
+        Err(ReplaceError::Unprotectable { location }) => {
             warn_unprotectable(&location, scope);
             Ok(())
         }
-        Err(err) => Err(err.into()),
+        Err(err @ ReplaceError::Failed { .. }) => Err(err.into()),
     }
 }
 
@@ -499,7 +501,7 @@ fn is_private(folder: &Folder, scope: &str) -> bool {
             warn_unprotectable(&location, scope);
             false
         }
-        Err(err @ (PrivateFileError::Io(_) | PrivateFileError::Failed { .. })) => {
+        Err(PrivateFileError::Io(err)) => {
             diagnostics::warn(
                 scope,
                 format!("Could not check the cache folder: {err}; collecting without a cache"),

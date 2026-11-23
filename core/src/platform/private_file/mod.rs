@@ -45,31 +45,49 @@ pub enum PrivateFileError {
         location: PathBuf,
     },
     Io(io::Error),
-    /// [`Folder::replace`] failed at `step`; the file it replaces is as it was.
+}
+
+impl std::fmt::Display for PrivateFileError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Unprotectable { location } => unprotectable(f, location),
+            Self::Io(err) => write!(f, "{err}"),
+        }
+    }
+}
+
+impl std::error::Error for PrivateFileError {}
+
+fn unprotectable(f: &mut std::fmt::Formatter<'_>, location: &Path) -> std::fmt::Result {
+    write!(f, "{} cannot keep files private", location.display())
+}
+
+/// Why [`Folder::replace`] did not replace the file; the file is as it was.
+#[derive(Debug)]
+pub enum ReplaceError {
+    /// As [`PrivateFileError::Unprotectable`]: nothing was written.
+    Unprotectable { location: PathBuf },
     Failed {
         step: ReplaceStep,
         source: io::Error,
     },
 }
 
-impl std::fmt::Display for PrivateFileError {
+impl std::fmt::Display for ReplaceError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Self::Unprotectable { location } => {
-                write!(f, "{} cannot keep files private", location.display())
-            }
-            Self::Io(err) => write!(f, "{err}"),
+            Self::Unprotectable { location } => unprotectable(f, location),
             // The cause follows as the error's source.
             Self::Failed { step, .. } => write!(f, "{step}"),
         }
     }
 }
 
-impl std::error::Error for PrivateFileError {
+impl std::error::Error for ReplaceError {
     fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
         match self {
             Self::Failed { source, .. } => Some(source),
-            Self::Unprotectable { .. } | Self::Io(_) => None,
+            Self::Unprotectable { .. } => None,
         }
     }
 }
@@ -77,7 +95,10 @@ impl std::error::Error for PrivateFileError {
 /// The step of [`Folder::replace`] that failed.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ReplaceStep {
-    /// Checking the folder and creating the private staging folder beside the file.
+    /// Checking the file's name and that its folder can keep it private (the folder's owner,
+    /// protection and file system).
+    Checking,
+    /// Creating the private staging folder beside the file.
     Staging,
     /// Creating the new file inside the staging folder.
     Creating,
@@ -90,6 +111,7 @@ pub enum ReplaceStep {
 impl std::fmt::Display for ReplaceStep {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.write_str(match self {
+            Self::Checking => "checking that its folder can keep it private",
             Self::Staging => "creating a private folder beside it",
             Self::Creating => "creating the new file",
             Self::Writing => "writing the new file",
@@ -146,17 +168,23 @@ impl Folder {
     /// Replaces `name` inside with a new owner-only file holding `bytes`: written into a
     /// staging folder beside it ([`Self::staging`]), flushed to disk, and moved over it in one
     /// step. A failure leaves the old file as it was and names its step
-    /// ([`PrivateFileError::Failed`]); a folder that cannot keep files private is
-    /// [`PrivateFileError::Unprotectable`].
-    pub fn replace(&self, name: &str, bytes: &[u8]) -> Result<(), PrivateFileError> {
-        let failed = |step| move |source| PrivateFileError::Failed { step, source };
-        let staging = self.staging(name).map_err(|err| match err {
-            PrivateFileError::Io(source) => PrivateFileError::Failed {
-                step: ReplaceStep::Staging,
-                source,
-            },
-            other => other,
-        })?;
+    /// ([`ReplaceError::Failed`]); a folder that cannot keep files private is
+    /// [`ReplaceError::Unprotectable`], with nothing written.
+    pub fn replace(&self, name: &str, bytes: &[u8]) -> Result<(), ReplaceError> {
+        let failed = |step| move |source| ReplaceError::Failed { step, source };
+        let refused = |step| {
+            move |err| match err {
+                PrivateFileError::Unprotectable { location } => {
+                    ReplaceError::Unprotectable { location }
+                }
+                PrivateFileError::Io(source) => ReplaceError::Failed { step, source },
+            }
+        };
+        check_name(name).map_err(failed(ReplaceStep::Checking))?;
+        self.check_private()
+            .map_err(refused(ReplaceStep::Checking))?;
+        // Checks the folder once more as it creates the staging folder inside.
+        let staging = self.staging(name).map_err(refused(ReplaceStep::Staging))?;
         let new = format!("{name}.new");
         let mut file = staging
             .create(&new)

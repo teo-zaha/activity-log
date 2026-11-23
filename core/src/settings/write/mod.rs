@@ -17,7 +17,9 @@ use super::{
     ConfigEditError, ConfigError, ConfigFile, ContentId, NO_LOCATION, precondition, warn_if_shared,
 };
 use crate::{
-    platform::private_file::{Folder, PrivateFileError, create_private_folder, open_folder},
+    platform::private_file::{
+        Folder, PrivateFileError, ReplaceError, create_private_folder, open_folder,
+    },
     settings::{Conflict, Precondition},
 };
 
@@ -211,19 +213,22 @@ impl Locked {
     fn publish(&self, content: &[u8]) -> Result<(), EditError> {
         self.folder
             .replace(&self.name, content)
-            .map_err(unprotectable_or(|err| {
-                EditError::Internal(err.context(format!("Writing {}", self.path.display())))
-            }))
+            .map_err(|err| match err {
+                ReplaceError::Unprotectable { location } => EditError::Unprotectable { location },
+                err @ ReplaceError::Failed { .. } => EditError::Internal(
+                    anyhow!(err).context(format!("Writing {}", self.path.display())),
+                ),
+            })
     }
 }
 
 /// [`EditError::Unprotectable`] for such a location, `other` for the rest.
 pub(super) fn unprotectable_or(
-    other: impl Fn(anyhow::Error) -> EditError,
+    other: impl Fn(io::Error) -> EditError,
 ) -> impl Fn(PrivateFileError) -> EditError {
     move |err| match err {
         PrivateFileError::Unprotectable { location } => EditError::Unprotectable { location },
-        err @ (PrivateFileError::Io(_) | PrivateFileError::Failed { .. }) => other(anyhow!(err)),
+        PrivateFileError::Io(err) => other(err),
     }
 }
 

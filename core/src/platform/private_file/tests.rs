@@ -59,7 +59,7 @@ fn a_staging_folder_with_anything_but_plain_files_is_kept() {
 mod replace {
     use std::{fs, path::Path};
 
-    use super::super::{PrivateFileError, ReplaceStep, open_folder, private_staging};
+    use super::super::{ReplaceError, ReplaceStep, open_folder, private_staging};
 
     fn names(folder: &Path) -> Vec<String> {
         let mut names = fs::read_dir(folder)
@@ -132,7 +132,7 @@ mod replace {
         assert!(
             matches!(
                 failed,
-                Err(PrivateFileError::Failed {
+                Err(ReplaceError::Failed {
                     step: ReplaceStep::Publishing,
                     ..
                 })
@@ -141,6 +141,28 @@ mod replace {
         );
         assert_eq!(fs::read_to_string(target.join("kept")).unwrap(), "old");
         assert_eq!(names(dir.path()), ["config.toml"]);
+    }
+
+    /// A name that is no single entry fails the check, before anything is created.
+    #[test]
+    fn a_name_out_of_the_folder_fails_the_check() {
+        let dir = tempfile::tempdir().unwrap();
+
+        let failed = open_folder(dir.path())
+            .unwrap()
+            .replace("../config.toml", b"new");
+
+        assert!(
+            matches!(
+                failed,
+                Err(ReplaceError::Failed {
+                    step: ReplaceStep::Checking,
+                    ..
+                })
+            ),
+            "{failed:?}"
+        );
+        assert!(names(dir.path()).is_empty());
     }
 
     /// Names are single entries of the staging folder, never paths out of it.

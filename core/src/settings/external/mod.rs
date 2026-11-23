@@ -79,7 +79,9 @@ pub fn edit_externally(
     let failed = |err: std::io::Error| ExternalEditError::Failed(EditError::Internal(anyhow!(err)));
     let session = folder
         .staging(&name)
-        .map_err(write::unprotectable_or(EditError::Internal))
+        .map_err(write::unprotectable_or(|err| {
+            EditError::Internal(anyhow!(err))
+        }))
         .map_err(ExternalEditError::Failed)?;
     let original = folder.read(&name).map_err(failed)?;
     if original.is_some() {
