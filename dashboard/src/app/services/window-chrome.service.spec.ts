@@ -10,7 +10,7 @@ import { WindowChromeService } from './window-chrome.service'
 /** Where the selected text lies on screen; jsdom lays nothing out. */
 let selectedRects: DOMRect[] = []
 
-function startChrome(tauri: boolean): void {
+function startChrome(tauri: boolean): WindowChromeService {
   // A window that is never fullscreen nor maximized, for what the service reads of it.
   if (tauri && !Object.hasOwn(window, '__TAURI_INTERNALS__')) {
     mockWindows('main')
@@ -21,7 +21,7 @@ function startChrome(tauri: boolean): void {
       { provide: RuntimeEnvironmentService, useValue: { isTauri: (): boolean => tauri } },
     ],
   })
-  TestBed.inject(WindowChromeService)
+  return TestBed.inject(WindowChromeService)
 }
 
 /** Shows `element` in the page. */
@@ -138,7 +138,7 @@ describe('WindowChromeService in the desktop window', () => {
   afterEach(() => {
     TestBed.resetTestingModule()
     clearTauriMocks()
-    root.classList.remove('fullscreen', 'frameless')
+    root.classList.remove('frameless')
   })
 
   /** Starts the window's services as the app does, the real runtime check included. */
@@ -166,6 +166,25 @@ describe('WindowChromeService in the desktop window', () => {
     expect(resizeListeners).toHaveLength(1)
   })
 
+  it('moves the window from the header outside fullscreen only', async () => {
+    let fullscreen = false
+    mockWindows('main')
+    mockIPC(cmd => (cmd === 'plugin:window|is_fullscreen' ? fullscreen : undefined), {
+      shouldMockEvents: true,
+    })
+
+    const chrome = startChrome(true)
+    await vi.waitFor(() => expect(chrome.movesWindow()).toBe(true))
+    fullscreen = true
+    await emit('tauri://resize', { width: 1920, height: 1080 })
+
+    await vi.waitFor(() => expect(chrome.movesWindow()).toBe(false))
+  })
+
+  it('never moves the window in a browser', () => {
+    expect(startChrome(false).movesWindow()).toBe(false)
+  })
+
   it('shows fullscreen as the latest read says, whatever order the reads answer in', async () => {
     const answers: ((fullscreen: boolean) => void)[] = []
     mockWindows('main')
@@ -177,7 +196,7 @@ describe('WindowChromeService in the desktop window', () => {
       { shouldMockEvents: true }
     )
 
-    startChrome(true)
+    const chrome = startChrome(true)
     await vi.waitFor(() => expect(answers).toHaveLength(1))
     // The window enters fullscreen while the first read is out.
     await emit('tauri://resize', { width: 1920, height: 1080 })
@@ -186,7 +205,7 @@ describe('WindowChromeService in the desktop window', () => {
     answers[0](false)
 
     await new Promise(resolve => setTimeout(resolve))
-    expect(root.classList.contains('fullscreen')).toBe(true)
+    expect(chrome.movesWindow()).toBe(false)
   })
 
   it.each([
@@ -211,9 +230,7 @@ describe('WindowChromeService in the desktop window', () => {
 
       await vi.waitFor(() =>
         expect(
-          refused === 'plugin:window|is_maximized'
-            ? root.classList.contains('fullscreen')
-            : chrome.maximized()
+          refused === 'plugin:window|is_maximized' ? !chrome.movesWindow() : chrome.maximized()
         ).toBe(true)
       )
       await emit('tauri://resize', { width: 1280, height: 800 })
@@ -242,10 +259,10 @@ describe('WindowChromeService in the desktop window', () => {
       { shouldMockEvents: true }
     )
 
-    startChrome(true)
+    const chrome = startChrome(true)
 
     // The window API loads on demand and each read is a round trip: wait for what they show.
-    await vi.waitFor(() => expect(root.classList.contains('fullscreen')).toBe(true))
+    await vi.waitFor(() => expect(chrome.movesWindow()).toBe(false))
     expect(reads).toBeGreaterThan(1)
   })
 })

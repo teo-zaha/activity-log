@@ -1,4 +1,4 @@
-import { DestroyRef, Service, inject, signal } from '@angular/core'
+import { DestroyRef, Service, computed, inject, signal } from '@angular/core'
 import { listener, setupSync } from '@signality/core/browser/listener'
 import type { Window as TauriWindow } from '@tauri-apps/api/window'
 import { DESKTOP_COMMANDS, DESKTOP_EVENTS, type MaximizeButtonState } from '../generated/activity'
@@ -12,10 +12,10 @@ import { RuntimeEnvironmentService } from './backend/runtime-environment.service
 import { failureWhile } from './failure'
 
 /**
- * The desktop window's frame: dragging and maximizing it from the app's own surfaces and, where
- * the window has no title bar (Windows, `tauri.windows.conf.json`), its buttons; the root's
- * `fullscreen` class while the window is fullscreen. In the desktop app the web view's own
- * right-click menu shows only in text fields and over selected text.
+ * The desktop window's frame: whether the header moves it (`movesWindow`, outside fullscreen)
+ * and, where the window has no title bar (Windows, `tauri.windows.conf.json`), its buttons. In
+ * the desktop app the web view's own right-click menu shows only in text fields and over
+ * selected text.
  */
 @Service()
 export class WindowChromeService {
@@ -28,6 +28,12 @@ export class WindowChromeService {
   readonly frameless =
     typeof document !== 'undefined' && document.documentElement.classList.contains('frameless')
   readonly maximized = signal(false)
+  private readonly fullscreen = signal(false)
+  /**
+   * Whether the header is the window's title bar, which moves it and maximizes it on a double
+   * click (Tauri's `data-tauri-drag-region`): in the desktop app, outside fullscreen.
+   */
+  readonly movesWindow = computed(() => this.runtime.isTauri() && !this.fullscreen())
   /**
    * On Windows 11 a native window over the maximize button shows the snap layouts, so the page
    * never sees the pointer there; the desktop app reports it instead.
@@ -79,17 +85,8 @@ export class WindowChromeService {
     }).catch(() => undefined)
   }
 
-  /** Moves the window with the pointer, as a title bar does; Windows snaps it at the edges. */
-  async startDrag(event: MouseEvent): Promise<void> {
-    if (!this.runtime.isTauri() || event.button !== 0) return
-    event.preventDefault()
-    await (await this.window()).startDragging()
-  }
-
-  async toggleMaximize(event?: MouseEvent): Promise<void> {
-    if (!this.runtime.isTauri() || (event && event.button !== 0)) return
-    event?.preventDefault()
-    await (await this.window()).toggleMaximize()
+  async toggleMaximize(): Promise<void> {
+    if (this.runtime.isTauri()) await (await this.window()).toggleMaximize()
   }
 
   async minimize(): Promise<void> {
@@ -106,8 +103,8 @@ export class WindowChromeService {
   }
 
   /**
-   * One listener for the window's resizes: the root's `fullscreen` class (the header's title bar
-   * moves the window only outside fullscreen) and, where the app draws the window buttons,
+   * One listener for the window's resizes: whether it is fullscreen (the header's title bar
+   * moves the window only outside it) and, where the app draws the window buttons,
    * maximize shown as restore while the window is maximized. Hand-written: Tauri's window events
    * are not DOM events, which Signality covers. The service lives as long as the window; once
    * destroyed (a spec's injector), it stops listening.
@@ -115,7 +112,6 @@ export class WindowChromeService {
   private async followWindow(): Promise<void> {
     const appWindow = await this.window()
     if (this.destroyed) return
-    const root = document.documentElement
     // Reads can overlap and answer out of order; only the latest one counts.
     let latest = 0
     let warned = false
@@ -127,7 +123,7 @@ export class WindowChromeService {
         this.frameless ? appWindow.isMaximized() : Promise.resolve(false),
       ])
       if (read !== latest || this.destroyed) return
-      if (fullscreen.status === 'fulfilled') root.classList.toggle('fullscreen', fullscreen.value)
+      if (fullscreen.status === 'fulfilled') this.fullscreen.set(fullscreen.value)
       if (maximized.status === 'fulfilled') this.maximized.set(maximized.value)
       const refused = [fullscreen, maximized].find(result => result.status === 'rejected')
       if (refused && !warned) {

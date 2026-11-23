@@ -127,8 +127,8 @@ describe('the shell in a browser', () => {
 
   describe('the desktop title bar', () => {
     /** The page as `index.html` marks it in the desktop app on `platform`. */
-    function desktop(platform: 'macos' | 'windows', ...state: 'fullscreen'[]): void {
-      const classes = ['tauri', ...(platform === 'windows' ? ['frameless'] : []), ...state]
+    function desktop(platform: 'macos' | 'windows'): void {
+      const classes = ['tauri', ...(platform === 'windows' ? ['frameless'] : [])]
       document.documentElement.classList.add(...classes)
       undo.push(() => document.documentElement.classList.remove(...classes))
     }
@@ -181,17 +181,6 @@ describe('the shell in a browser', () => {
         expect(collisions()).toEqual([])
       })
     }
-
-    it('keeps the strip in fullscreen, where it no longer moves the window', async () => {
-      await page.viewport(1440, 960)
-      desktop('windows', 'fullscreen')
-      await openApp(`/timeline?${RANGE}`)
-      await frames()
-      const strip = document.querySelector('app-header .window-drag-strip')!
-
-      expect(top('app-header .header-inner')).toBe(captionButtons().bottom)
-      expect(getComputedStyle(strip).pointerEvents).toBe('none')
-    })
   })
 
   /** Every field people type in, whatever its class. */

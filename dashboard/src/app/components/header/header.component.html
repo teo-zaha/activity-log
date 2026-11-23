@@ -1,15 +1,7 @@
 <header class="app-header">
-  <div
-    class="window-drag-strip"
-    (mousedown)="startWindowDrag($event)"
-    (dblclick)="toggleWindowMaximize($event)"
-  ></div>
-  <div
-    class="header-inner"
-    (mousedown)="startHeaderDrag($event)"
-    (dblclick)="toggleHeaderMaximize($event)"
-  >
-    <div class="brand">
+  <div class="window-drag-strip" [attr.data-tauri-drag-region]="dragsItself()"></div>
+  <div class="header-inner" [attr.data-tauri-drag-region]="dragsItself()">
+    <div class="brand" [attr.data-tauri-drag-region]="dragsWithin()">
       <span class="brand-mark" aria-hidden="true">
         <mat-icon>timeline</mat-icon>
       </span>
@@ -17,7 +9,7 @@
     </div>
 
     <!-- What the layout on screen puts in the header row, such as the views' range. -->
-    <div class="header-center">
+    <div class="header-center" [attr.data-tauri-drag-region]="dragsItself()">
       <ng-container *ngTemplateOutlet="center()" />
     </div>
 

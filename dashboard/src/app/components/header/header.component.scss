@@ -23,15 +23,11 @@
 // The desktop window's title bar: the strip the window's buttons sit in (the traffic lights on
 // macOS, the caption buttons on Windows), above the row, which keeps clear of them. A fullscreen
 // window keeps the strip, where the caption buttons stay and the traffic lights come with the
-// menu bar, but it no longer moves the window.
+// menu bar, but it no longer moves the window (`movesWindow`).
 :host-context(html.tauri) .window-drag-strip {
   height: var(--title-bar-height);
   opacity: 1;
   pointer-events: auto;
-}
-
-:host-context(html.tauri.fullscreen) .window-drag-strip {
-  pointer-events: none;
 }
 
 .header-inner {

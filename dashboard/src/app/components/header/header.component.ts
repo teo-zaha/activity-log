@@ -1,5 +1,5 @@
 import { NgTemplateOutlet } from '@angular/common'
-import { Component, type TemplateRef, inject, input } from '@angular/core'
+import { Component, type TemplateRef, computed, inject, input } from '@angular/core'
 import { MatIconModule } from '@angular/material/icon'
 import { MatTooltipModule } from '@angular/material/tooltip'
 import { IconButtonComponent } from '../button/icon-button.component'
@@ -23,6 +23,13 @@ export class HeaderComponent {
   private readonly exports = inject(ActivityExportService)
   protected readonly canExport = this.exports.canExport
   private readonly chrome = inject(WindowChromeService)
+  /**
+   * Tauri's `data-tauri-drag-region` on what moves the window: the strip above the row, the row
+   * and its empty middle themselves (`''`, not what lies in them) and the whole brand
+   * (`'deep'`); the controls never do. Off in fullscreen and in a browser.
+   */
+  protected readonly dragsItself = computed(() => (this.chrome.movesWindow() ? '' : null))
+  protected readonly dragsWithin = computed(() => (this.chrome.movesWindow() ? 'deep' : null))
 
   protected exportMd(): void {
     void this.exports.exportShown('markdown')
@@ -30,31 +37,5 @@ export class HeaderComponent {
 
   protected exportJson(): void {
     void this.exports.exportShown('json')
-  }
-
-  protected startHeaderDrag(event: MouseEvent): void {
-    if (this.isDragSurface(event)) void this.startWindowDrag(event)
-  }
-
-  protected toggleHeaderMaximize(event: MouseEvent): void {
-    if (this.isDragSurface(event)) void this.toggleWindowMaximize(event)
-  }
-
-  /** The row itself, its empty middle and the brand move the window; controls do not. */
-  private isDragSurface(event: MouseEvent): boolean {
-    const target = event.target
-    return (
-      target === event.currentTarget ||
-      (target instanceof Element &&
-        (target.classList.contains('header-center') || target.closest('.brand') !== null))
-    )
-  }
-
-  protected startWindowDrag(event: MouseEvent): Promise<void> {
-    return this.chrome.startDrag(event)
-  }
-
-  protected toggleWindowMaximize(event: MouseEvent): Promise<void> {
-    return this.chrome.toggleMaximize(event)
   }
 }
