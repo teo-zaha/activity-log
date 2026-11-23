@@ -92,6 +92,10 @@ Var ActivityLog.Title
 Var ActivityLog.Footer
 Var ActivityLog.Text ; the App open page's text, which a failed close replaces
 Var ActivityLog.NewerVersion ; the installed version when it is newer than this one (.onInit)
+Var ActivityLog.LogoIcon ; the icons, loaded once at their size here (GUIInit), freed at the end
+Var ActivityLog.ErrorIcon
+Var ActivityLog.SmallIcon
+Var ActivityLog.CheckFrame ; the dark checkbox's focus frame (uninstaller)
 
 ; OUT = VALUE pixels at 96 DPI, at the window's DPI.
 !macro AL_PX OUT VALUE
@@ -108,6 +112,13 @@ Var ActivityLog.NewerVersion ; the installed version when it is newer than this 
   ${ElseIf} $ActivityLog.Theme == light
     SetCtlColors ${HWND} ${AL_LIGHT_${ROLE}} ${AL_LIGHT_BG}
   ${EndIf}
+!macroend
+
+; OUT = the icon RESOURCE of MODULE (0: the system's) loaded at SIZE pixels, or 0. Uses $9.
+!macro AL_LOAD_ICON OUT MODULE RESOURCE SIZE
+  StrCpy $9 0
+  System::Call 'comctl32::LoadIconWithScaleDown(p ${MODULE}, p ${RESOURCE}, i ${SIZE}, i ${SIZE}, *p .r9)'
+  StrCpy ${OUT} $9
 !macroend
 
 ; A static control of ours on PARENT, empty and unplaced.
@@ -207,9 +218,10 @@ Var ActivityLog.NewerVersion ; the installed version when it is newer than this 
     GetDlgItem $1 $HWNDPARENT 1018
     !insertmacro AL_PLACE $1 0 0 $ActivityLog.Width $ActivityLog.Height
 
-    ; The window: no minimize box, sized to that client area around the centre NSIS chose
+    ; The window, sized to that client area around the centre NSIS chose; it can be minimized
+    ; (a slow WebView2 download), never maximized
     System::Call 'user32::GetWindowLongW(p $HWNDPARENT, i ${GWL_STYLE}) i .r1'
-    IntOp $1 $1 & 0xFFFCFFFF ; without WS_MINIMIZEBOX and WS_MAXIMIZEBOX
+    IntOp $1 $1 & 0xFFFEFFFF ; without WS_MAXIMIZEBOX
     System::Call 'user32::SetWindowLongW(p $HWNDPARENT, i ${GWL_STYLE}, i r1)'
     System::Call '*(i, i, i, i) p .r9'
     System::Call 'user32::GetWindowRect(p $HWNDPARENT, p r9)'
@@ -247,11 +259,16 @@ Var ActivityLog.NewerVersion ; the installed version when it is newer than this 
       ${AL_PX} $1 16
     ${EndIf}
     System::Call 'kernel32::GetModuleHandleW(p 0) p .r2'
-    StrCpy $3 0
-    System::Call 'comctl32::LoadIconWithScaleDown(p r2, p 103, i r1, i r1, *p .r3)'
-    ${If} $3 P<> 0
-      SendMessage $HWNDPARENT ${WM_SETICON} 0 $3 ; ICON_SMALL
+    !insertmacro AL_LOAD_ICON $ActivityLog.SmallIcon r2 103 $1
+    ${If} $ActivityLog.SmallIcon P<> 0
+      SendMessage $HWNDPARENT ${WM_SETICON} 0 $ActivityLog.SmallIcon ; ICON_SMALL
     ${EndIf}
+    ; The logo and the system's error icon, each loaded at its size here (Windows scales down
+    ; from a larger frame only when the ico has no exact one)
+    ${AL_PX} $1 ${AL_LOGO}
+    !insertmacro AL_LOAD_ICON $ActivityLog.LogoIcon r2 103 $1
+    ${AL_PX} $1 ${AL_ERROR_ICON}
+    !insertmacro AL_LOAD_ICON $ActivityLog.ErrorIcon 0 ${AL_IDI_ERROR} $1
 
     !insertmacro AL_COLORS $HWNDPARENT TEXT
 
@@ -266,6 +283,20 @@ Var ActivityLog.NewerVersion ; the installed version when it is newer than this 
     ${Next}
 
     System::Store "L"
+  FunctionEnd
+
+  ; The window is gone: free the fonts and icons GUIInit made
+  !if "${UN}" == ""
+    Function .onGUIEnd
+  !else
+    Function un.onGUIEnd
+  !endif
+    System::Call 'gdi32::DeleteObject(p $ActivityLog.FontBody)'
+    System::Call 'gdi32::DeleteObject(p $ActivityLog.FontTitle)'
+    System::Call 'gdi32::DeleteObject(p $ActivityLog.FontSmall)'
+    System::Call 'user32::DestroyIcon(p $ActivityLog.SmallIcon)'
+    System::Call 'user32::DestroyIcon(p $ActivityLog.LogoIcon)'
+    System::Call 'user32::DestroyIcon(p $ActivityLog.ErrorIcon)'
   FunctionEnd
 
   ; Stack: the page's dialog. It covers the client area under the outer buttons, which it hides
@@ -289,25 +320,16 @@ Var ActivityLog.NewerVersion ; the installed version when it is newer than this 
     Pop $0
   FunctionEnd
 
-  ; Stack: parent, module (0 for the system's icons), resource id, size and top at 96 DPI. Puts
-  ; the icon, loaded at its size here, centred at the top; returns the static.
+  ; Stack: parent, icon, size and top at 96 DPI. Puts the icon, loaded at its size here
+  ; (GUIInit), centred at the top; returns the static.
   Function ${UN}ActivityLog.Icon
     System::Store "S"
     Pop $4 ; top
     Pop $3 ; size
-    Pop $2 ; resource
-    Pop $1 ; module
+    Pop $5 ; icon
     Pop $0 ; parent
     ${AL_PX} $3 $3
     ${AL_PX} $4 $4
-    ${If} $1 = 1
-      System::Call 'kernel32::GetModuleHandleW(p 0) p .r1'
-    ${EndIf}
-    StrCpy $5 0
-    System::Call 'comctl32::LoadIconWithScaleDown(p r1, p r2, i r3, i r3, *p .r5)'
-    ${If} $5 P= 0
-      System::Call 'user32::LoadImageW(p r1, p r2, i 1, i r3, i r3, i 0x8000) p .r5' ; IMAGE_ICON, LR_SHARED
-    ${EndIf}
     !insertmacro AL_STATIC $6 $0 ${SS_ICON} $ActivityLog.FontBody TEXT
     SendMessage $6 ${STM_SETICON} $5 0
     IntOp $7 $ActivityLog.Width - $3
@@ -445,8 +467,7 @@ Var ActivityLog.NewerVersion ; the installed version when it is newer than this 
     Push $0
     Call ${UN}ActivityLog.PageBegin
     Push $0
-    Push 1
-    Push 103
+    Push $ActivityLog.LogoIcon
     Push ${AL_LOGO}
     Push ${AL_LOGO_TOP}
     Call ${UN}ActivityLog.Icon
@@ -526,8 +547,7 @@ Var ActivityLog.NewerVersion ; the installed version when it is newer than this 
     ${IfThen} $1 P<> 0 ${|} ShowWindow $1 ${SW_HIDE} ${|}
 
     Push $0
-    Push 1
-    Push 103
+    Push $ActivityLog.LogoIcon
     Push ${AL_LOGO}
     Push ${AL_LOGO_TOP}
     Call ${UN}ActivityLog.Icon
@@ -624,7 +644,11 @@ Var ActivityLog.NewerVersion ; the installed version when it is newer than this 
       GetDlgItem $1 $0 1006
       !if "${UN}" == ""
         SendMessage $ActivityLog.Title ${WM_SETTEXT} 0 "STR:$(alStarting)"
-        SendMessage $1 ${WM_SETTEXT} 0 "STR:$(alInstalled)"
+        ${If} $NoShortcutMode = 1
+          SendMessage $1 ${WM_SETTEXT} 0 "STR:$(alInstalledNoShortcut)"
+        ${Else}
+          SendMessage $1 ${WM_SETTEXT} 0 "STR:$(alInstalled)"
+        ${EndIf}
       !else
         SendMessage $ActivityLog.Title ${WM_SETTEXT} 0 "STR:$(alUninstalled)"
         SendMessage $1 ${WM_SETTEXT} 0 "STR:"
@@ -671,7 +695,22 @@ Var ActivityLog.NewerVersion ; the installed version when it is newer than this 
     Push $3
     Call ${UN}ActivityLog.ErrorLayout
     Pop $2 ; buttons' row
-    ; The log, when shown, covers all above the buttons
+    Push $0
+    Push $2
+    GetDlgItem $1 $HWNDPARENT 2 ; Close: Cancel, `^CancelBtn`, all NSIS enables after a failure
+    Push $1
+    Call ${UN}ActivityLog.DetailsRow
+    done:
+    System::Store "L"
+  FunctionEnd
+
+  ; Stack: the InstFiles page, the buttons' row top, the button that closes. Shows NSIS's Show
+  ; details and that button in the row; the log, once shown, covers all above them.
+  Function ${UN}ActivityLog.DetailsRow
+    System::Store "S"
+    Pop $3 ; the closing button
+    Pop $2 ; row top
+    Pop $0 ; page
     GetDlgItem $1 $0 1016
     ${AL_PX} $4 16
     ${AL_PX} $5 12
@@ -680,11 +719,8 @@ Var ActivityLog.NewerVersion ; the installed version when it is newer than this 
     IntOp $7 $2 - $5
     IntOp $7 $7 - $4
     System::Call 'user32::SetWindowPos(p r1, p 0, i r4, i r4, i r6, i r7, i 0x10)' ; on top, SWP_NOACTIVATE
-    ; Show details (NSIS's, which shows the log) and Close (Cancel, `^CancelBtn`)
     GetDlgItem $1 $0 1027
-    GetDlgItem $3 $HWNDPARENT 2
     !insertmacro AL_BUTTONS $2 $1 $3
-    done:
     System::Store "L"
   FunctionEnd
 
@@ -697,8 +733,7 @@ Var ActivityLog.NewerVersion ; the installed version when it is newer than this 
     Pop $2 ; title static
     Pop $0 ; parent
     Push $0
-    Push 0
-    Push ${AL_IDI_ERROR}
+    Push $ActivityLog.ErrorIcon
     Push ${AL_ERROR_ICON}
     Push ${AL_ERROR_TOP}
     Call ${UN}ActivityLog.Icon
@@ -717,8 +752,31 @@ Var ActivityLog.NewerVersion ; the installed version when it is newer than this 
     IntOp $3 $3 + $4
     !insertmacro AL_STATIC $2 $0 ${SS_CENTER} $ActivityLog.FontBody MUTED
     SendMessage $2 ${WM_SETTEXT} 0 "STR:$1"
+    StrCpy $7 $3 ; message top
     !insertmacro AL_PLACE_TEXT $2 $3 $3
+    ; A message too long for the window is cut at its last line that fits, with an ellipsis
+    ; (Show details has it whole), so the buttons stay in the window
     ${AL_PX} $4 ${AL_ROW_GAP}
+    ${AL_PX} $5 ${AL_BUTTON_HEIGHT}
+    ${AL_PX} $6 ${AL_FOOTER_BOTTOM}
+    IntOp $8 $ActivityLog.Height - $6
+    IntOp $8 $8 - $5
+    IntOp $8 $8 - $4 ; the lowest the message may end
+    ${If} $3 > $8
+      ${AL_PX} $6 ${AL_LINE}
+      IntOp $5 $8 - $7
+      IntOp $5 $5 / $6
+      IntOp $5 $5 * $6 ; whole lines
+      System::Call 'user32::GetWindowLongW(p r2, i ${GWL_STYLE}) i .r6'
+      IntOp $6 $6 | 0x2000 ; SS_EDITCONTROL: the ellipsis on the last line shown
+      IntOp $6 $6 | ${SS_ENDELLIPSIS}
+      System::Call 'user32::SetWindowLongW(p r2, i ${GWL_STYLE}, i r6)'
+      ${AL_PX} $6 ${AL_SIDE}
+      IntOp $9 $6 * 2
+      IntOp $9 $ActivityLog.Width - $9
+      !insertmacro AL_PLACE $2 $6 $7 $9 $5
+      IntOp $3 $7 + $5
+    ${EndIf}
     IntOp $3 $3 + $4
     Push $3
     System::Store "L"
@@ -734,6 +792,7 @@ Var ActivityLog.NewerVersion ; the installed version when it is newer than this 
   LangString alCopying 1033 "Copying files…"
   LangString alStarting 1033 "Starting $(^Name)…"
   LangString alInstalled 1033 "Installed. You'll find it in the Start menu."
+  LangString alInstalledNoShortcut 1033 "Installed."
   LangString alFooter 1033 "Version ${VERSION} · for you only"
   LangString alInstallFailed 1033 "$(^Name) couldn't be installed"
   LangString alAppOpen 1033 "$(^Name) is open"
@@ -811,8 +870,7 @@ Var ActivityLog.NewerVersion ; the installed version when it is newer than this 
     Push $0
     Call un.ActivityLog.PageBegin
     Push $0
-    Push 1
-    Push 103
+    Push $ActivityLog.LogoIcon
     Push ${AL_LOGO}
     Push ${AL_LOGO_TOP}
     Call un.ActivityLog.Icon
@@ -830,21 +888,28 @@ Var ActivityLog.NewerVersion ; the installed version when it is newer than this 
 
     System::Call '*(i 0, i 0) p .r9' ; SIZE
     ${If} $ActivityLog.Theme == dark
-      ; A themed checkbox draws its text black whatever the colours, so in dark mode the box
-      ; has no text and a label beside it says what it is (and toggles it). The label comes
-      ; first, so screen readers name the box by it.
+      ; A themed checkbox draws its text black whatever the colours. So in dark mode the box
+      ; keeps its text, which screen readers read as its name, but is only as wide as the box,
+      ; which cuts the text off; a label beside it draws the text and toggles the box. The box
+      ; cannot show its own focus rectangle then, so a frame around the label shows while the
+      ; box has keyboard focus (`un.ActivityLog.CheckFocus`).
+      ${NSD_CreateCheckbox} 0 0 0 0 ""
+      Pop $DeleteAppDataCheckbox
+      SendMessage $DeleteAppDataCheckbox ${WM_SETFONT} $ActivityLog.FontBody 0
+      System::Call 'uxtheme::SetWindowTheme(p $DeleteAppDataCheckbox, w "DarkMode_Explorer", p 0)'
+      !insertmacro AL_COLORS $DeleteAppDataCheckbox TEXT
+      SendMessage $DeleteAppDataCheckbox ${AL_BCM_GETIDEALSIZE} 0 $9
+      System::Call '*$9(i .r4, i .r5)' ; the box alone
+      SendMessage $DeleteAppDataCheckbox ${WM_SETTEXT} 0 "STR:$(alDeleteData)"
       ${NSD_CreateLabel} 0 0 0 0 "$(alDeleteData)"
       Pop $3
       ${NSD_AddStyle} $3 ${SS_NOTIFY}
       SendMessage $3 ${WM_SETFONT} $ActivityLog.FontBody 0
       !insertmacro AL_COLORS $3 TEXT
       ${NSD_OnClick} $3 un.ActivityLog.ToggleDeleteData
-      ${NSD_CreateCheckbox} 0 0 0 0 ""
-      Pop $DeleteAppDataCheckbox
-      System::Call 'uxtheme::SetWindowTheme(p $DeleteAppDataCheckbox, w "DarkMode_Explorer", p 0)'
-      !insertmacro AL_COLORS $DeleteAppDataCheckbox TEXT
-      SendMessage $DeleteAppDataCheckbox ${AL_BCM_GETIDEALSIZE} 0 $9
-      System::Call '*$9(i .r4, i .r5)' ; the box
+      ; the frame, under the label; SS_WHITEFRAME draws in the window colour, light on dark
+      System::Call 'user32::CreateWindowExW(i 0, w "STATIC", p 0, i ${WS_CHILD}|${WS_CLIPSIBLINGS}|0x9, i 0, i 0, i 0, i 0, p r0, p 0, p 0, p 0) p .s'
+      Pop $ActivityLog.CheckFrame
       ; the label's width, one line
       System::Call 'user32::GetDC(p r3) p .r6'
       System::Call 'gdi32::SelectObject(p r6, p $ActivityLog.FontBody) p .r7'
@@ -864,6 +929,15 @@ Var ActivityLog.NewerVersion ; the installed version when it is newer than this 
       IntOp $7 $7 + $4
       IntOp $7 $7 + $6
       !insertmacro AL_PLACE $3 $7 $2 $1 $5
+      ${AL_PX} $8 2
+      IntOp $R1 $7 - $8
+      IntOp $R2 $2 - $8
+      IntOp $R3 $1 + $8
+      IntOp $R3 $R3 + $8
+      IntOp $R4 $5 + $8
+      IntOp $R4 $R4 + $8
+      !insertmacro AL_PLACE $ActivityLog.CheckFrame $R1 $R2 $R3 $R4
+      ${NSD_CreateTimer} un.ActivityLog.CheckFocus 100
     ${Else}
       ${NSD_CreateCheckbox} 0 0 0 0 "$(alDeleteData)"
       Pop $DeleteAppDataCheckbox
@@ -900,9 +974,27 @@ Var ActivityLog.NewerVersion ; the installed version when it is newer than this 
     ${Else}
       ${NSD_Check} $DeleteAppDataCheckbox
     ${EndIf}
+    ${NSD_SetFocus} $DeleteAppDataCheckbox
+  FunctionEnd
+
+  ; Dark mode: the frame around the label while the box has the focus and Windows shows focus
+  ; (keyboard use: WM_QUERYUISTATE without UISF_HIDEFOCUS)
+  Function un.ActivityLog.CheckFocus
+    System::Store "S"
+    System::Call 'user32::GetFocus() p .r0'
+    SendMessage $DeleteAppDataCheckbox 0x0129 0 0 $1 ; WM_QUERYUISTATE
+    IntOp $1 $1 & 1 ; UISF_HIDEFOCUS
+    ${If} $0 P= $DeleteAppDataCheckbox
+    ${AndIf} $1 = 0
+      ShowWindow $ActivityLog.CheckFrame ${SW_SHOW}
+    ${Else}
+      ShowWindow $ActivityLog.CheckFrame ${SW_HIDE}
+    ${EndIf}
+    System::Store "L"
   FunctionEnd
 
   Function un.ActivityLog.ConfirmLeave
+    ${NSD_KillTimer} un.ActivityLog.CheckFocus
     ${NSD_GetState} $DeleteAppDataCheckbox $DeleteAppDataCheckboxState
   FunctionEnd
   !undef AL_UN
