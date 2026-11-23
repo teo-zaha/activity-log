@@ -687,8 +687,6 @@ export class SettingsSourcePaneComponent {
         return 'email'
       case 'url':
         return 'url'
-      case 'password':
-        return 'password'
       default:
         return 'text'
     }
