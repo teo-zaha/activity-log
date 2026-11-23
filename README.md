@@ -216,7 +216,7 @@ The `activity-log:` scheme is registered by the packaged app bundle on macOS (no
 
 ### Keyboard shortcuts
 
-Press <kbd>?</kbd> anywhere, or choose **Keyboard shortcuts** at the bottom of the sidebar (on a phone, **Settings → General → Keyboard shortcuts**), for the reference of your platform: every command once, with all its keys, by where it works. The single keys work in the browser and in the desktop app alike; the desktop app adds the <kbd>⌘</kbd>/<kbd>Ctrl</kbd> chords, which a browser keeps for itself. Hold <kbd>Shift</kbd> on its own to see each control's key on it.
+Press <kbd>?</kbd> anywhere, or choose **Keyboard shortcuts** at the bottom of the sidebar (on a phone, **Settings → General → Keyboard shortcuts**), for the reference of your platform: every command once, with all its keys, by where it works. The single keys work in the browser and in the desktop app alike; the desktop app adds the <kbd>⌘</kbd>/<kbd>Ctrl</kbd> chords, which a browser keeps for itself. Hold <kbd>Shift</kbd> on its own to see each control's key on it, then let go and press the key.
 
 | Keys                                                                                    | Action                                                                                   | Where                         |
 | --------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------- | ----------------------------- |
