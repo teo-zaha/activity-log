@@ -706,3 +706,39 @@ fn a_new_address_for_a_sealed_token_is_an_issue_at_the_token() {
     );
     assert!(check_save(&with_token, base(), Some(&read)).is_empty());
 }
+
+/// A token for a connection without an address is an issue at the token's field, as the save
+/// would be refused; with the address in the same save it is none.
+#[test]
+fn a_token_without_an_address_is_an_issue_at_the_token() {
+    let read = file("[[gitlab]]\nlabel = \"New\"\nname = \"new\"\n");
+    let id = "gitlab/new".parse::<ConnectionId>().unwrap();
+    let base = || SaveBase::Known(read.edit_base(&id, &[]).unwrap());
+
+    let token = save(
+        "gitlab/new",
+        vec![("GITLAB_TOKEN", text("glpat-test-0001"))],
+    );
+    let issues = check_save(&token, base(), Some(&read));
+    assert_eq!(
+        issues
+            .iter()
+            .map(|issue| (issue.field.clone(), issue.problem))
+            .collect::<Vec<_>>(),
+        [(
+            ProviderConfigFieldRefDto::Value {
+                key: "GITLAB_TOKEN".to_string()
+            },
+            ProviderConfigIssueKindDto::Invalid
+        )]
+    );
+
+    let with_url = save(
+        "gitlab/new",
+        vec![
+            ("GITLAB_URL", text("https://gitlab.example.test")),
+            ("GITLAB_TOKEN", text("glpat-test-0001")),
+        ],
+    );
+    assert!(check_save(&with_url, base(), Some(&read)).is_empty());
+}

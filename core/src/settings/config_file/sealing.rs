@@ -15,7 +15,7 @@ use crate::{
     },
     secrets::{
         Sealer,
-        sealed::{Binding, Unopenable},
+        sealed::{Binding, BindingError, SealError, Unopenable},
     },
     settings::{SEALED, field_name},
 };
@@ -25,7 +25,42 @@ use crate::{
 pub(in crate::settings) struct Sealed {
     pub(in crate::settings) count: usize,
     /// Plain secrets left as they were, their table naming no address they can be bound to.
-    pub(in crate::settings) unbound: Vec<(ConnectionId, ProviderConfigKey)>,
+    pub(in crate::settings) unbound: Vec<(ConnectionId, ProviderConfigKey, BindingError)>,
+    /// Plain secrets left as they were, the cipher having refused them.
+    pub(in crate::settings) failed: Vec<(ConnectionId, ProviderConfigKey, SealError)>,
+}
+
+impl Sealed {
+    /// Logs what stays plain text. A secret in `new`, the writer's own, that the cipher
+    /// refused fails the edit: the app never saves a secret it brought as plain text. One the
+    /// file held already stays as it was, to be sealed by a later save.
+    pub(in crate::settings) fn report(
+        self,
+        new: &[(ConnectionId, ProviderConfigKey)],
+    ) -> Result<(), crate::settings::EditError> {
+        for (connection, secret, why) in self.unbound {
+            crate::diagnostics::warn(
+                "settings",
+                format!(
+                    "{connection}: {} stays plain text until it can be bound to an address ({why})",
+                    secret.label
+                ),
+            );
+        }
+        for (connection, secret, why) in self.failed {
+            if new.contains(&(connection.clone(), secret)) {
+                return Err(crate::settings::EditError::Internal(anyhow::anyhow!(
+                    "{connection}: sealing {} failed: {why}",
+                    secret.name
+                )));
+            }
+            crate::diagnostics::warn(
+                "settings",
+                format!("{connection}: {} stays plain text: {why}", secret.label),
+            );
+        }
+        Ok(())
+    }
 }
 
 impl ConfigFile {
@@ -45,12 +80,19 @@ impl ConfigFile {
                     let Some(StoredValue::Text(text)) = values.get_stored(key.name) else {
                         continue;
                     };
-                    let value = Binding::of(&source, &values)
-                        .ok()
-                        .and_then(|binding| sealer.seal(*key, &binding, text).ok());
-                    let Some(value) = value else {
-                        sealed.unbound.push((entry.id.clone(), *key));
-                        continue;
+                    let binding = match Binding::of(&source, &values) {
+                        Ok(binding) => binding,
+                        Err(why) => {
+                            sealed.unbound.push((entry.id.clone(), *key, why));
+                            continue;
+                        }
+                    };
+                    let value = match sealer.seal(*key, &binding, text) {
+                        Ok(value) => value,
+                        Err(why) => {
+                            sealed.failed.push((entry.id.clone(), *key, why));
+                            continue;
+                        }
                     };
                     let mut table = InlineTable::new();
                     table.insert(SEALED, Value::from(value.as_str()));
@@ -70,21 +112,24 @@ impl ConfigFile {
         sealed
     }
 
-    /// The first connection whose sealed secret is as it was in `before` while what it is
-    /// bound to changed: it would not open, so the change must bring the secret again. Bindings
-    /// are compared, never their tags.
-    pub fn rebound(&self, before: &ConfigFile) -> Option<(ConnectionId, ProviderConfigKey)> {
+    /// Each connection whose sealed secret is as it was in `before` while what it is bound to
+    /// changed: it would not open, so the change must bring the secret again. Bindings are
+    /// compared, never their tags.
+    pub fn rebound(&self, before: &ConfigFile) -> Vec<(ConnectionId, ProviderConfigKey)> {
         let before = before.connections().connections;
         self.connections()
             .connections
             .into_iter()
-            .find_map(|connection| {
-                let old = before.iter().find(|old| old.id == connection.id)?;
+            .flat_map(|connection| {
+                let Some(old) = before.iter().find(|old| old.id == connection.id) else {
+                    return Vec::new();
+                };
                 let source = connection.source().clone();
-                let keys = adapter_of(&source).config_requirements();
-                keys.iter()
+                adapter_of(&source)
+                    .config_requirements()
+                    .iter()
                     .filter(|key| key.is_secret())
-                    .find(|key| {
+                    .filter(|key| {
                         let stored = connection.values().get_stored(key.name);
                         matches!(stored, Some(StoredValue::Sealed(StoredSecret::Sealed(_))))
                             && stored == old.values().get_stored(key.name)
@@ -92,16 +137,43 @@ impl ConfigFile {
                                 != Binding::of(&source, old.values()).ok()
                     })
                     .map(|key| (connection.id.clone(), *key))
+                    .collect()
+            })
+            .collect()
+    }
+
+    /// The first plain secret new since `before` whose table names nothing it can be bound
+    /// to: it could not be sealed, so a writer that brings it is refused rather than leave it
+    /// in plain text.
+    pub fn unbindable(
+        &self,
+        before: &ConfigFile,
+    ) -> Option<(ConnectionId, ProviderConfigKey, BindingError)> {
+        let connections = self.connections().connections;
+        self.new_plain_secrets(Some(before))
+            .into_iter()
+            .find_map(|(id, key)| {
+                let connection = connections.iter().find(|connection| connection.id == id)?;
+                Binding::of(connection.source(), connection.values())
+                    .err()
+                    .map(|why| (id, key, why))
             })
     }
 
-    /// Opens every value `sealer`'s key sealed, for the binding its table names now: one that
-    /// does not open must never be published.
+    /// Opens every value `sealer`'s key sealed that is not stored as it was in `before`, the
+    /// file as read under the lock, for the binding its table names now: one that does not
+    /// open must never be published. A value left as it was is not this writer's to answer for
+    /// (one sealed for an address edited since by hand stays as it was).
     pub(in crate::settings) fn check_opens(
         &self,
         sealer: &Sealer,
+        before: Option<&ConfigFile>,
     ) -> Result<(), (ConnectionId, ProviderConfigKey, Unopenable)> {
+        let before = before
+            .map(|file| file.connections().connections)
+            .unwrap_or_default();
         for connection in self.connections().connections {
+            let old = before.iter().find(|old| old.id == connection.id);
             let source = connection.source().clone();
             for key in adapter_of(&source)
                 .config_requirements()
@@ -113,7 +185,10 @@ impl ConfigFile {
                 else {
                     continue;
                 };
-                if !sealer.sealed(value) {
+                let unchanged = old.is_some_and(|old| {
+                    old.values().get_stored(key.name) == connection.values().get_stored(key.name)
+                });
+                if unchanged || !sealer.sealed(value) {
                     continue;
                 }
                 let failed = |why| (connection.id.clone(), *key, why);

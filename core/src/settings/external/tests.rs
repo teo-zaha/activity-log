@@ -16,7 +16,7 @@ fn folder_names(folder: &Path) -> Vec<String> {
 }
 
 /// An editor that replaces the copy's text with `text`.
-fn writes(text: &'static str) -> impl FnOnce(&Path) -> anyhow::Result<()> {
+fn writes(text: &str) -> impl FnOnce(&Path) -> anyhow::Result<()> + '_ {
     move |copy| Ok(fs::write(copy, text)?)
 }
 
@@ -469,4 +469,40 @@ fn an_edit_without_a_new_secret_asks_no_key() {
             .unwrap()
             .contains("glpat-test-0000")
     );
+}
+
+/// A new address typed under a sealed token is saved as written, with one warning for the
+/// token to be entered again; the value it left stale blocks no later typed token.
+#[test]
+fn a_new_address_under_a_sealed_token_is_saved_with_a_warning() {
+    use crate::secrets::{DataKey, KEY_LEN, Sealer, StoreKind};
+    let sealer = || {
+        Ok(Sealer::for_tests(
+            StoreKind::Os,
+            DataKey::from_slice(&[1; KEY_LEN]).unwrap(),
+        ))
+    };
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("config.toml");
+    fs::write(&path, "").unwrap();
+    edit_externally(&path, writes(TYPED_TOKEN), |_| sealer()).unwrap();
+    let sealed = fs::read_to_string(&path).unwrap();
+
+    let moved = sealed.replace("gitlab.example.test", "other.example.test");
+    let outcome = edit_externally(&path, writes(&moved), |_| {
+        panic!("no key is needed for an address")
+    })
+    .unwrap();
+    let ExternalEdit::Saved { warnings } = outcome else {
+        panic!("not saved");
+    };
+    assert_eq!(warnings.len(), 1, "{warnings:?}");
+    assert_eq!(fs::read_to_string(&path).unwrap(), moved);
+
+    let feed = format!(
+        "{moved}\n[[calendar]]\nname = \"feed\"\nlabel = \"Feed\"\nics_url = \"https://calendar.example.test/private.ics\"\n"
+    );
+    edit_externally(&path, writes(&feed), |_| sealer()).unwrap();
+    let text = fs::read_to_string(&path).unwrap();
+    assert!(!text.contains("private.ics"), "{text}");
 }

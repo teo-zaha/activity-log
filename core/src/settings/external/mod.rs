@@ -164,13 +164,28 @@ pub fn edit_externally(
             .as_deref()
             .and_then(|bytes| ConfigFile::parse(&locked.path, bytes).ok());
         let fresh = fresh_instances(original.as_ref(), &file);
+        let rebound = original
+            .as_ref()
+            .map(|original| file.rebound(original))
+            .unwrap_or_default();
         let content = with_fresh_instances(edited, file, &fresh)?;
         let content = match &sealing {
-            Some(sealer) => sealed_content(&locked.path, content, sealer)?,
+            Some(sealer) => sealed_content(&locked.path, content, sealer, original.as_ref())?,
             None => content,
         };
         let written = locked.write_checked(current.as_deref(), content)?;
-        Ok(written.warnings)
+        // Saved as the user wrote it: a token sealed for the address before no longer opens.
+        let rebound = rebound.into_iter().map(|(connection, secret)| {
+            format!(
+                "{connection}: {} must be entered again for the new address or TLS setting",
+                secret.label
+            )
+        });
+        Ok(written
+            .warnings
+            .into_iter()
+            .chain(rebound)
+            .collect::<Vec<_>>())
     })();
     match saved {
         Ok(mut warnings) => {
@@ -370,20 +385,18 @@ fn canonical_value(value: &Value) -> String {
 }
 
 /// `content` with every plain secret sealed by `sealer`, its line endings kept, and opened
-/// again from those bytes before they are published.
-fn sealed_content(path: &Path, content: Vec<u8>, sealer: &Sealer) -> Result<Vec<u8>, EditError> {
+/// again from those bytes before they are published; `original` is the file as read under the
+/// lock, whose values are left as they were.
+fn sealed_content(
+    path: &Path,
+    content: Vec<u8>,
+    sealer: &Sealer,
+    original: Option<&ConfigFile>,
+) -> Result<Vec<u8>, EditError> {
     let mut file = ConfigFile::parse(path, &content).map_err(EditError::Invalid)?;
-    let sealed = file.seal_plain(sealer);
-    for (connection, secret) in sealed.unbound {
-        crate::diagnostics::warn(
-            "settings",
-            format!(
-                "{connection}: {} stays plain text until its address is a web address it can be bound to",
-                secret.name
-            ),
-        );
-    }
+    let new = file.new_plain_secrets(original);
+    file.seal_plain(sealer).report(&new)?;
     let sealed = write::with_line_endings_of(file.to_string(), Some(&content));
-    write::check_sealed(path, &sealed, sealer)?;
+    write::check_sealed(path, &sealed, sealer, original)?;
     Ok(sealed)
 }

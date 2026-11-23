@@ -22,7 +22,7 @@ use crate::{
     },
     secrets::{
         Secrets, StoreKind,
-        sealed::{Binding, KeyId, Malformed},
+        sealed::{Binding, BindingError, KeyId, Malformed},
     },
     settings::{
         ConfigEditError, ConfigFile, Conflict, ConflictKind, EditBase, FieldId, Precondition,
@@ -148,7 +148,7 @@ pub fn check_save(
     let prepared = prepare_save(request);
     let mut issues = match (&prepared, current) {
         (Err(issues), _) => issues.clone(),
-        (Ok(changes), Some(current)) => rebound_issues(changes, current),
+        (Ok(changes), Some(current)) => binding_issues(changes, current),
         (Ok(_), None) => Vec::new(),
     };
     let conflict = match (base.precondition(), current) {
@@ -161,24 +161,36 @@ pub fn check_save(
 }
 
 /// A save that changes what a sealed secret is bound to (its server's address, Jira's TLS
-/// setting) without the secret: the issue sits at the secret's field, as the save would be
-/// refused for it.
-fn rebound_issues(changes: &SaveChanges, current: &ConfigFile) -> Vec<ProviderConfigFieldIssueDto> {
+/// setting) without the secret, or brings a secret its connection names no address for: the
+/// issue sits at the secret's field, as the save would be refused for it.
+fn binding_issues(changes: &SaveChanges, current: &ConfigFile) -> Vec<ProviderConfigFieldIssueDto> {
     let mut saved = current.clone();
     if apply_save(&mut saved, changes).is_err() {
         return Vec::new();
     }
-    saved
+    let issue = |secret: ProviderConfigKey, message: String| ProviderConfigFieldIssueDto {
+        field: ProviderConfigFieldRefDto::Value {
+            key: secret.name.to_string(),
+        },
+        problem: ProviderConfigIssueKindDto::Invalid,
+        message,
+    };
+    let rebound = saved
         .rebound(current)
-        .map(|(_, secret)| ProviderConfigFieldIssueDto {
-            field: ProviderConfigFieldRefDto::Value {
-                key: secret.name.to_string(),
-            },
-            problem: ProviderConfigIssueKindDto::Invalid,
-            message: REBOUND.to_string(),
-        })
         .into_iter()
-        .collect()
+        .map(|(_, secret)| issue(secret, REBOUND.to_string()));
+    let unbindable = saved.unbindable(current).map(|(id, secret, why)| {
+        let address = match why {
+            BindingError::NoOrigin { key } | BindingError::Unsupported { key } => {
+                config_keys(&id.source)
+                    .iter()
+                    .find(|bound| bound.name == key)
+                    .map_or(key, |bound| bound.label)
+            }
+        };
+        issue(secret, format!("Set the {address} first."))
+    });
+    rebound.chain(unbindable).collect()
 }
 
 const REBOUND: &str = "Enter it again for the new address or TLS setting.";

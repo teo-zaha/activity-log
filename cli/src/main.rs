@@ -271,7 +271,7 @@ async fn change_sources(action: SourcesCommand, config: Option<&Path>) -> Result
             // A new address (or TLS setting) needs the token sealed for it: asked here.
             let mut moved = file.clone();
             moved.set(&id, key, set[0].1.as_deref())?;
-            if let Some((_, secret)) = moved.rebound(&file) {
+            if let Some((_, secret)) = moved.rebound(&file).into_iter().next() {
                 if !std::io::IsTerminal::is_terminal(&io::stdin()) {
                     anyhow::bail!(
                         "{id}: {} must be entered again for the new address or TLS setting; run this in a terminal, or set it first with `sources set {id} {} -`",

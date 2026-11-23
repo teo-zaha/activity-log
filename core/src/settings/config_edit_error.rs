@@ -27,6 +27,14 @@ pub enum ConfigEditError {
         /// The secret's wire name, `GITLAB_TOKEN`.
         secret: &'static str,
     },
+    /// A new secret whose table names nothing it can be bound to (no web address yet): it
+    /// could not be sealed, and a secret is never saved as plain text by the app.
+    SecretUnbound {
+        connection: ConnectionId,
+        /// The secret's wire name, `GITLAB_TOKEN`.
+        secret: &'static str,
+        why: crate::secrets::sealed::BindingError,
+    },
 }
 
 impl std::fmt::Display for ConfigEditError {
@@ -45,6 +53,14 @@ impl std::fmt::Display for ConfigEditError {
             Self::BindingChanged { connection, secret } => write!(
                 f,
                 "{connection}: enter {secret} again for the new address or TLS setting"
+            ),
+            Self::SecretUnbound {
+                connection,
+                secret,
+                why,
+            } => write!(
+                f,
+                "{connection}: {secret} is saved only for the address it is sent to; set that first ({why})"
             ),
         }
     }

@@ -77,7 +77,8 @@ impl From<ConfigEditError> for BackendError {
             ConfigEditError::WslOnlyForGit
             | ConfigEditError::EmptyLabel
             | ConfigEditError::UnknownSetting { .. }
-            | ConfigEditError::BindingChanged { .. } => BackendErrorKind::InvalidRequest,
+            | ConfigEditError::BindingChanged { .. }
+            | ConfigEditError::SecretUnbound { .. } => BackendErrorKind::InvalidRequest,
             ConfigEditError::NotATableList(_) => BackendErrorKind::BadConfig,
         };
         Self::new(kind, err.to_string())

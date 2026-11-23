@@ -898,7 +898,7 @@ mod sealing {
         },
         secrets::{
             DataKey, KEY_LEN, Sealer, StoreKind,
-            sealed::{Binding, SealedValue, seal},
+            sealed::{Binding, BindingError, SealedValue, seal},
         },
         settings::{ConfigEditError, Precondition, edit_config},
     };
@@ -1030,6 +1030,81 @@ mod sealing {
         assert_ne!(sealed_token(&path).as_str(), "");
     }
 
+    /// A new secret whose table names no address is refused, never written as plain text,
+    /// with a key or without; a plain one the file held already stays as it was.
+    #[test]
+    fn a_new_secret_without_an_address_is_refused() {
+        let held = "[[gitlab]]\nname = \"old\"\nlabel = \"Old\"\ntoken = \"glpat-test-0009\"\n";
+        let (_dir, path) = config(&format!(
+            "{held}\n[[gitlab]]\nname = \"new\"\nlabel = \"New\"\n"
+        ));
+        let before = read(&path);
+        for sealing in [Some(sealer(1)), None] {
+            let refused = edit_config(&path, Precondition::None, sealing.as_ref(), |file| {
+                file.set(&id("gitlab/new"), GITLAB_TOKEN, Some("glpat-test-0000"))
+            })
+            .err()
+            .unwrap();
+            assert!(
+                matches!(
+                    &refused,
+                    EditError::Rejected(ConfigEditError::SecretUnbound {
+                        connection,
+                        secret: "GITLAB_TOKEN",
+                        why: BindingError::NoOrigin { key: "GITLAB_URL" },
+                    }) if *connection == id("gitlab/new")
+                ),
+                "{refused:?}"
+            );
+            assert_eq!(read(&path), before);
+        }
+
+        edit_config(&path, Precondition::None, Some(&sealer(1)), |file| {
+            file.rename(&id("gitlab/new"), "Newer")
+        })
+        .unwrap();
+        assert!(read(&path).contains("token = \"glpat-test-0009\""));
+    }
+
+    /// A value sealed for an address edited since by hand (it no longer opens) is left as it
+    /// was and blocks no save of another connection's token.
+    #[test]
+    fn a_stale_sealed_value_elsewhere_blocks_no_save() {
+        let binding = Binding::of(
+            &crate::model::Source::Gitlab,
+            &crate::provider::connection::ConnectionValues::new(
+                [(
+                    "GITLAB_URL".to_string(),
+                    Some("https://gitlab.example.test".to_string()),
+                )]
+                .into(),
+            ),
+        )
+        .unwrap();
+        let stale = seal(
+            &DataKey::from_slice(&[1; KEY_LEN]).unwrap(),
+            StoreKind::Os,
+            GITLAB_TOKEN,
+            &binding,
+            "glpat-test-0009",
+        )
+        .unwrap();
+        let (_dir, path) = config(&format!(
+            "[[gitlab]]\nname = \"old\"\nlabel = \"Old\"\nurl = \"https://moved.example.test\"\ntoken = {{ sealed = \"{}\" }}\n\n{GITLAB}",
+            stale.as_str()
+        ));
+        let sealer = sealer(1);
+        edit_config(&path, Precondition::None, Some(&sealer), |file| {
+            file.set(&id("gitlab/work"), GITLAB_TOKEN, Some("glpat-test-0000"))
+        })
+        .unwrap();
+
+        let text = read(&path);
+        assert!(text.contains(stale.as_str()), "{text}");
+        assert!(!text.contains("glpat-test-0000"), "{text}");
+        sealed_token(&path);
+    }
+
     /// Before anything is published, every value the key sealed is opened from the bytes
     /// about to be written: one that would not open (its address edited under it) fails.
     #[test]
@@ -1056,13 +1131,13 @@ mod sealing {
         .unwrap();
         let path = std::path::Path::new("config.toml");
         let good = format!("{GITLAB}token = {{ sealed = \"{}\" }}\n", value.as_str());
-        assert!(check_sealed(path, good.as_bytes(), &sealer).is_ok());
+        assert!(check_sealed(path, good.as_bytes(), &sealer, None).is_ok());
         let moved = good.replace("gitlab.example.test", "evil.example.test");
         assert!(matches!(
-            check_sealed(path, moved.as_bytes(), &sealer),
+            check_sealed(path, moved.as_bytes(), &sealer, None),
             Err(EditError::Internal(_))
         ));
         // A value another key sealed is not this writer's to open.
-        assert!(check_sealed(path, moved.as_bytes(), &self::sealer(2)).is_ok());
+        assert!(check_sealed(path, moved.as_bytes(), &self::sealer(2), None).is_ok());
     }
 }

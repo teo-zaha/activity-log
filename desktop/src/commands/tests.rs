@@ -668,3 +668,50 @@ fn a_draft_saved_into_a_source_added_again_changes_the_one_created() {
     let labels = labels(&path);
     assert_eq!(labels, ["Jira", "Mine"]);
 }
+
+/// A token for a connection without an address is refused at its field by the check and as
+/// `invalidRequest` by the save, with the OS store holding a key: it is never written as plain
+/// text.
+#[test]
+fn a_token_without_an_address_is_refused() {
+    use std::sync::Arc;
+
+    use activity_log_core::secrets::{
+        DataKey, FrontEnd, MemoryStore, SecretStore, Secrets, StoreKind,
+    };
+
+    let text = "[[gitlab]]\nname = \"new\"\nlabel = \"New\"\n";
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("config.toml");
+    std::fs::write(&path, text).unwrap();
+    let os: Arc<dyn SecretStore> = Arc::new(MemoryStore::holding(
+        StoreKind::Os,
+        DataKey::generate().unwrap(),
+    ));
+    let file: Arc<dyn SecretStore> = Arc::new(MemoryStore::new(StoreKind::File));
+    let state = AppState::start(
+        Some(path.clone()),
+        Secrets::with_stores(FrontEnd::Desktop, Some((os, None)), (file, None)),
+    );
+    let request = serde_json::json!({
+        "connection": { "source": "gitlab", "name": "new" },
+        "values": [{ "key": "GITLAB_TOKEN", "value": "glpat-test-0000" }],
+        "basedOn": snapshot_revision(&state),
+    });
+
+    let issues = invoke(
+        state.clone(),
+        "check_provider_config",
+        serde_json::json!({ "request": request }),
+    )
+    .unwrap();
+    let refused = refusal(state, "save_provider_config", request);
+
+    assert_eq!(
+        issues[0]["field"],
+        serde_json::json!({ "kind": "value", "key": "GITLAB_TOKEN" })
+    );
+    assert_eq!(issues[0]["problem"], "invalid");
+    assert_eq!(refused.kind, BackendErrorKind::InvalidRequest);
+    assert_eq!(std::fs::read_to_string(&path).unwrap(), text);
+}
