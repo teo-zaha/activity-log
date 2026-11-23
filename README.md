@@ -574,10 +574,18 @@ nix develop .#windows -c pnpm desktop:build:windows  # cross-build Windows NSIS 
 pnpm --dir dashboard exec tauri icon src/favicon.svg -o ../desktop/icons  # regenerate app icons
 ```
 
-The Windows installer's header and sidebar are drawn once per display scale, so they stay sharp on scaled displays; `desktop/installer/hooks.nsh` picks the largest that fits each control. After changing their design or the app icon, redraw them all and commit what the script writes:
+The Windows installer is one click: a small window installs Activity Log for the current user into `%LOCALAPPDATA%\Activity Log` (or the folder `/D=` names), then opens it. It asks only when needed (Activity Log is open; a newer version is installed, which it refuses), and the uninstaller asks whether to also delete your settings and cached activity. Its window and pages are `desktop/installer/one-click.nsh`, on our copy of Tauri's NSIS template (`desktop/installer/installer.nsi`, with our changes between `; >>> activity-log` markers). When a Tauri update changes the bundler, check and merge its template:
 
 ```bash
-nix shell --inputs-from . nixpkgs#python3 nixpkgs#librsvg nixpkgs#imagemagick -c python3 desktop/installer/generate-images.py
+nix develop -c desktop/installer/template.sh check          # is the copy the CLI's version?
+desktop/installer/template.sh diff                         # our changes against upstream
+desktop/installer/template.sh merge <tauri-bundler version>  # three-way merge of upstream's changes
+```
+
+After changing the app icon, redraw the installer's icon (a frame for the logo at each display scale) and commit what the script writes:
+
+```bash
+nix shell --inputs-from . nixpkgs#python3 nixpkgs#imagemagick -c python3 desktop/installer/generate-images.py
 ```
 
 ## Coming next
