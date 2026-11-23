@@ -1135,6 +1135,31 @@ describe('SettingsSourcePaneComponent', () => {
     expect(screen.queryByText('Jira saved')).toBeNull()
   })
 
+  for (const kind of ['secretStoreRefused', 'secretStoreUnavailable'] as const) {
+    it(`keeps a token whose save the store refused (${kind}), to save again`, async () => {
+      const { saveProviderConfig } = await setup()
+      saveProviderConfig.mockRejectedValueOnce(new BackendFailure(kind, 'The secret was not saved'))
+      const token = await screen.findByLabelText('API token')
+
+      await userEvent.type(token, 's3cret')
+      await userEvent.click(screen.getByRole('button', { name: 'Save settings' }))
+
+      expect((await screen.findByRole('alert')).textContent).toContain('The secret was not saved')
+      expect(token).toHaveProperty('value', 's3cret')
+      const save = screen.getByRole('button', { name: 'Save settings' })
+      expect(save).toHaveProperty('disabled', false)
+
+      saveProviderConfig.mockResolvedValueOnce(saveResponse(jiraFields))
+      await userEvent.click(save)
+      await screen.findByText('Jira saved')
+      expect(saveProviderConfig).toHaveBeenLastCalledWith({
+        connection: { source: 'jira', name: 'default' },
+        values: [{ key: 'apiToken', value: 's3cret' }],
+        basedOn: 'r1',
+      })
+    })
+  }
+
   it('does not load anything outside the desktop app', async () => {
     const { loadProviderConfig } = await setup({ desktop: false })
 
