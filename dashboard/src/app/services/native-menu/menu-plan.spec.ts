@@ -17,7 +17,7 @@ describe('menuPlanOf', () => {
   it('lists the table’s menu entries per submenu, the views as the navigation groups them', () => {
     expect(outline(SHORTCUTS)).toEqual([
       ['app: Settings… (comma)'],
-      ['file: Collect (r)', 'file: Export Markdown…', 'file: Export JSON…', 'file: Copy Link'],
+      ['file: Collect (r)', 'file: Export Markdown…', 'file: Export JSON…'],
       ['edit: Filter Activity… (f)'],
       [
         'view: Timeline (digit1)',
@@ -56,7 +56,7 @@ describe('menuPlanOf', () => {
     expect(byLabel.get('Day')?.view).toBe('day')
     expect(byLabel.get('Back')?.view).toBeNull()
     expect(byLabel.get('Filter Activity…')?.action).toEqual({ kind: 'chord', keys: 'mod+f' })
-    expect(byLabel.get('Copy Link')?.action).toEqual({ kind: 'entry', id: 'app.copy-link' })
+    expect(byLabel.get('Export JSON…')?.action).toEqual({ kind: 'entry', id: 'app.export-json' })
     // The `?` stays the page's: the help's item has no accelerator.
     expect(byLabel.get('Keyboard Shortcuts')?.accelerator).toBeNull()
     expect(new Set(items.map(item => item.key)).size).toBe(items.length)

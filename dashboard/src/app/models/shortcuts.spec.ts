@@ -56,8 +56,8 @@ const TEXT_EDITING: Readonly<Record<Os, ReadonlySet<string>>> = {
 
 /** The browser leaves these to itself: its own Back does what `app.back` does. */
 const BROWSER_DOES_ITSELF = new Set<ShortcutId>(['app.back'])
-/** Only the menu and the header's buttons: a single key would write a file or the clipboard. */
-const MENU_ONLY = new Set<ShortcutId>(['app.export-markdown', 'app.export-json', 'app.copy-link'])
+/** Only the menu and the header's buttons: a single key would write a file. */
+const MENU_ONLY = new Set<ShortcutId>(['app.export-markdown', 'app.export-json'])
 /**
  * Keys every common layout types without AltGr or ⌥: the Latin letters (a non-Latin layout's by
  * the Latin letter in their place), and these

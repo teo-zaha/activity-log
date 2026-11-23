@@ -59,27 +59,26 @@ fn dashboard_spec() -> MenuSpec {
                     command(1, "Collect", Some(MenuKey::R)),
                     command(2, "Export Markdown…", None),
                     command(3, "Export JSON…", None),
-                    command(4, "Copy Link", None),
                 ],
             ),
             section(
                 MenuSubmenu::Edit,
-                vec![command(5, "Filter Activity…", Some(MenuKey::F))],
+                vec![command(4, "Filter Activity…", Some(MenuKey::F))],
             ),
             section(
                 MenuSubmenu::View,
                 vec![
-                    check(6, "Timeline", MenuKey::Digit1),
-                    check(7, "Day", MenuKey::Digit2),
+                    check(5, "Timeline", MenuKey::Digit1),
+                    check(6, "Day", MenuKey::Digit2),
                 ],
             ),
             section(
                 MenuSubmenu::View,
-                vec![command(8, "Back", Some(MenuKey::BracketLeft))],
+                vec![command(7, "Back", Some(MenuKey::BracketLeft))],
             ),
             section(
                 MenuSubmenu::Help,
-                vec![command(9, "Keyboard Shortcuts", None)],
+                vec![command(8, "Keyboard Shortcuts", None)],
             ),
         ],
     }
@@ -137,7 +136,6 @@ fn lays_out_the_bar_with_the_system_items_around_the_apps() {
             "Collect",
             "Export Markdown…",
             "Export JSON…",
-            "Copy Link",
             "-",
             "CloseWindow"
         ]
@@ -306,7 +304,7 @@ fn updates_only_the_menu_that_is_installed() {
     let spec = dashboard_spec();
     let shown = Recorded::default();
     let day = |checked| MenuItemUpdate {
-        key: MenuItemKey(7),
+        key: MenuItemKey(6),
         state: MenuItemState::Check {
             title: "Day".into(),
             enabled: true,
@@ -342,7 +340,7 @@ fn updates_only_the_menu_that_is_installed() {
         menus.update(second, &[day(false)]),
         Err(MenuError::Stale { .. })
     ));
-    assert!(menus.chosen(&item_id(second, MenuItemKey(7))).is_none());
+    assert!(menus.chosen(&item_id(second, MenuItemKey(6))).is_none());
 }
 
 /// Runs `command` over IPC as the dashboard does: the answer, or the `BackendError` it refused.

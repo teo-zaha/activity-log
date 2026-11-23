@@ -104,7 +104,6 @@ export const SHORTCUT_IDS = [
   'app.settings',
   'app.export-markdown',
   'app.export-json',
-  'app.copy-link',
   'app.back',
   'layer.close',
   'app.help',
@@ -191,7 +190,6 @@ const ENTRIES: { readonly [Id in ShortcutId]: Omit<ShortcutEntry, 'id'> } = {
   // Menu items without a key: the header's buttons do the same.
   'app.export-markdown': { label: 'Export Markdown…', scope: 'global', menu: 'file', chords: [] },
   'app.export-json': { label: 'Export JSON…', scope: 'global', menu: 'file', chords: [] },
-  'app.copy-link': { label: 'Copy Link', scope: 'global', menu: 'file', chords: [] },
   // Alt+← moves by word in a text field on macOS and is never a menu accelerator.
   'app.back': {
     label: 'Back',
