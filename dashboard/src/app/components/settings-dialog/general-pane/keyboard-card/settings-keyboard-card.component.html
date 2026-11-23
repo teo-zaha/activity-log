@@ -15,9 +15,12 @@
     (change)="setCharacterKeys($event.checked)"
   />
 </div>
-<div class="keyboard-row">
-  <button appButton variant="secondary" size="sm" type="button" (click)="openHelp()">
-    Keyboard shortcuts
-    <app-key-tag shortcut="app.help" />
-  </button>
-</div>
+<!-- Elsewhere the sidebar opens the help; a phone has no sidebar, but may have a keyboard. -->
+@if (isPhone()) {
+  <div class="keyboard-row">
+    <button appButton variant="secondary" size="sm" type="button" (click)="openHelp()">
+      Keyboard shortcuts
+      <app-key-tag shortcut="app.help" />
+    </button>
+  </div>
+}

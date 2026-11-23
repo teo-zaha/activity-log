@@ -506,15 +506,26 @@ describe('Shortcuts in the app', APP_RENDER_TEST, () => {
         const { router } = await ready('/timeline?settings=general', MAC_DESKTOP)
         const toggle = await screen.findByRole('switch', { name: 'Single-key shortcuts' }, SLOW)
         expect(toggle.getAttribute('aria-checked')).toBe('true')
-        const helpButton = screen.getByRole('button', { name: /Keyboard shortcuts/ })
-        expect(helpButton.querySelector('app-key-tag')?.textContent).toBe('?')
 
         await userEvent.click(toggle)
         expect(toggle.getAttribute('aria-checked')).toBe('false')
         expect(localStorage.getItem('character-shortcuts')).toBe('off')
-        expect(helpButton.querySelector('app-key-tag')?.hasAttribute('hidden')).toBe(true)
+        await userEvent.click(screen.getByRole('button', { name: 'Close settings' }))
+        await vi.waitFor(() => expect(router.url).toBe('/timeline'))
+        expect(press('?', { shiftKey: true, code: 'Slash' }).defaultPrevented).toBe(false)
+        expect(press('2', { code: 'Digit2' }).defaultPrevented).toBe(false)
+        expect(press('r', { code: 'KeyR' }).defaultPrevented).toBe(false)
 
-        // The help, from its row: over the settings, without the keys that are off.
+        // The help, from the sidebar: without its `?`, and without the keys that are off.
+        // Once the settings dialog has left, which hides the page from the tree meanwhile.
+        const helpButton = await vi.waitFor(() =>
+          within(screen.getByRole('complementary', { name: 'Views and sources' })).getByRole(
+            'button',
+            { name: 'Keyboard shortcuts' }
+          )
+        )
+        expect(helpButton.hasAttribute('aria-keyshortcuts')).toBe(false)
+        expect(helpButton.querySelector('app-key-tag')?.hasAttribute('hidden')).toBe(true)
         await userEvent.click(helpButton)
         expect(await helpRows()).toEqual([
           'Collect: ⌘R',
@@ -533,13 +544,6 @@ describe('Shortcuts in the app', APP_RENDER_TEST, () => {
         await vi.waitFor(() =>
           expect(screen.queryByRole('dialog', { name: 'Keyboard shortcuts' })).toBeNull()
         )
-
-        await userEvent.click(screen.getByRole('button', { name: 'Close settings' }))
-        await vi.waitFor(() => expect(router.url).toBe('/timeline'))
-        expect(press('?', { shiftKey: true, code: 'Slash' }).defaultPrevented).toBe(false)
-        expect(press('2', { code: 'Digit2' }).defaultPrevented).toBe(false)
-        expect(press('r', { code: 'KeyR' }).defaultPrevented).toBe(false)
-        // Once the settings dialog has left, which hides the page from the tree meanwhile.
         await vi.waitFor(() =>
           expect(collectButton().getAttribute('aria-keyshortcuts')).toBe('Meta+R')
         )
