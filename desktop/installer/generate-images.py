@@ -1,28 +1,38 @@
 #!/usr/bin/env python3
-"""Draws the Windows installer's header and sidebar bitmaps, one pair per display scale.
+"""Draws the Windows installer's icon and its header and sidebar bitmaps, one pair per scale.
 
-NSIS draws these 24-bit BMPs 1:1 (`hooks.nsh` sets `NoStretchNoCrop` and picks the pair for
-the window's DPI), so each is drawn at the pixel size its control has at that scale. Run it
-from anywhere after changing the art or the sizes; it rewrites every `nsis-*.bmp` beside it:
+MUI2 sizes its image controls in dialog units and resizes a bitmap to them with LoadImage, whose
+resampling is coarse. So each bitmap here is drawn at exactly the pixel size its control has at
+one display scale, and `hooks.nsh` hands MUI the largest that fits the control it measures, which
+LoadImage then copies 1:1. Run it after changing the art, the sizes or the app icon, from the
+repository root, and commit what it writes:
 
-    nix shell nixpkgs#librsvg nixpkgs#imagemagick -c python3 desktop/installer/generate-images.py
+    nix shell --inputs-from . nixpkgs#python3 nixpkgs#librsvg nixpkgs#imagemagick \
+      -c python3 desktop/installer/generate-images.py
 
-The 100% pair keeps the names `tauri.windows.conf.json` gives Tauri (`nsis-header.bmp`,
-`nsis-sidebar.bmp`); the others are `nsis-header-<scale>.bmp` and `nsis-sidebar-<scale>.bmp`.
+It writes `nsis-header*.bmp`, `nsis-sidebar*.bmp` (the 100% pair keeps the names
+`tauri.windows.conf.json` gives Tauri), `nsis-scales.nsh` (which pair fits which control) and
+`installer.ico`.
 """
 
 import pathlib
+import re
+import struct
 import subprocess
 import tempfile
+import xml.etree.ElementTree as ET
 
 HERE = pathlib.Path(__file__).resolve().parent
+ROOT = HERE.parent.parent
+FAVICON = ROOT / "dashboard/src/favicon.svg"
+APP_ICON_ICO = ROOT / "desktop/icons/icon.ico"
+APP_ICON_PNG = ROOT / "desktop/icons/icon.png"
 
-# The controls' pixel sizes per scale. MUI2 lays them out in dialog units (sidebar 109x193,
-# header 100x35, in `modern_headerbmp.exe`), which Windows turns into pixels by the dialog
-# font's base units: Tahoma 8 pt (MS Shell Dlg 2), measured at each DPI from its `hdmx` widths
-# and its ascent and descent, as GetDialogBaseUnits does. At 100% that gives MUI's documented
-# 164x314 and 150x57. The sizes do not grow in proportion to the scale, which is why one
-# bitmap stretched to every scale looked blurred and distorted.
+# The controls' pixel sizes at Windows' scale presets. MUI2 lays them out in dialog units (sidebar
+# 109x193, header 100x35, in `modern_headerbmp.exe`), which Windows turns into pixels by the
+# dialog font's base units: Tahoma 8 pt (MS Shell Dlg 2), measured at each DPI from its `hdmx`
+# widths and its ascent and descent, as GetDialogBaseUnits does. At 100% that gives MUI's
+# documented 164x314 and 150x57. The sizes do not grow in proportion to the scale.
 #   scale: (sidebar width, sidebar height, header width, header height)
 CONTROLS = {
     100: (164, 314, 150, 57),
@@ -30,42 +40,41 @@ CONTROLS = {
     150: (245, 458, 225, 83),
     175: (273, 555, 250, 101),
     200: (327, 603, 300, 109),
+    225: (354, 700, 325, 127),
     250: (409, 796, 375, 144),
     300: (491, 941, 450, 171),
+    350: (545, 1086, 500, 197),
 }
 
-# hooks.nsh uses the largest scale at or below the window's, so a sidebar is drawn as tall as
-# the next scale's control (225% included under 200%): the page clips what lies below its
-# bottom, and a custom scale in between shows no strip under the image.
-SIDEBAR_TAIL = {100: 386, 125: 458, 150: 555, 175: 603, 200: 796, 250: 941, 300: 1101}
+# The icon's sizes: the app icon's own frames, and the ones Windows asks for at 125% and 250%,
+# drawn from the app icon.
+ICON_SIZES = (16, 20, 24, 32, 40, 48, 64, 256)
 
-BRAND = "#1d4ed8"
 WASH_TOP = "#f8fafc"
 WASH_BOTTOM = "#dce9fc"
 CHART_LINE = "#a9c4f5"
 CHART_GRID = "#dbe6f8"
 
-# The app's mark (dashboard favicon.svg): white on a #1d4ed8 rounded square, on a 32 grid.
-MARK = (
-    "M23 8c0 1.1-.9 2-2 2-.18 0-.35-.02-.51-.07l-3.56 3.55c.05.16.07.34.07.52 0 1.1-.9 2-2 2s-2"
-    "-.9-2-2c0-.18.02-.36.07-.52l-2.55-2.55c-.16.05-.34.07-.52.07s-.36-.02-.52-.07l-4.55 4.56c"
-    ".05.16.07.33.07.51 0 1.1-.9 2-2 2s-2-.9-2-2 .9-2 2-2c.18 0 .35.02.51.07l4.56-4.55C8.02 9.36"
-    " 8 9.18 8 9c0-1.1.9-2 2-2s2 .9 2 2c0 .18-.02.36-.07.52l2.55 2.55c.16-.05.34-.07.52-.07s.36"
-    ".02.52.07l3.55-3.56C19.02 8.35 19 8.18 19 8c0-1.1.9-2 2-2s2 .9 2 2z"
-)
+SVG_NS = "http://www.w3.org/2000/svg"
+
+
+def favicon() -> tuple[str, str]:
+    """The app's mark (the dashboard's favicon) as an element to nest, and its blue."""
+    text = FAVICON.read_text()
+    brand = ET.fromstring(text).find(f"{{{SVG_NS}}}rect").get("fill")
+    body = re.sub(r"<\?xml[^>]*\?>", "", text).strip()
+    return body, brand
+
+
+MARK, BRAND = favicon()
 
 
 def app_icon(x: float, y: float, size: float) -> str:
-    k = size / 32
-    return (
-        f'<rect x="{x}" y="{y}" width="{size}" height="{size}" rx="{8 * k}" fill="{BRAND}"/>'
-        f'<path fill="#fff" transform="translate({x + 4 * k} {y + 4 * k}) scale({k})" d="{MARK}"/>'
-    )
+    return MARK.replace("<svg ", f'<svg x="{x}" y="{y}" width="{size}" height="{size}" ', 1)
 
 
 def sidebar_svg(scale: int) -> tuple[str, int, int]:
     width, height, _, _ = CONTROLS[scale]
-    tail = SIDEBAR_TAIL[scale]
     k = scale / 100
     tile = round(100 * k)
     tile_x = (width - tile) / 2
@@ -79,7 +88,7 @@ def sidebar_svg(scale: int) -> tuple[str, int, int]:
     )
     step = width / 5
     cols = "".join(
-        f'<rect x="{round(step * i)}" y="{round(height * 0.62)}" width="{grid}" height="{tail}" fill="{CHART_GRID}"/>'
+        f'<rect x="{round(step * i)}" y="{round(height * 0.62)}" width="{grid}" height="{height}" fill="{CHART_GRID}"/>'
         for i in range(1, 5)
     )
     points = [(0, 0.89), (0.183, 0.833), (0.40, 0.871), (0.652, 0.753), (0.838, 0.782), (1.02, 0.70)]
@@ -89,16 +98,15 @@ def sidebar_svg(scale: int) -> tuple[str, int, int]:
         f'stroke="{CHART_LINE}" stroke-width="{2 * k:.2f}"/>'
         for px, py in points[1:-1]
     )
-    svg = f"""<svg xmlns="http://www.w3.org/2000/svg" width="{width}" height="{tail}" viewBox="0 0 {width} {tail}">
+    svg = f"""<svg xmlns="{SVG_NS}" width="{width}" height="{height}" viewBox="0 0 {width} {height}">
 <defs>
-  <linearGradient id="wash" gradientUnits="userSpaceOnUse" x1="0" y1="0" x2="0" y2="{height}">
+  <linearGradient id="wash" x1="0" y1="0" x2="0" y2="1">
     <stop offset="0" stop-color="{WASH_TOP}"/><stop offset="1" stop-color="{WASH_BOTTOM}"/>
   </linearGradient>
   <filter id="shadow" x="-30%" y="-30%" width="160%" height="160%">
     <feDropShadow dx="0" dy="{2 * k:.2f}" stdDeviation="{5 * k:.2f}" flood-color="{BRAND}" flood-opacity="0.14"/>
   </filter>
 </defs>
-<rect width="{width}" height="{tail}" fill="{WASH_BOTTOM}"/>
 <rect width="{width}" height="{height}" fill="url(#wash)"/>
 {rows}{cols}
 <polyline points="{line}" fill="none" stroke="{CHART_LINE}" stroke-width="{2 * k:.2f}" stroke-linejoin="round"/>
@@ -106,7 +114,7 @@ def sidebar_svg(scale: int) -> tuple[str, int, int]:
 <rect x="{tile_x}" y="{tile_y}" width="{tile}" height="{tile}" rx="{22 * k:.2f}" fill="#fff" filter="url(#shadow)"/>
 {app_icon(tile_x + (tile - icon) / 2, tile_y + (tile - icon) / 2, icon)}
 </svg>"""
-    return svg, width, tail
+    return svg, width, height
 
 
 def header_svg(scale: int) -> tuple[str, int, int]:
@@ -115,7 +123,7 @@ def header_svg(scale: int) -> tuple[str, int, int]:
     icon = round(height * 0.6)
     x = width - round(13 * k) - icon
     y = round((height - icon) / 2)
-    svg = f"""<svg xmlns="http://www.w3.org/2000/svg" width="{width}" height="{height}" viewBox="0 0 {width} {height}">
+    svg = f"""<svg xmlns="{SVG_NS}" width="{width}" height="{height}" viewBox="0 0 {width} {height}">
 <rect width="{width}" height="{height}" fill="#fff"/>
 {app_icon(x, y, icon)}
 </svg>"""
@@ -138,13 +146,77 @@ def render(svg: str, width: int, height: int, out: pathlib.Path, work: pathlib.P
     )
 
 
+def bitmap(kind: str, scale: int) -> str:
+    return f"nsis-{kind}{'' if scale == 100 else f'-{scale}'}.bmp"
+
+
+def scales_nsh() -> str:
+    """Two macros that put the largest bitmap fitting a control of WIDTH x HEIGHT pixels at TARGET.
+
+    They leave RESULT 1 when one fits, and 0 when none does (a control smaller than the 100%
+    bitmap), so MUI's own image stays. The 100% pair is MUI's own, so it is never extracted again.
+    """
+    out = [
+        "; Generated by generate-images.py from its CONTROLS table: do not edit, run the script.",
+        "; ACTIVITY_LOG_IMAGES is the folder of these bitmaps (hooks.nsh defines it).",
+        "",
+    ]
+    for kind, (w_at, h_at) in (("header", (2, 3)), ("sidebar", (0, 1))):
+        out.append(f"!macro ACTIVITY_LOG_{kind.upper()}_FOR WIDTH HEIGHT TARGET RESULT")
+        out.append("  StrCpy ${RESULT} 0")
+        first = True
+        for scale in sorted(CONTROLS, reverse=True):
+            if scale == 100:
+                continue
+            size = CONTROLS[scale]
+            name = bitmap(kind, scale)
+            out.append(f"  ${{{'If' if first else 'ElseIf'}}} ${{WIDTH}} >= {size[w_at]}")
+            out.append(f"  ${{AndIf}} ${{HEIGHT}} >= {size[h_at]}")
+            out.append(f'    !pragma verifyloadimage "${{ACTIVITY_LOG_IMAGES}}/{name}"')
+            out.append(f'    File "/oname=${{TARGET}}" "${{ACTIVITY_LOG_IMAGES}}/{name}"')
+            out.append("    StrCpy ${RESULT} 1")
+            first = False
+        out.append("  ${EndIf}")
+        out.append("!macroend")
+        out.append("")
+    return "\n".join(out)
+
+
+def installer_ico(work: pathlib.Path) -> bytes:
+    """The app icon's frames as they are, and the missing sizes drawn from icons/icon.png."""
+    data = APP_ICON_ICO.read_bytes()
+    frames = {}
+    for i in range(struct.unpack_from("<H", data, 4)[0]):
+        w, _, _, _, planes, bpp, size, offset = struct.unpack_from("<BBBBHHII", data, 6 + 16 * i)
+        frames[w or 256] = (planes, bpp, data[offset:offset + size])
+    for size in ICON_SIZES:
+        if size not in frames:
+            png = work / f"icon-{size}.png"
+            subprocess.run(
+                ["magick", str(APP_ICON_PNG), "-filter", "Lanczos", "-resize", f"{size}x{size}",
+                 "-strip", f"PNG32:{png}"],
+                check=True,
+            )
+            frames[size] = (1, 32, png.read_bytes())
+    head = struct.pack("<HHH", 0, 1, len(ICON_SIZES))
+    body = b""
+    offset = 6 + 16 * len(ICON_SIZES)
+    for size in ICON_SIZES:
+        planes, bpp, image = frames[size]
+        head += struct.pack("<BBBBHHII", size % 256, size % 256, 0, 0, planes, bpp, len(image),
+                            offset + len(body))
+        body += image
+    return head + body
+
+
 def main() -> None:
     with tempfile.TemporaryDirectory() as tmp:
         work = pathlib.Path(tmp)
         for scale in CONTROLS:
-            suffix = "" if scale == 100 else f"-{scale}"
-            render(*sidebar_svg(scale), HERE / f"nsis-sidebar{suffix}.bmp", work)
-            render(*header_svg(scale), HERE / f"nsis-header{suffix}.bmp", work)
+            render(*sidebar_svg(scale), HERE / bitmap("sidebar", scale), work)
+            render(*header_svg(scale), HERE / bitmap("header", scale), work)
+        (HERE / "nsis-scales.nsh").write_text(scales_nsh())
+        (HERE / "installer.ico").write_bytes(installer_ico(work))
 
 
 if __name__ == "__main__":
