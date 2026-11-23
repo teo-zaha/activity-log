@@ -20,24 +20,18 @@
   -webkit-user-select: none;
 }
 
+// The desktop window's title bar: the strip the window's buttons sit in (the traffic lights on
+// macOS, the caption buttons on Windows), above the row, which keeps clear of them. A fullscreen
+// window keeps the strip, where the caption buttons stay and the traffic lights come with the
+// menu bar, but it no longer moves the window.
 :host-context(html.tauri) .window-drag-strip {
-  height: 28px;
+  height: var(--title-bar-height);
   opacity: 1;
   pointer-events: auto;
 }
 
 :host-context(html.tauri.fullscreen) .window-drag-strip {
   pointer-events: none;
-}
-
-// Windows: no traffic lights to make room for; the header itself is the title bar, and its
-// right end leaves room for the window buttons.
-:host-context(html.frameless) .window-drag-strip {
-  height: 0;
-}
-
-:host-context(html.frameless) .header-inner {
-  padding-right: calc(16px + var(--window-controls-width));
 }
 
 .header-inner {

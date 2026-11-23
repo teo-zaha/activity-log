@@ -1124,10 +1124,12 @@ mat-card {
 }
 
 // Room for the window buttons the app draws where the window has no title bar (Windows,
-// WindowControlsComponent): three 46 × 32 px caption buttons.
+// WindowControlsComponent): caption buttons 32 px tall. `--title-bar-height` is the header's
+// strip above its row, where the desktop window's buttons sit: macOS's traffic lights
+// (`titleBarStyle: Overlay`), Windows' caption buttons; none in a browser.
 :root {
-  --window-controls-width: 0px;
   --window-controls-height: 0px;
+  --title-bar-height: 0px;
   // A dialog keeps 16 px from the window's edges and, centred, clear of the buttons and of the
   // screen's safe area (notches, the status bar, the home indicator; `viewport-fit=cover`).
   --dialog-max-width: calc(
@@ -1141,7 +1143,11 @@ mat-card {
   --phone-nav-height: calc(64px + env(safe-area-inset-bottom));
 }
 
+html.tauri {
+  --title-bar-height: 28px;
+}
+
 html.frameless {
-  --window-controls-width: 138px;
   --window-controls-height: 32px;
+  --title-bar-height: var(--window-controls-height);
 }

@@ -106,8 +106,8 @@ export class WindowChromeService {
   }
 
   /**
-   * One listener for the window's resizes: the root's `fullscreen` class (the header leaves the
-   * traffic lights' room only outside fullscreen) and, where the app draws the window buttons,
+   * One listener for the window's resizes: the root's `fullscreen` class (the header's title bar
+   * moves the window only outside fullscreen) and, where the app draws the window buttons,
    * maximize shown as restore while the window is maximized. Hand-written: Tauri's window events
    * are not DOM events, which Signality covers. The service lives as long as the window; once
    * destroyed (a spec's injector), it stops listening.

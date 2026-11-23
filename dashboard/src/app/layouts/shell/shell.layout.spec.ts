@@ -125,6 +125,75 @@ describe('the shell in a browser', () => {
     }
   })
 
+  describe('the desktop title bar', () => {
+    /** The page as `index.html` marks it in the desktop app on `platform`. */
+    function desktop(platform: 'macos' | 'windows', ...state: 'fullscreen'[]): void {
+      const classes = ['tauri', ...(platform === 'windows' ? ['frameless'] : []), ...state]
+      document.documentElement.classList.add(...classes)
+      undo.push(() => document.documentElement.classList.remove(...classes))
+    }
+
+    const top = (selector: string): number =>
+      document.querySelector(selector)?.getBoundingClientRect().top ?? Number.NaN
+
+    /** The caption buttons the app draws on Windows, and their bottom. */
+    function captionButtons(): { rects: DOMRect[]; bottom: number } {
+      const rects = [...document.querySelectorAll('app-window-controls .control')].map(button =>
+        button.getBoundingClientRect()
+      )
+      return { rects, bottom: Math.max(...rects.map(rect => rect.bottom)) }
+    }
+
+    it('leaves the traffic lights a strip above the header’s row on macOS', async () => {
+      await page.viewport(1440, 960)
+      desktop('macos')
+      await openApp(`/timeline?${RANGE}`)
+      await frames()
+
+      expect(top('app-header .header-inner')).toBe(28)
+    })
+
+    for (const size of [
+      { name: 'a desktop window', width: 1440 },
+      { name: 'a window as narrow as a phone', width: 402 },
+    ]) {
+      it(`puts the header's row below the caption buttons on Windows, in ${size.name}`, async () => {
+        await page.viewport(size.width, 960)
+        desktop('windows')
+        await openApp(`/timeline?${RANGE}`)
+        await frames()
+        const buttons = captionButtons()
+
+        // Flush in the window's top right corner, at the caption's full height.
+        expect(buttons.rects.map(rect => [rect.top, rect.height])).toEqual([
+          [0, 32],
+          [0, 32],
+          [0, 32],
+        ])
+        expect(buttons.rects.at(-1)?.right).toBe(innerWidth)
+        // The header's row starts below them, as on macOS below the traffic lights.
+        expect(top('app-header .header-inner')).toBe(buttons.bottom)
+        expect(
+          headerControls()
+            .filter(({ rect }) => buttons.rects.some(button => overlaps(rect, button)))
+            .map(({ name }) => name)
+        ).toEqual([])
+        expect(collisions()).toEqual([])
+      })
+    }
+
+    it('keeps the strip in fullscreen, where it no longer moves the window', async () => {
+      await page.viewport(1440, 960)
+      desktop('windows', 'fullscreen')
+      await openApp(`/timeline?${RANGE}`)
+      await frames()
+      const strip = document.querySelector('app-header .window-drag-strip')!
+
+      expect(top('app-header .header-inner')).toBe(captionButtons().bottom)
+      expect(getComputedStyle(strip).pointerEvents).toBe('none')
+    })
+  })
+
   /** Every field people type in, whatever its class. */
   const fieldSizes = (): string[] =>
     [...document.querySelectorAll('input, textarea, select')]
