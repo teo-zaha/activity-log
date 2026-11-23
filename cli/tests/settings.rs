@@ -8,8 +8,8 @@ use std::{
     process::{Command, Output, Stdio},
 };
 
-/// The CLI run in `dir`, so no `.env` of the repository is read. Each test passes its own
-/// config or clears the environment.
+/// The CLI run in `dir`, without the `ACTIVITY_LOG_CONFIG` of the environment the tests run in.
+/// Each test passes its own config or clears the environment.
 fn cli(dir: &Path) -> Command {
     let mut command = Command::new(env!("CARGO_BIN_EXE_activity-log"));
     command.env_remove("ACTIVITY_LOG_CONFIG").current_dir(dir);
@@ -201,4 +201,27 @@ fn a_shared_settings_file_is_reported_once_and_made_private_by_the_next_save() {
     assert!(renamed.status.success(), "{}", stderr(&renamed));
     assert_eq!(mode(), 0o600);
     assert!(fs::read_to_string(&path).unwrap().contains("Company"));
+}
+
+/// A `.env` in the working folder sets nothing: the CLI resolves its config without the
+/// `ACTIVITY_LOG_CONFIG` it names.
+#[test]
+fn a_dotenv_file_in_the_working_folder_is_not_read() {
+    let dir = tempfile::tempdir().unwrap();
+    let planted = dir.path().join("planted.toml");
+    fs::write(
+        dir.path().join(".env"),
+        format!("ACTIVITY_LOG_CONFIG={}\n", planted.display()),
+    )
+    .unwrap();
+
+    let output = cli(dir.path()).args(["config", "path"]).output().unwrap();
+
+    let printed = String::from_utf8_lossy(&output.stdout);
+    assert!(!printed.contains("planted.toml"), "{printed}");
+    assert!(
+        !stderr(&output).contains("planted.toml"),
+        "{}",
+        stderr(&output)
+    );
 }

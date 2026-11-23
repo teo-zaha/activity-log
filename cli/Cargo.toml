@@ -17,7 +17,6 @@ activity-log-core = { package = "core", path = "../core" }
 anyhow.workspace = true
 chrono.workspace = true
 clap.workspace = true
-dotenvy.workspace = true
 rpassword = "7.5"
 serde_json.workspace = true
 strum.workspace = true

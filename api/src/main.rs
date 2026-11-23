@@ -1,11 +1,9 @@
 use std::path::PathBuf;
 
 use activity_log_api::build_rocket;
-use dotenvy::dotenv;
 
 #[rocket::main]
 async fn main() -> anyhow::Result<()> {
-    dotenv().ok();
     let config = config_arg(std::env::args().skip(1))?;
 
     let port = std::env::var("PORT")

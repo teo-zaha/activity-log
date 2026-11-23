@@ -1064,7 +1064,7 @@ fn git_config(values: Vec<(&'static str, &'static str)>) -> anyhow::Result<GitCo
 
 #[test]
 fn git_config_tells_unset_lists_from_empty_ones() {
-    // `GIT_DIRS=` in a .env file is unset, so the default applies.
+    // An empty value is unset, so the default applies.
     assert_eq!(git_config(vec![("GIT_DIRS", "")]).unwrap().dirs, None);
     // A saved empty list means none.
     assert_eq!(

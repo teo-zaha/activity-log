@@ -189,8 +189,6 @@ fn fatal(err: &anyhow::Error) -> ExitCode {
 }
 
 async fn run(cli: Cli) -> Result<ExitCode> {
-    dotenvy::dotenv().ok();
-
     let config = cli.config.as_deref();
     match cli.command {
         None => return collect(&cli.collect, config).await,
