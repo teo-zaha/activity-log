@@ -11,9 +11,7 @@ import {
   viewChildren,
 } from '@angular/core'
 import { MatIconModule } from '@angular/material/icon'
-import { Router } from '@angular/router'
 import { AutoAnimateDirective } from '../auto-animate/auto-animate.directive'
-import type { EntryUiAdapter } from '../../providers/types'
 import { ActivityDataService } from '../../services/activity-data.service'
 import { ActivitySelection } from '../../services/activity-selection.service'
 import { ActivityViewStateService } from '../../services/activity-view-state.service'
@@ -25,7 +23,6 @@ import { IconButtonComponent } from '../button/icon-button.component'
 import { ExternalLinkDirective } from '../external-link/external-link.directive'
 import { MeetingDescriptionComponent } from '../meeting-description/meeting-description.component'
 import { PageHeaderComponent } from '../page-header/page-header.component'
-import { appLink, injectLinkBase, injectShareLink } from '../share/share-link'
 import { SourceBadgeComponent } from '../source-badge/source-badge.component'
 import { TopLayer } from '../../layouts/shell/top-layer.service'
 import { NavigationMotionService } from '../../navigation-motion'
@@ -64,9 +61,6 @@ export class EventDetailComponent {
   private readonly selection = inject(ActivitySelection)
   private readonly viewState = inject(ActivityViewStateService)
   private readonly injector = inject(Injector)
-  private readonly router = inject(Router)
-  private readonly shareLink = injectShareLink()
-  private readonly linkBase = injectLinkBase()
   /** On a phone the details are a page of their own, left with a back arrow. */
   protected readonly isPhone = inject(BreakpointState).phone
   protected readonly motion = inject(NavigationMotionService)
@@ -277,18 +271,6 @@ export class EventDetailComponent {
     if (this.step(delta)) {
       event.preventDefault()
     }
-  }
-
-  /**
-   * Shares the link to this one event, without its group or filter. It names the range shown, the
-   * URL's or the collected one, so it opens with the event in it.
-   */
-  protected shareEntry(entry: EntryUiAdapter): Promise<void> {
-    const [from, to] = [this.viewState.dateFrom(), this.viewState.dateTo()]
-    const range = from && to ? { from, to } : {}
-    return this.shareLink(
-      appLink(this.router, [], { ...range, event: entry.trackKey }, this.linkBase)
-    )
   }
 
   private restoreFocus(): void {

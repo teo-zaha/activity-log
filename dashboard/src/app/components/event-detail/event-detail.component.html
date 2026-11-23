@@ -43,7 +43,7 @@
         @let index = openIndex();
         @let inGroup = entries !== null && index !== null;
         @let pageBack = isPhone() && !inGroup;
-        <!-- A single event needs only share and close, floated beside its badges. -->
+        <!-- A single event needs only close, floated beside its badges. -->
         <app-page-header
           class="flyout-header"
           [class.is-bare]="!entries"
@@ -93,13 +93,6 @@
               ></button>
             </div>
           }
-          <button
-            pageAction
-            appIconButton
-            icon="share"
-            label="Share link to this event"
-            (click)="shareEntry(entry)"
-          ></button>
         </app-page-header>
 
         <div class="flyout-body" #body>

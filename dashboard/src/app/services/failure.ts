@@ -30,15 +30,6 @@ export function failureWhile(action: string, error: unknown): Failure {
   return { ...failed, message: `${action} failed: ${failed.message}` }
 }
 
-/** Two failures of one attempt, the first having led to the second, both reasons kept. */
-export function failureThen(first: Failure, then: Failure): Failure {
-  return {
-    kind: 'other',
-    message: `${first.message}; ${then.message}`,
-    cause: [first.cause, then.cause],
-  }
-}
-
 /** Whether the backend refused the call as `kind`. */
 export function refusedAs(failure: Failure, kind: BackendFailureKind): boolean {
   return failure.kind === 'backend' && failure.cause.kind === kind

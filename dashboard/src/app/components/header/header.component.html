@@ -21,7 +21,7 @@
       <ng-container *ngTemplateOutlet="center()" />
     </div>
 
-    <div class="header-actions" role="group" aria-label="Export and share">
+    <div class="header-actions" role="group" aria-label="Export">
       <button
         appIconButton
         icon="description"
@@ -41,15 +41,6 @@
         (click)="exportJson()"
         [disabled]="!canExport()"
         matTooltip="Export JSON"
-      ></button>
-      <button
-        appIconButton
-        icon="share"
-        label="Share link to this view"
-        size="lg"
-        class="btn-action"
-        (click)="shareView()"
-        matTooltip="Share link to this view"
       ></button>
     </div>
   </div>

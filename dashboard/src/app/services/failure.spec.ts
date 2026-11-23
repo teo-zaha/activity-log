@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { BackendFailure } from './backend/backend-failure'
-import { failure, failureOf, failureThen, failureWhile, refusedAs } from './failure'
+import { failure, failureOf, failureWhile, refusedAs } from './failure'
 
 describe('Failure', () => {
   it('keeps what was thrown as the cause, beside the message for people', () => {
@@ -11,24 +11,15 @@ describe('Failure', () => {
       message: 'Write permission denied.',
       cause: thrown,
     })
-    expect(failureWhile('Copying the link', thrown)).toEqual({
+    expect(failureWhile('Saving the file', thrown)).toEqual({
       kind: 'other',
-      message: 'Copying the link failed: Write permission denied.',
+      message: 'Saving the file failed: Write permission denied.',
       cause: thrown,
     })
   })
 
-  it('names a failure of its own with no cause, and keeps both of two', () => {
-    const refused = new Error('Share refused')
-    const first = failureWhile('Sharing the link', refused)
-    const then = failure('Copying the link failed: no clipboard')
-
-    expect(then).toEqual({ kind: 'other', message: 'Copying the link failed: no clipboard' })
-    expect(failureThen(first, then)).toEqual({
-      kind: 'other',
-      message: 'Sharing the link failed: Share refused; Copying the link failed: no clipboard',
-      cause: [refused, undefined],
-    })
+  it('names a failure of its own with no cause', () => {
+    expect(failure('No source is ready')).toEqual({ kind: 'other', message: 'No source is ready' })
   })
 
   it('keeps a backend failure typed, so callers can tell by its kind', () => {

@@ -59,7 +59,7 @@ describe('ShellLayoutComponent', APP_RENDER_TEST, () => {
     expect(within(header()).queryByLabelText('From date')).toBeNull()
     expect(within(sidebar()).queryByRole('button', { name: 'Add source' })).toBeNull()
     expect(within(header()).getByText('Activity Log')).toBeTruthy()
-    expect(within(header()).getByRole('button', { name: 'Share link to this view' })).toBeTruthy()
+    expect(within(header()).getByRole('button', { name: 'Export Markdown' })).toBeTruthy()
     expect(screen.getByRole('main').querySelector('.view')?.classList).toContain('under-settings')
     const tabs = within(screen.getByRole('navigation', { name: 'Views' }))
     expect(tabs.getByRole('button', { name: 'Settings' }).getAttribute('aria-current')).toBe('page')

@@ -5,11 +5,10 @@ import { MatTooltipModule } from '@angular/material/tooltip'
 import { IconButtonComponent } from '../button/icon-button.component'
 import { ActivityExportService } from '../../services/activity-export.service'
 import { WindowChromeService } from '../../services/window-chrome.service'
-import { injectShareLink, injectViewLink } from '../share/share-link'
 
 /**
  * The window's top row on every page: the brand, what the layout on screen puts in the middle
- * (`center`), and Export and Share. In the desktop app it is the title bar too.
+ * (`center`), and Export. In the desktop app it is the title bar too.
  */
 @Component({
   selector: 'app-header',
@@ -24,8 +23,6 @@ export class HeaderComponent {
   private readonly exports = inject(ActivityExportService)
   protected readonly canExport = this.exports.canExport
   private readonly chrome = inject(WindowChromeService)
-  private readonly shareLink = injectShareLink()
-  private readonly viewLink = injectViewLink()
 
   protected exportMd(): void {
     void this.exports.exportShown('markdown')
@@ -33,11 +30,6 @@ export class HeaderComponent {
 
   protected exportJson(): void {
     void this.exports.exportShown('json')
-  }
-
-  /** Shares the link to this view (`injectViewLink`). */
-  protected shareView(): Promise<void> {
-    return this.shareLink(this.viewLink())
   }
 
   protected startHeaderDrag(event: MouseEvent): void {

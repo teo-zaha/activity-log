@@ -4,7 +4,6 @@ import { Router } from '@angular/router'
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 import { provideAppRouter } from '../app.routes'
 import { ActivityDataService } from './activity-data.service'
-import { appLink } from '../components/share/share-link'
 import { DeepLinkService } from './deep-link.service'
 
 describe('DeepLinkService', () => {
@@ -124,16 +123,17 @@ describe('DeepLinkService', () => {
     })
   })
 
-  it('opens a shared link to an event with / and # in its id as that event', async () => {
+  it('opens a link to an event with / and # in its id as that event', async () => {
     const { links, router } = await setup()
     // A numbered id (`make_ids_unique`) holds `#`; ids also hold `/`.
     for (const key of ['git/work/1f3a#2', 'calendar/team/uid/1@example.org#2']) {
       await router.navigate(['/day', '2026-11-17'], { queryParams: { event: key } })
-      const shared = appLink(router, ['event'])
-      expect(shared).not.toContain('#')
+      // The address the app is on, as an `activity-log:` link.
+      const link = `activity-log:/${router.url}`
+      expect(link).not.toContain('#')
       await router.navigateByUrl('/timeline')
 
-      expect(await links.open(shared)).toBe(true)
+      expect(await links.open(link)).toBe(true)
       expect(router.parseUrl(router.url).queryParams['event']).toBe(key)
       // A reload reads the same address again.
       expect(

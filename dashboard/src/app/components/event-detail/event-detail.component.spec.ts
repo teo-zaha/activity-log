@@ -138,25 +138,19 @@ describe('EventDetailComponent', () => {
     expect(screen.getAllByRole('button', { name: /close event details/i })).toHaveLength(2)
   })
 
-  it('shares a link that names the range shown, also when the URL names none', async () => {
-    const copied = vi.fn<(text: string) => Promise<void>>(() => Promise.resolve())
-    vi.stubGlobal('navigator', { ...navigator, clipboard: { writeText: copied } })
-    try {
-      const entry = createEntryAdapter(activityLog.entries[0])
-      await renderDetails([entry], { event: entry.trackKey })
+  it('offers no Share: only closing the details', async () => {
+    const entry = createEntryAdapter(activityLog.entries[0])
+    await renderDetails([entry], { event: entry.trackKey })
 
-      fireEvent.click(screen.getByRole('button', { name: /share/i }))
-
-      await vi.waitFor(() => expect(copied).toHaveBeenCalledOnce())
-      const link = new URL(copied.mock.calls[0]?.[0] ?? '')
-      // In the browser the link is this page's own address.
-      expect(link.origin).toBe(document.location.origin)
-      expect(link.searchParams.get('from')).toBe('2026-11-01')
-      expect(link.searchParams.get('to')).toBe('2026-11-30')
-      expect(link.searchParams.get('event')).toBe(entry.trackKey)
-    } finally {
-      vi.unstubAllGlobals()
-    }
+    const header = screen
+      .getByRole('dialog', { name: entry.title })
+      .querySelector('app-page-header')
+    expect(
+      [...(header?.querySelectorAll('button') ?? [])].map(button =>
+        button.getAttribute('aria-label')
+      )
+    ).toEqual(['Close event details'])
+    expect(screen.queryByRole('button', { name: /share/i })).toBeNull()
   })
 
   it('shows the busy status of a meeting', async () => {

@@ -181,7 +181,7 @@ At widths of 640 px or less, navigation and Settings move to a bottom tab bar, s
 
 ### Links and history
 
-Every view, date range, filter, open event, and Settings section lives in the URL so reloads and shared links open the same state:
+Every view, date range, filter, open event, and Settings section lives in the URL so reloads and links open the same state:
 
 | Path or query                                                                        | What it opens                                                                              |
 | ------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------ |
@@ -200,13 +200,6 @@ Every view, date range, filter, open event, and Settings section lives in the UR
 - **Closing a layer:** closing Settings or event details steps back past all history entries that layer pushed, or replaces the URL if the layer was opened directly from a link or reload.
 - Hidden source chips and calendar zoom stay out of the URL.
 
-**Share:**
-
-- In the **browser**, **Share** in the header shares the page's own `http(s)` URL with its full query (including Settings).
-- In the **desktop app**, **Share** shares an `activity-log://` link with `q`, `from`, `to`, `event`, and `events` (never `settings`).
-- Sharing from an event's detail panel links directly to that event in the current date range.
-- Where the OS has no share sheet, Activity Log copies the link to the clipboard and reports an error if clipboard access is unavailable or refused.
-
 ### Deep links
 
 The desktop app handles `activity-log://` links using the same paths and query parameters as above:
@@ -217,7 +210,7 @@ The desktop app handles `activity-log://` links using the same paths and query p
 | `activity-log://timeline?from=2026-10-01&to=2026-11-17` | Timeline, collecting that range      |
 | `activity-log://week/2026-11-16?settings=logs`          | Week view with Settings open on Logs |
 
-Hand-written links must percent-encode `#` as `%23` and `+` as `%2B` (event IDs can contain both; links built by **Share** encode them automatically). Deep links bring the running window to the front (on Windows and Linux, a second launch forwards its link to the running instance and exits). Links only navigate: unknown views, invalid parameters, and uncollectable ranges are dropped, and nothing is written.
+Links must percent-encode `#` as `%23` and `+` as `%2B` (event IDs can contain both). Deep links bring the running window to the front (on Windows and Linux, a second launch forwards its link to the running instance and exits). Links only navigate: unknown views, invalid parameters, and uncollectable ranges are dropped, and nothing is written.
 
 The `activity-log:` scheme is registered by the packaged app bundle on macOS (not `pnpm desktop:dev`) and by the installer on Windows; debug builds on Windows and Linux register it on startup.
 
