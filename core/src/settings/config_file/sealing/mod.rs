@@ -20,6 +20,9 @@ use crate::{
     settings::{SEALED, field_name},
 };
 
+#[cfg(test)]
+mod tests;
+
 /// What a sealing pass did.
 #[derive(Debug, Default)]
 pub(in crate::settings) struct Sealed {
@@ -49,10 +52,10 @@ impl Sealed {
         }
         for (connection, secret, why) in self.failed {
             if new.contains(&(connection.clone(), secret)) {
-                return Err(crate::settings::EditError::Internal(anyhow::anyhow!(
-                    "{connection}: sealing {} failed: {why}",
-                    secret.name
-                )));
+                return Err(crate::settings::EditError::Internal(
+                    anyhow::Error::new(why)
+                        .context(format!("{connection}: sealing {} failed", secret.name)),
+                ));
             }
             crate::diagnostics::warn(
                 "settings",
