@@ -44,7 +44,11 @@ describe('ViewsLayoutComponent', () => {
 
   it('shows what to do without sources instead of a view, and the collection status with either', async () => {
     const backend = new MockBackendTransport()
-    backend.providersResponse = { currentOs: 'macos', providers: [] }
+    backend.providersResponse = {
+      currentOs: 'macos',
+      secretStore: { store: 'os', state: 'ready' },
+      providers: [],
+    }
     const { container } = await setup(backend)
 
     expect(container.querySelector('app-no-sources')).not.toBeNull()

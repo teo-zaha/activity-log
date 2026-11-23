@@ -17,21 +17,26 @@ use std::{
     time::{Duration, Instant},
 };
 
+use crate::model::SecretStoreInfo;
 use anyhow::anyhow;
 use futures::{
     FutureExt,
     future::{BoxFuture, Shared},
 };
 
+mod choice;
 mod key_file;
 #[cfg(any(test, feature = "test-support"))]
 mod memory;
+pub mod opening;
 mod os_store;
 pub mod sealed;
 mod store;
 #[cfg(test)]
 mod tests;
 
+use choice::Decided;
+pub use choice::{Choice, ForcedStore, FrontEnd, OsAnswer, SECRET_STORE_VARIABLE, UnknownStore};
 pub use key_file::{KEY_FILE_VARIABLE, KeyFileAccess, KeyFileStore};
 #[cfg(any(test, feature = "test-support"))]
 pub use memory::{MemoryStore, ReadGate, StoreCall, StoreCalls};
@@ -51,14 +56,29 @@ pub const KEY_WAIT: Duration = Duration::from_secs(120);
 /// The name of the key-creation lock for the OS store's key.
 const OS_KEY_LOCK: &str = "secret-key.lock";
 
+/// What a check waits for while the OS store may show a dialog.
+#[cfg(target_os = "macos")]
+const OS_STORE_WAIT: &str = "Waiting for the keychain";
+#[cfg(target_os = "windows")]
+const OS_STORE_WAIT: &str = "Waiting for Credential Manager";
+#[cfg(not(any(target_os = "macos", target_os = "windows")))]
+const OS_STORE_WAIT: &str = "Waiting for the keyring";
+
+fn lock<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
+    mutex.lock().unwrap_or_else(PoisonError::into_inner)
+}
+
 /// The stores of one process and the keys read from them. Cheap to clone; clones share both.
 #[derive(Clone)]
 pub struct Secrets(Arc<Inner>);
 
 struct Inner {
-    /// `None` only in tests that give no OS store.
+    /// `None` without an OS store: the dev profile, a test.
     os: Option<Arc<Slot>>,
     file: Arc<Slot>,
+    choice: Choice,
+    /// How the OS store last answered (a probe or a read), for what the settings show.
+    os_answer: Mutex<OsAnswer>,
 }
 
 /// One store, its key-creation lock and what was read from it.
@@ -95,57 +115,114 @@ pub struct KeyCreation<'a> {
     creator: &'a dyn KeyCreator,
 }
 
+/// A store for a handle: the store and its key-creation lock.
+pub type StoreSlot = (Arc<dyn SecretStore>, Option<PathBuf>);
+
 impl Secrets {
     /// The desktop app's: the OS store, and the key file read only. With the dev profile, as
     /// for every front end, only the profile's own key file, which it creates.
     #[cfg(not(test))]
     pub fn desktop(config_path: Option<&Path>) -> Self {
-        Self::of_user(config_path, KeyFileAccess::ReadOnly)
+        Self::of_user(FrontEnd::Desktop, config_path, KeyFileAccess::ReadOnly)
     }
 
     /// The CLI's: the OS store, and a key file it may create.
     #[cfg(not(test))]
     pub fn cli(config_path: Option<&Path>) -> Self {
-        Self::of_user(config_path, KeyFileAccess::Create)
+        Self::of_user(FrontEnd::Cli, config_path, KeyFileAccess::Create)
     }
 
     /// The API server's: it never writes the config, so it never creates a key.
     #[cfg(not(test))]
     pub fn api(config_path: Option<&Path>) -> Self {
-        Self::of_user(config_path, KeyFileAccess::ReadOnly)
+        Self::of_user(FrontEnd::Api, config_path, KeyFileAccess::ReadOnly)
     }
 
+    /// The stores the user's programs use. In a build with `test-support` (another crate's
+    /// tests, and the binaries those tests run) there is no OS store at all and the key file is
+    /// only where `ACTIVITY_LOG_SECRET_KEY_FILE` puts it, so no test reaches a real keychain or
+    /// key file.
     #[cfg(not(test))]
-    fn of_user(config_path: Option<&Path>, access: KeyFileAccess) -> Self {
-        let (os, access) = match crate::profile::current() {
-            // The keychain is never asked: a rebuild never prompts, nothing is sealed into it.
-            crate::profile::Profile::Dev => (None, KeyFileAccess::Create),
-            crate::profile::Profile::Installed => (
-                Some((
-                    Arc::new(OsStore::user()) as Arc<dyn SecretStore>,
-                    os_key_lock(config_path),
-                )),
-                access,
-            ),
+    fn of_user(front_end: FrontEnd, config_path: Option<&Path>, access: KeyFileAccess) -> Self {
+        let profile = crate::profile::current();
+        let forced = match front_end {
+            FrontEnd::Desktop => {
+                if std::env::var_os(SECRET_STORE_VARIABLE).is_some() {
+                    crate::diagnostics::warn(
+                        "secrets",
+                        format!(
+                            "{SECRET_STORE_VARIABLE} is ignored: the desktop app keeps the key in the OS store"
+                        ),
+                    );
+                }
+                None
+            }
+            FrontEnd::Cli | FrontEnd::Api => {
+                let value = std::env::var(SECRET_STORE_VARIABLE).ok();
+                ForcedStore::parse(value.as_deref()).unwrap_or_else(|unknown| {
+                    crate::diagnostics::warn("secrets", unknown.to_string());
+                    None
+                })
+            }
         };
-        let file = KeyFileStore::new(KeyFileStore::default_path(), access);
+        let tested = cfg!(feature = "test-support");
+        let os_store = matches!(profile, crate::profile::Profile::Installed) && !tested;
+        let access = match profile {
+            crate::profile::Profile::Dev => KeyFileAccess::Create,
+            crate::profile::Profile::Installed => access,
+        };
+        let os = os_store.then(|| {
+            (
+                Arc::new(OsStore::user()) as Arc<dyn SecretStore>,
+                os_key_lock(config_path),
+            )
+        });
+        let key_file = if tested {
+            crate::platform::dirs::env_path(KEY_FILE_VARIABLE)
+        } else {
+            KeyFileStore::default_path()
+        };
+        let file = KeyFileStore::new(key_file, access);
         let file_lock = file.creation_lock();
-        Self::build(os, (Arc::new(file), file_lock))
+        Self::build(
+            Choice {
+                front_end,
+                profile,
+                forced,
+                has_os_store: os.is_some(),
+            },
+            os,
+            (Arc::new(file), file_lock),
+        )
     }
 
-    /// Any stores, each with its key-creation lock.
+    /// Any stores, each with its key-creation lock, for `front_end` on the installed profile.
     #[cfg(any(test, feature = "test-support"))]
-    pub fn with_stores(
-        os: Option<(Arc<dyn SecretStore>, Option<PathBuf>)>,
-        file: (Arc<dyn SecretStore>, Option<PathBuf>),
-    ) -> Self {
-        Self::build(os, file)
+    pub fn with_stores(front_end: FrontEnd, os: Option<StoreSlot>, file: StoreSlot) -> Self {
+        let choice = Choice {
+            front_end,
+            profile: crate::profile::Profile::Installed,
+            forced: None,
+            has_os_store: os.is_some(),
+        };
+        Self::build(choice, os, file)
     }
 
-    fn build(
-        os: Option<(Arc<dyn SecretStore>, Option<PathBuf>)>,
-        (file, file_lock): (Arc<dyn SecretStore>, Option<PathBuf>),
-    ) -> Self {
+    /// A handle with no store: nothing sealed opens and nothing is sealed, for a host of
+    /// tests.
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn none() -> Self {
+        Self::with_stores(
+            FrontEnd::Api,
+            None,
+            (
+                Arc::new(KeyFileStore::new(None, KeyFileAccess::ReadOnly)),
+                None,
+            ),
+        )
+    }
+
+    fn build(choice: Choice, os: Option<StoreSlot>, (file, file_lock): StoreSlot) -> Self {
         let slot = |store, creation_lock| {
             Arc::new(Slot {
                 store,
@@ -156,7 +233,46 @@ impl Secrets {
         Self(Arc::new(Inner {
             os: os.map(|(store, lock)| slot(store, lock)),
             file: slot(file, file_lock),
+            choice,
+            os_answer: Mutex::new(OsAnswer::NotAsked),
         }))
+    }
+
+    /// Where new secrets are sealed here, as the settings show it, from the OS store's last
+    /// answer.
+    pub fn store_info(&self) -> SecretStoreInfo {
+        self.0.choice.info(*lock(&self.0.os_answer))
+    }
+
+    /// Asks the OS store whether it is there and answering, without a dialog, where the
+    /// answer decides anything, and returns what the settings show then.
+    pub async fn probe(&self) -> SecretStoreInfo {
+        if let (Decided::OsFirst, Some(os)) = (self.0.choice.decided(), &self.0.os) {
+            let answer = os.store.probe().await;
+            self.record_os(answer.as_ref().map(drop));
+        }
+        self.store_info()
+    }
+
+    /// What a connection waits for while its check opens `values`: the OS store, when a value
+    /// sealed with its key is there and the key is not held yet. Words for people only.
+    pub fn waiting_reason(
+        &self,
+        values: &crate::provider::connection::ConnectionValues,
+    ) -> Option<&'static str> {
+        use crate::provider::connection::StoredSecret;
+        let needs_os = values.sealed().any(|(_, secret)| {
+            matches!(secret, StoredSecret::Sealed(value) if value.store() == StoreKind::Os)
+        });
+        (needs_os && self.0.os.is_some() && self.held(StoreKind::Os).is_none())
+            .then_some(OS_STORE_WAIT)
+    }
+
+    fn record_os(&self, answer: Result<(), &StoreError>) {
+        *lock(&self.0.os_answer) = match answer {
+            Ok(()) => OsAnswer::Ready,
+            Err(err) => OsAnswer::Error(err.kind()),
+        };
     }
 
     /// A reader's key in the store of `kind`: the one held, else what one read of the store
@@ -182,7 +298,7 @@ impl Secrets {
                 }
             }
         };
-        match tokio::time::timeout(KEY_WAIT, answer).await {
+        let answer = match tokio::time::timeout(KEY_WAIT, answer).await {
             Ok(Ok(Lookup::Found(key))) => Ok(Some(key)),
             Ok(Ok(Lookup::Absent)) => Ok(None),
             Ok(Err(err)) => Err(err),
@@ -190,7 +306,11 @@ impl Secrets {
                 "The secure store did not answer within {} s",
                 KEY_WAIT.as_secs()
             ))),
+        };
+        if kind == StoreKind::Os {
+            self.record_os(answer.as_ref().map(drop));
         }
+        answer
     }
 
     /// The key of `kind` already held, without asking the store.

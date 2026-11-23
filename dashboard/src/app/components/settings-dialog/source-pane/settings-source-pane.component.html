@@ -39,6 +39,9 @@
         [attr.aria-busy]="savingConfig()"
         (focusout)="checkDraft()"
       >
+        @if (secretStoreLine(); as line) {
+          <app-feedback [tone]="line.tone" block>{{ line.text }}</app-feedback>
+        }
         <fieldset class="config-fields" [disabled]="savingConfig()">
           <legend class="u-sr-only">Provider configuration fields</legend>
           <div class="config-field">
@@ -82,10 +85,9 @@
                   @if (field.required) {
                     <span class="tag">Required</span>
                   }
-                  @if (field.shape === 'single' && field.secret) {
-                    <span class="tag" [attr.data-tone]="isSecretFieldSet(field) ? 'ok' : null">
-                      {{ isSecretFieldSet(field) ? 'Set' : 'Not set' }}
-                    </span>
+                  @if (field.shape === 'secret') {
+                    @let tag = storedTag(field);
+                    <span class="tag" [attr.data-tone]="tag.tone">{{ tag.text }}</span>
                   }
                 </span>
               </div>

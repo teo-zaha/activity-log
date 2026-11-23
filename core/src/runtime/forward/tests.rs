@@ -15,6 +15,9 @@ fn providers() -> ProvidersResponse {
     ProvidersResponse {
         current_os: SupportedOs::Linux,
         providers: Vec::new(),
+        secret_store: crate::model::SecretStoreInfo::Os {
+            state: crate::model::OsStoreState::Ready,
+        },
     }
 }
 

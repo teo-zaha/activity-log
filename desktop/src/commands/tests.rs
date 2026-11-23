@@ -36,7 +36,10 @@ async fn settings_commands_that_arrive_together_both_apply() {
         .ok()
         .unwrap()
         .map(|c| c.id);
-    let state = AppState::start(Some(path.clone()));
+    let state = AppState::start(
+        Some(path.clone()),
+        activity_log_core::secrets::Secrets::none(),
+    );
     let (first_loaded, first_has_loaded) = mpsc::channel();
     let (second_loaded, second_has_loaded) = mpsc::channel();
 
@@ -83,7 +86,10 @@ async fn settings_commands_that_arrive_together_both_apply() {
 async fn a_save_over_a_file_that_does_not_parse_is_a_bad_config() {
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("config.toml");
-    let state = AppState::start(Some(path.clone()));
+    let state = AppState::start(
+        Some(path.clone()),
+        activity_log_core::secrets::Secrets::none(),
+    );
     // Broken after the app read it, as another program could.
     std::fs::write(&path, "[[git]\n").unwrap();
 
@@ -179,7 +185,7 @@ fn commands_refuse_with_the_kinds_the_api_answers() {
     let range = |start: &str, end: &str| serde_json::json!({ "start": start, "end": end });
     assert_eq!(
         refusal(
-            AppState::start(None),
+            AppState::start(None, activity_log_core::secrets::Secrets::none()),
             "collect",
             range("2026-03-01", "2026-03-05")
         )
@@ -188,7 +194,7 @@ fn commands_refuse_with_the_kinds_the_api_answers() {
     );
     assert_eq!(
         refusal(
-            AppState::start(None),
+            AppState::start(None, activity_log_core::secrets::Secrets::none()),
             "collect",
             range("1000-01-01T00:00:00Z", "9999-12-31T00:00:00Z")
         )
@@ -197,7 +203,7 @@ fn commands_refuse_with_the_kinds_the_api_answers() {
     );
     assert_eq!(
         refusal(
-            AppState::start(None),
+            AppState::start(None, activity_log_core::secrets::Secrets::none()),
             "recheck_connection",
             serde_json::json!({ "source": "calendar", "name": "other" })
         )
@@ -206,7 +212,7 @@ fn commands_refuse_with_the_kinds_the_api_answers() {
     );
     assert_eq!(
         refusal(
-            AppState::start(None),
+            AppState::start(None, activity_log_core::secrets::Secrets::none()),
             "save_export",
             serde_json::json!({
                 "format": "json",
@@ -220,7 +226,7 @@ fn commands_refuse_with_the_kinds_the_api_answers() {
         BackendErrorKind::InvalidRequest
     );
 
-    let quitting = AppState::start(None);
+    let quitting = AppState::start(None, activity_log_core::secrets::Secrets::none());
     quitting.host.shutdown();
     assert_eq!(
         refusal(
@@ -235,7 +241,7 @@ fn commands_refuse_with_the_kinds_the_api_answers() {
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("config.toml");
     std::fs::write(&path, "[[calendar]]\nlabel = \"Team\"\n").unwrap();
-    let shut_down = AppState::start(Some(path));
+    let shut_down = AppState::start(Some(path), activity_log_core::secrets::Secrets::none());
     shut_down.host.shutdown();
     assert_eq!(
         refusal(
@@ -256,9 +262,21 @@ fn tauri_refuses_a_call_it_cannot_decode_with_a_string() {
     let request = serde_json::json!({
         "request": { "start": "2026-03-01T00:00:00Z", "end": "2026-03-06T00:00:00Z" }
     });
-    assert!(invoke(AppState::start(None), "collect", request).is_ok());
+    assert!(
+        invoke(
+            AppState::start(None, activity_log_core::secrets::Secrets::none()),
+            "collect",
+            request
+        )
+        .is_ok()
+    );
 
-    let rejected = invoke(AppState::start(None), "collect", serde_json::json!({})).unwrap_err();
+    let rejected = invoke(
+        AppState::start(None, activity_log_core::secrets::Secrets::none()),
+        "collect",
+        serde_json::json!({}),
+    )
+    .unwrap_err();
 
     assert!(rejected.is_string(), "{rejected}");
     assert!(serde_json::from_value::<BackendError>(rejected).is_err());
@@ -267,7 +285,7 @@ fn tauri_refuses_a_call_it_cannot_decode_with_a_string() {
 /// Without a settings location a save fails as such, and nothing is written.
 #[tokio::test]
 async fn a_save_without_a_settings_location_writes_nothing() {
-    let state = AppState::start(None);
+    let state = AppState::start(None, activity_log_core::secrets::Secrets::none());
 
     let refused = update_config(&state, Precondition::None, |file| {
         file.rename(&"gitlab/work".parse().unwrap(), "Work")
@@ -284,7 +302,10 @@ async fn a_busy_settings_file_is_reported_and_left_alone() {
     std::fs::write(&path, "[[git]]\n").unwrap();
     let held = std::fs::File::create(dir.path().join("config.toml.lock")).unwrap();
     held.lock().unwrap();
-    let state = AppState::start(Some(path.clone()));
+    let state = AppState::start(
+        Some(path.clone()),
+        activity_log_core::secrets::Secrets::none(),
+    );
 
     let refused = update_config(&state, Precondition::None, |file| {
         file.rename(&"git/this-computer".parse().unwrap(), "Laptop")
@@ -302,7 +323,7 @@ async fn config_problems_after_an_edit_reach_the_logs() {
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("config.toml");
     std::fs::write(&path, "[[gitlab]]\nlabel = \"Edited\"\nurll = \"x\"\n").unwrap();
-    let state = AppState::start(Some(path));
+    let state = AppState::start(Some(path), activity_log_core::secrets::Secrets::none());
 
     let (_, saved) = update_config(&state, Precondition::None, |file| {
         file.rename(&"gitlab/edited".parse().unwrap(), "Edited")
@@ -364,7 +385,10 @@ async fn an_unprotectable_location_is_reported_with_the_agreed_text() {
     let shared = dir.path().join("shared");
     std::fs::create_dir(&shared).unwrap();
     std::fs::set_permissions(&shared, std::fs::Permissions::from_mode(0o1777)).unwrap();
-    let state = AppState::start(Some(shared.join("config.toml")));
+    let state = AppState::start(
+        Some(shared.join("config.toml")),
+        activity_log_core::secrets::Secrets::none(),
+    );
 
     let refused = update_config(&state, Precondition::None, |file| {
         file.add(
@@ -392,7 +416,7 @@ async fn an_unprotectable_location_is_reported_with_the_agreed_text() {
 async fn a_save_answers_with_the_added_connection_checking() {
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("config.toml");
-    let state = AppState::start(Some(path));
+    let state = AppState::start(Some(path), activity_log_core::secrets::Secrets::none());
 
     for label in ["Team", "Home", "Club"] {
         let (created, saved) = update_config(&state, Precondition::None, move |file| {
@@ -422,7 +446,7 @@ async fn a_save_answers_with_the_added_connection_checking() {
 /// once parsed.
 #[test]
 fn the_runtime_state_read_is_the_state_event_of_the_same_value() {
-    let state = AppState::start(None);
+    let state = AppState::start(None, activity_log_core::secrets::Secrets::none());
     let published = state.host.subscribe().borrow().clone();
     let event = activity_log_core::runtime::RuntimeMessage::pair(&published);
 
@@ -469,7 +493,10 @@ fn settings_at(text: &str) -> (tempfile::TempDir, std::path::PathBuf, AppState) 
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("config.toml");
     std::fs::write(&path, text).unwrap();
-    let state = AppState::start(Some(path.clone()));
+    let state = AppState::start(
+        Some(path.clone()),
+        activity_log_core::secrets::Secrets::none(),
+    );
     (dir, path, state)
 }
 

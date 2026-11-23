@@ -100,7 +100,10 @@ pub fn run() {
             // The startup checks can take seconds (WSL starting, a large disk, a slow host), so
             // they run in the background: until its own check finishes a source is listed as
             // checking, and the first collection reads each source as soon as it is checked.
-            let (state, run_ends) = AppState::start_following(ConfigFile::resolve_path(None));
+            let path = ConfigFile::resolve_path(None);
+            // The one place the app builds its stores of the key.
+            let secrets = activity_log_core::secrets::Secrets::desktop(path.as_deref());
+            let (state, run_ends) = AppState::start_following(path, secrets);
             state.host.start_initial_collection();
             // Edits from the CLI apply within a few seconds.
             tauri::async_runtime::spawn(state.host.watch_config());

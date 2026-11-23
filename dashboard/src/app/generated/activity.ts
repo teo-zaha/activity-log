@@ -8,7 +8,7 @@ export type SupportedOs = "windows" | "macos" | "linux";
 
 export type ProviderStatus = "checking" | "available" | "unavailable" | "degraded";
 
-export type ProviderProblem = "timedOut" | "unsupported" | "notConfigured" | "refused" | "unreachable" | "notInstalled" | "notRunning" | "permissionDenied" | "noData" | "failed" | "collectionFailed";
+export type ProviderProblem = "timedOut" | "unsupported" | "notConfigured" | "refused" | "unreachable" | "notInstalled" | "notRunning" | "permissionDenied" | "noData" | "failed" | "collectionFailed" | "secretUnavailable";
 
 export type ProviderInfo = { connection: ConnectionId, label: string, 
 /**
@@ -24,25 +24,33 @@ problem?: ProviderProblem,
  */
 recheckable: boolean, checkedAt: string, };
 
-export type ProvidersResponse = { currentOs: SupportedOs, providers: Array<ProviderInfo>, };
+export type OsStoreState = "ready" | "refused";
+
+export type KeyFileReason = "noOsStore" | "forced" | "devProfile";
+
+export type NoStoreReason = "noOsStore";
+
+export type SecretStoreInfo = { "store": "os", state: OsStoreState, } | { "store": "file", why: KeyFileReason, } | { "store": "unavailable", why: NoStoreReason, };
+
+export type ProvidersResponse = { currentOs: SupportedOs, providers: Array<ProviderInfo>, 
+/**
+ * Where new secrets are sealed here.
+ */
+secretStore: SecretStoreInfo, };
 
 export type ProviderConfigValueTypeDto = "string" | "bool" | "int" | "password" | "email" | "url";
 
-export type ProviderConfigFieldValueDto = { "shape": "single", valueType: ProviderConfigValueTypeDto, 
-/**
- * Secrets are write-only: `value` is never sent for them.
- */
-secret: boolean, value?: string, } | { "shape": "list", itemType: ProviderConfigValueTypeDto, 
+export type SecretStoreKindDto = "os" | "file";
+
+export type SecretStoredDto = { "kind": "sealed", store: SecretStoreKindDto, } | { "kind": "sealedForOtherServer", store: SecretStoreKindDto, } | { "kind": "sealedWithOtherKey", store: SecretStoreKindDto, } | { "kind": "savedByNewerVersion" } | { "kind": "unreadable" } | { "kind": "plainText" };
+
+export type ProviderConfigFieldValueDto = { "shape": "single", valueType: ProviderConfigValueTypeDto, value?: string, } | { "shape": "secret", valueType: ProviderConfigValueTypeDto, stored: SecretStoredDto | null, } | { "shape": "list", itemType: ProviderConfigValueTypeDto, 
 /**
  * The configured items, or the default the provider uses while the key is unset.
  */
 items: Array<string>, };
 
-export type ProviderConfigFieldStateDto = { key: string, label: string, required: boolean, isSet: boolean, } & ({ "shape": "single", valueType: ProviderConfigValueTypeDto, 
-/**
- * Secrets are write-only: `value` is never sent for them.
- */
-secret: boolean, value?: string, } | { "shape": "list", itemType: ProviderConfigValueTypeDto, 
+export type ProviderConfigFieldStateDto = { key: string, label: string, required: boolean, isSet: boolean, } & ({ "shape": "single", valueType: ProviderConfigValueTypeDto, value?: string, } | { "shape": "secret", valueType: ProviderConfigValueTypeDto, stored: SecretStoredDto | null, } | { "shape": "list", itemType: ProviderConfigValueTypeDto, 
 /**
  * The configured items, or the default the provider uses while the key is unset.
  */
@@ -411,7 +419,11 @@ export type ShownActivity = { "kind": "running" } & ActivityLog | { "kind": "rea
 
 export type CollectAnswer = { stamp: PartStamp, } & ({ "kind": "running" } & ActivityLog | { "kind": "ready" } & ActivityLog | { "kind": "failed" } & CollectionFailedResponse);
 
-export type RecheckAnswer = { stamp: PartStamp, currentOs: SupportedOs, providers: Array<ProviderInfo>, };
+export type RecheckAnswer = { stamp: PartStamp, currentOs: SupportedOs, providers: Array<ProviderInfo>, 
+/**
+ * Where new secrets are sealed here.
+ */
+secretStore: SecretStoreInfo, };
 
 export type MaximizeButtonState = { hovered: boolean, pressed: boolean, };
 

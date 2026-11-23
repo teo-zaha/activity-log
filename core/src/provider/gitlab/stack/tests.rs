@@ -796,7 +796,12 @@ async fn runtime(server: &TestServer, name: &str) -> ProviderRuntime {
             .into(),
         ),
     );
-    let runtime = ProviderRuntime::inspect(Arc::new(GitLabProvider), &connection).await;
+    let runtime = ProviderRuntime::inspect(
+        Arc::new(GitLabProvider),
+        &connection,
+        &crate::secrets::Secrets::none(),
+    )
+    .await;
     assert!(runtime.usable(), "{:?}", runtime.info().reason);
     runtime
 }

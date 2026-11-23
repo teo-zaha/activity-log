@@ -7,13 +7,17 @@ use crate::{
     model::{ConnectionId, Source},
     provider::{
         adapter as adapter_of,
-        connection::{Connection, ConnectionLocation, ConnectionValues, Instances, slug},
+        connection::{
+            Connection, ConnectionLocation, ConnectionValues, Instances, StoredSecret, StoredValue,
+            slug,
+        },
         git::{LOCAL_LABEL, wsl_label},
         provider_adapter::ProviderAdapter,
-        provider_config::encode_config_list,
+        provider_config::{ProviderConfigKey, encode_config_list},
         provider_registry,
     },
-    settings::{INSTANCE, LABEL, NAME, WSL, field_name},
+    secrets::sealed::SealedValue,
+    settings::{INSTANCE, LABEL, NAME, SEALED, WSL, field_name},
 };
 
 impl ConfigFile {
@@ -204,18 +208,59 @@ pub(super) fn entry_values(
             warnings.push(format!("{}: unknown setting `{field}`", entry.id));
             continue;
         };
-        match raw_value(item) {
-            Some(raw) => {
-                let raw = (!raw.is_empty()).then_some(raw);
-                values.insert(key.name.to_string(), raw);
+        match stored_value(*key, item) {
+            Ok(value) => {
+                values.insert(key.name.to_string(), value);
             }
-            None => warnings.push(format!(
+            Err(Unread::NotAValue) => warnings.push(format!(
                 "{}: `{field}` must be text, a number, true/false or a list of text",
+                entry.id
+            )),
+            Err(Unread::SealedNotSecret) => warnings.push(format!(
+                "{}: `{field}` is no secret, so it cannot be sealed; it is skipped",
+                entry.id
+            )),
+            Err(Unread::OtherTable) => warnings.push(format!(
+                "{}: `{field}` must be text or `{{ sealed = \"…\" }}`; it is skipped",
                 entry.id
             )),
         }
     }
-    ConnectionValues::new(values)
+    ConnectionValues::stored(values)
+}
+
+/// Why a field was not read.
+enum Unread {
+    NotAValue,
+    /// `{ sealed = "…" }` on a field that holds no secret.
+    SealedNotSecret,
+    /// A table of another shape than `{ sealed = "…" }`.
+    OtherTable,
+}
+
+/// A field as the file holds it: a secret may be `{ sealed = "…" }`, a table with exactly
+/// that key and text (nothing sniffs a string for a prefix: a string is always text); an empty
+/// text is unset.
+fn stored_value(key: ProviderConfigKey, item: &Item) -> Result<Option<StoredValue>, Unread> {
+    if let Some(table) = item.as_table_like() {
+        let sealed = match (table.len(), table.get(SEALED).and_then(Item::as_str)) {
+            (1, Some(text)) => text,
+            _ => return Err(Unread::OtherTable),
+        };
+        if !key.is_secret() {
+            return Err(Unread::SealedNotSecret);
+        }
+        let secret = match SealedValue::parse(sealed) {
+            Ok(value) => StoredSecret::Sealed(value),
+            Err(malformed) => StoredSecret::Unreadable {
+                text: sealed.to_string(),
+                malformed,
+            },
+        };
+        return Ok(Some(StoredValue::Sealed(secret)));
+    }
+    let raw = raw_value(item).ok_or(Unread::NotAValue)?;
+    Ok((!raw.is_empty()).then_some(StoredValue::Text(raw)))
 }
 
 /// A field as the config machinery reads it: lists as their JSON form.

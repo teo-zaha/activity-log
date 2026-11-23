@@ -50,6 +50,19 @@ impl ProviderContext {
         }
     }
 
+    /// The context of one connection whose values are read from `source`: its values with
+    /// its sealed secrets opened.
+    pub fn for_connection_with(
+        connection: &Connection,
+        source: &dyn ConfigSource,
+        requirements: &[ProviderConfigKey],
+    ) -> Self {
+        Self {
+            connection: Some(connection.clone()),
+            ..Self::resolve(source, requirements)
+        }
+    }
+
     pub fn connection(&self) -> Option<&Connection> {
         self.connection.as_ref()
     }

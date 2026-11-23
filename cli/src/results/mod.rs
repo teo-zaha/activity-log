@@ -47,6 +47,7 @@ pub(crate) fn problem_terms(problem: ProviderProblem) -> (&'static str, Effect) 
         ProviderProblem::NotConfigured => ("not configured", Effect::Fails),
         ProviderProblem::Failed => ("check failed", Effect::Fails),
         ProviderProblem::CollectionFailed => ("collection failed", Effect::Fails),
+        ProviderProblem::SecretUnavailable => ("no key from the secure store", Effect::Fails),
         ProviderProblem::Unsupported => ("not supported on this OS", Effect::Skips),
         ProviderProblem::NotInstalled => ("not installed", Effect::Skips),
         ProviderProblem::NotRunning => ("not running", Effect::Skips),

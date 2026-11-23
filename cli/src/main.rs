@@ -11,6 +11,7 @@ use activity_log_core::{
     export::render_export,
     model::{CollectOptions, ConnectionId, OutputFormat, Source},
     provider::{connection::ConnectionLocation, inspect_provider_runtimes_with},
+    secrets::Secrets,
     settings::{
         ConfigEditError, ConfigFile, EditError, Editor, ExternalEdit, FieldId, NO_LOCATION,
         Precondition, edit_config, edit_externally, load_connections,
@@ -220,7 +221,8 @@ async fn list_sources(config: Option<&Path>) -> Result<()> {
     if let Some(path) = ConfigFile::resolve_path(config) {
         status.say(&format!("{}\n", path.display()))?;
     }
-    let runtimes = inspect_provider_runtimes_with(&load_connections(config)?).await;
+    let secrets = Secrets::cli(ConfigFile::resolve_path(config).as_deref());
+    let runtimes = inspect_provider_runtimes_with(&load_connections(config)?, &secrets).await;
     let providers = runtimes
         .iter()
         .map(|runtime| runtime.info().clone())
@@ -377,7 +379,8 @@ async fn collect(args: &CollectArgs, config: Option<&Path>) -> Result<ExitCode> 
         options.end.with_timezone(&Local)
     ))?;
 
-    let runtimes = inspect_provider_runtimes_with(&connections).await;
+    let secrets = Secrets::cli(ConfigFile::resolve_path(config).as_deref());
+    let runtimes = inspect_provider_runtimes_with(&connections, &secrets).await;
     let providers = runtimes
         .iter()
         .map(|runtime| runtime.info().clone())

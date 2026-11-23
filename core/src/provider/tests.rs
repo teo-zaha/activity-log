@@ -33,7 +33,7 @@ use crate::{
         },
         provider_context::ProviderContext,
         provider_registry,
-        provider_runtime::{ProviderRuntime, with_startup_timeout},
+        provider_runtime::{ProviderRuntime, start_check_with, with_startup_timeout},
     },
 };
 use strum::IntoEnumIterator;
@@ -166,6 +166,7 @@ async fn missing_required_config_skips_startup_check() {
             calls: Arc::clone(&calls),
         }),
         &test_connection(TestConfigSource::default()),
+        &crate::secrets::Secrets::none(),
     )
     .await;
 
@@ -194,6 +195,7 @@ async fn unsupported_os_is_derived_from_provider_metadata() {
             calls: Arc::clone(&calls),
         }),
         &test_connection(TestConfigSource::default()),
+        &crate::secrets::Secrets::none(),
     )
     .await;
 
@@ -223,6 +225,7 @@ async fn startup_check_runs_with_resolved_config() {
             calls: Arc::clone(&calls),
         }),
         &test_connection(config),
+        &crate::secrets::Secrets::none(),
     )
     .await;
 
@@ -252,6 +255,7 @@ async fn invalid_typed_config_skips_startup_check() {
             calls: Arc::clone(&calls),
         }),
         &test_connection(config),
+        &crate::secrets::Secrets::none(),
     )
     .await;
 
@@ -284,6 +288,7 @@ async fn strict_bool_config_rejects_non_true_false_values() {
             calls: Arc::clone(&calls),
         }),
         &test_connection(config),
+        &crate::secrets::Secrets::none(),
     )
     .await;
 
@@ -377,6 +382,7 @@ async fn typed_config_is_available_in_startup_check() {
             calls: Arc::clone(&calls),
         }),
         &test_connection(config),
+        &crate::secrets::Secrets::none(),
     )
     .await;
 
@@ -528,7 +534,12 @@ async fn git_provider_is_unavailable_when_no_repositories_are_found() {
         empty_root.path().display().to_string(),
     );
 
-    let runtime = ProviderRuntime::inspect(Arc::new(GitProvider), &test_connection(config)).await;
+    let runtime = ProviderRuntime::inspect(
+        Arc::new(GitProvider),
+        &test_connection(config),
+        &crate::secrets::Secrets::none(),
+    )
+    .await;
 
     assert!(!runtime.info().usable);
     assert_eq!(runtime.info().problem, Some(ProviderProblem::NoData));
@@ -547,7 +558,12 @@ async fn git_wsl_connection_off_windows_is_unsupported() {
         ConnectionValues::default(),
     );
 
-    let runtime = ProviderRuntime::inspect(Arc::new(GitProvider), &connection).await;
+    let runtime = ProviderRuntime::inspect(
+        Arc::new(GitProvider),
+        &connection,
+        &crate::secrets::Secrets::none(),
+    )
+    .await;
 
     assert!(!runtime.info().usable);
     assert_eq!(runtime.info().problem, Some(ProviderProblem::Unsupported));
@@ -568,7 +584,12 @@ async fn git_provider_names_a_folder_it_may_not_read() {
         .values
         .insert("GIT_DIRS".to_string(), closed.display().to_string());
 
-    let runtime = ProviderRuntime::inspect(Arc::new(GitProvider), &test_connection(config)).await;
+    let runtime = ProviderRuntime::inspect(
+        Arc::new(GitProvider),
+        &test_connection(config),
+        &crate::secrets::Secrets::none(),
+    )
+    .await;
     std::fs::set_permissions(&closed, std::fs::Permissions::from_mode(0o700)).unwrap();
 
     assert_eq!(
@@ -585,7 +606,12 @@ async fn git_provider_is_available_when_a_repository_can_be_opened() {
         .values
         .insert("GIT_DIRS".to_string(), repo.path().display().to_string());
 
-    let runtime = ProviderRuntime::inspect(Arc::new(GitProvider), &test_connection(config)).await;
+    let runtime = ProviderRuntime::inspect(
+        Arc::new(GitProvider),
+        &test_connection(config),
+        &crate::secrets::Secrets::none(),
+    )
+    .await;
 
     assert!(runtime.info().usable);
 }
@@ -601,7 +627,12 @@ async fn git_provider_is_unavailable_when_discovered_repositories_are_invalid() 
         invalid_root.path().display().to_string(),
     );
 
-    let runtime = ProviderRuntime::inspect(Arc::new(GitProvider), &test_connection(config)).await;
+    let runtime = ProviderRuntime::inspect(
+        Arc::new(GitProvider),
+        &test_connection(config),
+        &crate::secrets::Secrets::none(),
+    )
+    .await;
 
     assert!(!runtime.info().usable);
     assert!(
@@ -676,7 +707,12 @@ async fn git_provider_accepts_quoted_paths_from_windows_copy_as_path() {
         format!("\"{}\"", repo.path().display()),
     );
 
-    let runtime = ProviderRuntime::inspect(Arc::new(GitProvider), &test_connection(config)).await;
+    let runtime = ProviderRuntime::inspect(
+        Arc::new(GitProvider),
+        &test_connection(config),
+        &crate::secrets::Secrets::none(),
+    )
+    .await;
 
     assert!(runtime.info().usable, "{:?}", runtime.info().reason);
 }
@@ -879,7 +915,12 @@ async fn cached_runtime(
         identity,
         fetches: fetches.clone(),
     };
-    let runtime = ProviderRuntime::inspect(Arc::new(adapter), &connection).await;
+    let runtime = ProviderRuntime::inspect(
+        Arc::new(adapter),
+        &connection,
+        &crate::secrets::Secrets::none(),
+    )
+    .await;
     assert!(runtime.usable());
     (runtime, fetches)
 }
@@ -1442,8 +1483,12 @@ fn no_declared_secret_reaches_a_fingerprint_the_snapshot_or_debug() {
             ConnectionLocation::default(),
             first,
         );
-        let snapshot =
-            crate::settings::view::build_snapshot(&[connection], &current_os(), "r1".to_string());
+        let snapshot = crate::settings::view::build_snapshot(
+            &[connection],
+            &current_os(),
+            "r1".to_string(),
+            &crate::secrets::Secrets::none(),
+        );
         let json = serde_json::to_string(&snapshot).unwrap();
         assert!(json.contains("\"connection\""), "{json}");
         assert!(!json.contains("first-secret"), "{json}");
@@ -1472,4 +1517,138 @@ fn binding_keys_are_the_server_addresses_and_jiras_tls_setting() {
         binding.extend(binds);
     }
     assert_eq!(binding, ["GITLAB_URL", "JIRA_URL", "JIRA_INSECURE"]);
+}
+
+/// GitLab whose check passes only with the token it was meant to get, for the opening tests.
+struct OpenedTokenCheck;
+
+impl ProviderAdapter for OpenedTokenCheck {
+    fn id(&self) -> Source {
+        Source::Gitlab
+    }
+
+    fn description(&self) -> &'static str {
+        "GitLab for tests"
+    }
+
+    fn supported_os(&self) -> &'static [SupportedOs] {
+        &[SupportedOs::Windows, SupportedOs::Macos, SupportedOs::Linux]
+    }
+
+    fn config_binding(&self) -> Option<ConfigBinding> {
+        Some(crate::provider::gitlab::GitLabConfig::binding())
+    }
+
+    fn startup_check(&self, context: ProviderContext) -> BoxFuture<'_, ProviderCheckResult> {
+        let token = context
+            .config::<crate::provider::gitlab::GitLabConfig>()
+            .map(|config| config.token.clone());
+        Box::pin(async move {
+            match token {
+                Ok(token) if token == "glpat-test-0000" => ProviderCheckResult::available(),
+                _ => ProviderCheckResult::unavailable_as(ProviderProblem::Failed, "wrong token"),
+            }
+        })
+    }
+
+    fn collect(
+        &self,
+        _options: CollectOptions,
+        _context: ProviderContext,
+    ) -> BoxFuture<'_, anyhow::Result<Vec<ActivityEntry>>> {
+        Box::pin(async { Ok(Vec::new()) })
+    }
+}
+
+/// A GitLab connection whose token is sealed with `key` for its URL.
+fn sealed_gitlab(key: &crate::secrets::DataKey) -> Connection {
+    use crate::provider::connection::{StoredSecret, StoredValue};
+    use crate::secrets::{StoreKind, sealed};
+    let mut values = std::collections::BTreeMap::new();
+    for (name, value) in [
+        ("GITLAB_URL", "https://gitlab.example.test"),
+        ("GITLAB_USER", "jane"),
+    ] {
+        values.insert(name.to_string(), Some(StoredValue::Text(value.to_string())));
+    }
+    let binding =
+        sealed::Binding::of(&Source::Gitlab, &ConnectionValues::stored(values.clone())).unwrap();
+    let token = sealed::seal(
+        key,
+        StoreKind::Os,
+        crate::provider::gitlab::GITLAB_TOKEN,
+        &binding,
+        "glpat-test-0000",
+    )
+    .unwrap();
+    values.insert(
+        "GITLAB_TOKEN".to_string(),
+        Some(StoredValue::Sealed(StoredSecret::Sealed(token))),
+    );
+    Connection::new(
+        "gitlab/work".parse().unwrap(),
+        "Work",
+        ConnectionLocation::Local,
+        ConnectionValues::stored(values),
+    )
+}
+
+/// The token is opened before the check's own timeout starts: a keychain dialog the user takes
+/// half a minute over is no slow server. Meanwhile the connection says what it waits for, and
+/// the check gets the opened token.
+#[tokio::test(start_paused = true)]
+async fn a_sealed_token_is_opened_before_the_check_timeout_starts() {
+    use crate::secrets::{
+        DataKey, FrontEnd, KEY_LEN, MemoryStore, SecretStore, Secrets, StoreKind,
+    };
+    let key = DataKey::from_slice(&[1; KEY_LEN]).unwrap();
+    let os = Arc::new(MemoryStore::holding(StoreKind::Os, key.clone()));
+    let gate = os.hold_reads();
+    let file: Arc<dyn SecretStore> = Arc::new(MemoryStore::new(StoreKind::File));
+    let secrets = Secrets::with_stores(
+        FrontEnd::Desktop,
+        Some((os.clone() as Arc<dyn SecretStore>, None)),
+        (file, None),
+    );
+    let connection = sealed_gitlab(&key);
+
+    let (checking, check) = start_check_with(Arc::new(OpenedTokenCheck), &connection, &secrets);
+    assert_eq!(checking.status, crate::model::ProviderStatus::Checking);
+    assert!(checking.reason.is_some(), "it says it waits for the store");
+    let check = tokio::spawn(check);
+    tokio::time::sleep(std::time::Duration::from_secs(30)).await;
+    gate.release();
+    let runtime = check.await.unwrap();
+    assert!(runtime.usable(), "{:?}", runtime.info());
+
+    // Once the key is held, a check waits for nothing.
+    let (checking, _) = start_check_with(Arc::new(OpenedTokenCheck), &connection, &secrets);
+    assert_eq!(checking.reason, None);
+}
+
+/// A token whose store gave no key leaves the connection `secretUnavailable`, which can be
+/// checked again, without running its check.
+#[tokio::test]
+async fn a_token_without_its_key_is_secret_unavailable() {
+    use crate::secrets::{
+        DataKey, FrontEnd, KEY_LEN, MemoryStore, SecretStore, Secrets, StoreCall, StoreErrorKind,
+        StoreKind,
+    };
+    let key = DataKey::from_slice(&[1; KEY_LEN]).unwrap();
+    let os = Arc::new(MemoryStore::holding(StoreKind::Os, key.clone()));
+    os.fail_next(StoreCall::Read, StoreErrorKind::Refused);
+    let file: Arc<dyn SecretStore> = Arc::new(MemoryStore::new(StoreKind::File));
+    let secrets = Secrets::with_stores(
+        FrontEnd::Desktop,
+        Some((os.clone() as Arc<dyn SecretStore>, None)),
+        (file, None),
+    );
+    let runtime =
+        ProviderRuntime::inspect(Arc::new(OpenedTokenCheck), &sealed_gitlab(&key), &secrets).await;
+    assert_eq!(
+        runtime.info().problem,
+        Some(ProviderProblem::SecretUnavailable)
+    );
+    assert!(runtime.info().recheckable);
+    assert!(!runtime.usable());
 }

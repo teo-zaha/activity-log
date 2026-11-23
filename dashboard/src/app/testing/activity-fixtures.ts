@@ -69,6 +69,7 @@ export const gitlabProvider: ProviderInfo = {
 export const providersResponse: ProvidersResponse = {
   currentOs: 'linux',
   providers: providerInfo,
+  secretStore: { store: 'os', state: 'ready' },
 }
 
 export const activityLog: ActivityLog = {

@@ -16,5 +16,8 @@ serde_json.workspace = true
 tokio.workspace = true
 
 [dev-dependencies]
+# `test-support`: a `Secrets` over stores in memory, and no OS store in any `Secrets` the
+# tests or the binaries they run build (feature unification), so no test reaches a keychain.
+activity-log-core = { package = "core", path = "../core", features = ["test-support"] }
 tempfile = "3.27"
 tokio = { workspace = true, features = ["test-util"] }

@@ -7,10 +7,11 @@ use crate::{
         AddConnectionRequestDto, BackendError, ConnectionId, ProviderConfigConnectionStateDto,
         ProviderConfigFieldIssueDto, ProviderConfigFieldRefDto, ProviderConfigFieldStateDto,
         ProviderConfigFieldValueDto, ProviderConfigIssueKindDto, ProviderConfigSaveRequestDto,
-        ProviderConfigSnapshotDto, ProviderConfigValueDto, ProviderKindDto, Source, SupportedOs,
+        ProviderConfigSnapshotDto, ProviderConfigValueDto, ProviderKindDto, SecretStoreKindDto,
+        SecretStoredDto, Source, SupportedOs,
     },
     provider::{
-        connection::{Connection, ConnectionLocation, Instances},
+        connection::{Connection, ConnectionLocation, Instances, StoredSecret, StoredValue},
         git::{GIT_DIRS, WSL_HOME, default_git_root},
         provider_config::{
             ConfigSource, ProviderConfigKey, ProviderConfigShape, ProviderConfigValueType,
@@ -18,6 +19,10 @@ use crate::{
             value_problem,
         },
         provider_registry,
+    },
+    secrets::{
+        Secrets, StoreKind,
+        sealed::{Binding, KeyId, Malformed},
     },
     settings::{
         ConfigEditError, ConfigFile, Conflict, ConflictKind, EditBase, FieldId, Precondition,
@@ -270,10 +275,13 @@ pub fn apply_add(
 
 /// Every kind, and `connections` with their fields as the settings show them, named by
 /// `revision` (the writer's registry entry for the file they were read from).
+/// `secrets` tells a secret sealed with another key than the one it holds; it is never asked
+/// for a key.
 pub fn build_snapshot(
     connections: &[Connection],
     current_os: &SupportedOs,
     revision: String,
+    secrets: &Secrets,
 ) -> ProviderConfigSnapshotDto {
     let registry = provider_registry();
     let kinds = registry
@@ -308,8 +316,8 @@ pub fn build_snapshot(
                         key: key.name.to_string(),
                         label: key.label.to_string(),
                         required: key.required,
-                        is_set: connection.values().get(key.name).is_some(),
-                        value: field_value(connection, *key),
+                        is_set: connection.values().get_stored(key.name).is_some(),
+                        value: field_value(connection, *key, secrets),
                     })
                     .collect(),
             })
@@ -371,21 +379,28 @@ fn wsl_distros(source: &Source, current_os: &SupportedOs) -> Vec<String> {
 }
 
 /// The configured value with its type. An unset list shows the default the provider falls back
-/// to, so the settings show what is actually used; a secret is never sent.
-fn field_value(connection: &Connection, key: ProviderConfigKey) -> ProviderConfigFieldValueDto {
+/// to, so the settings show what is actually used; a secret is never sent, only how it is
+/// stored.
+fn field_value(
+    connection: &Connection,
+    key: ProviderConfigKey,
+    secrets: &Secrets,
+) -> ProviderConfigFieldValueDto {
     let configured = connection
         .values()
         .get(key.name)
         .filter(|raw| !raw.trim().is_empty());
     match key.shape {
-        ProviderConfigShape::Single(value_type) => {
-            let secret = key.is_secret();
-            ProviderConfigFieldValueDto::Single {
+        ProviderConfigShape::Single(value_type) if key.is_secret() => {
+            ProviderConfigFieldValueDto::Secret {
                 value_type: value_type.into(),
-                secret,
-                value: configured.filter(|_| !secret),
+                stored: stored_secret(connection, key, secrets),
             }
         }
+        ProviderConfigShape::Single(value_type) => ProviderConfigFieldValueDto::Single {
+            value_type: value_type.into(),
+            value: configured,
+        },
         ProviderConfigShape::List(item_type) => ProviderConfigFieldValueDto::List {
             item_type: item_type.into(),
             items: match configured {
@@ -394,6 +409,45 @@ fn field_value(connection: &Connection, key: ProviderConfigKey) -> ProviderConfi
             },
         },
     }
+}
+
+/// How a secret is stored, from the file and the key `secrets` already holds; a sealed value
+/// that will not open for the table's current address says so (its binding tag, a hint only),
+/// and one sealed with another key than the one held says that.
+fn stored_secret(
+    connection: &Connection,
+    key: ProviderConfigKey,
+    secrets: &Secrets,
+) -> Option<SecretStoredDto> {
+    let values = connection.values();
+    let sealed = match values.get_stored(key.name)? {
+        StoredValue::Text(text) if text.trim().is_empty() => return None,
+        StoredValue::Text(_) => return Some(SecretStoredDto::PlainText),
+        StoredValue::Sealed(StoredSecret::Unreadable {
+            malformed: Malformed::Version,
+            ..
+        }) => return Some(SecretStoredDto::SavedByNewerVersion),
+        StoredValue::Sealed(StoredSecret::Unreadable { .. }) => {
+            return Some(SecretStoredDto::Unreadable);
+        }
+        StoredValue::Sealed(StoredSecret::Sealed(sealed)) => sealed,
+    };
+    let store = match sealed.store() {
+        StoreKind::Os => SecretStoreKindDto::Os,
+        StoreKind::File => SecretStoreKindDto::File,
+    };
+    let for_here =
+        Binding::of(connection.source(), values).is_ok_and(|binding| sealed.sealed_for(&binding));
+    let other_key = secrets
+        .held(sealed.store())
+        .is_some_and(|held| KeyId::of(&held) != sealed.key_id());
+    Some(if !for_here {
+        SecretStoredDto::SealedForOtherServer { store }
+    } else if other_key {
+        SecretStoredDto::SealedWithOtherKey { store }
+    } else {
+        SecretStoredDto::Sealed { store }
+    })
 }
 
 fn default_list(connection: &Connection, key: ProviderConfigKey) -> Vec<String> {

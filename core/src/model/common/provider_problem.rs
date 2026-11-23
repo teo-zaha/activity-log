@@ -30,4 +30,8 @@ pub enum ProviderProblem {
     Failed,
     /// The check passed, but the last collection failed for another reason.
     CollectionFailed,
+    /// The secure store that holds the key to the connection's secrets gave no key: missing,
+    /// refusing (a dismissed dialog, no interaction allowed) or failing. Check again once it
+    /// answers.
+    SecretUnavailable,
 }

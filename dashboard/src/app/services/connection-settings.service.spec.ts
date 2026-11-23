@@ -22,6 +22,7 @@ describe('ConnectionSettings', () => {
     await data.initLoad()
     backend.providersResponse = {
       currentOs: 'linux',
+      secretStore: { store: 'os', state: 'ready' },
       providers: [...backend.providersResponse.providers, gitlabProvider],
     }
     backend.activityResponses = [collectingLog, activityLog]

@@ -119,7 +119,11 @@ describe('ActivityDataService', () => {
 
   it('knows when no source is set up, but only once providers loaded', async () => {
     const { backend, service } = setup()
-    backend.providersResponse = { currentOs: 'linux', providers: [] }
+    backend.providersResponse = {
+      currentOs: 'linux',
+      secretStore: { store: 'os', state: 'ready' },
+      providers: [],
+    }
     // Without sources there is no collection to wait for.
     backend.activityResponses = [null]
     backend.activityResponse = null
@@ -384,7 +388,11 @@ describe('ActivityDataService', () => {
     it('checks a source again and follows the collection the backend starts after it', async () => {
       const { backend, service } = setup()
       await service.initLoad()
-      backend.providersResponse = { currentOs: 'linux', providers: withJira('checking') }
+      backend.providersResponse = {
+        currentOs: 'linux',
+        secretStore: { store: 'os', state: 'ready' },
+        providers: withJira('checking'),
+      }
       backend.activityResponses = [collectingLog]
 
       await service.recheckConnection({ source: 'jira', name: 'default' })
@@ -392,7 +400,11 @@ describe('ActivityDataService', () => {
       await pushed(backend)
       expect(service.collectionStatus()).toMatchObject({ kind: 'collecting', operation: 'collect' })
 
-      backend.providersResponse = { currentOs: 'linux', providers: providerInfo }
+      backend.providersResponse = {
+        currentOs: 'linux',
+        secretStore: { store: 'os', state: 'ready' },
+        providers: providerInfo,
+      }
       await vi.runAllTimersAsync()
       expect(service.providerInfo()[1]?.status).toBe('available')
       expect(service.collectionStatus()).toEqual({ kind: 'idle' })
@@ -400,7 +412,11 @@ describe('ActivityDataService', () => {
 
     it('connects again after a lost stream and follows the checks to their end', async () => {
       const { backend, service } = setup()
-      backend.providersResponse = { currentOs: 'linux', providers: withJira('checking') }
+      backend.providersResponse = {
+        currentOs: 'linux',
+        secretStore: { store: 'os', state: 'ready' },
+        providers: withJira('checking'),
+      }
       const load = service.initLoad()
       await settleAnswers()
       expect(service.providerInfo()[1]?.status).toBe('checking')
@@ -408,7 +424,11 @@ describe('ActivityDataService', () => {
       backend.stateError = new BackendFailure('unreachable', 'connection reset')
       await vi.advanceTimersByTimeAsync(1)
       backend.stateError = null
-      backend.providersResponse = { currentOs: 'linux', providers: providerInfo }
+      backend.providersResponse = {
+        currentOs: 'linux',
+        secretStore: { store: 'os', state: 'ready' },
+        providers: providerInfo,
+      }
       await vi.runAllTimersAsync()
       await load
 
@@ -452,7 +472,11 @@ describe('ActivityDataService', () => {
       expect(service.meta()).not.toBeNull()
       backend.activityResponses = []
       backend.activityResponse = null
-      backend.providersResponse = { currentOs: 'linux', providers: [] }
+      backend.providersResponse = {
+        currentOs: 'linux',
+        secretStore: { store: 'os', state: 'ready' },
+        providers: [],
+      }
 
       await save()
       await vi.runAllTimersAsync()
@@ -504,7 +528,11 @@ describe('ActivityDataService', () => {
     it('follows the collection a check starts after a label save', async () => {
       const { backend, service } = setup()
       await service.initLoad()
-      backend.providersResponse = { currentOs: 'linux', providers: withJira('checking') }
+      backend.providersResponse = {
+        currentOs: 'linux',
+        secretStore: { store: 'os', state: 'ready' },
+        providers: withJira('checking'),
+      }
       // The host still shows the last log while the new check runs.
       backend.activityResponses = [activityLog]
 
@@ -513,7 +541,11 @@ describe('ActivityDataService', () => {
       expect(service.allEntries()).toEqual(activityLog.entries)
 
       // The check found another account: the host collected Jira again, with nothing for it.
-      backend.providersResponse = { currentOs: 'linux', providers: providerInfo }
+      backend.providersResponse = {
+        currentOs: 'linux',
+        secretStore: { store: 'os', state: 'ready' },
+        providers: providerInfo,
+      }
       backend.activityResponse = withEntries(activityLog, [])
       await vi.runAllTimersAsync()
 
@@ -630,7 +662,11 @@ describe('ActivityDataService', () => {
       const reply = held()
       backend.saveGate = reply.gate
       // The removal of Jira is installed; its answer is held.
-      backend.providersResponse = { currentOs: 'linux', providers: [providerInfo[0]!] }
+      backend.providersResponse = {
+        currentOs: 'linux',
+        secretStore: { store: 'os', state: 'ready' },
+        providers: [providerInfo[0]!],
+      }
       const removal = TestBed.inject(ConnectionSettings).removeConnection({
         source: 'jira',
         name: 'default',
@@ -744,6 +780,7 @@ describe('ActivityDataService', () => {
       // `config.toml` changed under the running server: it now collects GitLab too.
       backend.providersResponse = {
         currentOs: 'linux',
+        secretStore: { store: 'os', state: 'ready' },
         providers: [...providerInfo, gitlabProvider],
       }
 
@@ -1017,6 +1054,7 @@ describe('ActivityDataService', () => {
     const { backend, service } = setup()
     backend.providersResponse = {
       currentOs: 'macos',
+      secretStore: { store: 'os', state: 'ready' },
       providers: [
         ...providerInfo,
         {
@@ -1044,6 +1082,7 @@ describe('ActivityDataService', () => {
     const { backend, service } = setup()
     backend.providersResponse = {
       currentOs: 'macos',
+      secretStore: { store: 'os', state: 'ready' },
       providers: [{ ...providerInfo[0]!, label: 'Laptop' }],
     }
 
@@ -1059,6 +1098,7 @@ describe('ActivityDataService', () => {
     const checking = { status: 'checking', usable: false } as const
     backend.providersResponse = {
       currentOs: 'macos',
+      secretStore: { store: 'os', state: 'ready' },
       providers: [
         { ...git, ...checking },
         { ...jira, ...checking },
@@ -1070,12 +1110,17 @@ describe('ActivityDataService', () => {
     expect([...viewState.activeConnections()].sort()).toEqual(['git/default', 'jira/default'])
     viewState.activeConnections.set(new Set(['jira/default']))
 
-    backend.providersResponse = { currentOs: 'macos', providers: [git, { ...jira, ...checking }] }
+    backend.providersResponse = {
+      currentOs: 'macos',
+      secretStore: { store: 'os', state: 'ready' },
+      providers: [git, { ...jira, ...checking }],
+    }
     await vi.advanceTimersByTimeAsync(1)
     expect(service.providerInfo().map(info => info.status)).toEqual(['available', 'checking'])
 
     backend.providersResponse = {
       currentOs: 'macos',
+      secretStore: { store: 'os', state: 'ready' },
       providers: [git, { ...jira, status: 'unavailable', usable: false }],
     }
     await vi.advanceTimersByTimeAsync(1)
@@ -1124,7 +1169,11 @@ describe('ActivityDataService', () => {
       authority = '1'
     ): ProvidersUpdate => ({
       ...stamp(epoch, revision, authority),
-      providers: { currentOs: 'linux', providers: list },
+      providers: {
+        currentOs: 'linux',
+        secretStore: { store: 'os', state: 'ready' },
+        providers: list,
+      },
     })
     const pair = (
       epoch: string,
@@ -1137,7 +1186,11 @@ describe('ActivityDataService', () => {
     })
     const saved = (epoch: string, revision: number): ProviderConfigSaveResponseDto => ({
       snapshot: { revision: 'r1', kinds: [], connections: [] },
-      providersResponse: { currentOs: 'linux', providers: providerInfo },
+      providersResponse: {
+        currentOs: 'linux',
+        secretStore: { store: 'os', state: 'ready' },
+        providers: providerInfo,
+      },
       installed: { epoch, revision },
     })
 

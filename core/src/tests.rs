@@ -75,10 +75,13 @@ async fn git_connections_share_emails_and_entries_name_their_connection() {
             ("other@example.com", "Not mine"),
         ],
     );
-    let runtimes = inspect_provider_runtimes_with(&[
-        git_connection("default", work.path()),
-        git_connection("side", side.path()),
-    ])
+    let runtimes = inspect_provider_runtimes_with(
+        &[
+            git_connection("default", work.path()),
+            git_connection("side", side.path()),
+        ],
+        &crate::secrets::Secrets::none(),
+    )
     .await;
     assert!(runtimes.iter().all(|runtime| runtime.usable()));
 
@@ -130,10 +133,13 @@ async fn a_commit_in_two_clones_is_listed_once() {
         &clones.path().join("copy"),
         &["config", "user.email", "me@example.com"],
     );
-    let runtimes = inspect_provider_runtimes_with(&[
-        git_connection("original", original.path()),
-        git_connection("clones", clones.path()),
-    ])
+    let runtimes = inspect_provider_runtimes_with(
+        &[
+            git_connection("original", original.path()),
+            git_connection("clones", clones.path()),
+        ],
+        &crate::secrets::Secrets::none(),
+    )
     .await;
 
     let options = CollectOptions {
@@ -266,7 +272,14 @@ async fn fake_runtimes(release: &Arc<Notify>, names: &[&str]) -> Vec<ProviderRun
             ConnectionLocation::Local,
             ConnectionValues::default(),
         );
-        runtimes.push(ProviderRuntime::inspect(adapter.clone(), &connection).await);
+        runtimes.push(
+            ProviderRuntime::inspect(
+                adapter.clone(),
+                &connection,
+                &crate::secrets::Secrets::none(),
+            )
+            .await,
+        );
     }
     runtimes
 }
@@ -382,10 +395,13 @@ async fn a_failed_connection_is_listed_without_entries() {
 async fn git_commits_appear_once_their_email_is_found() {
     let side = repo(None, &[("me@example.com", "Side commit")]);
     let work = repo(Some("me@example.com"), &[("me@example.com", "Work commit")]);
-    let runtimes = inspect_provider_runtimes_with(&[
-        git_connection("side", side.path()),
-        git_connection("work", work.path()),
-    ])
+    let runtimes = inspect_provider_runtimes_with(
+        &[
+            git_connection("side", side.path()),
+            git_connection("work", work.path()),
+        ],
+        &crate::secrets::Secrets::none(),
+    )
     .await;
     let checked = Arc::new(Notify::new());
     let reported = Mutex::new(Vec::new());
@@ -537,8 +553,11 @@ async fn a_commit_two_clones_of_one_connection_hold_is_not_numbered() {
             &["config", "user.email", "me@example.com"],
         );
     }
-    let runtimes =
-        inspect_provider_runtimes_with(&[git_connection("both-clones", parent.path())]).await;
+    let runtimes = inspect_provider_runtimes_with(
+        &[git_connection("both-clones", parent.path())],
+        &crate::secrets::Secrets::none(),
+    )
+    .await;
 
     let collected = collect_runtimes(march(), &runtimes).await.project(march());
 

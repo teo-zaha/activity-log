@@ -1,7 +1,9 @@
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
-use crate::model::common::provider_config_value_type_dto::ProviderConfigValueTypeDto;
+use crate::model::common::{
+    provider_config_value_type_dto::ProviderConfigValueTypeDto, secret_stored_dto::SecretStoredDto,
+};
 
 /// A field's value and its type, tagged by `shape` so a client can narrow to one of them.
 #[derive(Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
@@ -12,11 +14,16 @@ pub enum ProviderConfigFieldValueDto {
     #[ts(rename_all = "camelCase")]
     Single {
         value_type: ProviderConfigValueTypeDto,
-        /// Secrets are write-only: `value` is never sent for them.
-        secret: bool,
         #[serde(skip_serializing_if = "Option::is_none")]
         #[ts(optional)]
         value: Option<String>,
+    },
+    /// A secret: write-only, so only how it is stored is sent, `None` when it is unset.
+    #[serde(rename_all = "camelCase")]
+    #[ts(rename_all = "camelCase")]
+    Secret {
+        value_type: ProviderConfigValueTypeDto,
+        stored: Option<SecretStoredDto>,
     },
     #[serde(rename_all = "camelCase")]
     #[ts(rename_all = "camelCase")]
@@ -37,14 +44,14 @@ impl std::fmt::Debug for ProviderConfigFieldValueDto {
             _ => value.to_string(),
         };
         match self {
-            Self::Single {
-                value_type,
-                secret,
-                value,
-            } => f
+            Self::Secret { value_type, stored } => f
+                .debug_struct("Secret")
+                .field("value_type", value_type)
+                .field("stored", stored)
+                .finish(),
+            Self::Single { value_type, value } => f
                 .debug_struct("Single")
                 .field("value_type", value_type)
-                .field("secret", secret)
                 .field(
                     "value",
                     &value.as_deref().map(|value| shown(value_type, value)),

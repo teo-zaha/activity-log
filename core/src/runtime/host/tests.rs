@@ -132,7 +132,7 @@ impl World {
                 source: connection.source().clone(),
                 world: world.clone(),
             });
-            start_check_with(adapter, connection)
+            start_check_with(adapter, connection, &crate::secrets::Secrets::none())
         })
     }
 }
@@ -368,7 +368,13 @@ fn spawner() -> (RunSpawner, Spawned) {
 
 fn host_of(world: &Arc<World>, connections: &[Connection]) -> (Host, Spawned) {
     let (spawner, spawned) = spawner();
-    let host = Host::build(None, world.starter(), planned_collector(), spawner);
+    let host = Host::build_with(
+        None,
+        crate::secrets::Secrets::none(),
+        world.starter(),
+        planned_collector(),
+        spawner,
+    );
     host.install(connections.to_vec(), None);
     (host, spawned)
 }
@@ -376,8 +382,9 @@ fn host_of(world: &Arc<World>, connections: &[Connection]) -> (Host, Spawned) {
 /// A host of the config file at `path` whose sources are `world`'s.
 fn host_at(path: &Path, world: &Arc<World>) -> (Host, Spawned) {
     let (spawner, spawned) = spawner();
-    let host = Host::build(
+    let host = Host::build_with(
         Some(path.to_path_buf()),
+        crate::secrets::Secrets::none(),
         world.starter(),
         planned_collector(),
         spawner,
@@ -540,7 +547,13 @@ async fn an_edit_answers_its_new_connections_checking_even_when_their_checks_end
     let path = dir.path().join("config.toml");
     let published = Arc::new(OnceLock::new());
     let (spawner, spawned) = eager_spawner(published.clone());
-    let host = Host::start(Some(path), spawner, BadConfig::Fail).unwrap();
+    let host = Host::start(
+        Some(path),
+        spawner,
+        BadConfig::Fail,
+        crate::secrets::Secrets::none(),
+    )
+    .unwrap();
     published.set(host.subscribe()).unwrap();
 
     let edit = host
@@ -781,8 +794,9 @@ async fn work_is_handed_over_with_no_lock_held_and_ends_after_it_shows() {
         })
     };
     let world = World::shared();
-    let host = Host::build(
+    let host = Host::build_with(
         Some(path.clone()),
+        crate::secrets::Secrets::none(),
         world.starter(),
         planned_collector(),
         spawner,
@@ -813,7 +827,13 @@ async fn an_edit_whose_caller_went_away_is_still_installed() {
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("config.toml");
     let (spawner, _spawned) = spawner();
-    let host = Host::start(Some(path), spawner, BadConfig::Fail).unwrap();
+    let host = Host::start(
+        Some(path),
+        spawner,
+        BadConfig::Fail,
+        crate::secrets::Secrets::none(),
+    )
+    .unwrap();
     let (started, has_started) = tokio::sync::oneshot::channel();
     let (release, released) = std::sync::mpsc::channel::<()>();
 
@@ -838,7 +858,13 @@ async fn a_save_that_writes_nothing_installs_what_another_writer_wrote() {
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("config.toml");
     let (spawner, _spawned) = spawner();
-    let host = Host::start(Some(path.clone()), spawner, BadConfig::Fail).unwrap();
+    let host = Host::start(
+        Some(path.clone()),
+        spawner,
+        BadConfig::Fail,
+        crate::secrets::Secrets::none(),
+    )
+    .unwrap();
     std::fs::write(&path, "[[calendar]]\nlabel = \"Team\"\n").unwrap();
 
     let edit = host.edit(Precondition::None, |_| Ok(())).await.unwrap();
@@ -863,7 +889,13 @@ async fn a_save_that_writes_nothing_installs_what_another_writer_wrote() {
 #[tokio::test]
 async fn an_edit_without_a_settings_location_fails() {
     let (spawner, _spawned) = spawner();
-    let host = Host::start(None, spawner, BadConfig::Fail).unwrap();
+    let host = Host::start(
+        None,
+        spawner,
+        BadConfig::Fail,
+        crate::secrets::Secrets::none(),
+    )
+    .unwrap();
 
     let refused = host.edit(Precondition::None, |_| Ok(())).await;
 
@@ -1002,7 +1034,13 @@ async fn a_label_edit_after_a_failed_run_runs_whole() {
     let path = dir.path().join("config.toml");
     std::fs::write(&path, TWO_SOURCES).unwrap();
     let (spawner, mut spawned) = spawner();
-    let host = Host::build(Some(path.clone()), world.starter(), collector, spawner);
+    let host = Host::build_with(
+        Some(path.clone()),
+        crate::secrets::Secrets::none(),
+        world.starter(),
+        collector,
+        spawner,
+    );
     let (connections, content) = load(&path).ok().unwrap();
     host.install(connections, Some(content));
     host.collect(march());
@@ -1042,7 +1080,13 @@ async fn a_shared_commit_follows_the_first_git_table() {
     let path = dir.path().join("config.toml");
     std::fs::write(&path, table("a") + &table("b")).unwrap();
     let (spawner, mut spawned) = spawner();
-    let host = Host::start(Some(path.clone()), spawner, BadConfig::Fail).unwrap();
+    let host = Host::start(
+        Some(path.clone()),
+        spawner,
+        BadConfig::Fail,
+        crate::secrets::Secrets::none(),
+    )
+    .unwrap();
     host.collect(march());
     spawned.end().await;
     let owner = || {
@@ -1222,7 +1266,13 @@ async fn an_outside_edit_is_installed_within_one_look() {
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("config.toml");
     let (spawner, _spawned) = spawner();
-    let host = Host::start(Some(path.clone()), spawner, BadConfig::StartEmpty).unwrap();
+    let host = Host::start(
+        Some(path.clone()),
+        spawner,
+        BadConfig::StartEmpty,
+        crate::secrets::Secrets::none(),
+    )
+    .unwrap();
     let watcher = tokio::spawn(host.watch_config());
     let started = tokio::time::Instant::now();
 
@@ -1245,7 +1295,13 @@ async fn a_change_still_being_written_is_installed_once_complete() {
     let path = dir.path().join("config.toml");
     std::fs::write(&path, "[[calendar]]\nlabel = \"Team\"\n").unwrap();
     let (spawner, _spawned) = spawner();
-    let host = Host::start(Some(path.clone()), spawner, BadConfig::Fail).unwrap();
+    let host = Host::start(
+        Some(path.clone()),
+        spawner,
+        BadConfig::Fail,
+        crate::secrets::Secrets::none(),
+    )
+    .unwrap();
     let read = super::pauses::Pause::new();
     host.set_pauses(super::pauses::Pauses {
         after_first_read: Some(read.clone()),
@@ -1341,7 +1397,13 @@ async fn a_file_that_does_not_parse_is_logged_once_and_the_last_good_config_stay
     let path = dir.path().join("config.toml");
     std::fs::write(&path, "[[calendar]]\nlabel = \"Team\"\n").unwrap();
     let (spawner, _spawned) = spawner();
-    let host = Host::start(Some(path.clone()), spawner, BadConfig::Fail).unwrap();
+    let host = Host::start(
+        Some(path.clone()),
+        spawner,
+        BadConfig::Fail,
+        crate::secrets::Secrets::none(),
+    )
+    .unwrap();
     let shown = path.display().to_string();
 
     for bytes in [&b"[[calendar]]\nlabel = \"\xff\"\n"[..], b"[[calendar]\n"] {
@@ -1363,7 +1425,13 @@ async fn a_file_that_cannot_be_read_is_tried_again_and_installed_once_it_can() {
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("config.toml");
     let (spawner, _spawned) = spawner();
-    let host = Host::start(Some(path.clone()), spawner, BadConfig::Fail).unwrap();
+    let host = Host::start(
+        Some(path.clone()),
+        spawner,
+        BadConfig::Fail,
+        crate::secrets::Secrets::none(),
+    )
+    .unwrap();
     std::fs::write(&path, "[[calendar]]\nlabel = \"Team\"\n").unwrap();
     std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o000)).unwrap();
     if std::fs::read(&path).is_ok() {
@@ -1393,15 +1461,26 @@ async fn a_file_that_does_not_parse_fails_the_server_and_starts_the_app_empty() 
     let (failing, _spawned) = spawner();
     let message = format!(
         "{:#}",
-        Host::start(Some(path.clone()), failing, BadConfig::Fail)
-            .err()
-            .unwrap()
+        Host::start(
+            Some(path.clone()),
+            failing,
+            BadConfig::Fail,
+            crate::secrets::Secrets::none()
+        )
+        .err()
+        .unwrap()
     );
     assert!(message.contains("line 2, column"), "{message}");
     assert!(!message.contains("STARTUP-SECRET"), "{message}");
 
     let (spawner, _spawned) = spawner();
-    let host = Host::start(Some(path.clone()), spawner, BadConfig::StartEmpty).unwrap();
+    let host = Host::start(
+        Some(path.clone()),
+        spawner,
+        BadConfig::StartEmpty,
+        crate::secrets::Secrets::none(),
+    )
+    .unwrap();
     assert!(host.providers_response().providers.is_empty());
     std::fs::write(&path, "[[calendar]]\nlabel = \"Team\"\n").unwrap();
     host.reload_if_changed().await;
@@ -1418,7 +1497,13 @@ async fn after_shutdown_nothing_holds_the_spawner_or_watches_the_file() {
         let _probe = &probe;
         tokio::spawn(work);
     });
-    let host = Host::start(Some(path), spawner, BadConfig::Fail).unwrap();
+    let host = Host::start(
+        Some(path),
+        spawner,
+        BadConfig::Fail,
+        crate::secrets::Secrets::none(),
+    )
+    .unwrap();
     let watcher = tokio::spawn(host.watch_config());
 
     host.shutdown();
@@ -1683,7 +1768,13 @@ async fn a_watcher_waiting_for_the_config_lock_at_shutdown_installs_nothing() {
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("config.toml");
     let (spawner, _spawned) = spawner();
-    let host = Host::start(Some(path.clone()), spawner, BadConfig::Fail).unwrap();
+    let host = Host::start(
+        Some(path.clone()),
+        spawner,
+        BadConfig::Fail,
+        crate::secrets::Secrets::none(),
+    )
+    .unwrap();
     let config = host.inner.config.clone().lock_owned().await;
     let watcher = tokio::spawn(host.watch_config());
     std::fs::write(&path, "[[calendar]]\nlabel = \"Team\"\n").unwrap();
@@ -1705,7 +1796,13 @@ async fn an_edit_after_shutdown_installs_nothing() {
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("config.toml");
     let (spawner, _spawned) = spawner();
-    let host = Host::start(Some(path), spawner, BadConfig::Fail).unwrap();
+    let host = Host::start(
+        Some(path),
+        spawner,
+        BadConfig::Fail,
+        crate::secrets::Secrets::none(),
+    )
+    .unwrap();
 
     host.shutdown();
     let refused = host
@@ -1724,7 +1821,13 @@ async fn an_edit_written_before_shutdown_installs_nothing_after_it() {
     let path = dir.path().join("config.toml");
     std::fs::write(&path, "[[calendar]]\nlabel = \"Home\"\n").unwrap();
     let (spawner, _spawned) = spawner();
-    let host = Host::start(Some(path), spawner, BadConfig::Fail).unwrap();
+    let host = Host::start(
+        Some(path),
+        spawner,
+        BadConfig::Fail,
+        crate::secrets::Secrets::none(),
+    )
+    .unwrap();
     let written = super::pauses::Pause::new();
     host.set_pauses(super::pauses::Pauses {
         after_edit_write: Some(written.clone()),
@@ -2005,4 +2108,35 @@ async fn shutdown_stops_an_annotation_under_way() {
     assert_eq!(spawned.end().await.outcome, RunOutcome::Stopped);
     assert_eq!(world.annotations_dropped.load(Ordering::SeqCst), 1);
     assert_eq!(host.subscribe().borrow().revision(), shown);
+}
+
+/// The probe at start shows where new secrets are sealed with the providers, and so does a
+/// check that asked the store.
+#[tokio::test]
+async fn the_providers_say_where_new_secrets_are_sealed() {
+    use crate::{
+        model::{OsStoreState, SecretStoreInfo},
+        secrets::{
+            FrontEnd, MemoryStore, SecretStore, Secrets, StoreCall, StoreErrorKind, StoreKind,
+        },
+    };
+    let os = Arc::new(MemoryStore::new(StoreKind::Os));
+    os.fail_next(StoreCall::Probe, StoreErrorKind::Refused);
+    let file: Arc<dyn SecretStore> = Arc::new(MemoryStore::new(StoreKind::File));
+    let secrets = Secrets::with_stores(
+        FrontEnd::Desktop,
+        Some((os.clone() as Arc<dyn SecretStore>, None)),
+        (file, None),
+    );
+    let (spawner, _spawned) = spawner();
+    let host = Host::start(None, spawner, BadConfig::Fail, secrets).unwrap();
+    let refused = SecretStoreInfo::Os {
+        state: OsStoreState::Refused,
+    };
+    published_until(&host, |published| {
+        published.providers.value.secret_store == refused
+    })
+    .await;
+    assert_eq!(os.calls().probes, 1);
+    assert_eq!(host.providers_response().secret_store, refused);
 }

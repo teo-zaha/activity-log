@@ -15,7 +15,7 @@ fn config_problems_at_startup_reach_the_logs() {
     let path = dir.path().join("config.toml");
     std::fs::write(&path, "[[gitlab]]\nlabel = \"Startup\"\ntokn = \"x\"\n").unwrap();
 
-    let state = AppState::start(Some(path));
+    let state = AppState::start(Some(path), activity_log_core::secrets::Secrets::none());
 
     assert_eq!(state.host.providers_response().providers.len(), 1);
     assert!(logged("gitlab/startup: unknown setting `tokn`"));
@@ -29,7 +29,7 @@ fn a_broken_config_at_startup_is_logged_without_its_text_and_starts_empty() {
     let path = dir.path().join("config.toml");
     std::fs::write(&path, "[[gitlab]]\ntoken = \"glpat-STARTUP-SECRET\n").unwrap();
 
-    let state = AppState::start(Some(path));
+    let state = AppState::start(Some(path), activity_log_core::secrets::Secrets::none());
     assert!(state.host.providers_response().providers.is_empty());
     let entries = diagnostics::entries();
     let logged = entries
@@ -53,7 +53,8 @@ fn a_broken_config_at_startup_is_logged_without_its_text_and_starts_empty() {
 /// The spawner hands each run's end on, with the run's id; a check's work has none.
 #[test]
 fn each_run_end_is_handed_on() {
-    let (state, mut ends) = AppState::start_following(None);
+    let (state, mut ends) =
+        AppState::start_following(None, activity_log_core::secrets::Secrets::none());
     state.host.start_initial_collection();
 
     let end = tauri::async_runtime::block_on(ends.recv()).expect("the run ends");

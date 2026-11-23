@@ -3,6 +3,7 @@ use std::{path::PathBuf, sync::Arc};
 use activity_log_core::{
     model::RunEnd,
     runtime::{BadConfig, Host, RunSpawner},
+    secrets::Secrets,
 };
 use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender, unbounded_channel};
 
@@ -23,14 +24,18 @@ impl AppState {
     /// and the app starts without sources, so it opens and the file can be fixed; the file is
     /// watched either way once `watch_config` runs. Nobody follows its runs' ends.
     #[cfg(test)]
-    pub(crate) fn start(path: Option<PathBuf>) -> Self {
-        Self::start_following(path).0
+    pub(crate) fn start(path: Option<PathBuf>, secrets: Secrets) -> Self {
+        Self::start_following(path, secrets).0
     }
 
-    /// `start`, and how each collection run ends, for `collection_notice::follow`.
-    pub(crate) fn start_following(path: Option<PathBuf>) -> (Self, UnboundedReceiver<RunEnd>) {
+    /// `start`, and how each collection run ends, for `collection_notice::follow`. `secrets`
+    /// opens the connections' sealed secrets; only `lib.rs` builds one over the user's stores.
+    pub(crate) fn start_following(
+        path: Option<PathBuf>,
+        secrets: Secrets,
+    ) -> (Self, UnboundedReceiver<RunEnd>) {
         let (ends, ended) = unbounded_channel();
-        let host = Host::start(path, spawner(ends), BadConfig::StartEmpty)
+        let host = Host::start(path, spawner(ends), BadConfig::StartEmpty, secrets)
             .expect("a host that starts empty on a bad file always starts");
         let state = Self {
             host,

@@ -3,10 +3,14 @@ import type {
   ActivityUpdate,
   ConnectionCount,
   ConnectionId,
+  KeyFileReason,
+  NoStoreReason,
+  OsStoreState,
   ProviderInfo,
   ProvidersUpdate,
   RuntimePing,
   RuntimeState,
+  SecretStoreInfo,
 } from '../../generated/activity'
 import { isSource } from '../../providers/connection'
 import type { RuntimeEventName, RuntimeMessage } from './runtime-stream'
@@ -135,8 +139,37 @@ function isProvidersUpdate(value: unknown): value is ProvidersUpdate {
   return (
     isRecord(providers) &&
     typeof providers['currentOs'] === 'string' &&
-    isListOf(providers['providers'], isProviderInfo)
+    isListOf(providers['providers'], isProviderInfo) &&
+    isSecretStoreInfo(providers['secretStore'])
   )
+}
+
+// Every value of each union, typed by it, so a new one is a compile error until it is read.
+const OS_STORE_STATES: Readonly<Record<OsStoreState, true>> = { ready: true, refused: true }
+const KEY_FILE_REASONS: Readonly<Record<KeyFileReason, true>> = {
+  noOsStore: true,
+  forced: true,
+  devProfile: true,
+}
+const NO_STORE_REASONS: Readonly<Record<NoStoreReason, true>> = { noOsStore: true }
+
+function isOneOf<T extends string>(value: unknown, values: Readonly<Record<T, true>>): value is T {
+  return typeof value === 'string' && Object.hasOwn(values, value)
+}
+
+/** Where new secrets are sealed, which the settings show: one of the store's own states. */
+function isSecretStoreInfo(value: unknown): value is SecretStoreInfo {
+  if (!isRecord(value)) return false
+  switch (value['store']) {
+    case 'os':
+      return isOneOf(value['state'], OS_STORE_STATES)
+    case 'file':
+      return isOneOf(value['why'], KEY_FILE_REASONS)
+    case 'unavailable':
+      return isOneOf(value['why'], NO_STORE_REASONS)
+    default:
+      return false
+  }
 }
 
 function isRuntimeState(value: unknown): value is RuntimeState {

@@ -22,7 +22,7 @@ use tauri_plugin_opener::OpenerExt;
 
 use crate::{
     app_state::AppState,
-    provider_config::{SnapshotRegistry, load_config, shown_connections},
+    provider_config::{load_config, shown_connections},
 };
 
 #[cfg(test)]
@@ -65,7 +65,7 @@ pub(crate) async fn get_provider_config(
     let file = tauri::async_runtime::spawn_blocking(move || load_config(path.as_deref()))
         .await
         .map_err(|err| BackendError::internal(format!("Reading settings failed: {err}")))??;
-    snapshot_of(&state.snapshots, file.unwrap_or_else(ConfigFile::empty)).await
+    snapshot_of(&state, file.unwrap_or_else(ConfigFile::empty)).await
 }
 
 /// The issues a save of `request` would be refused for, without saving it: values that do not
@@ -176,7 +176,7 @@ async fn update_config<T: Send + 'static>(
         None => diagnostics::info("settings", "Settings saved; they apply at the next start"),
     }
 
-    let snapshot = snapshot_of(&state.snapshots, edit.file).await?;
+    let snapshot = snapshot_of(state, edit.file).await?;
     Ok((
         edit.value,
         ProviderConfigSaveResponseDto {
@@ -205,13 +205,14 @@ fn unknown_base_refusal(state: &AppState, mut conflict: Conflict) -> BackendErro
 /// The snapshot of `file` with the revision a save based on it names; built off the async
 /// workers, since it lists WSL distributions from the registry.
 async fn snapshot_of(
-    snapshots: &SnapshotRegistry,
+    state: &AppState,
     file: ConfigFile,
 ) -> Result<ProviderConfigSnapshotDto, BackendError> {
     let connections = shown_connections(&file);
-    let revision = snapshots.register(file);
+    let revision = state.snapshots.register(file);
+    let secrets = state.host.secrets().clone();
     tauri::async_runtime::spawn_blocking(move || {
-        build_snapshot(&connections, &current_os(), revision)
+        build_snapshot(&connections, &current_os(), revision, &secrets)
     })
     .await
     .map_err(|err| BackendError::internal(format!("Reading settings failed: {err}")))

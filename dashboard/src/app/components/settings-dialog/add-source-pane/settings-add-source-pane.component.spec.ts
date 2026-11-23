@@ -67,7 +67,11 @@ async function setup(
   const addConnection = vi.fn().mockResolvedValue({
     created,
     snapshot: after,
-    providersResponse: { currentOs: 'windows', providers: providerInfo },
+    providersResponse: {
+      currentOs: 'windows',
+      secretStore: { store: 'os', state: 'ready' },
+      providers: providerInfo,
+    },
     installed,
   })
   const opened = vi.fn()

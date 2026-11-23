@@ -440,13 +440,15 @@ Key rules:
 
 These optional variables control file locations, API port, and cache TTL. Set them in the shell or service that starts Activity Log (for example `ACTIVITY_LOG_CACHE_DIR=/tmp/al-cache activity-log`); no part of Activity Log reads a `.env` file:
 
-| Variable                 | Description                                                                                   | Default             |
-| ------------------------ | --------------------------------------------------------------------------------------------- | ------------------- |
-| `ACTIVITY_LOG_CONFIG`    | Path to `config.toml`                                                                         | OS config directory |
-| `ACTIVITY_LOG_PROFILE`   | `dev` for the [dev profile](#dev-profile) (debug builds only; the development scripts set it) | unset               |
-| `PORT`                   | Rocket API port (`pnpm dev` and `pnpm api:dev` set `3001`)                                    | `3000`              |
-| `CACHE_TTL_MINUTES`      | Minutes that recent (not yet settled) cached GitLab/Jira days stay fresh                      | `5`                 |
-| `ACTIVITY_LOG_CACHE_DIR` | Directory for per-day cache files                                                             | OS cache directory  |
+| Variable                       | Description                                                                                                                   | Default                                               |
+| ------------------------------ | ----------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------- |
+| `ACTIVITY_LOG_CONFIG`          | Path to `config.toml`                                                                                                         | OS config directory                                   |
+| `ACTIVITY_LOG_SECRET_STORE`    | Where the key to the secrets lives: `os` (the keychain only) or `file` (the key file, for SSH or CI); CLI and API server only | the keychain, else the key file                       |
+| `ACTIVITY_LOG_SECRET_KEY_FILE` | Path of the key file (a Docker volume, tests)                                                                                 | `activity-log/secret.key` in the local data directory |
+| `ACTIVITY_LOG_PROFILE`         | `dev` for the [dev profile](#dev-profile) (debug builds only; the development scripts set it)                                 | unset                                                 |
+| `PORT`                         | Rocket API port (`pnpm dev` and `pnpm api:dev` set `3001`)                                                                    | `3000`                                                |
+| `CACHE_TTL_MINUTES`            | Minutes that recent (not yet settled) cached GitLab/Jira days stay fresh                                                      | `5`                                                   |
+| `ACTIVITY_LOG_CACHE_DIR`       | Directory for per-day cache files                                                                                             | OS cache directory                                    |
 
 ### Per-day cache
 

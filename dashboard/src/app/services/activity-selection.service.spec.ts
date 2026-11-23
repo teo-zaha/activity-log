@@ -29,6 +29,7 @@ async function loaded(): Promise<{ selection: ActivitySelection; router: Router 
   const backend = new MockBackendTransport()
   backend.providersResponse = {
     currentOs: 'linux',
+    secretStore: { store: 'os', state: 'ready' },
     providers: [
       ...providerInfo,
       { ...providerInfo[0]!, connection: { source: 'calendar', name: 'team' }, label: 'Team' },

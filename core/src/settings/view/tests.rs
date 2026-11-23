@@ -25,11 +25,16 @@ fn connections(file: &ConfigFile) -> Vec<Connection> {
 
 fn connection_state(file: &ConfigFile, id: &str) -> ProviderConfigConnectionStateDto {
     let id = id.parse::<ConnectionId>().unwrap();
-    build_snapshot(&connections(file), &OS, "r1".to_string())
-        .connections
-        .into_iter()
-        .find(|state| state.connection == id)
-        .unwrap_or_else(|| panic!("no connection {id}"))
+    build_snapshot(
+        &connections(file),
+        &OS,
+        "r1".to_string(),
+        &crate::secrets::Secrets::none(),
+    )
+    .connections
+    .into_iter()
+    .find(|state| state.connection == id)
+    .unwrap_or_else(|| panic!("no connection {id}"))
 }
 
 fn field(state: &ProviderConfigConnectionStateDto, key: &str) -> ProviderConfigFieldValueDto {
@@ -80,12 +85,17 @@ fn fields_are_labelled_as_their_keys_declare() {
     let file = file(
         "[[gitlab]]\nlabel = \"Work\"\n\n[[jira]]\nlabel = \"Jira\"\n\n[[git]]\nlabel = \"Git\"\n",
     );
-    let labels = build_snapshot(&connections(&file), &OS, "r1".to_string())
-        .connections
-        .into_iter()
-        .flat_map(|state| state.fields)
-        .map(|field| (field.key, field.label))
-        .collect::<Vec<_>>();
+    let labels = build_snapshot(
+        &connections(&file),
+        &OS,
+        "r1".to_string(),
+        &crate::secrets::Secrets::none(),
+    )
+    .connections
+    .into_iter()
+    .flat_map(|state| state.fields)
+    .map(|field| (field.key, field.label))
+    .collect::<Vec<_>>();
     let label = |key: &str| {
         labels
             .iter()
@@ -99,7 +109,12 @@ fn fields_are_labelled_as_their_keys_declare() {
 
 #[test]
 fn snapshot_lists_kinds_and_connections() {
-    let empty = build_snapshot(&connections(&file("")), &OS, "r1".to_string());
+    let empty = build_snapshot(
+        &connections(&file("")),
+        &OS,
+        "r1".to_string(),
+        &crate::secrets::Secrets::none(),
+    );
     assert!(empty.connections.is_empty());
     let gitlab = empty
         .kinds
@@ -112,7 +127,12 @@ fn snapshot_lists_kinds_and_connections() {
         "Merge requests, pushes, comments and reviews"
     );
     assert!(empty.kinds.iter().all(|kind| !kind.description.is_empty()));
-    let on_linux = build_snapshot(&[], &SupportedOs::Linux, "r1".to_string());
+    let on_linux = build_snapshot(
+        &[],
+        &SupportedOs::Linux,
+        "r1".to_string(),
+        &crate::secrets::Secrets::none(),
+    );
     let outlook = on_linux
         .kinds
         .iter()
@@ -125,7 +145,12 @@ fn snapshot_lists_kinds_and_connections() {
         [SupportedOs::Windows, SupportedOs::Macos]
     );
 
-    let snapshot = build_snapshot(&connections(&file("[[git]]\n")), &OS, "r1".to_string());
+    let snapshot = build_snapshot(
+        &connections(&file("[[git]]\n")),
+        &OS,
+        "r1".to_string(),
+        &crate::secrets::Secrets::none(),
+    );
     assert_eq!(
         snapshot.connections[0].connection,
         ConnectionId::new(Source::Git, "this-computer")
@@ -146,10 +171,9 @@ fn snapshot_masks_secrets_and_shows_the_default_git_folder() {
     assert!(token.is_set);
     assert_eq!(
         token.value,
-        ProviderConfigFieldValueDto::Single {
+        ProviderConfigFieldValueDto::Secret {
             value_type: ProviderConfigValueTypeDto::Password,
-            secret: true,
-            value: None,
+            stored: Some(crate::model::SecretStoredDto::PlainText),
         }
     );
     let default_root = default_git_root().expect("home directory");
@@ -181,7 +205,6 @@ fn saves_values_and_labels_of_one_connection() {
         field(&gitlab, "GITLAB_URL"),
         ProviderConfigFieldValueDto::Single {
             value_type: ProviderConfigValueTypeDto::Url,
-            secret: false,
             value: Some("https://gitlab.example.com".to_string()),
         }
     );
@@ -322,7 +345,12 @@ fn debug_output_of_a_settings_snapshot_shows_no_url_query() {
 
     let debug = format!(
         "{:?}",
-        build_snapshot(&connections(&file), &OS, "r1".to_string())
+        build_snapshot(
+            &connections(&file),
+            &OS,
+            "r1".to_string(),
+            &crate::secrets::Secrets::none()
+        )
     );
 
     assert!(!debug.contains("query-secret"), "{debug}");
@@ -542,5 +570,100 @@ fn a_check_against_the_current_file_names_what_changed_since_the_base() {
     assert_eq!(
         check_save(&request, SaveBase::Unknown(id), Some(&read))[0].problem,
         ProviderConfigIssueKindDto::UnknownBase
+    );
+}
+
+/// A secret is shown only by how it is stored, read from the file and the key already held:
+/// sealed, sealed for another server than the table names now, sealed with another key than
+/// the one held, by a newer version, unreadable, plain text, or unset.
+#[tokio::test]
+async fn a_secret_shows_how_it_is_stored() {
+    use std::sync::Arc;
+
+    use crate::{
+        model::{SecretStoreKindDto, SecretStoredDto},
+        secrets::{DataKey, FrontEnd, KEY_LEN, MemoryStore, SecretStore, Secrets, StoreKind},
+    };
+
+    // Sealed with [1; 64] for https://gitlab.example.test (the pinned vector).
+    let sealed = "v1:os:2c9b4508:e5add042:Z6q9UyLkNkvLurag57DDwPh66TvP6jkJwkov3dxk6g";
+    let config = file(&format!(
+        r#"
+[[gitlab]]
+label = "Sealed"
+url = "https://gitlab.example.test"
+token = {{ sealed = "{sealed}" }}
+
+[[gitlab]]
+label = "Moved"
+url = "https://other.example.test"
+token = {{ sealed = "{sealed}" }}
+
+[[gitlab]]
+label = "Newer"
+token = {{ sealed = "v2:os:00000000:00000000:AAAAAAAAAAAAAAAAAAAAAA" }}
+
+[[gitlab]]
+label = "Damaged"
+token = {{ sealed = "v1:os:2c9b4508:e5add042:!!" }}
+
+[[gitlab]]
+label = "Plain"
+token = "glpat-test-0000"
+
+[[gitlab]]
+label = "Unset"
+"#
+    ));
+    let stored = |secrets: &Secrets, id: &str| {
+        let id = id.parse::<ConnectionId>().unwrap();
+        let state = build_snapshot(&connections(&config), &OS, "r1".to_string(), secrets)
+            .connections
+            .into_iter()
+            .find(|state| state.connection == id)
+            .unwrap();
+        match field(&state, "GITLAB_TOKEN") {
+            ProviderConfigFieldValueDto::Secret { stored, .. } => stored,
+            other => panic!("{other:?}"),
+        }
+    };
+    let os = SecretStoreKindDto::Os;
+    let none = Secrets::none();
+    for (id, expected) in [
+        ("gitlab/sealed", Some(SecretStoredDto::Sealed { store: os })),
+        (
+            "gitlab/moved",
+            Some(SecretStoredDto::SealedForOtherServer { store: os }),
+        ),
+        ("gitlab/newer", Some(SecretStoredDto::SavedByNewerVersion)),
+        ("gitlab/damaged", Some(SecretStoredDto::Unreadable)),
+        ("gitlab/plain", Some(SecretStoredDto::PlainText)),
+        ("gitlab/unset", None),
+    ] {
+        assert_eq!(stored(&none, id), expected, "{id}");
+    }
+
+    // Only once another key is held does it say the value was sealed with another one.
+    let held = |byte| async move {
+        let store = Arc::new(MemoryStore::holding(
+            StoreKind::Os,
+            DataKey::from_slice(&[byte; KEY_LEN]).unwrap(),
+        ));
+        let file: Arc<dyn SecretStore> = Arc::new(MemoryStore::new(StoreKind::File));
+        let secrets = Secrets::with_stores(
+            FrontEnd::Desktop,
+            Some((store as Arc<dyn SecretStore>, None)),
+            (file, None),
+        );
+        secrets.key(StoreKind::Os).await.unwrap();
+        secrets
+    };
+    assert_eq!(
+        stored(&held(2).await, "gitlab/sealed"),
+        Some(SecretStoredDto::SealedWithOtherKey { store: os })
+    );
+    assert_eq!(
+        stored(&held(1).await, "gitlab/sealed"),
+        Some(SecretStoredDto::Sealed { store: os })
     );
 }

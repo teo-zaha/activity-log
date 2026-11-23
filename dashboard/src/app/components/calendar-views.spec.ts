@@ -18,6 +18,7 @@ import { WeekViewComponent } from './week-view/week-view.component'
 const checkedAt = '2026-11-17T08:00:00Z'
 const providers: ProvidersResponse = {
   currentOs: 'windows',
+  secretStore: { store: 'os', state: 'ready' },
   providers: [
     {
       connection: { source: 'outlook', name: 'default' },

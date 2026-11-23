@@ -33,6 +33,7 @@ async fn check(reply: impl Fn() -> Reply + Send + 'static) -> (ProviderRuntime, 
     let runtime = ProviderRuntime::inspect(
         Arc::new(GitLabProvider),
         &gitlab_connection(&format!("{}/gitlab/", server.url), "someone-else"),
+        &crate::secrets::Secrets::none(),
     )
     .await;
     (runtime, server)

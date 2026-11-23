@@ -16,7 +16,7 @@ use super::{HostWork, RunSpawner, config::ReadFailure};
 use crate::{
     model::{
         ActivityState, CollectOptions, ConnectionId, LogLevel, ProviderInfo, ProvidersResponse,
-        RunId,
+        RunId, SecretStoreInfo,
     },
     provider::{connection::Connection, current_os, provider_check_result::CheckOutcome},
     runtime::{
@@ -56,6 +56,9 @@ pub(super) struct HostState {
     /// connection's collection key. The published authority rises and both parts are stamped,
     /// so a subscriber gets what changed as one pair.
     pub(super) new_authority: bool,
+    /// Where new secrets are sealed, as the settings show it: from the probe at start, then
+    /// from each check that asked the store.
+    pub(super) secret_store: SecretStoreInfo,
 }
 
 type SharedCheck = Shared<BoxFuture<'static, Result<Checked, Superseded>>>;
@@ -191,6 +194,7 @@ impl HostState {
         ProvidersResponse {
             current_os: current_os(),
             providers,
+            secret_store: self.secret_store,
         }
     }
 

@@ -66,6 +66,10 @@ pub fn problem_of(err: &anyhow::Error) -> Option<ProviderProblem> {
         if let Some(failure) = cause.downcast_ref::<SourceFailure>() {
             return Some(failure.problem.into());
         }
+        // The key store gave no key, whatever it took: never a slow server or a timeout.
+        if cause.is::<crate::secrets::StoreError>() {
+            return Some(ProviderProblem::SecretUnavailable);
+        }
         apple_script_problem(cause)
     })
 }

@@ -13,7 +13,9 @@ export type DraftValues = Record<string, string | null>
 /** Items of `list` fields by key; blank rows are dropped on save. */
 export type ListDrafts = Record<string, string[]>
 
-export type SingleField = Extract<ProviderConfigFieldStateDto, { shape: 'single' }>
+/** A field of one value: plain, or a secret, of which only how it is stored is sent. */
+export type SingleField = Extract<ProviderConfigFieldStateDto, { shape: 'single' | 'secret' }>
+export type SecretField = Extract<ProviderConfigFieldStateDto, { shape: 'secret' }>
 export type ListField = Extract<ProviderConfigFieldStateDto, { shape: 'list' }>
 
 /** What a draft asks of one single-value field. */
@@ -53,7 +55,11 @@ export interface DraftForm {
 }
 
 export function isSingleField(field: ProviderConfigFieldStateDto): field is SingleField {
-  return field.shape === 'single'
+  return field.shape === 'single' || field.shape === 'secret'
+}
+
+export function isSecretField(field: ProviderConfigFieldStateDto): field is SecretField {
+  return field.shape === 'secret'
 }
 
 export function isListField(field: ProviderConfigFieldStateDto): field is ListField {
@@ -80,7 +86,7 @@ const UNTOUCHED = { kind: 'untouched' } as const
  */
 export function valueEditOf(field: SingleField, drafted: string | null | undefined): ValueEdit {
   if (drafted === undefined) return UNTOUCHED
-  if (field.secret) {
+  if (isSecretField(field)) {
     if (drafted === null) return { kind: 'clear' }
     const value = drafted.trim()
     return value === '' ? UNTOUCHED : { kind: 'replace', value }
@@ -168,7 +174,7 @@ export function formOf(state: ProviderConfigConnectionStateDto, draft?: SourceDr
     } else {
       const edit = draft?.values[field.key]
       if (edit?.kind === 'replace') values[field.key] = edit.value
-      if (edit?.kind === 'clear') values[field.key] = field.secret ? null : ''
+      if (edit?.kind === 'clear') values[field.key] = isSecretField(field) ? null : ''
     }
   }
   return { label: draft?.label ?? state.label, values, lists, resets }
@@ -206,7 +212,7 @@ function requestValue(
 }
 
 function initialValueFor(field: SingleField): string {
-  const value = field.secret ? '' : (field.value ?? '')
+  const value = field.shape === 'single' ? (field.value ?? '') : ''
   if (field.valueType !== 'bool') return value
   const normalized = value.trim().toLowerCase()
   return normalized === 'true' || normalized === 'false' ? normalized : value

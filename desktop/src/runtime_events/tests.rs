@@ -24,6 +24,9 @@ fn value(authority: u64, activity: u64, providers: u64) -> Arc<Published> {
             value: Arc::new(ProvidersResponse {
                 current_os: SupportedOs::Linux,
                 providers: Vec::new(),
+                secret_store: activity_log_core::model::SecretStoreInfo::Os {
+                    state: activity_log_core::model::OsStoreState::Ready,
+                },
             }),
         },
     })

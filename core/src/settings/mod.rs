@@ -46,6 +46,8 @@ const WSL: &str = "wsl";
 /// A reserved, non-secret id that tells two lifetimes of a connection with the same name apart.
 /// Written into a table when the app first writes that table.
 const INSTANCE: &str = "instance";
+/// The one key of a sealed secret's table: `token = { sealed = "v1:…" }`.
+const SEALED: &str = "sealed";
 
 /// What every reader and writer says when the OS gives no folder for the settings.
 pub const NO_LOCATION: &str = "Activity Log has no folder for its settings. Set ACTIVITY_LOG_CONFIG to a file path, or start it with --config <path>.";

@@ -40,6 +40,9 @@ windows = { version = "0.62.2", features = [
 ] }
 
 [dev-dependencies]
+# `test-support`: a `Secrets` over stores in memory, and no OS store in any `Secrets` the
+# tests or the binaries they run build (feature unification), so no test reaches a keychain.
+activity-log-core = { package = "core", path = "../core", features = ["test-support"] }
 # The accelerator parser Tauri's menu uses (the version in its tree), to check ours parse.
 muda = { version = "0.20.0", default-features = false }
 strum.workspace = true

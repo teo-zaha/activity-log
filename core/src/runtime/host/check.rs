@@ -81,6 +81,8 @@ impl Host {
                 .record(id, runtime.identity())
                 .ok_or(Superseded)?;
             let checked = Checked { runtime, key };
+            // A check that asked the store shows how it answered.
+            state.secret_store = inner.secrets.store_info();
             let old = std::mem::replace(
                 &mut state.checks[index].state,
                 CheckState::Recorded(Box::new(checked.clone())),

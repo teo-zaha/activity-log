@@ -10,10 +10,9 @@ use crate::{
     model::{ConnectionId, Source},
     provider::{
         adapter as adapter_of,
-        connection::{ConnectionLocation, Instances, slug},
+        connection::{ConnectionLocation, Instances, StoredValue, slug},
         provider_config::{
-            ConfigSource, ProviderConfigKey, ProviderConfigShape, ProviderConfigValueType,
-            parse_config_list,
+            ProviderConfigKey, ProviderConfigShape, ProviderConfigValueType, parse_config_list,
         },
     },
     settings::{ConfigEditError, EditBase, FieldId, LABEL, NAME, WSL, field_name},
@@ -214,8 +213,8 @@ impl ConfigFile {
             .iter()
             .map(|field| {
                 let seen = match field {
-                    FieldId::Label => Some(entry.label.clone()),
-                    FieldId::Value(key) => values.get(key),
+                    FieldId::Label => Some(StoredValue::Text(entry.label.clone())),
+                    FieldId::Value(key) => values.get_stored(key).cloned(),
                 };
                 (field.clone(), seen)
             })
@@ -324,7 +323,7 @@ fn assign(table: &mut Table, key: &str, mut item: Item) {
 pub(in crate::settings) struct Seen {
     label: String,
     pub(in crate::settings) instance: Option<String>,
-    pub(in crate::settings) fields: BTreeMap<FieldId, Option<String>>,
+    pub(in crate::settings) fields: BTreeMap<FieldId, Option<StoredValue>>,
 }
 
 /// Writes a value with its TOML type: `true`, `42`, `["a", "b"]` or text.

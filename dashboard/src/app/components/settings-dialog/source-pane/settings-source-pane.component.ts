@@ -1,3 +1,4 @@
+import { secretStoreLine } from './secret-store-line'
 import {
   Component,
   computed,
@@ -44,6 +45,8 @@ import {
   type DraftValues,
   type ListDrafts,
   type ListField,
+  type SecretField,
+  isSecretField,
   type SingleField,
   type SourceDraft,
   draftOf,
@@ -83,6 +86,12 @@ interface CheckedDraft {
   readonly key: ConnectionKey
   readonly draft: SourceDraft
   readonly result: CheckResult
+}
+
+/** A secret's tag: how it is stored, and whether that is as it should be. */
+interface StoredTag {
+  readonly text: string
+  readonly tone: 'ok' | 'warn' | null
 }
 
 @Component({
@@ -170,6 +179,12 @@ export class SettingsSourcePaneComponent {
   })
 
   protected readonly configFields = computed(() => this.connectionState()?.fields ?? [])
+  /** Where this source's secrets would be sealed, when that is not the usual OS store. */
+  protected readonly secretStoreLine = computed(() => {
+    const info = this.data.secretStore()
+    const hasSecret = this.configFields().some(isSecretField)
+    return info !== null && hasSecret ? secretStoreLine(info) : null
+  })
   protected readonly hasConnectionState = computed(() => this.connectionState() !== null)
 
   /** Unsaved edits left earlier, applied when this connection's settings load. */
@@ -345,7 +360,7 @@ export class SettingsSourcePaneComponent {
     const field = state.fields.find(({ key }) => key === at.key)
     if (field === undefined) return null
     if (field.shape === 'list') return field.items.join(', ') || 'none'
-    if (field.secret) return field.isSet ? 'set' : 'not set'
+    if (field.shape === 'secret') return field.isSet ? 'set' : 'not set'
     return field.value ?? 'not set'
   }
 
@@ -671,12 +686,35 @@ export class SettingsSourcePaneComponent {
 
   /** A saved secret that the draft has not cleared; plain fields show their value instead. */
   protected isSecretFieldSet(field: SingleField): boolean {
-    return field.secret && field.isSet && this.draftValues()[field.key] !== null
+    return field.shape === 'secret' && field.isSet && this.draftValues()[field.key] !== null
+  }
+
+  /** How a secret is stored, as its tag says it, and whether that is as it should be. */
+  protected storedTag(field: SecretField): StoredTag {
+    if (!this.isSecretFieldSet(field) || field.stored === null) {
+      return { text: 'Not set', tone: null }
+    }
+    switch (field.stored.kind) {
+      case 'sealed':
+        return field.stored.store === 'os'
+          ? { text: 'Stored securely', tone: 'ok' }
+          : { text: 'Stored in a key file', tone: 'ok' }
+      case 'sealedForOtherServer':
+        return { text: 'Saved for another server; enter it again', tone: 'warn' }
+      case 'sealedWithOtherKey':
+        return { text: 'Saved on another computer; enter it again', tone: 'warn' }
+      case 'savedByNewerVersion':
+        return { text: 'Saved by a newer Activity Log', tone: 'warn' }
+      case 'unreadable':
+        return { text: 'Cannot be read; enter it again', tone: 'warn' }
+      case 'plainText':
+        return { text: 'Stored as plain text', tone: 'warn' }
+    }
   }
 
   protected inputTypeFor(field: SingleField): string {
     // Signal Forms parses a `null` model as a number in a text input, and a cleared secret is `null`.
-    if (field.secret) {
+    if (field.shape === 'secret') {
       return 'password'
     }
 

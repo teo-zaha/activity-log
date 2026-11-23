@@ -77,6 +77,7 @@ function statusIcon(status: ProviderStatus): string {
 const PROBLEM_ICONS: Partial<Record<ProviderProblem, string>> = {
   timedOut: 'timer_off',
   refused: 'lock',
+  secretUnavailable: 'key_off',
   unreachable: 'cloud_off',
   notInstalled: 'download',
   notRunning: 'power_settings_new',
@@ -97,6 +98,7 @@ const PROBLEM_TITLES: Record<ProviderProblem, string | null> = {
   noData: 'Nothing to read',
   failed: null,
   collectionFailed: null,
+  secretUnavailable: 'Secure store not available',
 }
 
 function statusTitle(status: ProviderStatus, problem: ProviderProblem | undefined): string {

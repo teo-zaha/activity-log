@@ -136,6 +136,7 @@ describe('ActivityExportService', () => {
     }
     backend.providersResponse = {
       currentOs: 'linux',
+      secretStore: { store: 'os', state: 'ready' },
       providers: [
         ...providerInfo,
         { ...providerInfo[0]!, connection: { source: 'calendar', name: 'team' }, label: 'Team' },

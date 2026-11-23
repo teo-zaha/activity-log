@@ -7,6 +7,7 @@ use std::{collections::BTreeMap, sync::Arc};
 use crate::{
     model::{ConnectionId, Source},
     provider::provider_config::ConfigSource,
+    secrets::sealed::{Malformed, SealedValue},
 };
 
 #[cfg(test)]
@@ -117,18 +118,74 @@ pub fn slug(label: &str) -> String {
     }
 }
 
+/// A config value as the file holds it: text, or a secret stored sealed.
+#[derive(Clone, PartialEq, Eq)]
+pub enum StoredValue {
+    Text(String),
+    Sealed(StoredSecret),
+}
+
+/// A secret the file holds as `{ sealed = "…" }`: one whose text reads, or that text and why it
+/// does not. Compared by its text, so preconditions and collection keys see a change of it.
+#[derive(Clone, PartialEq, Eq)]
+pub enum StoredSecret {
+    Sealed(SealedValue),
+    Unreadable { text: String, malformed: Malformed },
+}
+
+impl std::fmt::Debug for StoredValue {
+    /// Neither text nor a sealed value's payload: either may be a secret.
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Text(_) => f.write_str("Text(<hidden>)"),
+            Self::Sealed(StoredSecret::Sealed(sealed)) => write!(f, "Sealed({sealed:?})"),
+            Self::Sealed(StoredSecret::Unreadable { malformed, .. }) => {
+                write!(f, "Unreadable({malformed:?})")
+            }
+        }
+    }
+}
+
 /// A connection's config values by key (`GITLAB_TOKEN`); `None` is a value cleared on purpose.
 #[derive(Default, PartialEq, Eq)]
-pub struct ConnectionValues(BTreeMap<String, Option<String>>);
+pub struct ConnectionValues(BTreeMap<String, Option<StoredValue>>);
 
 impl ConnectionValues {
+    /// Values that are all text.
     pub fn new(values: BTreeMap<String, Option<String>>) -> Self {
+        Self(
+            values
+                .into_iter()
+                .map(|(key, value)| (key, value.map(StoredValue::Text)))
+                .collect(),
+        )
+    }
+
+    /// Values as the file holds them.
+    pub fn stored(values: BTreeMap<String, Option<StoredValue>>) -> Self {
         Self(values)
+    }
+
+    /// The value of `key` as the file holds it; `None` unset or cleared.
+    pub fn get_stored(&self, key: &str) -> Option<&StoredValue> {
+        self.0.get(key).and_then(Option::as_ref)
+    }
+
+    /// The secrets stored sealed, by key.
+    pub fn sealed(&self) -> impl Iterator<Item = (&str, &StoredSecret)> {
+        self.0.iter().filter_map(|(key, value)| match value {
+            Some(StoredValue::Sealed(secret)) => Some((key.as_str(), secret)),
+            Some(StoredValue::Text(_)) | None => None,
+        })
     }
 }
 
 impl ConfigSource for ConnectionValues {
+    /// Text only: a sealed secret's text is never handed on as its value.
     fn get(&self, key: &str) -> Option<String> {
-        self.0.get(key).cloned().flatten()
+        match self.get_stored(key)? {
+            StoredValue::Text(text) => Some(text.clone()),
+            StoredValue::Sealed(_) => None,
+        }
     }
 }

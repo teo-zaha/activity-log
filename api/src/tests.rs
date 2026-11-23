@@ -547,6 +547,7 @@ async fn a_request_sees_a_config_file_changed_since_the_last_one() {
         Some(path.clone()),
         spawner(),
         activity_log_core::runtime::BadConfig::Fail,
+        activity_log_core::secrets::Secrets::none(),
     )
     .unwrap();
     let client = Client::tracked(build_rocket_with(host, false))
@@ -809,6 +810,7 @@ async fn client_at(path: &std::path::Path) -> Client {
         Some(path.to_path_buf()),
         spawner(),
         activity_log_core::runtime::BadConfig::Fail,
+        activity_log_core::secrets::Secrets::none(),
     )
     .unwrap();
     Client::tracked(build_rocket_with(host, false))
@@ -937,4 +939,30 @@ async fn a_quiet_stream_sends_a_ping_of_its_host() {
         serde_json::json!({ "epoch": first.data["activity"]["epoch"] })
     );
     assert!(started.elapsed() >= activity_log_core::runtime::PING_INTERVAL);
+}
+
+/// With `test-support`, which every crate's tests turn on, the front ends' own `Secrets` have
+/// no OS store, so no test (nor a binary a test runs) can reach a keychain: the desktop's has
+/// no store at all, the CLI's and the server's only a key file `ACTIVITY_LOG_SECRET_KEY_FILE`
+/// would name.
+#[test]
+fn tests_never_reach_an_os_store() {
+    use activity_log_core::{
+        model::{KeyFileReason, NoStoreReason, SecretStoreInfo},
+        secrets::Secrets,
+    };
+    assert_eq!(
+        Secrets::desktop(None).store_info(),
+        SecretStoreInfo::Unavailable {
+            why: NoStoreReason::NoOsStore
+        }
+    );
+    for secrets in [Secrets::cli(None), Secrets::api(None)] {
+        assert_eq!(
+            secrets.store_info(),
+            SecretStoreInfo::File {
+                why: KeyFileReason::NoOsStore
+            }
+        );
+    }
 }

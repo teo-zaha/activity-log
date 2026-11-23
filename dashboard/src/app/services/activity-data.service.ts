@@ -158,6 +158,8 @@ export class ActivityDataService {
   readonly providerInfo = computed(
     () => this.installed()?.providers?.providers.providers ?? NO_PROVIDERS
   )
+  /** Where new secrets are sealed here; `null` until the sources came in. */
+  readonly secretStore = computed(() => this.installed()?.providers?.providers.secretStore ?? null)
   /** Whether the list of sources has come in once. */
   readonly providersLoaded = computed(() => (this.installed()?.providers ?? null) !== null)
   /** Nothing is set up yet: the dashboard asks for a first source instead of showing views. */
@@ -743,6 +745,10 @@ function activityUpdateOf(answer: CollectAnswer): ActivityUpdate {
 
 /** A recheck's answer as the update of the sources it installed. */
 function providersUpdateOf(answer: RecheckAnswer): ProvidersUpdate {
-  const providers: ProvidersResponse = { currentOs: answer.currentOs, providers: answer.providers }
+  const providers: ProvidersResponse = {
+    currentOs: answer.currentOs,
+    providers: answer.providers,
+    secretStore: answer.secretStore,
+  }
   return { ...answer.stamp, providers }
 }

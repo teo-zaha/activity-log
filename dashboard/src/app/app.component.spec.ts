@@ -29,7 +29,11 @@ function shell(backend: MockBackendTransport): (Provider | EnvironmentProviders)
 describe('AppComponent', APP_RENDER_TEST, () => {
   it('offers Retry for a backend it cannot reach, also with no sources set up', async () => {
     const backend = new MockBackendTransport()
-    backend.providersResponse = { currentOs: 'macos', providers: [] }
+    backend.providersResponse = {
+      currentOs: 'macos',
+      secretStore: { store: 'os', state: 'ready' },
+      providers: [],
+    }
     backend.activityResponses = [null]
     const { fixture } = await render(AppComponent, { providers: [...shell(backend)] })
     const data = TestBed.inject(ActivityDataService)

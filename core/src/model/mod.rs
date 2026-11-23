@@ -41,6 +41,7 @@ pub use common::{
     collect_request::CollectRequest, collection_failed_response::CollectionFailedResponse,
     connection_id::ConnectionId, export_file::ExportFile, export_outcome::ExportOutcome,
     export_request::ExportRequest, identity_evidence::IdentityEvidence,
+    key_file_reason::KeyFileReason, no_store_reason::NoStoreReason, os_store_state::OsStoreState,
     output_format::OutputFormat,
     provider_config_connection_state_dto::ProviderConfigConnectionStateDto,
     provider_config_field_issue_dto::ProviderConfigFieldIssueDto,
@@ -57,7 +58,8 @@ pub use common::{
     provider_kind_dto::ProviderKindDto, provider_problem::ProviderProblem,
     provider_status::ProviderStatus, providers_response::ProvidersResponse,
     range_error::RangeError, remote_identity::RemoteIdentity,
-    remove_connection_request_dto::RemoveConnectionRequestDto, source::Source,
+    remove_connection_request_dto::RemoveConnectionRequestDto, secret_store_info::SecretStoreInfo,
+    secret_store_kind_dto::SecretStoreKindDto, secret_stored_dto::SecretStoredDto, source::Source,
     supported_os::SupportedOs, timestamp::Timestamp,
 };
 pub use diagnostics::{log_entry::LogEntry, log_level::LogLevel, logs_response::LogsResponse};

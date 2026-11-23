@@ -8,7 +8,7 @@ const ready = { ...activity, state: { kind: 'ready', log: activityLog } }
 const withLog = (log: object): object => ({ ...activity, state: { kind: 'ready', log } })
 const withList = (list: unknown): object => ({
   ...providers,
-  providers: { currentOs: 'linux', providers: list },
+  providers: { currentOs: 'linux', secretStore: { store: 'os', state: 'ready' }, providers: list },
 })
 const withoutRecheckable = (): object => {
   const provider: Record<string, unknown> = { ...providers.providers.providers[0] }
@@ -43,6 +43,17 @@ describe('decodeRuntimeMessage', () => {
   ])('refuses providers with %s', (_name, list) => {
     expect(decodeRuntimeMessage('providers', withList(list))).toBeNull()
     expect(decodeRuntimeMessage('state', { activity, providers: withList(list) })).toBeNull()
+  })
+
+  it.each([
+    ['no secret store', undefined],
+    ['a store of no known kind', { store: 'keychain' }],
+    ['the OS store in no known state', { store: 'os', state: 'locked' }],
+    ['the key file for no known reason', { store: 'file', why: 'osStore' }],
+    ['no store for no known reason', { store: 'unavailable', why: 'forced' }],
+  ])('refuses providers with %s', (_name, secretStore) => {
+    const withStore = { ...providers, providers: { ...providers.providers, secretStore } }
+    expect(decodeRuntimeMessage('providers', withStore)).toBeNull()
   })
 
   it.each([

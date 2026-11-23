@@ -3,8 +3,8 @@ use std::{cell::Cell, path::PathBuf, sync::Arc, time::Duration};
 use tempfile::{TempDir, tempdir};
 
 use super::{
-    DataKey, FreshKey, Interaction, KEY_WAIT, MemoryStore, SecretStore, Secrets, StoreCall,
-    StoreCalls, StoreErrorKind, StoreKind, take_creation_lock,
+    DataKey, FreshKey, FrontEnd, Interaction, KEY_WAIT, MemoryStore, SecretStore, Secrets,
+    StoreCall, StoreCalls, StoreErrorKind, StoreKind, take_creation_lock,
 };
 
 /// `Secrets` over an OS store in memory, with its key-creation lock in a folder of its own.
@@ -21,6 +21,7 @@ fn fixture(os: MemoryStore) -> Fixture {
     let os = Arc::new(os);
     let file: Arc<dyn SecretStore> = Arc::new(MemoryStore::new(StoreKind::File));
     let secrets = Secrets::with_stores(
+        FrontEnd::Cli,
         Some((os.clone() as Arc<dyn SecretStore>, Some(lock.clone()))),
         (file, None),
     );
@@ -220,6 +221,7 @@ async fn without_a_lock_folder_no_key_is_created() {
     let os = Arc::new(MemoryStore::new(StoreKind::Os));
     let file: Arc<dyn SecretStore> = Arc::new(MemoryStore::new(StoreKind::File));
     let secrets = Secrets::with_stores(
+        FrontEnd::Cli,
         Some((os.clone() as Arc<dyn SecretStore>, None)),
         (file, None),
     );
@@ -236,7 +238,7 @@ async fn without_a_lock_folder_no_key_is_created() {
 #[tokio::test]
 async fn without_an_os_store_its_key_is_unavailable() {
     let file: Arc<dyn SecretStore> = Arc::new(MemoryStore::new(StoreKind::File));
-    let secrets = Secrets::with_stores(None, (file, None));
+    let secrets = Secrets::with_stores(FrontEnd::Cli, None, (file, None));
     assert_eq!(
         secrets.key(StoreKind::Os).await.unwrap_err().kind(),
         StoreErrorKind::Unavailable
@@ -304,6 +306,7 @@ async fn a_read_only_store_offers_no_creation() {
     let lock = dir.path().join("activity-log").join("secret.key.lock");
     let file = Arc::new(MemoryStore::new(StoreKind::File).read_only());
     let secrets = Secrets::with_stores(
+        FrontEnd::Cli,
         None,
         (file.clone() as Arc<dyn SecretStore>, Some(lock.clone())),
     );

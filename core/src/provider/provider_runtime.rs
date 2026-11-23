@@ -11,6 +11,10 @@ use crate::{
         ActivityEntry, CollectOptions, ConnectionId, ConnectionStamp, IdentityEvidence, LogLevel,
         ProviderInfo, ProviderProblem, ProviderStatus, Source, SupportedOs,
     },
+    secrets::{
+        Secrets,
+        opening::{Unopened, open_connection},
+    },
     utils::now_iso,
 };
 
@@ -38,14 +42,41 @@ pub struct ProviderRuntime {
 }
 
 impl ProviderRuntime {
-    pub async fn inspect(adapter: Arc<dyn ProviderAdapter>, connection: &Connection) -> Self {
-        // Resolve provider config once so startup checks and later collections use the same input.
-        let mut context =
-            ProviderContext::for_connection(connection, adapter.config_requirements());
-        let (info, identity) = diagnostics::in_connection(
-            connection.id.clone(),
-            build_provider_info(adapter.as_ref(), connection, &mut context),
-        )
+    /// Checks `connection`: its sealed secrets are opened first, with `secrets`, before the
+    /// check's own timeout starts (a keychain dialog is no slow server), and the config is
+    /// resolved once, so the check and every later collection read the same values; no
+    /// collection asks a store again.
+    pub async fn inspect(
+        adapter: Arc<dyn ProviderAdapter>,
+        connection: &Connection,
+        secrets: &Secrets,
+    ) -> Self {
+        let requirements = adapter.config_requirements();
+        let supported = adapter.supported_os().contains(&current_os());
+        let (info, identity, context) = diagnostics::in_connection(connection.id.clone(), async {
+            let opened = if supported {
+                open_connection(connection.source(), connection.values(), secrets).await
+            } else {
+                Ok(Default::default())
+            };
+            let (mut context, unopened) = match &opened {
+                Ok(opened) => (
+                    ProviderContext::for_connection_with(
+                        connection,
+                        &opened.over(connection.values()),
+                        requirements,
+                    ),
+                    None,
+                ),
+                Err(unopened) => (
+                    ProviderContext::for_connection(connection, requirements),
+                    Some(unopened),
+                ),
+            };
+            let (info, identity) =
+                build_provider_info(adapter.as_ref(), connection, &mut context, unopened).await;
+            (info, identity, context)
+        })
         .await;
 
         Self {
@@ -210,9 +241,12 @@ impl ProviderAdapter for Recorded {
 }
 
 /// One runtime per connection, in connection order.
-pub async fn inspect_provider_runtimes_with(connections: &[Connection]) -> Vec<ProviderRuntime> {
+pub async fn inspect_provider_runtimes_with(
+    connections: &[Connection],
+    secrets: &Secrets,
+) -> Vec<ProviderRuntime> {
     join_all(
-        start_checks(connections)
+        start_checks(connections, secrets)
             .into_iter()
             .map(|(_, check)| check),
     )
@@ -222,23 +256,36 @@ pub async fn inspect_provider_runtimes_with(connections: &[Connection]) -> Vec<P
 /// For each connection: what its info says while its startup check runs, and that check.
 pub fn start_checks(
     connections: &[Connection],
+    secrets: &Secrets,
 ) -> Vec<(ProviderInfo, BoxFuture<'static, ProviderRuntime>)> {
-    connections.iter().map(start_check).collect()
+    connections
+        .iter()
+        .map(|connection| start_check(connection, secrets))
+        .collect()
 }
 
 /// `start_checks` for one connection.
-pub fn start_check(connection: &Connection) -> (ProviderInfo, BoxFuture<'static, ProviderRuntime>) {
-    start_check_with(adapter(connection.source()).clone(), connection)
+pub fn start_check(
+    connection: &Connection,
+    secrets: &Secrets,
+) -> (ProviderInfo, BoxFuture<'static, ProviderRuntime>) {
+    start_check_with(adapter(connection.source()).clone(), connection, secrets)
 }
 
-/// `start_check` with the adapter given.
+/// `start_check` with the adapter given. While the check waits for the OS store (a dialog the
+/// user has not answered), the connection says so.
 pub(crate) fn start_check_with(
     adapter: Arc<dyn ProviderAdapter>,
     connection: &Connection,
+    secrets: &Secrets,
 ) -> (ProviderInfo, BoxFuture<'static, ProviderRuntime>) {
-    let checking = provider_info(adapter.as_ref(), connection);
+    let mut checking = provider_info(adapter.as_ref(), connection);
+    checking.reason = secrets
+        .waiting_reason(connection.values())
+        .map(str::to_string);
     let connection = connection.clone();
-    let check = async move { ProviderRuntime::inspect(adapter, &connection).await };
+    let secrets = secrets.clone();
+    let check = async move { ProviderRuntime::inspect(adapter, &connection, &secrets).await };
     (checking, check.boxed())
 }
 
@@ -246,12 +293,15 @@ async fn build_provider_info(
     adapter: &dyn ProviderAdapter,
     connection: &Connection,
     context: &mut ProviderContext,
+    unopened: Option<&Unopened>,
 ) -> (ProviderInfo, IdentityEvidence) {
     let current_os = current_os();
     let requirements = adapter.config_requirements();
     let started = std::time::Instant::now();
     let result = if !adapter.supported_os().contains(&current_os) {
         unavailable(ProviderProblem::Unsupported, "OS not supported")
+    } else if let Some(unopened) = unopened {
+        unavailable(unopened.problem(), unopened.reason())
     } else if !context.missing_required_keys(requirements).is_empty() {
         unavailable(
             ProviderProblem::NotConfigured,

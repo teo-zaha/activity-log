@@ -11,7 +11,8 @@ use crate::app_state::AppState;
 
 /// A real run's id, from a host's first collection.
 fn a_run() -> RunId {
-    let (state, mut ends) = AppState::start_following(None);
+    let (state, mut ends) =
+        AppState::start_following(None, activity_log_core::secrets::Secrets::none());
     state.host.start_initial_collection();
     tauri::async_runtime::block_on(ends.recv())
         .expect("the run ends")

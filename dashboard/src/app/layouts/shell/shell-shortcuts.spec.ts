@@ -263,7 +263,11 @@ describe('Shortcuts in the app', APP_RENDER_TEST, () => {
       'leaves the key alone when there is no filter to focus: no sources, on %s',
       async url => {
         const backend = new MockBackendTransport()
-        backend.providersResponse = { currentOs: 'macos', providers: [] }
+        backend.providersResponse = {
+          currentOs: 'macos',
+          secretStore: { store: 'os', state: 'ready' },
+          providers: [],
+        }
         const { router, settle } = await openApp(url, { backend, platform: WINDOWS_DESKTOP })
         await vi.waitFor(() =>
           expect(TestBed.inject(ActivityDataService).hasNoSources()).toBe(true)

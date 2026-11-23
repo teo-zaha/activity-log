@@ -35,8 +35,12 @@ pub(crate) fn jira_connection(url: &str) -> Connection {
 
 async fn check(reply: impl Fn() -> Reply + Send + 'static) -> (ProviderRuntime, TestServer) {
     let server = TestServer::start(move |_| reply());
-    let runtime =
-        ProviderRuntime::inspect(Arc::new(JiraProvider), &jira_connection(&server.url)).await;
+    let runtime = ProviderRuntime::inspect(
+        Arc::new(JiraProvider),
+        &jira_connection(&server.url),
+        &crate::secrets::Secrets::none(),
+    )
+    .await;
     (runtime, server)
 }
 
@@ -128,7 +132,12 @@ async fn a_url_with_credentials_is_not_configured_and_never_asked() {
     let server = TestServer::start(|_| Reply::json(200, r#"{"key":"x"}"#));
     let url = server.url.replace("http://", "http://jane:secret@");
 
-    let runtime = ProviderRuntime::inspect(Arc::new(JiraProvider), &jira_connection(&url)).await;
+    let runtime = ProviderRuntime::inspect(
+        Arc::new(JiraProvider),
+        &jira_connection(&url),
+        &crate::secrets::Secrets::none(),
+    )
+    .await;
 
     assert!(!runtime.usable());
     assert_eq!(runtime.info().problem, Some(ProviderProblem::NotConfigured));

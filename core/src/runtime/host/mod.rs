@@ -11,16 +11,14 @@ use std::{collections::BTreeMap, path::PathBuf, sync::Arc};
 use futures::future::BoxFuture;
 use tokio::sync::watch;
 
-use super::{
-    keys::KeyTable,
-    report::{Checked, Collector},
-};
+use super::{keys::KeyTable, report::Collector};
 use crate::{
     diagnostics,
     model::{
         ActivityState, PartStamp, ProviderInfo, ProvidersResponse, RunEnd, RunId, RuntimeState,
     },
     provider::{ProviderRuntime, connection::Connection, current_os, start_check},
+    secrets::Secrets,
     settings::warn_no_location,
 };
 
@@ -46,7 +44,12 @@ pub(crate) use transition::state_lock_held;
 
 use config::load;
 use run::planned_collector;
-use state::{CheckState, ConnectionCheck, HostState, Shown};
+use state::{HostState, Shown};
+#[cfg(any(test, feature = "test-support"))]
+use {
+    super::report::Checked,
+    state::{CheckState, ConnectionCheck},
+};
 
 /// Work the host hands to its adapter: a collection run resolves to its `RunEnd`; a check
 /// resolves to `None`. A run is handed over exactly once; a join of a running collection hands
@@ -84,6 +87,8 @@ pub struct Host {
 struct HostInner {
     /// The config file; `None` without a settings location.
     path: Option<PathBuf>,
+    /// The stores of the key the connections' sealed secrets open with.
+    secrets: Secrets,
     starter: CheckStarter,
     collector: Collector,
     state: std::sync::Mutex<HostState>,
@@ -102,17 +107,16 @@ impl Host {
     /// is watched once [`Self::watch_config`] runs. `path` is `None` when there is no settings
     /// location: no sources, nothing watched, and every edit fails with
     /// [`EditError::NoLocation`](crate::settings::EditError::NoLocation).
+    /// `secrets` opens the connections' sealed secrets; only the binaries build one over the
+    /// user's stores.
     pub fn start(
         path: Option<PathBuf>,
         spawner: RunSpawner,
         bad_config: BadConfig,
+        secrets: Secrets,
     ) -> anyhow::Result<Host> {
-        let host = Self::build(
-            path.clone(),
-            Arc::new(start_check),
-            planned_collector(),
-            spawner,
-        );
+        let host = Self::build(path.clone(), secrets, planned_collector(), spawner);
+        host.probe_secret_store();
         let Some(path) = path else {
             warn_no_location();
             host.install(Vec::new(), None);
@@ -135,14 +139,16 @@ impl Host {
         Ok(host)
     }
 
-    /// A host of fixed connections that never reloads, for tests.
+    /// A host of fixed connections that never reloads and opens no sealed secret, for tests.
+    #[cfg(any(test, feature = "test-support"))]
     pub fn fixed(connections: &[Connection], spawner: RunSpawner) -> Host {
-        let host = Self::build(None, Arc::new(start_check), planned_collector(), spawner);
+        let host = Self::build(None, Secrets::none(), planned_collector(), spawner);
         host.install(connections.to_vec(), None);
         host
     }
 
     /// A host of providers whose checks are done, collected by `collector`, for tests.
+    #[cfg(any(test, feature = "test-support"))]
     pub fn with_collector(
         collector: Collector,
         providers: Vec<ProviderInfo>,
@@ -150,7 +156,7 @@ impl Host {
     ) -> Host {
         // Its checks are recorded and cannot be run again, and it has no file to install from,
         // so it never starts one.
-        let host = Self::build(None, Arc::new(start_check), collector, spawner);
+        let host = Self::build(None, Secrets::none(), collector, spawner);
         host.transition(|_, state| {
             let connections = providers
                 .iter()
@@ -187,6 +193,21 @@ impl Host {
 
     pub(crate) fn build(
         path: Option<PathBuf>,
+        secrets: Secrets,
+        collector: Collector,
+        spawner: RunSpawner,
+    ) -> Host {
+        let starter: CheckStarter = {
+            let secrets = secrets.clone();
+            Arc::new(move |connection| start_check(connection, &secrets))
+        };
+        Self::build_with(path, secrets, starter, collector, spawner)
+    }
+
+    /// [`Self::build`] with the check starter given.
+    pub(crate) fn build_with(
+        path: Option<PathBuf>,
+        secrets: Secrets,
         starter: CheckStarter,
         collector: Collector,
         spawner: RunSpawner,
@@ -194,6 +215,7 @@ impl Host {
         let empty = ProvidersResponse {
             current_os: current_os(),
             providers: Vec::new(),
+            secret_store: secrets.store_info(),
         };
         let initial = Arc::new(Published::initial(empty));
         let state = HostState {
@@ -213,10 +235,12 @@ impl Host {
             logs: Vec::new(),
             shut_down: false,
             new_authority: false,
+            secret_store: secrets.store_info(),
         };
         Host {
             inner: Arc::new(HostInner {
                 path,
+                secrets,
                 starter,
                 collector,
                 state: std::sync::Mutex::new(state),
@@ -227,6 +251,26 @@ impl Host {
                 pauses: Default::default(),
             }),
         }
+    }
+
+    /// Asks the secret store, once at start and off the state lock, where new secrets are
+    /// sealed, and shows the answer with the providers.
+    fn probe_secret_store(&self) {
+        let host = Arc::downgrade(&self.inner);
+        let secrets = self.inner.secrets.clone();
+        let work: HostWork = Box::pin(async move {
+            let info = secrets.probe().await;
+            if let Some(inner) = host.upgrade() {
+                Host { inner }.transition(|_, state| state.secret_store = info);
+            }
+            None
+        });
+        self.transition(|_, state| state.work.push(work));
+    }
+
+    /// The stores this host opens sealed secrets with.
+    pub fn secrets(&self) -> &Secrets {
+        &self.inner.secrets
     }
 
     /// The host's last transition: the shown run stops, every run and check still in flight

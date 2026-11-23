@@ -12,6 +12,7 @@ use activity_log_core::{
         BadConfig, Forwarder, Host, PING_INTERVAL, RunSpawner, RuntimeMessage, answer_collect,
         answer_recheck,
     },
+    secrets::Secrets,
     settings::ConfigFile,
 };
 use rocket::{
@@ -250,7 +251,9 @@ pub async fn build_rocket(config: Option<&Path>) -> anyhow::Result<Rocket<Build>
     if let Some(path) = &path {
         println!("Reading connections from {}", path.display());
     }
-    let host = Host::start(path, spawner(), BadConfig::Fail)?;
+    // The one place the server builds its stores of the key.
+    let secrets = Secrets::api(path.as_deref());
+    let host = Host::start(path, spawner(), BadConfig::Fail, secrets)?;
     Ok(build_rocket_with(host, true))
 }
 

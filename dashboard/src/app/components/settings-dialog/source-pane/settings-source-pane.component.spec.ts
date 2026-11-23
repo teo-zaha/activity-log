@@ -15,6 +15,8 @@ import type {
   ProviderConfigSaveRequestDto,
   ProviderConfigSaveResponseDto,
   ProviderConfigSnapshotDto,
+  SecretStoreInfo,
+  SecretStoredDto,
 } from '../../../generated/activity'
 import { ActivityDataService } from '../../../services/activity-data.service'
 import { ConnectionSettings } from '../../../services/connection-settings.service'
@@ -50,7 +52,6 @@ const jiraFields: ProviderConfigFieldStateDto[] = [
     required: true,
     shape: 'single',
     valueType: 'url',
-    secret: false,
     isSet: true,
     value: 'https://jira.example.com',
   },
@@ -60,7 +61,6 @@ const jiraFields: ProviderConfigFieldStateDto[] = [
     required: false,
     shape: 'single',
     valueType: 'int',
-    secret: false,
     isSet: true,
     value: '50',
   },
@@ -68,9 +68,9 @@ const jiraFields: ProviderConfigFieldStateDto[] = [
     key: 'apiToken',
     label: 'API token',
     required: true,
-    shape: 'single',
+    shape: 'secret',
     valueType: 'password',
-    secret: true,
+    stored: { kind: 'sealed', store: 'os' },
     isSet: true,
   },
   {
@@ -79,7 +79,6 @@ const jiraFields: ProviderConfigFieldStateDto[] = [
     required: false,
     shape: 'single',
     valueType: 'bool',
-    secret: false,
     isSet: true,
     value: 'true',
   },
@@ -130,6 +129,7 @@ async function setup(
     provider?: SettingsProviderRow
     load?: () => Promise<ProviderConfigSnapshotDto>
     drafts?: SourceDrafts
+    secretStore?: SecretStoreInfo
   } = {}
 ): Promise<Setup> {
   const loadProviderConfig = vi.fn<() => Promise<ProviderConfigSnapshotDto>>(
@@ -143,6 +143,9 @@ async function setup(
   const receiptStanding = vi.fn<(receipt: InstallReceipt) => ReceiptStanding>(() => 'current')
   const checkProviderConfig = vi.fn<CheckProviderConfig>(() => Promise.resolve([]))
   const hostEpoch = signal<string | null>('mock-host')
+  const secretStore = signal<SecretStoreInfo | null>(
+    options.secretStore ?? { store: 'os', state: 'ready' }
+  )
   const removeConnection =
     vi.fn<(request: RemoveConnectionRequestDto) => Promise<ProviderConfigSaveResponseDto>>()
   const addConnection =
@@ -169,6 +172,7 @@ async function setup(
           recheckConnection,
           receiptStanding,
           hostEpoch,
+          secretStore,
         },
       },
       {
@@ -208,7 +212,11 @@ function nextToast(): Promise<string> {
 function saveResponse(fields: ProviderConfigFieldStateDto[]): ProviderConfigSaveResponseDto {
   return {
     snapshot: snapshot(fields),
-    providersResponse: { currentOs: 'linux', providers: providerInfo },
+    providersResponse: {
+      currentOs: 'linux',
+      secretStore: { store: 'os', state: 'ready' },
+      providers: providerInfo,
+    },
     installed: { epoch: 'mock-host', revision: 1 },
   }
 }
@@ -225,9 +233,40 @@ describe('SettingsSourcePaneComponent', () => {
     )
     expect(screen.getByLabelText('Max results')).toHaveProperty('value', '50')
     expect(screen.getByLabelText('API token')).toHaveProperty('value', '')
-    expect(screen.getByText('Set')).toBeTruthy()
+    expect(screen.getByText('Stored securely')).toBeTruthy()
     expect(screen.getByRole('button', { name: 'Save settings' })).toHaveProperty('disabled', true)
     expect(loadProviderConfig).toHaveBeenCalledTimes(1)
+  })
+
+  it.each([
+    [{ kind: 'sealed', store: 'os' }, 'Stored securely'],
+    [{ kind: 'sealed', store: 'file' }, 'Stored in a key file'],
+    [{ kind: 'sealedForOtherServer', store: 'os' }, 'Saved for another server; enter it again'],
+    [{ kind: 'sealedWithOtherKey', store: 'os' }, 'Saved on another computer; enter it again'],
+    [{ kind: 'savedByNewerVersion' }, 'Saved by a newer Activity Log'],
+    [{ kind: 'unreadable' }, 'Cannot be read; enter it again'],
+    [{ kind: 'plainText' }, 'Stored as plain text'],
+  ] satisfies [SecretStoredDto, string][])(
+    'says how a saved secret is stored (%o), never its value',
+    async (stored, text) => {
+      const fields = jiraFields.map(field =>
+        field.shape === 'secret' ? { ...field, stored } : field
+      )
+      await setup({ load: () => Promise.resolve(snapshot(fields)) })
+      expect(await screen.findByText(text)).toBeTruthy()
+      expect(screen.getByLabelText('API token')).toHaveProperty('value', '')
+    }
+  )
+
+  it('says where secrets are sealed when it is not the keychain', async () => {
+    await setup({ secretStore: { store: 'file', why: 'noOsStore' } })
+    expect(await screen.findByText(/protected by a key file/)).toBeTruthy()
+  })
+
+  it('says nothing of the store while the keychain answers', async () => {
+    await setup()
+    await screen.findByLabelText('API token')
+    expect(screen.queryByText(/key file|keychain/)).toBeNull()
   })
 
   it('titles the health card by the problem the startup check reported', async () => {
@@ -766,7 +805,11 @@ describe('SettingsSourcePaneComponent', () => {
       addConnection.mockResolvedValue({
         created: { source: 'jira', name: 'jira' },
         snapshot: { ...snapshot(), revision: 'r3' },
-        providersResponse: { currentOs: 'linux', providers: providerInfo },
+        providersResponse: {
+          currentOs: 'linux',
+          secretStore: { store: 'os', state: 'ready' },
+          providers: providerInfo,
+        },
         installed: { epoch: 'mock-host', revision: 2 },
       })
       await userEvent.click(screen.getByRole('button', { name: 'Add it again' }))
@@ -807,7 +850,11 @@ describe('SettingsSourcePaneComponent', () => {
       addConnection.mockResolvedValue({
         created: { source: 'jira', name: 'jira' },
         snapshot: { ...snapshot(), revision: 'r3' },
-        providersResponse: { currentOs: 'linux', providers: providerInfo },
+        providersResponse: {
+          currentOs: 'linux',
+          secretStore: { store: 'os', state: 'ready' },
+          providers: providerInfo,
+        },
         installed: null,
       })
       receiptStanding.mockReturnValue('notInstalled')
@@ -1130,9 +1177,9 @@ describe('SettingsSourcePaneComponent', () => {
               key: 'webhook',
               label: 'Webhook',
               required: false,
-              shape: 'single',
+              shape: 'secret',
               valueType: 'string',
-              secret: true,
+              stored: { kind: 'sealed', store: 'os' },
               isSet: true,
             },
           ])
@@ -1161,7 +1208,6 @@ describe('SettingsSourcePaneComponent', () => {
         required: false,
         shape: 'single',
         valueType: 'string',
-        secret: false,
         isSet: true,
         value: '/code',
       },
@@ -1215,7 +1261,6 @@ describe('SettingsSourcePaneComponent', () => {
       required: false,
       shape: 'single',
       valueType: 'string',
-      secret: false,
       isSet: true,
       value: '/code',
     }
@@ -1254,7 +1299,11 @@ describe('SettingsSourcePaneComponent', () => {
       const toasted = nextToast()
       answer({
         snapshot: both(),
-        providersResponse: { currentOs: 'linux', providers: providerInfo },
+        providersResponse: {
+          currentOs: 'linux',
+          secretStore: { store: 'os', state: 'ready' },
+          providers: providerInfo,
+        },
         installed: { epoch: 'mock-host', revision: 1 },
       })
       expect(await toasted).toBe('Jira saved')
@@ -1308,6 +1357,7 @@ describe('SettingsSourcePaneComponent', () => {
             provide: ActivityDataService,
             useValue: {
               receiptStanding: (): ReceiptStanding => 'current',
+              secretStore: signal<SecretStoreInfo | null>(null),
               hostEpoch: signal('mock-host'),
             },
           },
@@ -1332,7 +1382,11 @@ describe('SettingsSourcePaneComponent', () => {
       const toasted = nextToast()
       answer({
         snapshot: { revision: 'r2', kinds: [], connections: [state('git', [gitRoot])] },
-        providersResponse: { currentOs: 'linux', providers: providerInfo },
+        providersResponse: {
+          currentOs: 'linux',
+          secretStore: { store: 'os', state: 'ready' },
+          providers: providerInfo,
+        },
         installed: { epoch: 'mock-host', revision: 1 },
       })
 
@@ -1365,6 +1419,7 @@ describe('SettingsSourcePaneComponent', () => {
           provide: ActivityDataService,
           useValue: {
             receiptStanding: (): ReceiptStanding => 'current',
+            secretStore: signal<SecretStoreInfo | null>(null),
             hostEpoch: signal('mock-host'),
           },
         },
@@ -1393,7 +1448,11 @@ describe('SettingsSourcePaneComponent', () => {
       const toasted = nextToast()
       answer({
         snapshot: both(),
-        providersResponse: { currentOs: 'linux', providers: providerInfo },
+        providersResponse: {
+          currentOs: 'linux',
+          secretStore: { store: 'os', state: 'ready' },
+          providers: providerInfo,
+        },
         installed: { epoch: 'mock-host', revision: 1 },
       })
       await toasted
@@ -1425,6 +1484,7 @@ describe('SettingsSourcePaneComponent', () => {
           provide: ActivityDataService,
           useValue: {
             receiptStanding: (): ReceiptStanding => 'current',
+            secretStore: signal<SecretStoreInfo | null>(null),
             hostEpoch: signal('mock-host'),
           },
         },
@@ -1449,7 +1509,11 @@ describe('SettingsSourcePaneComponent', () => {
       const toasted = nextToast()
       answer({
         snapshot: both(),
-        providersResponse: { currentOs: 'linux', providers: providerInfo },
+        providersResponse: {
+          currentOs: 'linux',
+          secretStore: { store: 'os', state: 'ready' },
+          providers: providerInfo,
+        },
         installed: { epoch: 'mock-host', revision: 1 },
       })
       await toasted
@@ -1482,6 +1546,7 @@ describe('SettingsSourcePaneComponent', () => {
             provide: ActivityDataService,
             useValue: {
               receiptStanding: (): ReceiptStanding => 'current',
+              secretStore: signal<SecretStoreInfo | null>(null),
               hostEpoch: signal('mock-host'),
             },
           },
@@ -1508,7 +1573,11 @@ describe('SettingsSourcePaneComponent', () => {
       const toasted = nextToast()
       answer({
         snapshot: { revision: 'r2', kinds: [], connections: [state('git', [gitRoot])] },
-        providersResponse: { currentOs: 'linux', providers: providerInfo },
+        providersResponse: {
+          currentOs: 'linux',
+          secretStore: { store: 'os', state: 'ready' },
+          providers: providerInfo,
+        },
         installed: { epoch: 'mock-host', revision: 1 },
       })
       expect(await toasted).toBe('Jira removed')
@@ -1707,12 +1776,20 @@ describe('SettingsSourcePaneComponent connections', () => {
     )
     const saveProviderConfig = vi.fn().mockResolvedValue({
       snapshot: connectionsSnapshot(),
-      providersResponse: { currentOs: 'linux', providers: providerInfo },
+      providersResponse: {
+        currentOs: 'linux',
+        secretStore: { store: 'os', state: 'ready' },
+        providers: providerInfo,
+      },
       installed: { epoch: 'mock-host', revision: 1 },
     })
     const removeConnection = vi.fn().mockResolvedValue({
       snapshot: connectionsSnapshot(),
-      providersResponse: { currentOs: 'linux', providers: providerInfo },
+      providersResponse: {
+        currentOs: 'linux',
+        secretStore: { store: 'os', state: 'ready' },
+        providers: providerInfo,
+      },
       installed: { epoch: 'mock-host', revision: 1 },
     })
     const removed = vi.fn()
@@ -1734,6 +1811,7 @@ describe('SettingsSourcePaneComponent connections', () => {
           useValue: {
             receiptStanding,
             hostEpoch: signal('mock-host'),
+            secretStore: signal<SecretStoreInfo | null>(null),
           },
         },
         { provide: RuntimeEnvironmentService, useValue: { isTauri: (): boolean => true } },
@@ -1759,7 +1837,11 @@ describe('SettingsSourcePaneComponent connections', () => {
     const toasted = nextToast()
     answer({
       snapshot: connectionsSnapshot(),
-      providersResponse: { currentOs: 'linux', providers: providerInfo },
+      providersResponse: {
+        currentOs: 'linux',
+        secretStore: { store: 'os', state: 'ready' },
+        providers: providerInfo,
+      },
       installed: { epoch: 'a', revision: 1 },
     })
     await toasted
@@ -1776,7 +1858,11 @@ describe('SettingsSourcePaneComponent connections', () => {
     // The file holds the removal, but the app quit before it installed it.
     removeConnection.mockResolvedValueOnce({
       snapshot: connectionsSnapshot(),
-      providersResponse: { currentOs: 'linux', providers: providerInfo },
+      providersResponse: {
+        currentOs: 'linux',
+        secretStore: { store: 'os', state: 'ready' },
+        providers: providerInfo,
+      },
       installed: null,
     })
 
@@ -1805,7 +1891,11 @@ describe('SettingsSourcePaneComponent connections', () => {
     const toasted = nextToast()
     answer({
       snapshot: connectionsSnapshot(),
-      providersResponse: { currentOs: 'linux', providers: providerInfo },
+      providersResponse: {
+        currentOs: 'linux',
+        secretStore: { store: 'os', state: 'ready' },
+        providers: providerInfo,
+      },
       installed: { epoch: 'mock-host', revision: 2 },
     })
     await toasted

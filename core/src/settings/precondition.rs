@@ -3,7 +3,7 @@
 use std::collections::BTreeMap;
 
 use super::ConfigFile;
-use crate::model::ConnectionId;
+use crate::{model::ConnectionId, provider::connection::StoredValue};
 
 /// A field a writer can change: the label or a config value.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
@@ -21,8 +21,9 @@ pub struct EditBase {
     label: String,
     /// `None` for a legacy table that had no instance when the writer read it.
     instance: Option<String>,
-    /// The touched fields and the kind's account fields, as seen; `None` for unset.
-    fields: BTreeMap<FieldId, Option<String>>,
+    /// The touched fields and the kind's account fields as the file held them (a sealed
+    /// secret by its text); `None` for unset.
+    fields: BTreeMap<FieldId, Option<StoredValue>>,
 }
 
 impl EditBase {
@@ -30,7 +31,7 @@ impl EditBase {
         connection: ConnectionId,
         label: String,
         instance: Option<String>,
-        fields: BTreeMap<FieldId, Option<String>>,
+        fields: BTreeMap<FieldId, Option<StoredValue>>,
     ) -> Self {
         Self {
             connection,

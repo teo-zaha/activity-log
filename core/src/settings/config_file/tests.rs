@@ -503,3 +503,84 @@ fn debug_output_of_the_config_file_never_shows_a_token() {
     assert!(!debug.contains("glpat-secret-token"), "{debug}");
     assert!(debug.contains("config.toml"), "{debug}");
 }
+
+/// A secret may be `{ sealed = "…" }`: read as sealed (a text that does not parse kept with
+/// why), never as its value. Any other table, or a sealed field that holds no secret, is
+/// skipped with a warning; a string is always text.
+#[test]
+fn reads_a_sealed_secret_by_its_shape() {
+    use crate::provider::connection::{StoredSecret, StoredValue};
+    use crate::secrets::sealed::Malformed;
+
+    let sealed = "v1:os:2c9b4508:e5add042:Z6q9UyLkNkvLurag57DDwPh66TvP6jkJwkov3dxk6g";
+    let read = file(&format!(
+        r#"
+[[gitlab]]
+label = "Sealed"
+url = "https://gitlab.example.test"
+token = {{ sealed = "{sealed}" }}
+
+[[gitlab]]
+label = "Newer"
+token = {{ sealed = "v2:os:00000000:00000000:AAAAAAAAAAAAAAAAAAAAAA" }}
+
+[[gitlab]]
+label = "Shapes"
+url = {{ sealed = "{sealed}" }}
+token = {{ sealed = "{sealed}", extra = 1 }}
+user = "v1:os:looks:sealed:but-is-text"
+"#
+    ))
+    .connections();
+    let token = |id: &str| {
+        find(&read.connections, id)
+            .values()
+            .get_stored("GITLAB_TOKEN")
+            .cloned()
+    };
+    match token("gitlab/sealed") {
+        Some(StoredValue::Sealed(StoredSecret::Sealed(value))) => {
+            assert_eq!(value.as_str(), sealed)
+        }
+        other => panic!("{other:?}"),
+    }
+    assert!(matches!(
+        token("gitlab/newer"),
+        Some(StoredValue::Sealed(StoredSecret::Unreadable {
+            malformed: Malformed::Version,
+            ..
+        }))
+    ));
+    let sealed_values = find(&read.connections, "gitlab/sealed").values();
+    assert_eq!(sealed_values.get("GITLAB_TOKEN"), None);
+
+    let shapes = find(&read.connections, "gitlab/shapes").values();
+    assert_eq!(shapes.get_stored("GITLAB_URL"), None);
+    assert_eq!(shapes.get_stored("GITLAB_TOKEN"), None);
+    assert_eq!(
+        shapes.get("GITLAB_USER").as_deref(),
+        Some("v1:os:looks:sealed:but-is-text")
+    );
+    assert_eq!(read.warnings.len(), 2, "{:?}", read.warnings);
+}
+
+/// What a writer saw of a sealed token is its text: another sealed value there is a change.
+#[test]
+fn a_changed_sealed_token_is_a_conflict() {
+    use crate::settings::{FieldId, Precondition, precondition::check};
+    let with = |sealed: &str| {
+        file(&format!(
+            "[[gitlab]]\nlabel = \"Work\"\nurl = \"https://gitlab.example.test\"\ntoken = {{ sealed = \"{sealed}\" }}\n"
+        ))
+    };
+    let before = with("v1:os:2c9b4508:e5add042:Z6q9UyLkNkvLurag57DDwPh66TvP6jkJwkov3dxk6g");
+    let id = "gitlab/work".parse::<ConnectionId>().unwrap();
+    let base = before
+        .edit_base(&id, &[FieldId::Value("GITLAB_TOKEN")])
+        .unwrap();
+    let precondition = Precondition::Unchanged(base);
+    assert!(check(&before, &precondition).is_ok());
+    let after = with("v1:os:2c9b4508:e5add042:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA");
+    let conflict = check(&after, &precondition).unwrap_err();
+    assert_eq!(conflict.fields, [FieldId::Value("GITLAB_TOKEN")]);
+}
