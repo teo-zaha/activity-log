@@ -24,7 +24,9 @@ jobs:
             libwebkit2gtk-4.1-dev \
             libgtk-3-dev \
             libayatana-appindicator3-dev \
-            librsvg2-dev
+            librsvg2-dev \
+            dbus \
+            gnome-keyring
 
       - uses: dtolnay/rust-toolchain@stable
         with:
@@ -38,7 +40,30 @@ jobs:
       - name: Clippy
         run: cargo clippy --workspace --all-targets -- -D warnings
 
+      - name: Clippy (real-store tests)
+        run: cargo clippy -p core --all-targets --features real-store-tests -- -D warnings
+
       # The desktop's tests have not been run on a headless Linux runner yet;
       # they run on Windows and in `pnpm verify`.
       - name: Test
         run: cargo test --workspace --exclude activity-log-desktop
+
+      # The Secret Service itself (core's real-store tests, on an item of their own): GNOME
+      # Keyring on a private session bus, then no bus at all, which must be `Unavailable`.
+      # `CI=true` and this variable are the marker they refuse to run without.
+      - name: Real secret store
+        env:
+          ACTIVITY_LOG_REAL_STORE_TESTS: '1'
+        run: |
+          dbus-run-session -- sh -c '
+            printf ci | gnome-keyring-daemon --unlock --components=secrets
+            cargo test -p core --features real-store-tests --test real_secret_store
+          '
+
+      - name: Real secret store without a session bus
+        env:
+          ACTIVITY_LOG_REAL_STORE_TESTS: '1'
+        run: |
+          env -u DBUS_SESSION_BUS_ADDRESS XDG_RUNTIME_DIR=/nonexistent \
+            cargo test -p core --features real-store-tests --test real_secret_store \
+            -- --ignored without_a_session_bus

@@ -26,6 +26,19 @@ pub(crate) fn cache_home() -> Option<PathBuf> {
     }
 }
 
+/// The OS folder for data that stays on this computer (never roams with a profile):
+/// `%LOCALAPPDATA%`, `~/Library/Application Support` or `$XDG_DATA_HOME` (`~/.local/share`);
+/// `None` without one.
+pub(crate) fn local_data_home() -> Option<PathBuf> {
+    if cfg!(target_os = "windows") {
+        env_path("LOCALAPPDATA")
+    } else if cfg!(target_os = "macos") {
+        home().map(|home| home.join("Library").join("Application Support"))
+    } else {
+        env_path("XDG_DATA_HOME").or_else(|| home().map(|home| home.join(".local").join("share")))
+    }
+}
+
 fn home() -> Option<PathBuf> {
     env_path("HOME")
 }

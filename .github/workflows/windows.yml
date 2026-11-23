@@ -27,5 +27,15 @@ jobs:
       - name: Clippy
         run: cargo clippy --workspace --all-targets -- -D warnings
 
+      - name: Clippy (real-store tests)
+        run: cargo clippy -p core --all-targets --features real-store-tests -- -D warnings
+
       - name: Test
         run: cargo test --workspace
+
+      # Credential Manager itself (core's real-store tests, on a credential of their own).
+      # `CI=true` and this variable are the marker they refuse to run without.
+      - name: Real secret store
+        env:
+          ACTIVITY_LOG_REAL_STORE_TESTS: '1'
+        run: cargo test -p core --features real-store-tests --test real_secret_store

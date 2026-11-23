@@ -10,6 +10,7 @@ pub mod model;
 pub(crate) mod platform;
 pub mod provider;
 pub mod runtime;
+pub mod secrets;
 pub mod settings;
 pub mod ts;
 pub mod utils;

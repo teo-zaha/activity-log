@@ -3,6 +3,7 @@ pub(crate) mod dirs;
 #[cfg(target_os = "macos")]
 pub mod macos;
 pub mod private_file;
+pub(crate) mod secret_store;
 #[cfg(target_os = "windows")]
 mod windows;
 #[cfg(target_os = "windows")]
