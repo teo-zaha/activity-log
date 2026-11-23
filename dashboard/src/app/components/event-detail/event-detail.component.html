@@ -50,7 +50,7 @@
           [backLabel]="pageBack ? 'Close event details' : null"
           [closeLabel]="pageBack ? null : 'Close event details'"
           [backKeys]="keys.closeOrBack"
-          [closeKeys]="keys.close"
+          closeShortcut="layer.close"
           (goBack)="close()"
           (dismiss)="close()"
         >
@@ -81,7 +81,9 @@
                 [attr.aria-disabled]="index === 0"
                 [attr.aria-keyshortcuts]="stepKeys().previous"
                 (click)="step(-1)"
-              ></button>
+              >
+                <app-key-tag shortcut="details.previous" />
+              </button>
               <button
                 appIconButton
                 size="sm"
@@ -90,7 +92,9 @@
                 [attr.aria-disabled]="index === entries.length - 1"
                 [attr.aria-keyshortcuts]="stepKeys().next"
                 (click)="step(1)"
-              ></button>
+              >
+                <app-key-tag shortcut="details.next" />
+              </button>
             </div>
           }
         </app-page-header>
@@ -177,7 +181,7 @@
           [backLabel]="isPhone() && !listed ? 'Close event details' : null"
           [closeLabel]="isPhone() && !listed ? null : 'Close event details'"
           [backKeys]="keys.closeOrBack"
-          [closeKeys]="keys.close"
+          closeShortcut="layer.close"
           (goBack)="close()"
           (dismiss)="close()"
         >
@@ -224,7 +228,7 @@
           [backLabel]="isPhone() ? 'Close event details' : null"
           [closeLabel]="isPhone() ? null : 'Close event details'"
           [backKeys]="keys.closeOrBack"
-          [closeKeys]="keys.close"
+          closeShortcut="layer.close"
           (goBack)="close()"
           (dismiss)="close()"
         >

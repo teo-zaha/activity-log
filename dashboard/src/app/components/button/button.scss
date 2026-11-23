@@ -8,6 +8,8 @@
     --_button-size: 36px;
     --icon-size: 18px;
 
+    // A key tag (`app-key-tag`) sits over its corner.
+    position: relative;
     display: inline-flex;
     align-items: center;
     justify-content: center;

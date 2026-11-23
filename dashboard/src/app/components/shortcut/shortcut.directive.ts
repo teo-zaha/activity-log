@@ -5,8 +5,9 @@ import { ShortcutService } from '../../services/shortcut.service'
 /**
  * Binds a shortcut to its control: the key clicks the host, or focuses it if it is a field, while
  * the host is in the page, not `inert` and not disabled; otherwise the key goes to the binding
- * before. Names the keys in `aria-keyshortcuts`. The key tag is `<app-key-tag>`, where there is
- * room for one. A host inside a view the router keeps while away binds only that view's entries.
+ * before. Names the keys in `aria-keyshortcuts`; an `<app-key-tag>` inside the control shows them
+ * while Shift is held. A host inside a view the router keeps while away binds only that view's
+ * entries.
  */
 @Directive({
   selector: '[appShortcut]',

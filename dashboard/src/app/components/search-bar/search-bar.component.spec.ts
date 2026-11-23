@@ -54,7 +54,7 @@ describe('SearchBarComponent', () => {
     expect(screen.getByRole('button', { name: 'Clear filter' })).toBeTruthy()
   })
 
-  it('names the shortcut of its view and shows its key while empty', async () => {
+  it('names the shortcut of its view and tags its key while empty', async () => {
     await render('<app-search-bar placeholder="Filter" shortcut="timeline.filter" />', {
       imports: [SearchBarComponent],
     })

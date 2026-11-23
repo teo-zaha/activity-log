@@ -46,6 +46,8 @@ export class SidebarComponent {
   /** The views', the help's and Settings' keys, for `aria-keyshortcuts`: the shell's fallbacks run them. */
   protected readonly shortcuts = inject(ShortcutService)
   protected readonly viewShortcuts = VIEW_SHORTCUTS
+  /** What the help's tooltip says, also its accessible description (the tooltip's). */
+  protected readonly revealHint = 'Hold Shift to show shortcuts'
   protected readonly isPhone = this.breakpoints.phone
   protected readonly isRail = this.breakpoints.rail
   /** On a phone the settings are the bottom bar's last tab: its views are not current then. */

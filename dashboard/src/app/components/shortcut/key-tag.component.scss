@@ -1,34 +1,64 @@
-@use '../dashboard-shared' as ui;
+// A badge over its control's top right corner, inside the control's box; on a compact button
+// (`data-size='sm'`), whose icon or label fills it, over its bottom right corner and half out.
+// One size for every tag.
+$size: 16px;
+$font-size: 10px;
+$inset: 2px;
+$compact-overhang-x: -2px; // the toolbars' gap: never over the next button
+$compact-overhang-y: -6px;
+$fade: 120ms;
 
 :host {
+  position: absolute;
+  top: $inset;
+  right: $inset;
+  z-index: 1;
   display: inline-grid;
   place-items: center;
-  min-width: 22px;
-  height: 22px;
-  padding: 0 5px;
-  border: 1px solid color-mix(in srgb, currentColor 30%, transparent);
-  border-bottom-width: 2px;
-  border-radius: 6px;
+  box-sizing: border-box;
+  min-width: $size;
+  height: $size;
+  padding: 0 3px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--surface);
+  color: var(--text-secondary);
   font:
-    600 12px Inter,
+    600 #{$font-size}/ 1 Inter,
     sans-serif;
+  letter-spacing: 0;
+  text-transform: none;
   white-space: nowrap;
   pointer-events: none;
+  opacity: 0;
+  visibility: hidden;
+}
+
+:host-context([data-size='sm']) {
+  top: auto;
+  right: $compact-overhang-x;
+  bottom: $compact-overhang-y;
+}
+
+:host(.is-shown) {
+  opacity: 1;
+  visibility: visible;
 }
 
 :host([hidden]) {
   display: none;
 }
 
-// No hardware keyboard to press it on: a touch screen at any width, and the phone layout.
-@include ui.no-hover {
+@media (prefers-reduced-motion: no-preference) {
   :host {
-    display: none;
+    transition:
+      opacity $fade ease-out,
+      visibility 0s linear $fade;
   }
-}
 
-@include ui.down('phone') {
-  :host {
-    display: none;
+  :host(.is-shown) {
+    transition:
+      opacity $fade ease-out,
+      visibility 0s;
   }
 }

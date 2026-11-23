@@ -22,6 +22,7 @@ import { EmptyStateComponent } from '../empty-state/empty-state.component'
 import { IconButtonComponent } from '../button/icon-button.component'
 import { ExternalLinkDirective } from '../external-link/external-link.directive'
 import { MeetingDescriptionComponent } from '../meeting-description/meeting-description.component'
+import { KeyTagComponent } from '../shortcut/key-tag.component'
 import { PageHeaderComponent } from '../page-header/page-header.component'
 import { SourceBadgeComponent } from '../source-badge/source-badge.component'
 import { TopLayer } from '../../layouts/shell/top-layer.service'
@@ -44,6 +45,7 @@ import { ShortcutService, ariaKeysOf } from '../../services/shortcut.service'
     EmptyStateComponent,
     ExternalLinkDirective,
     IconButtonComponent,
+    KeyTagComponent,
     MatIconModule,
     MeetingDescriptionComponent,
     PageHeaderComponent,
@@ -72,7 +74,6 @@ export class EventDetailComponent {
    */
   protected readonly keys = {
     back: this.shortcuts.ariaKeys('app.back'),
-    close: this.shortcuts.ariaKeys('layer.close'),
     closeOrBack: ariaKeysOf([
       this.shortcuts.ariaKeys('layer.close'),
       this.shortcuts.ariaKeys('app.back'),

@@ -64,8 +64,8 @@ $breakpoints: (
   }
 }
 
-/// Where the pointer cannot hover (a touch screen), at any width: hides what only a mouse and a
-/// keyboard use, such as key tags. `@include ui.no-hover { display: none; }`.
+/// Where the pointer cannot hover (a touch screen), at any width: what a finger needs instead of
+/// a mouse, such as more room. `@include ui.no-hover { padding-block: 13px; }`.
 @mixin no-hover {
   @media (hover: none) {
     @content;

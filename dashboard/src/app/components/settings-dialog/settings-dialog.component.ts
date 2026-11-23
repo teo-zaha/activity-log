@@ -86,7 +86,6 @@ export class SettingsDialogComponent {
    */
   protected readonly keys = {
     back: this.shortcuts.ariaKeys('app.back'),
-    close: this.shortcuts.ariaKeys('layer.close'),
   }
   private readonly nav = viewChild(SettingsNavComponent)
   private readonly pageTitle = viewChild<ElementRef<HTMLElement>>('pageTitle')

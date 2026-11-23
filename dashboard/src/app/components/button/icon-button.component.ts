@@ -5,12 +5,14 @@ import type { ButtonSize, ButtonType, ButtonVariant } from './button.types'
 /**
  * A square button that shows only an icon, so its `label` is required and becomes the
  * accessible name: `<button appIconButton icon="close" label="Close"></button>`. Add `matTooltip`
- * on the element when sighted users need the label too.
+ * on the element when sighted users need the label too. Its one content is a key tag.
  */
 @Component({
   selector: 'button[appIconButton], a[appIconButton]',
   imports: [MatIconModule],
-  template: `<mat-icon [class.u-spin]="busy()">{{ busy() ? 'autorenew' : icon() }}</mat-icon>`,
+  // Content is only for a key tag (`app-key-tag`), which lies over the icon's corner.
+  template: `<mat-icon [class.u-spin]="busy()">{{ busy() ? 'autorenew' : icon() }}</mat-icon
+    ><ng-content />`,
   styleUrl: './button.scss',
   host: {
     'data-icon-only': '',

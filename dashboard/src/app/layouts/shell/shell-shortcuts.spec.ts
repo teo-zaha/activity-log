@@ -6,7 +6,7 @@ import userEvent from '@testing-library/user-event'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { createEntryAdapter } from '../../providers/provider-adapter'
 import { ActivityDataService } from '../../services/activity-data.service'
-import type { ShortcutPlatform } from '../../services/shortcut.service'
+import { REVEAL_DELAY_MS, type ShortcutPlatform } from '../../services/shortcut.service'
 import { activityLog, MockBackendTransport } from '../../testing/activity-fixtures'
 import { type OpenApp, openApp } from '../../testing/app'
 import { mockPhone } from '../../testing/media'
@@ -58,6 +58,53 @@ describe('Shortcuts in the app', APP_RENDER_TEST, () => {
     phone?.restore()
     phone = null
     localStorage.clear()
+  })
+
+  describe('Key tags: shown while Shift is held on its own', () => {
+    const tagOf = (control: HTMLElement): Element | null => control.querySelector('app-key-tag')
+    const shown = (control: HTMLElement): boolean =>
+      tagOf(control)?.classList.contains('is-shown') ?? false
+
+    it('tags Collect and the calendar’s controls, hidden until Shift is held', async () => {
+      const { settle } = await openApp('/day/2026-05-18', { platform: BROWSER })
+      await settle()
+      const controls = [
+        collectButton(),
+        screen.getByRole('button', { name: 'Previous day' }),
+        screen.getByRole('button', { name: 'Today' }),
+        screen.getByRole('button', { name: 'Next day' }),
+      ]
+      expect(controls.map(control => tagOf(control)?.textContent)).toEqual(['R', 'P', 'T', 'N'])
+      expect(controls.map(control => control.getAttribute('aria-keyshortcuts'))).toEqual([
+        'R',
+        'P',
+        'T',
+        'N',
+      ])
+      expect(controls.some(shown)).toBe(false)
+
+      press('Shift', { shiftKey: true })
+      await vi.waitFor(() => expect(controls.every(shown)).toBe(true))
+      fireEvent(document.body, new KeyboardEvent('keyup', { key: 'Shift', bubbles: true }))
+      await vi.waitFor(() => expect(controls.some(shown)).toBe(false))
+    })
+
+    it('tags the filter, and shows nothing while it has focus', async () => {
+      await openApp('/timeline', { platform: BROWSER })
+      const field = await screen.findByRole('searchbox', { name: 'Filter activity' }, SLOW)
+      const dock = field.parentElement
+      if (!dock) throw new Error('the filter has its dock')
+      expect(field.getAttribute('aria-keyshortcuts')).toBe('/')
+
+      press('Shift', { shiftKey: true })
+      await vi.waitFor(() => expect(shown(dock)).toBe(true))
+      fireEvent(document.body, new KeyboardEvent('keyup', { key: 'Shift', bubbles: true }))
+
+      field.focus()
+      press('Shift', { shiftKey: true })
+      await new Promise(resolve => setTimeout(resolve, REVEAL_DELAY_MS + 50))
+      expect(shown(dock)).toBe(false)
+    })
   })
 
   describe('`/` and the Timeline’s filter', () => {
@@ -525,7 +572,8 @@ describe('Shortcuts in the app', APP_RENDER_TEST, () => {
           )
         )
         expect(helpButton.hasAttribute('aria-keyshortcuts')).toBe(false)
-        expect(helpButton.querySelector('app-key-tag')?.hasAttribute('hidden')).toBe(true)
+        // Its tag still says that Shift shows the keys left.
+        expect(helpButton.querySelector('app-key-tag')?.textContent).toBe('⇧')
         await userEvent.click(helpButton)
         expect(await helpRows()).toEqual([
           'Collect: ⌘R',

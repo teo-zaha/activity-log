@@ -31,7 +31,9 @@
         label="Previous day"
         appShortcut="calendar.previous"
         (click)="viewState.navigateDay(-1)"
-      ></button>
+      >
+        <app-key-tag shortcut="calendar.previous" />
+      </button>
       <button
         appButton
         variant="ghost"
@@ -50,7 +52,9 @@
         label="Next day"
         appShortcut="calendar.next"
         (click)="viewState.navigateDay(1)"
-      ></button>
+      >
+        <app-key-tag shortcut="calendar.next" />
+      </button>
     </div>
     <div class="nav-controls zoom-controls">
       <button

@@ -23,7 +23,7 @@
         [backLabel]="isPhone() ? 'Back to settings' : null"
         [closeLabel]="isPhone() ? null : 'Close settings'"
         [backKeys]="keys.back"
-        [closeKeys]="keys.close"
+        closeShortcut="layer.close"
         (goBack)="back()"
         (dismiss)="close()"
       >

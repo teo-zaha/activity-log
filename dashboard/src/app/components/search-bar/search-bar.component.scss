@@ -77,10 +77,9 @@
 }
 
 .search-hint {
-  position: absolute;
+  top: 50%;
   right: 12px;
-  border-color: var(--border);
-  color: var(--text-tertiary);
+  translate: 0 -50%;
 }
 
 @include ui.down('tablet') {

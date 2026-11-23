@@ -83,6 +83,7 @@
 
 .view-btn {
   @include nav.row;
+  position: relative;
   text-decoration: none;
 
   mat-icon {
@@ -122,6 +123,7 @@
 .help-button,
 .settings-button {
   @include nav.row;
+  position: relative;
 
   mat-icon {
     color: var(--text-tertiary);
@@ -136,9 +138,26 @@
   white-space: nowrap;
 }
 
-.help-key {
-  flex: none;
-  color: var(--text-tertiary);
+// A row's key tag at its end, over the space the label leaves; the rail and the phone's bottom
+// bar keep the tag's own corner.
+.sidebar:not(.is-rail) .row-key {
+  top: 50%;
+  right: 10px;
+  translate: 0 -50%;
+}
+
+// The rail's square rows: the corner itself, as far from the icon as the row allows.
+.sidebar.is-rail .row-key {
+  top: 0;
+  right: 0;
+}
+
+@include ui.down('phone') {
+  .sidebar:not(.is-rail) .row-key {
+    top: 2px;
+    right: 2px;
+    translate: none;
+  }
 }
 
 // ── Rail (tablet & narrow desktop windows) ───────────────────────────────────

@@ -107,7 +107,7 @@ describe('the keyboard help in a browser', () => {
     expect(help.getBoundingClientRect().bottom).toBeLessThanOrEqual(innerHeight)
   })
 
-  it('shows the Keyboard card on a touch screen, without the `?` key tag', async () => {
+  it('shows the Keyboard card on a touch screen, its `?` tag hidden until Shift is held', async () => {
     await page.viewport(402, 800)
     await touch(true)
     await openApp('/timeline?settings=general', { platform: BROWSER })
@@ -121,6 +121,6 @@ describe('the keyboard help in a browser', () => {
     expect(toggle?.width ?? 0).toBeGreaterThan(0)
     const tag = card?.querySelector('app-key-tag')
     if (!tag) throw new Error('the help row has its key tag')
-    expect(getComputedStyle(tag).display).toBe('none')
+    expect(getComputedStyle(tag).visibility).toBe('hidden')
   })
 })
