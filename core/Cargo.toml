@@ -14,7 +14,9 @@ test-support = []
 real-store-tests = []
 
 [dependencies]
+aes-siv = { version = "=0.8.0", default-features = false, features = ["alloc", "zeroize"] }
 anyhow.workspace = true
+base64 = "0.23"
 chrono.workspace = true
 chrono-tz.workspace = true
 calcard = { version = "0.3", default-features = false }
@@ -27,6 +29,7 @@ iana-time-zone = "0.1"
 reqwest.workspace = true
 serde.workspace = true
 serde_json.workspace = true
+sha2 = "0.11"
 strum.workspace = true
 subtle = "2.6"
 tokio.workspace = true

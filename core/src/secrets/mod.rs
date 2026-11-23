@@ -27,6 +27,7 @@ mod key_file;
 #[cfg(any(test, feature = "test-support"))]
 mod memory;
 mod os_store;
+pub mod sealed;
 mod store;
 #[cfg(test)]
 mod tests;

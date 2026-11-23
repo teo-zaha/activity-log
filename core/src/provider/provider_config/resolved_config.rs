@@ -209,7 +209,8 @@ pub fn encode_config_list(items: &[String]) -> String {
     serde_json::to_string(items).expect("a list of strings always serializes")
 }
 
-fn parse_bool(value: &str) -> Option<bool> {
+/// A bool as every reader of the config reads it: `true` or `false`, any case, trimmed.
+pub(crate) fn parse_bool(value: &str) -> Option<bool> {
     match value.trim().to_ascii_lowercase().as_str() {
         "true" => Some(true),
         "false" => Some(false),
