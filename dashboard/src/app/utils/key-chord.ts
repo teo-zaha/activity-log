@@ -137,6 +137,11 @@ export function formatChord(keys: ChordKeys, os: Os): string {
   return `${modifier === 'mod' ? 'Ctrl' : 'Alt'}+${label}`
 }
 
+/** How Shift reads on a key tag: `⇧` on macOS, as its menus write it, `Shift` elsewhere. */
+export function formatShift(os: Os): string {
+  return os === 'mac' ? '⇧' : 'Shift'
+}
+
 const ARIA_KEYS: Readonly<Record<ChordKey, string>> = {
   escape: 'Escape',
   f5: 'F5',

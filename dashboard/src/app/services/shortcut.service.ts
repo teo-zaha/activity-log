@@ -4,6 +4,7 @@ import { toSignal } from '@angular/core/rxjs-interop'
 import { MatDialog } from '@angular/material/dialog'
 import { type ActivatedRouteSnapshot, Router } from '@angular/router'
 import { listener, setupSync } from '@signality/core/browser/listener'
+import { debounceCallback } from '@signality/core/scheduling/debounce-callback'
 import { concat, map, mergeMap, of, scan } from 'rxjs'
 import {
   type Build,
@@ -26,6 +27,7 @@ import {
   ariaChord,
   chordOf,
   formatChord,
+  formatShift,
   osOf,
 } from '../utils/key-chord'
 import { RuntimeEnvironmentService } from './backend/runtime-environment.service'
@@ -87,6 +89,15 @@ export const HAND_OFF_LIMIT_MS = 3000
 type HandOff =
   | { readonly kind: 'none' }
   | { readonly kind: 'pending'; readonly id: ShortcutId; readonly until: number }
+
+/**
+ * How long Shift is held on its own before the key tags show (`revealKeys`): long enough that a
+ * Shift pressed on its way to a letter or a click never flashes them.
+ */
+export const REVEAL_DELAY_MS = 180
+
+/** Shift held on its own: `pressed` until `REVEAL_DELAY_MS` passed, then `held`. */
+type ShiftHold = 'none' | 'pressed' | 'held'
 
 interface Binding {
   readonly run: () => void | false
@@ -215,6 +226,23 @@ export class ShortcutService {
   /** A hand-off to a field under way (`expectHandOff`), until `handOff` makes it. */
   private handOffState: HandOff = { kind: 'none' }
 
+  private readonly shiftHold = signal<ShiftHold>('none')
+  /** Each Shift press starts it again; it reveals only if Shift is still held on its own. */
+  private readonly revealAfterDelay = debounceCallback(() => {
+    if (this.shiftHold() === 'pressed') this.shiftHold.set('held')
+  }, REVEAL_DELAY_MS)
+
+  /**
+   * Whether the key tags show: Shift is held on its own, past `REVEAL_DELAY_MS`, and no dialog
+   * or modal layer holds the keys (the help included, whose `?` is the only key that works).
+   */
+  readonly revealKeys: Signal<boolean> = computed(
+    () =>
+      this.shiftHold() === 'held' &&
+      this.openDialogs().length === 0 &&
+      !this.layers().some(layer => layer.kind === 'modal')
+  )
+
   private readonly routeScope = computed(() => {
     this.router.lastSuccessfulNavigation()
     return routeScopeOf(this.router.routerState.snapshot.root)
@@ -236,10 +264,21 @@ export class ShortcutService {
     // can come before the first render.
     setupSync(() => {
       listener(this.document, 'keydown', event => this.onKeydown(event))
-      // Only to know when a held key is let go (`held`).
-      listener(this.document, 'keyup', () => (this.held = false))
+      // To know when a held key is let go (`held`, `shiftHold`).
+      listener(this.document, 'keyup', event => {
+        this.held = false
+        if (event.key === 'Shift') this.shiftHold.set('none')
+      })
+      // Shift+click is no reveal; captured, so a control that stops the event still ends it.
+      listener.capture(this.document, 'pointerdown', () => this.shiftHold.set('none'))
+      // A key let go elsewhere never comes back as `keyup`.
+      listener(this.document, 'visibilitychange', () => this.shiftHold.set('none'))
       const view = this.document.defaultView
-      if (view) listener(view, 'blur', () => (this.held = false))
+      if (view)
+        listener(view, 'blur', () => {
+          this.held = false
+          this.shiftHold.set('none')
+        })
     })
   }
 
@@ -379,6 +418,9 @@ export class ShortcutService {
     return chord ? formatChord(chord.keys, this.platform.os) : null
   }
 
+  /** How Shift reads here, on the tag that says holding it shows the others. */
+  readonly shiftKey = formatShift(this.platform.os)
+
   /** How people read `chord` here. */
   format(chord: Chord): string {
     return formatChord(chord.keys, this.platform.os)
@@ -393,6 +435,7 @@ export class ShortcutService {
   }
 
   private onKeydown(event: KeyboardEvent): void {
+    this.followShift(event)
     // Widgets claim only unmodified keys, so a held ⌘ key always gets here.
     this.held = event.repeat
     // Handled by a field or widget, mid-composition (IME), or held down.
@@ -406,6 +449,28 @@ export class ShortcutService {
     if (match === null || this.menuTakes(match.chord)) return
     if (this.typingAt(target) && !firesWhileTyping(match.chord)) return
     if (this.run(match.entry.id)) event.preventDefault()
+  }
+
+  /**
+   * Shift pressed on its own, away from fields and typeahead widgets and outside `inert`, starts
+   * the reveal; its auto-repeat leaves it as it is, and any other key ends it (Shift+letter types
+   * or is a chord), also one a field or widget handled.
+   */
+  private followShift(event: KeyboardEvent): void {
+    if (event.key !== 'Shift') {
+      this.shiftHold.set('none')
+      return
+    }
+    if (event.repeat) return
+    const target = event.target
+    const alone = !event.ctrlKey && !event.altKey && !event.metaKey
+    const free = !(target instanceof Element && target.closest('[inert]') !== null)
+    if (alone && free && !this.typingAt(target)) {
+      this.shiftHold.set('pressed')
+      this.revealAfterDelay()
+    } else {
+      this.shiftHold.set('none')
+    }
   }
 
   /** Whether the installed macOS menu takes `chord` before the page (`menuOwnsAccelerators`). */

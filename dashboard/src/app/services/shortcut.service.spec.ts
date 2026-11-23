@@ -8,6 +8,7 @@ import { SHORTCUTS, type ShortcutEntry } from '../models/shortcuts'
 import { ShortcutPreferences } from './shortcut-preferences.service'
 import {
   HAND_OFF_LIMIT_MS,
+  REVEAL_DELAY_MS,
   SHORTCUT_HELP_DIALOG_ID,
   SHORTCUT_PLATFORM,
   SHORTCUT_SCOPE,
@@ -742,5 +743,120 @@ describe('ShortcutService', () => {
     expect(filter()).toBe(true)
     await TestBed.inject(Router).navigateByUrl('/day')
     expect(filter()).toBe(false)
+  })
+
+  describe('revealing the key tags: Shift held on its own', () => {
+    afterEach(() => {
+      vi.useRealTimers()
+    })
+
+    /** The service, with the delay's timer in the spec's hands. */
+    async function revealing(): Promise<ShortcutService> {
+      const shortcuts = await setup(BROWSER)
+      vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
+      return shortcuts
+    }
+
+    function release(key = 'Shift'): void {
+      document.body.dispatchEvent(new KeyboardEvent('keyup', { key, bubbles: true }))
+    }
+
+    function holdShift(target: EventTarget = document.body): void {
+      press('Shift', { shiftKey: true }, target)
+    }
+
+    it('shows them once Shift has been held past the delay, its repeats changing nothing', async () => {
+      const shortcuts = await revealing()
+      expect(shortcuts.revealKeys()).toBe(false)
+
+      holdShift()
+      vi.advanceTimersByTime(REVEAL_DELAY_MS - 50)
+      // Auto-repeat neither starts the delay again nor ends it.
+      press('Shift', { shiftKey: true, repeat: true })
+      vi.advanceTimersByTime(49)
+      expect(shortcuts.revealKeys()).toBe(false)
+      vi.advanceTimersByTime(1)
+      expect(shortcuts.revealKeys()).toBe(true)
+      press('Shift', { shiftKey: true, repeat: true })
+      expect(shortcuts.revealKeys()).toBe(true)
+
+      release()
+      expect(shortcuts.revealKeys()).toBe(false)
+    })
+
+    it('never shows them for a Shift on its way to a letter or a click', async () => {
+      const shortcuts = await revealing()
+      holdShift()
+      press('R', { shiftKey: true, code: 'KeyR' })
+      vi.advanceTimersByTime(REVEAL_DELAY_MS)
+      expect(shortcuts.revealKeys()).toBe(false)
+
+      release()
+      holdShift()
+      document.body.dispatchEvent(new Event('pointerdown', { bubbles: true }))
+      vi.advanceTimersByTime(REVEAL_DELAY_MS)
+      expect(shortcuts.revealKeys()).toBe(false)
+    })
+
+    it('hides them at another key, a click, and as the window or the page goes away', async () => {
+      const shortcuts = await revealing()
+      const ends: readonly (() => void)[] = [
+        () => press('R', { shiftKey: true, code: 'KeyR' }),
+        () => document.body.dispatchEvent(new Event('pointerdown', { bubbles: true })),
+        () => window.dispatchEvent(new Event('blur')),
+        () => document.dispatchEvent(new Event('visibilitychange')),
+      ]
+      for (const end of ends) {
+        holdShift()
+        vi.advanceTimersByTime(REVEAL_DELAY_MS)
+        expect(shortcuts.revealKeys()).toBe(true)
+        end()
+        expect(shortcuts.revealKeys()).toBe(false)
+        // Held on, Shift shows nothing again until it is pressed again.
+        vi.advanceTimersByTime(REVEAL_DELAY_MS)
+        expect(shortcuts.revealKeys()).toBe(false)
+      }
+    })
+
+    it('shows none while typing, with another modifier, or inside inert content', async () => {
+      const shortcuts = await revealing()
+      const input = field()
+      const select = document.createElement('div')
+      select.setAttribute('role', 'combobox')
+      const inert = document.createElement('div')
+      inert.setAttribute('inert', '')
+      const inside = document.createElement('button')
+      inert.append(inside)
+      document.body.append(select, inert)
+
+      for (const target of [input, select, inside]) {
+        holdShift(target)
+        vi.advanceTimersByTime(REVEAL_DELAY_MS)
+        expect(shortcuts.revealKeys()).toBe(false)
+        release()
+      }
+      press('Shift', { shiftKey: true, metaKey: true })
+      vi.advanceTimersByTime(REVEAL_DELAY_MS)
+      expect(shortcuts.revealKeys()).toBe(false)
+    })
+
+    it('shows none under a modal layer or a dialog, the help included', async () => {
+      const shortcuts = await revealing()
+      holdShift()
+      vi.advanceTimersByTime(REVEAL_DELAY_MS)
+      expect(shortcuts.revealKeys()).toBe(true)
+
+      const closePicker = shortcuts.openLayer({ kind: 'modal' })
+      expect(shortcuts.revealKeys()).toBe(false)
+      closePicker()
+      expect(shortcuts.revealKeys()).toBe(true)
+
+      vi.useRealTimers()
+      const dialogs = TestBed.inject(MatDialog)
+      dialogs.open(ShortcutHelpDialogComponent, { id: SHORTCUT_HELP_DIALOG_ID })
+      await vi.waitFor(() => expect(shortcuts.revealKeys()).toBe(false))
+      dialogs.closeAll()
+      await vi.waitFor(() => expect(shortcuts.revealKeys()).toBe(true))
+    })
   })
 })
