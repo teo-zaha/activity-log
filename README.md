@@ -574,7 +574,7 @@ nix develop .#windows -c pnpm desktop:build:windows  # cross-build Windows NSIS 
 pnpm --dir dashboard exec tauri icon src/favicon.svg -o ../desktop/icons  # regenerate app icons
 ```
 
-The Windows installer is one click: a small window installs Activity Log for the current user into `%LOCALAPPDATA%\Activity Log` (or the folder `/D=` names), then opens it. It asks only when needed (Activity Log is open; a newer version is installed, which it refuses), and the uninstaller asks whether to also delete your settings and cached activity. Its window and pages are `desktop/installer/one-click.nsh`, on our copy of Tauri's NSIS template (`desktop/installer/installer.nsi`, with our changes between `; >>> activity-log` markers). When a Tauri update changes the bundler, check and merge its template:
+The Windows installer is one click: a small window installs Activity Log for the current user into `%LOCALAPPDATA%\Activity Log` (or the folder `/D=` names), then opens it. It asks only when needed (Activity Log is open; a newer version is installed, which it refuses), and the uninstaller asks whether to also delete your settings and cached activity. Its window and pages are `desktop/installer/one-click.nsh`, on our copy of Tauri's NSIS template (`desktop/installer/installer.nsi`, with our changes between `; >>> activity-log` markers). `pnpm desktop:build:windows` and the Windows CI build first check that the template copy is the installed Tauri CLI's. When a Tauri update changes the bundler, merge its template:
 
 ```bash
 nix develop -c desktop/installer/template.sh check          # is the copy the CLI's version?
