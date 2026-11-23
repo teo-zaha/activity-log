@@ -48,7 +48,7 @@ export function openShortcutHelp(dialogs: MatDialog): void {
 }
 
 /**
- * The help (`?`, or Settings › General): every command that has a key here, once, with all its
+ * The help (`?`, the sidebar, or Settings › General on a phone): every command that has a key here, once, with all its
  * keys, by where it works, from the registry. With single-key shortcuts off it lists only the
  * keys left and says so.
  */

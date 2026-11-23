@@ -1,5 +1,6 @@
 import { NgTemplateOutlet } from '@angular/common'
 import { Component, type TemplateRef, inject, input } from '@angular/core'
+import { MatDialog } from '@angular/material/dialog'
 import { MatIconModule } from '@angular/material/icon'
 import { MatTooltipModule } from '@angular/material/tooltip'
 import { RouterLink, RouterLinkActive } from '@angular/router'
@@ -11,14 +12,24 @@ import { ShortcutService } from '../../services/shortcut.service'
 import type { ViewMode } from '../../utils/app-url'
 import { viewCommands } from '../../utils/app-url'
 import { SettingsDialogLauncher } from '../settings-dialog/settings-dialog-launcher.service'
+import { KeyTagComponent } from '../shortcut/key-tag.component'
+import { openShortcutHelp } from '../shortcut/shortcut-help-dialog.component'
 
 /**
- * The navigation, drawn from `NAV_GROUPS`, and Settings: a column on wide screens, a rail of icons
- * on narrower ones, and on a phone the bottom bar, with Settings as its last tab.
+ * The navigation, drawn from `NAV_GROUPS`, the keyboard shortcuts' help and Settings: a column on
+ * wide screens, a rail of icons on narrower ones, and on a phone the bottom bar, with Settings as
+ * its last tab (the help is in Settings › General there).
  */
 @Component({
   selector: 'app-sidebar',
-  imports: [MatIconModule, MatTooltipModule, NgTemplateOutlet, RouterLink, RouterLinkActive],
+  imports: [
+    KeyTagComponent,
+    MatIconModule,
+    MatTooltipModule,
+    NgTemplateOutlet,
+    RouterLink,
+    RouterLinkActive,
+  ],
   templateUrl: './sidebar.component.html',
   styleUrl: './sidebar.component.scss',
 })
@@ -29,9 +40,10 @@ export class SidebarComponent {
   private readonly viewState = inject(ActivityViewStateService)
   private readonly settings = inject(SettingsDialogLauncher)
   private readonly breakpoints = inject(BreakpointState)
+  private readonly dialogs = inject(MatDialog)
 
   protected readonly groups = NAV_GROUPS
-  /** The views' and Settings' keys, for `aria-keyshortcuts`: the shell's fallbacks run them. */
+  /** The views', the help's and Settings' keys, for `aria-keyshortcuts`: the shell's fallbacks run them. */
   protected readonly shortcuts = inject(ShortcutService)
   protected readonly viewShortcuts = VIEW_SHORTCUTS
   protected readonly isPhone = this.breakpoints.phone
@@ -51,5 +63,14 @@ export class SidebarComponent {
 
   protected openSettings(): void {
     this.settings.open()
+  }
+
+  /**
+   * Opens the help as `?` does, but never closes it: a click cannot reach the sidebar under the
+   * help, a dialog or a modal layer (their backdrop), nor under the details (`inert`). The dialog
+   * gives focus back to this button as it closes.
+   */
+  protected openHelp(): void {
+    openShortcutHelp(this.dialogs)
   }
 }

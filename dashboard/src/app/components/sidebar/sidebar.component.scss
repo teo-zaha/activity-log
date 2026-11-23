@@ -107,21 +107,38 @@
   white-space: nowrap;
 }
 
-// ── Settings ─────────────────────────────────────────────────────────────────
+// ── The help and Settings ────────────────────────────────────────────────────
 
 .sidebar-bottom {
   flex: none;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
   margin: 22px 4px 4px 8px;
   padding-top: 10px;
   border-top: 1px solid var(--hairline);
 }
 
+.help-button,
 .settings-button {
   @include nav.row;
 
   mat-icon {
     color: var(--text-tertiary);
   }
+}
+
+.help-label {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.help-key {
+  flex: none;
+  color: var(--text-tertiary);
 }
 
 // ── Rail (tablet & narrow desktop windows) ───────────────────────────────────
@@ -139,19 +156,20 @@
 
   .section-label,
   .view-label,
+  .help-label,
   .settings-label {
     @include ui.visually-hidden;
   }
 
   .view-btn,
+  .help-button,
   .settings-button {
     @include nav.rail-row;
   }
 
   .sidebar-bottom {
     align-self: stretch;
-    display: flex;
-    justify-content: center;
+    align-items: center;
     margin: 16px 0 4px 6px;
   }
 }

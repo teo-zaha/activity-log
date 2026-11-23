@@ -47,6 +47,22 @@
 
   @if (!isPhone()) {
     <div class="sidebar-bottom">
+      <!-- The help, as `?` opens it; on a phone it is in Settings › General instead. -->
+      <button
+        class="help-button"
+        type="button"
+        (click)="openHelp()"
+        [attr.aria-keyshortcuts]="shortcuts.ariaKeys('app.help')"
+        matTooltip="Keyboard shortcuts"
+        [matTooltipDisabled]="!isRail()"
+        matTooltipPosition="right"
+      >
+        <mat-icon>keyboard</mat-icon>
+        <span class="help-label">Keyboard shortcuts</span>
+        @if (!isRail()) {
+          <app-key-tag class="help-key" shortcut="app.help" />
+        }
+      </button>
       <button
         class="settings-button"
         type="button"
