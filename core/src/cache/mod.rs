@@ -34,12 +34,7 @@ use crate::{
 #[cfg(test)]
 mod tests;
 
-/// Bump when the file layout changes; older files are then ignored and rewritten. 5: entries
-/// as they are sent, read by their `source`, instead of wrapped in a `kind` tag. 6: entries
-/// stamped with their connection before they are stored, and GitLab's events as typed rows (an
-/// unreleased version-5 writer stored `connection: ""` and the older GitLab fields). 7: GitLab
-/// entries name their project (`projectId`), which a version-6 day cannot tell from an event
-/// that has none.
+/// Bump when the file layout changes; older files are then ignored and rewritten.
 const FILE_VERSION: u32 = 7;
 /// A day counts as settled once it was fetched at least this long after it ended, so late
 /// writes (clock skew, slow API indexing) are not frozen into the cache.
