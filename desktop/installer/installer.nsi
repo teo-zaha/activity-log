@@ -190,6 +190,19 @@ VIAddVersionKey "ProductVersion" "${VERSION}"
 ; Installer pages, must be ordered as they appear
 ; >>> activity-log: one click, no wizard: no Welcome page. `one-click.nsh` draws the window and
 ; its pages; its first page refuses a downgrade when a newer version is installed.
+; Settings that would bring stock MUI pages (or another install scope) into that window:
+!if "${LICENSE}" != ""
+  !error "The one-click installer shows no licence page: remove bundle.licenseFile, or add a page of ours"
+!endif
+!if "${INSTALLMODE}" != "currentUser"
+  !error "The one-click installer installs for the current user only: bundle.windows.nsis.installMode must stay currentUser"
+!endif
+!if "${STARTMENUFOLDER}" != ""
+  !error "The one-click installer asks for no Start menu folder: remove bundle.windows.nsis.startMenuFolder"
+!endif
+!if "${DISPLAYLANGUAGESELECTOR}" == "true"
+  !error "The one-click installer is English only: remove bundle.windows.nsis.displayLanguageSelector"
+!endif
 !insertmacro ACTIVITY_LOG_INSTALLER_UI
 ; <<< activity-log
 
