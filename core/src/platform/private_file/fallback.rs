@@ -32,6 +32,11 @@ impl Folder {
         }
     }
 
+    /// Nothing here can be kept private, so a file that exists is exposed.
+    pub(super) fn read_owner_only(&self, name: &str) -> io::Result<Option<super::OwnerOnly>> {
+        Ok(self.read(name)?.map(|_| super::OwnerOnly::Exposed))
+    }
+
     pub(super) fn check_private(&self) -> Result<(), PrivateFileError> {
         Err(PrivateFileError::Unprotectable {
             location: self.0.clone(),

@@ -17,7 +17,7 @@ use std::{
 use super::linux as os;
 #[cfg(target_os = "macos")]
 use super::macos as os;
-use super::{PrivateFileError, staging_name};
+use super::{OwnerOnly, PrivateFileError, staging_name};
 
 /// How often a staging folder is created again when its name was taken or something appeared
 /// in it before it was verified.
@@ -82,6 +82,35 @@ impl Folder {
         let mut bytes = Vec::new();
         file.read_to_end(&mut bytes)?;
         Ok(Some(bytes))
+    }
+
+    pub(super) fn read_owner_only(&self, name: &str) -> io::Result<Option<OwnerOnly>> {
+        let name = c_name(OsStr::new(name))?;
+        // Non-blocking, so a FIFO planted under the name cannot hold the open.
+        let fd = unsafe {
+            libc::openat(
+                self.fd.as_raw_fd(),
+                name.as_ptr(),
+                libc::O_RDONLY | libc::O_NOFOLLOW | libc::O_CLOEXEC | libc::O_NONBLOCK,
+            )
+        };
+        let mut file = match owned(fd) {
+            Ok(fd) => File::from(fd),
+            Err(err) if err.kind() == io::ErrorKind::NotFound => return Ok(None),
+            Err(err) => return Err(err),
+        };
+        let stat = fstat(file.as_fd())?;
+        let private = stat.st_mode & libc::S_IFMT == libc::S_IFREG
+            && stat.st_uid == unsafe { libc::geteuid() }
+            && stat.st_mode & 0o077 == 0
+            && !os::has_acl(file.as_fd())?;
+        if !private {
+            return Ok(Some(OwnerOnly::Exposed));
+        }
+        let size = usize::try_from(stat.st_size).unwrap_or(0);
+        let mut bytes = Vec::with_capacity(size.saturating_add(1));
+        file.read_to_end(&mut bytes)?;
+        Ok(Some(OwnerOnly::Private(bytes)))
     }
 
     pub(super) fn check_private(&self) -> Result<(), PrivateFileError> {

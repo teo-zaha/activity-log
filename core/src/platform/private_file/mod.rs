@@ -127,6 +127,15 @@ impl From<io::Error> for PrivateFileError {
     }
 }
 
+/// What [`Folder::read_owner_only`] found.
+pub enum OwnerOnly {
+    /// Only the user can reach it; its bytes, read into a buffer sized for them.
+    Private(Vec<u8>),
+    /// Another account can read or change it, or it is not a regular file of the user's:
+    /// nothing was read.
+    Exposed,
+}
+
 /// A folder held open, so that locking, reading and publishing a file in it all happen in the
 /// same folder even if its path is moved or relinked meanwhile.
 pub struct Folder(imp::Folder);
@@ -148,6 +157,15 @@ impl Folder {
     pub fn read(&self, name: &str) -> io::Result<Option<Vec<u8>>> {
         check_name(name)?;
         self.0.read(name)
+    }
+
+    /// The bytes of `name` inside if only the user can reach it, judged on the very handle
+    /// they are read through: a regular file owned by the user that no other account may
+    /// read or write (no group or other mode bits, no extended ACL entry on macOS and Linux;
+    /// no rights for another account on Windows). `None` when it does not exist.
+    pub fn read_owner_only(&self, name: &str) -> io::Result<Option<OwnerOnly>> {
+        check_name(name)?;
+        self.0.read_owner_only(name)
     }
 
     /// Whether this folder can keep files private: owned by the user, no other account may

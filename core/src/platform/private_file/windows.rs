@@ -60,7 +60,7 @@ use windows::{
 };
 
 use super::{
-    Found, PrivateFileError,
+    Found, OwnerOnly, PrivateFileError,
     acl::{self, AceView, Expected},
     removable, staging_name,
 };
@@ -135,6 +135,40 @@ impl Folder {
         let mut bytes = Vec::new();
         file.read_to_end(&mut bytes)?;
         Ok(Some(bytes))
+    }
+
+    pub(super) fn read_owner_only(&self, name: &str) -> io::Result<Option<OwnerOnly>> {
+        let opened = open_entry(
+            &self.path.join(name),
+            &self.final_path,
+            FILE_GENERIC_READ.0,
+            OPEN_EXISTING,
+        );
+        let handle = match opened {
+            Ok(handle) => handle,
+            Err(err)
+                if matches!(
+                    code(&err),
+                    Some(ERROR_FILE_NOT_FOUND | ERROR_PATH_NOT_FOUND)
+                ) =>
+            {
+                return Ok(None);
+            }
+            Err(err) => return Err(err),
+        };
+        let sid = user_sid()?;
+        let private = with_security(&handle, |owner, dacl, _| {
+            Ok(acl::trusted(&sid_string(owner)?, &sid)
+                && !grants_others(dacl, &sid, READ_RIGHTS | WRITE_RIGHTS)?)
+        })?;
+        if !private {
+            return Ok(Some(OwnerOnly::Exposed));
+        }
+        let mut file = File::from(handle);
+        let size = usize::try_from(file.metadata()?.len()).unwrap_or(0);
+        let mut bytes = Vec::with_capacity(size.saturating_add(1));
+        file.read_to_end(&mut bytes)?;
+        Ok(Some(OwnerOnly::Private(bytes)))
     }
 
     pub(super) fn check_private(&self) -> Result<(), PrivateFileError> {
