@@ -450,9 +450,9 @@ Tokens and secret links (GitLab and Jira tokens, a calendar's ICS address) are s
 
 Activity Log 0.0.7 kept its sources in the desktop app's `settings.json` and in a `.env` for the CLI. The first start of the desktop app, or the first `activity-log` command that reads the sources, imports them once into `config.toml`: only on the default config path (not with `--config`, `ACTIVITY_LOG_CONFIG` or the dev profile), and only while no `config.toml` exists there (an empty one counts, so removing every source never brings them back).
 
-- **What it reads:** the desktop app reads `settings.json`; the CLI reads it too, and the first `.env` up from its working directory, if your own account owns it. When both set something, `settings.json` wins and the Logs name the other file. The process environment is never read, and the old files are left as they are.
+- **What it reads:** the desktop app reads `settings.json`; the CLI reads it too, and the first `.env` up from its working directory, if your own account owns it and it sets one of 0.0.7's settings. When both set something, `settings.json` wins and the Logs name the other file. The process environment is never read: a `.env` setting that refers to a variable (`$VAR`, `${VAR}`) is left out. The old files are left as they are.
 - **What it writes:** a GitLab and a Jira source where any of their settings were set, the local Git source (and on Windows one WSL Git source per distribution), Outlook and System where they run. Tokens are sealed as any other. A value today's settings refuse, or a token without its server's address, is left out and named in the Logs, never with its value; the desktop app offers to open the settings then.
-- **When it waits:** settings that bring a token need the keychain. The desktop app imports nothing without one, or while it refuses, and tries again at the next start; the CLI falls back to its key file where there is no keychain.
+- **When it waits:** settings that bring a token need the keychain. The desktop app asks it without a dialog as it starts; where it would need one, or there is no keychain, it imports nothing yet and its notice offers Import, which lets the keychain ask. The CLI asks as usual and falls back to its key file where there is no keychain. While the import waits, the first source you add gives it up, so the CLI refuses commands that change the settings until the import is done or you give it up with `activity-log config skip-import`.
 - **Once:** `legacy-import.toml` beside `config.toml` records what was imported and left out. The API server never imports; it says to run `activity-log sources` once.
 
 ### Environment variables
@@ -525,6 +525,7 @@ activity-log sources rename gitlab/oss "Open source"
 activity-log sources remove gitlab/oss
 activity-log config path                          # print config.toml path
 activity-log config edit                          # edit a private copy in $VISUAL / $EDITOR
+activity-log config skip-import                   # give up importing 0.0.7's settings
 ```
 
 ## API
