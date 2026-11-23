@@ -1,5 +1,12 @@
 @use '../../dashboard-shared' as ui;
 
+// The settings' panes end with room below their last row, as General and Logs do: the page
+// scrolls to its very end, past the Coming soon list.
+:host {
+  display: block;
+  padding-bottom: 24px;
+}
+
 .add-source {
   display: flex;
   flex-direction: column;
@@ -165,10 +172,6 @@
 // ── Tablets and phones: one row per kind, one list ──────────────────────────
 
 @include ui.down('tablet') {
-  .add-source {
-    padding-bottom: 24px;
-  }
-
   .tile-grid {
     grid-template-columns: minmax(0, 1fr);
     gap: 0;
