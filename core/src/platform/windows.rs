@@ -738,3 +738,21 @@ fn render_event_xml(event: EVT_HANDLE) -> Result<String> {
         &buffer[..used_utf16.saturating_sub(1)],
     ))
 }
+
+/// The Roaming AppData folder as Windows knows it for this account, whatever `APPDATA` says, so
+/// every process of the user agrees on it; `None` when the shell cannot say.
+pub(crate) fn roaming_app_data() -> Option<std::path::PathBuf> {
+    use windows::Win32::{
+        System::Com::CoTaskMemFree,
+        UI::Shell::{FOLDERID_RoamingAppData, KF_FLAG_DONT_VERIFY, SHGetKnownFolderPath},
+    };
+    // SAFETY: on success the shell returns a NUL-terminated string it allocated, freed below.
+    unsafe {
+        let path =
+            SHGetKnownFolderPath(&FOLDERID_RoamingAppData, KF_FLAG_DONT_VERIFY, None).ok()?;
+        let text = path.to_string().ok();
+        CoTaskMemFree(Some(path.0.cast_const().cast()));
+        text.filter(|text| !text.is_empty())
+            .map(std::path::PathBuf::from)
+    }
+}

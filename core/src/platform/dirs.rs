@@ -14,6 +14,17 @@ pub(crate) fn config_home() -> Option<PathBuf> {
     }
 }
 
+/// The OS folder for settings as the system knows it, for what every process of the user must
+/// share whatever its environment says (the OS key's creation lock): on Windows the known
+/// Roaming AppData folder, else [`config_home`].
+pub(crate) fn shared_config_home() -> Option<PathBuf> {
+    #[cfg(target_os = "windows")]
+    let known = crate::platform::roaming_app_data();
+    #[cfg(not(target_os = "windows"))]
+    let known = None;
+    known.or_else(config_home)
+}
+
 /// The OS folder for caches: `%LOCALAPPDATA%`, `~/Library/Caches` or `$XDG_CACHE_HOME`
 /// (`~/.cache`); `None` without one.
 pub(crate) fn cache_home() -> Option<PathBuf> {

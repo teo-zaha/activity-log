@@ -263,3 +263,54 @@ fn a_key_never_prints() {
     assert!(key.same_as(&key.clone()));
     assert!(!key.same_as(&DataKey::generate().unwrap()));
 }
+
+/// A read task that panics leaves nothing held and no attempt behind: the next reader asks.
+#[tokio::test]
+async fn a_panicked_read_leaves_the_slot_free() {
+    let stored = key();
+    let f = fixture(MemoryStore::holding(StoreKind::Os, stored.clone()));
+    f.os.panic_next_read();
+    assert_eq!(
+        f.secrets.key(StoreKind::Os).await.unwrap_err().kind(),
+        StoreErrorKind::Failed
+    );
+    let found = f.secrets.key(StoreKind::Os).await.unwrap().unwrap();
+    assert!(found.same_as(&stored));
+    assert_eq!(reads(&f.os), 2);
+}
+
+/// An attempt that never ends holds no one: a reader that comes once it is `KEY_WAIT` old
+/// starts another.
+#[tokio::test(start_paused = true)]
+async fn an_attempt_older_than_the_wait_is_asked_again() {
+    let stored = key();
+    let f = fixture(MemoryStore::holding(StoreKind::Os, stored.clone()));
+    let gate = f.os.hold_reads();
+    f.secrets.key(StoreKind::Os).await.unwrap_err();
+    let second = {
+        let secrets = f.secrets.clone();
+        tokio::spawn(async move { secrets.key(StoreKind::Os).await })
+    };
+    tokio::time::sleep(Duration::from_millis(10)).await;
+    assert_eq!(reads(&f.os), 2);
+    gate.release();
+    assert!(second.await.unwrap().unwrap().unwrap().same_as(&stored));
+}
+
+/// A store this program only reads gives no creation right: no lock, no warning, no key.
+#[tokio::test]
+async fn a_read_only_store_offers_no_creation() {
+    let dir = tempdir().unwrap();
+    let lock = dir.path().join("activity-log").join("secret.key.lock");
+    let file = Arc::new(MemoryStore::new(StoreKind::File).read_only());
+    let secrets = Secrets::with_stores(
+        None,
+        (file.clone() as Arc<dyn SecretStore>, Some(lock.clone())),
+    );
+    assert!(matches!(
+        secrets.fresh_key(StoreKind::File).await.unwrap(),
+        FreshKey::AbsentReadOnly
+    ));
+    assert_eq!(file.calls().creates, 0);
+    assert!(!lock.parent().unwrap().exists());
+}

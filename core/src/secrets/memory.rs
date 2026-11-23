@@ -11,7 +11,8 @@ use futures::{FutureExt, future::BoxFuture};
 use tokio::sync::Semaphore;
 
 use super::{
-    Created, DataKey, Interaction, Lookup, SecretStore, StoreError, StoreErrorKind, StoreKind,
+    Created, DataKey, Interaction, KeyCreator, Lookup, SecretStore, StoreError, StoreErrorKind,
+    StoreKind,
 };
 
 /// A store call, for scripting its answer.
@@ -32,6 +33,8 @@ pub struct StoreCalls {
 
 pub struct MemoryStore {
     kind: StoreKind,
+    /// Whether this program may create the key here (see [`Self::read_only`]).
+    creates: bool,
     state: Mutex<MemoryState>,
     /// While set, every read waits for a permit (see [`Self::hold_reads`]).
     read_gate: Mutex<Option<Arc<Semaphore>>>,
@@ -43,6 +46,8 @@ struct MemoryState {
     failures: VecDeque<(StoreCall, StoreErrorKind)>,
     /// What the next creation stores in place of the key it is given: another writer's.
     created_instead: Option<DataKey>,
+    /// The next read panics, as a broken store's task would.
+    panic_next_read: bool,
     calls: StoreCalls,
     read_interactions: Vec<Interaction>,
 }
@@ -51,6 +56,7 @@ impl MemoryStore {
     pub fn new(kind: StoreKind) -> Self {
         Self {
             kind,
+            creates: true,
             state: Mutex::default(),
             read_gate: Mutex::new(None),
         }
@@ -62,6 +68,12 @@ impl MemoryStore {
         store
     }
 
+    /// A store this program only reads: it offers no creation.
+    pub fn read_only(mut self) -> Self {
+        self.creates = false;
+        self
+    }
+
     /// The next `call` fails with `kind`; failures queue up in order.
     pub fn fail_next(&self, call: StoreCall, kind: StoreErrorKind) {
         self.state().failures.push_back((call, kind));
@@ -70,6 +82,11 @@ impl MemoryStore {
     /// The next creation stores `key`, not the one it is given, as if another writer had.
     pub fn create_instead(&self, key: DataKey) {
         self.state().created_instead = Some(key);
+    }
+
+    /// The next read panics.
+    pub fn panic_next_read(&self) {
+        self.state().panic_next_read = true;
     }
 
     /// Replaces the key held, as another process or the user would.
@@ -137,6 +154,10 @@ impl SecretStore for MemoryStore {
                 gate.acquire().await.expect("the gate stays open").forget();
             }
             let mut state = self.state();
+            if std::mem::take(&mut state.panic_next_read) {
+                drop(state);
+                panic!("a scripted panic while reading the key");
+            }
             if let Some(err) = self.scripted_failure(&mut state, StoreCall::Read) {
                 return Err(err);
             }
@@ -148,6 +169,24 @@ impl SecretStore for MemoryStore {
         .boxed()
     }
 
+    fn probe(&self) -> BoxFuture<'_, Result<(), StoreError>> {
+        async move {
+            let mut state = self.state();
+            state.calls.probes += 1;
+            match self.scripted_failure(&mut state, StoreCall::Probe) {
+                Some(err) => Err(err),
+                None => Ok(()),
+            }
+        }
+        .boxed()
+    }
+
+    fn creator(&self) -> Option<&dyn KeyCreator> {
+        self.creates.then_some(self as &dyn KeyCreator)
+    }
+}
+
+impl KeyCreator for MemoryStore {
     fn create_if_absent<'a>(
         &'a self,
         key: &'a DataKey,
@@ -164,18 +203,6 @@ impl SecretStore for MemoryStore {
             let stored = state.created_instead.take().unwrap_or_else(|| key.clone());
             state.key = Some(stored);
             Ok(Created::Stored)
-        }
-        .boxed()
-    }
-
-    fn probe(&self) -> BoxFuture<'_, Result<(), StoreError>> {
-        async move {
-            let mut state = self.state();
-            state.calls.probes += 1;
-            match self.scripted_failure(&mut state, StoreCall::Probe) {
-                Some(err) => Err(err),
-                None => Ok(()),
-            }
         }
         .boxed()
     }

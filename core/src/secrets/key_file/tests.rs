@@ -11,6 +11,16 @@ fn store_at(path: &Path, access: KeyFileAccess) -> KeyFileStore {
     KeyFileStore::new(Some(path.to_path_buf()), access)
 }
 
+async fn create(
+    store: &KeyFileStore,
+    key: &DataKey,
+) -> Result<Created, crate::secrets::StoreError> {
+    let creator = store
+        .creator()
+        .expect("a store that may create the key file");
+    creator.create_if_absent(key).await
+}
+
 async fn read(store: &KeyFileStore) -> Result<Lookup, crate::secrets::StoreError> {
     store.read(Interaction::Allowed).await
 }
@@ -24,7 +34,7 @@ async fn a_created_key_reads_back_and_is_never_replaced() {
     assert!(matches!(read(&store).await.unwrap(), Lookup::Absent));
 
     let key = DataKey::generate().unwrap();
-    assert_eq!(store.create_if_absent(&key).await.unwrap(), Created::Stored);
+    assert_eq!(create(&store, &key).await.unwrap(), Created::Stored);
     let Lookup::Found(stored) = read(&store).await.unwrap() else {
         panic!("no key after creating it");
     };
@@ -34,24 +44,18 @@ async fn a_created_key_reads_back_and_is_never_replaced() {
     assert_eq!(text.len(), "activity-log config key v1\n".len() + 129);
 
     let other = DataKey::generate().unwrap();
-    assert_eq!(
-        store.create_if_absent(&other).await.unwrap(),
-        Created::AlreadyThere
-    );
+    assert_eq!(create(&store, &other).await.unwrap(), Created::AlreadyThere);
     assert_eq!(fs::read_to_string(&path).unwrap(), text);
 }
 
-/// The desktop app and the API server only read the key file: a creation writes nothing.
+/// The desktop app and the API server only read the key file: there is no creation to ask.
 #[tokio::test]
 async fn a_read_only_key_file_is_never_created() {
     let dir = tempdir().unwrap();
     let path = dir.path().join("secret.key");
     let store = store_at(&path, KeyFileAccess::ReadOnly);
-    let err = store
-        .create_if_absent(&DataKey::generate().unwrap())
-        .await
-        .unwrap_err();
-    assert_eq!(err.kind(), StoreErrorKind::Failed);
+    assert!(store.creator().is_none());
+    assert!(matches!(read(&store).await.unwrap(), Lookup::Absent));
     assert!(!path.exists());
 }
 
@@ -61,10 +65,7 @@ async fn a_damaged_key_file_is_not_absent_and_stays() {
     let dir = tempdir().unwrap();
     let path = dir.path().join("secret.key");
     let store = store_at(&path, KeyFileAccess::Create);
-    store
-        .create_if_absent(&DataKey::generate().unwrap())
-        .await
-        .unwrap();
+    create(&store, &DataKey::generate().unwrap()).await.unwrap();
     for damaged in [
         "activity-log config key v1\nabcd\n".to_string(),
         "another format\n".to_string(),
@@ -77,10 +78,7 @@ async fn a_damaged_key_file_is_not_absent_and_stays() {
             StoreErrorKind::Failed
         );
         assert_eq!(
-            store
-                .create_if_absent(&DataKey::generate().unwrap())
-                .await
-                .unwrap(),
+            create(&store, &DataKey::generate().unwrap()).await.unwrap(),
             Created::AlreadyThere
         );
         assert_eq!(fs::read_to_string(&path).unwrap(), damaged);
@@ -123,18 +121,20 @@ async fn a_key_file_others_can_reach_is_not_used() {
     let folder = dir.path().join("activity-log");
     let path = folder.join("secret.key");
     let store = store_at(&path, KeyFileAccess::Create);
-    store
-        .create_if_absent(&DataKey::generate().unwrap())
-        .await
-        .unwrap();
+    create(&store, &DataKey::generate().unwrap()).await.unwrap();
     assert!(matches!(read(&store).await.unwrap(), Lookup::Found(_)));
 
-    fs::set_permissions(&path, fs::Permissions::from_mode(0o644)).unwrap();
-    assert_eq!(
-        read(&store).await.unwrap_err().kind(),
-        StoreErrorKind::Failed
-    );
+    // Readable, or only writable, by the group or others: either way not the user's alone.
+    for mode in [0o644, 0o640, 0o620, 0o602] {
+        fs::set_permissions(&path, fs::Permissions::from_mode(mode)).unwrap();
+        assert_eq!(
+            read(&store).await.unwrap_err().kind(),
+            StoreErrorKind::Failed,
+            "mode {mode:o}"
+        );
+    }
     fs::set_permissions(&path, fs::Permissions::from_mode(0o600)).unwrap();
+    assert!(matches!(read(&store).await.unwrap(), Lookup::Found(_)));
 
     fs::set_permissions(&folder, fs::Permissions::from_mode(0o777)).unwrap();
     assert_eq!(

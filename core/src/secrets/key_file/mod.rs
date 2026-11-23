@@ -11,10 +11,12 @@ use anyhow::anyhow;
 use futures::{FutureExt, future::BoxFuture};
 use zeroize::Zeroizing;
 
-use super::{Created, DataKey, Interaction, KEY_LEN, Lookup, SecretStore, StoreError, StoreKind};
+use super::{
+    Created, DataKey, Interaction, KEY_LEN, KeyCreator, Lookup, SecretStore, StoreError, StoreKind,
+};
 use crate::platform::{
     dirs,
-    private_file::{self, ReplaceError},
+    private_file::{self, OwnerOnly, ReplaceError},
 };
 
 #[cfg(test)]
@@ -36,12 +38,22 @@ pub enum KeyFileAccess {
 pub struct KeyFileStore {
     /// `None` without a local data folder and without the variable: there is no key file here.
     path: Option<PathBuf>,
-    access: KeyFileAccess,
+    /// `None` where this program only reads the key file.
+    writer: Option<KeyFileWriter>,
+}
+
+/// The right to create the key file, which only a `KeyFileAccess::Create` store holds.
+struct KeyFileWriter {
+    path: Option<PathBuf>,
 }
 
 impl KeyFileStore {
     pub fn new(path: Option<PathBuf>, access: KeyFileAccess) -> Self {
-        Self { path, access }
+        let writer = match access {
+            KeyFileAccess::Create => Some(KeyFileWriter { path: path.clone() }),
+            KeyFileAccess::ReadOnly => None,
+        };
+        Self { path, writer }
     }
 
     /// `ACTIVITY_LOG_SECRET_KEY_FILE`, else `activity-log/secret.key` in the local data folder.
@@ -57,19 +69,18 @@ impl KeyFileStore {
         let name = path.file_name()?.to_str()?;
         Some(path.with_file_name(format!("{name}.lock")))
     }
+}
 
-    fn located(&self) -> Result<(&Path, &str), StoreError> {
-        let path = self
-            .path
-            .as_deref()
-            .ok_or_else(|| StoreError::unavailable(anyhow!("There is no folder for a key file")))?;
-        let parts = path
-            .parent()
-            .zip(path.file_name().and_then(|name| name.to_str()));
-        parts.ok_or_else(|| {
-            StoreError::failed(anyhow!("{} is not a key file's path", path.display()))
-        })
-    }
+/// The key file's folder and name.
+fn located(path: Option<&Path>) -> Result<(PathBuf, String), StoreError> {
+    let path =
+        path.ok_or_else(|| StoreError::unavailable(anyhow!("There is no folder for a key file")))?;
+    let parts = path
+        .parent()
+        .zip(path.file_name().and_then(|name| name.to_str()));
+    parts
+        .map(|(folder, name)| (folder.to_path_buf(), name.to_string()))
+        .ok_or_else(|| StoreError::failed(anyhow!("{} is not a key file's path", path.display())))
 }
 
 impl SecretStore for KeyFileStore {
@@ -78,9 +89,7 @@ impl SecretStore for KeyFileStore {
     }
 
     fn read(&self, _interaction: Interaction) -> BoxFuture<'_, Result<Lookup, StoreError>> {
-        let located = self
-            .located()
-            .map(|(folder, name)| (folder.to_path_buf(), name.to_string()));
+        let located = located(self.path.as_deref());
         async move {
             let (folder, name) = located?;
             blocking(move || read_key(&folder, &name)).await
@@ -88,34 +97,34 @@ impl SecretStore for KeyFileStore {
         .boxed()
     }
 
+    /// The key file is there wherever it has a location.
+    fn probe(&self) -> BoxFuture<'_, Result<(), StoreError>> {
+        let located = located(self.path.as_deref()).map(drop);
+        async move { located }.boxed()
+    }
+
+    fn creator(&self) -> Option<&dyn KeyCreator> {
+        self.writer.as_ref().map(|writer| writer as &dyn KeyCreator)
+    }
+}
+
+impl KeyCreator for KeyFileWriter {
     fn create_if_absent<'a>(
         &'a self,
         key: &'a DataKey,
     ) -> BoxFuture<'a, Result<Created, StoreError>> {
-        let located = self
-            .located()
-            .map(|(folder, name)| (folder.to_path_buf(), name.to_string()));
-        let access = self.access;
+        let located = located(self.path.as_deref());
         let key = key.clone();
         async move {
             let (folder, name) = located?;
-            if access == KeyFileAccess::ReadOnly {
-                return Err(StoreError::failed(anyhow!(
-                    "This program only reads the key file"
-                )));
-            }
             blocking(move || create_key(&folder, &name, &key)).await
         }
         .boxed()
     }
-
-    /// The key file is there wherever it has a location.
-    fn probe(&self) -> BoxFuture<'_, Result<(), StoreError>> {
-        let located = self.located().map(drop);
-        async move { located }.boxed()
-    }
 }
 
+/// A key file another account could have planted, read or changed is no key to seal with: its
+/// folder must be private, and the file itself only the user's, judged on the handle read.
 fn read_key(folder_path: &Path, name: &str) -> Result<Lookup, StoreError> {
     let reading = |err: io::Error| {
         StoreError::failed(
@@ -127,21 +136,20 @@ fn read_key(folder_path: &Path, name: &str) -> Result<Lookup, StoreError> {
         Err(err) if err.kind() == io::ErrorKind::NotFound => return Ok(Lookup::Absent),
         Err(err) => return Err(reading(err)),
     };
-    let Some(bytes) = folder.read(name).map_err(reading)? else {
-        return Ok(Lookup::Absent);
+    let path = folder_path.join(name);
+    let bytes = match folder.read_owner_only(name).map_err(reading)? {
+        None => return Ok(Lookup::Absent),
+        Some(OwnerOnly::Exposed) => {
+            return Err(StoreError::failed(anyhow!(
+                "The key file {} is not only this user's: another account may read or change it",
+                path.display()
+            )));
+        }
+        Some(OwnerOnly::Private(bytes)) => Zeroizing::new(bytes),
     };
-    let bytes = Zeroizing::new(bytes);
-    // A key another account could have planted or can read is no key to seal with.
     folder.check_private().map_err(|err| {
         StoreError::failed(anyhow!(err).context("The key file's folder is not private"))
     })?;
-    let path = folder_path.join(name);
-    if private_file::readable_by_others(&path).map_err(reading)? {
-        return Err(StoreError::failed(anyhow!(
-            "Other accounts can read the key file {}",
-            path.display()
-        )));
-    }
     decode(&bytes)
         .map(Lookup::Found)
         .ok_or_else(|| StoreError::failed(anyhow!("{} is not a key file", path.display())))
@@ -157,7 +165,12 @@ fn create_key(folder_path: &Path, name: &str, key: &DataKey) -> Result<Created, 
     private_file::create_private_folder(folder_path).map_err(failed)?;
     let folder = private_file::open_folder(folder_path).map_err(failed)?;
     // `replace` would overwrite: under the key-creation lock, a file that is there stays.
-    if folder.read(name).map_err(failed)?.is_some() {
+    if folder
+        .read(name)
+        .map_err(failed)?
+        .map(Zeroizing::new)
+        .is_some()
+    {
         return Ok(Created::AlreadyThere);
     }
     folder

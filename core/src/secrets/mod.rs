@@ -38,12 +38,13 @@ pub use os_store::OsStore;
 #[cfg(feature = "real-store-tests")]
 pub use os_store::RealStoreRefusal;
 pub use store::{
-    Created, DataKey, Interaction, KEY_LEN, Lookup, SecretStore, StoreError, StoreErrorKind,
-    StoreKind,
+    Created, DataKey, Interaction, KEY_LEN, KeyCreator, Lookup, SecretStore, StoreError,
+    StoreErrorKind, StoreKind,
 };
 
 /// How long a reader waits for the store (a dialog the user has not answered). The attempt
-/// goes on after that: its key, once it comes, is held for the next reader.
+/// goes on after that: its key, once it comes, is held for the next reader; a reader that comes
+/// once an attempt is this old starts another (a prompt that never completes holds no one).
 pub const KEY_WAIT: Duration = Duration::from_secs(120);
 
 /// The name of the key-creation lock for the OS store's key.
@@ -71,20 +72,26 @@ enum Held {
     Nothing,
     Asking {
         attempt: u64,
+        started: tokio::time::Instant,
         answer: Shared<BoxFuture<'static, Result<Lookup, StoreError>>>,
     },
     Key(DataKey),
 }
 
-/// What a writer read from the store: the key, or none yet, which only it may create.
+/// What a writer read from the store: the key, or none yet, which it may create only where
+/// this program creates keys.
 pub enum FreshKey<'a> {
     Found(DataKey),
     Absent(KeyCreation<'a>),
+    /// No key, in a store this program only reads (the desktop's and the API's key file): no
+    /// creation, no lock, no warning.
+    AbsentReadOnly,
 }
 
 /// The right to create the key a fresh read did not find (see [`KeyCreation::create`]).
 pub struct KeyCreation<'a> {
     slot: &'a Arc<Slot>,
+    creator: &'a dyn KeyCreator,
 }
 
 impl Secrets {
@@ -151,11 +158,14 @@ impl Secrets {
             let mut held = slot.held();
             match &*held {
                 Held::Key(key) => return Ok(Some(key.clone())),
-                Held::Asking { answer, .. } => answer.clone(),
-                Held::Nothing => {
+                Held::Asking {
+                    answer, started, ..
+                } if started.elapsed() < KEY_WAIT => answer.clone(),
+                Held::Asking { .. } | Held::Nothing => {
                     let (attempt, answer) = slot.ask();
                     *held = Held::Asking {
                         attempt,
+                        started: tokio::time::Instant::now(),
                         answer: answer.clone(),
                     };
                     answer
@@ -192,7 +202,10 @@ impl Secrets {
                 slot.hold(&key);
                 Ok(FreshKey::Found(key))
             }
-            Lookup::Absent => Ok(FreshKey::Absent(KeyCreation { slot })),
+            Lookup::Absent => Ok(match slot.store.creator() {
+                Some(creator) => FreshKey::Absent(KeyCreation { slot, creator }),
+                None => FreshKey::AbsentReadOnly,
+            }),
         }
     }
 
@@ -232,7 +245,7 @@ impl KeyCreation<'_> {
         }
         before_creating();
         let key = DataKey::generate()?;
-        let created = slot.store.create_if_absent(&key).await?;
+        let created = self.creator.create_if_absent(&key).await?;
         let stored = match slot.store.read(Interaction::Allowed).await? {
             Lookup::Found(stored) => stored,
             Lookup::Absent => {
@@ -257,14 +270,19 @@ impl Slot {
     }
 
     /// Starts one read of the store, run as a task of its own so it goes on, and fills the
-    /// slot, when every reader stopped waiting.
+    /// slot, when every reader stopped waiting. However the task ends (an answer, a panic, the
+    /// runtime shutting down), its attempt is settled.
     fn ask(self: &Arc<Self>) -> (u64, Shared<BoxFuture<'static, Result<Lookup, StoreError>>>) {
         static ATTEMPTS: AtomicU64 = AtomicU64::new(0);
         let attempt = ATTEMPTS.fetch_add(1, Ordering::Relaxed);
-        let slot = self.clone();
+        let mut settle = Settle {
+            slot: self.clone(),
+            attempt,
+            answer: None,
+        };
         let task = tokio::spawn(async move {
-            let answer = slot.store.read(Interaction::Allowed).await;
-            slot.settle(attempt, &answer);
+            let answer = settle.slot.store.read(Interaction::Allowed).await;
+            settle.record(&answer);
             answer
         });
         let answer = async move {
@@ -279,16 +297,17 @@ impl Slot {
         (attempt, answer)
     }
 
-    /// Ends `attempt`: a key found is held, anything else leaves nothing held, so the next
-    /// reader asks again. A key a writer stored meanwhile stays.
-    fn settle(&self, attempt: u64, answer: &Result<Lookup, StoreError>) {
+    /// Ends `attempt`: a key found is held, anything else (no answer at all included) leaves
+    /// nothing held, so the next reader asks again. A key a writer stored meanwhile, or a newer
+    /// attempt, stays.
+    fn settle(&self, attempt: u64, answer: Option<&Result<Lookup, StoreError>>) {
         let mut held = self.held();
         if !matches!(&*held, Held::Asking { attempt: current, .. } if *current == attempt) {
             return;
         }
         *held = match answer {
-            Ok(Lookup::Found(key)) => Held::Key(key.clone()),
-            Ok(Lookup::Absent) | Err(_) => Held::Nothing,
+            Some(Ok(Lookup::Found(key))) => Held::Key(key.clone()),
+            Some(Ok(Lookup::Absent) | Err(_)) | None => Held::Nothing,
         };
     }
 
@@ -297,11 +316,30 @@ impl Slot {
     }
 }
 
-/// The OS key's creation lock: in the OS config folder, so every config shares it, else
-/// beside the config file.
+/// Settles a read attempt when its task ends, whichever way.
+struct Settle {
+    slot: Arc<Slot>,
+    attempt: u64,
+    answer: Option<Result<Lookup, StoreError>>,
+}
+
+impl Settle {
+    fn record(&mut self, answer: &Result<Lookup, StoreError>) {
+        self.answer = Some(answer.clone());
+    }
+}
+
+impl Drop for Settle {
+    fn drop(&mut self) {
+        self.slot.settle(self.attempt, self.answer.as_ref());
+    }
+}
+
+/// The OS key's creation lock: in the OS config folder as the system knows it, so every
+/// config and every process of the user shares it, else beside the config file.
 #[cfg_attr(test, allow(dead_code))]
 fn os_key_lock(config_path: Option<&Path>) -> Option<PathBuf> {
-    crate::platform::dirs::config_home()
+    crate::platform::dirs::shared_config_home()
         .map(|dir| dir.join("activity-log"))
         .or_else(|| config_path.and_then(Path::parent).map(Path::to_path_buf))
         .map(|dir| dir.join(OS_KEY_LOCK))

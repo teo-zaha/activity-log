@@ -7,6 +7,8 @@ pub(crate) mod secret_store;
 #[cfg(target_os = "windows")]
 mod windows;
 #[cfg(target_os = "windows")]
+pub(crate) use windows::roaming_app_data;
+#[cfg(target_os = "windows")]
 pub use windows::{
     ComGuard, DispatchObject, active_outlook_application, connect_outlook_application,
     outlook_is_installed, process_is_elevated, query_windows_event_log, run_wsl_script,

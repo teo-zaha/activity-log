@@ -4,7 +4,9 @@
 
 use futures::{FutureExt, future::BoxFuture};
 
-use super::{Created, DataKey, Interaction, Lookup, SecretStore, StoreError, StoreKind};
+use super::{
+    Created, DataKey, Interaction, KeyCreator, Lookup, SecretStore, StoreError, StoreKind,
+};
 use crate::platform::secret_store::{self, Place};
 
 pub struct OsStore {
@@ -82,14 +84,20 @@ impl SecretStore for OsStore {
         secret_store::read(&self.place, interaction).boxed()
     }
 
+    fn probe(&self) -> BoxFuture<'_, Result<(), StoreError>> {
+        secret_store::probe(&self.place).boxed()
+    }
+
+    fn creator(&self) -> Option<&dyn KeyCreator> {
+        Some(self)
+    }
+}
+
+impl KeyCreator for OsStore {
     fn create_if_absent<'a>(
         &'a self,
         key: &'a DataKey,
     ) -> BoxFuture<'a, Result<Created, StoreError>> {
         secret_store::create_if_absent(&self.place, key).boxed()
-    }
-
-    fn probe(&self) -> BoxFuture<'_, Result<(), StoreError>> {
-        secret_store::probe(&self.place).boxed()
     }
 }
