@@ -20,7 +20,6 @@ import re
 import struct
 import subprocess
 import tempfile
-import xml.etree.ElementTree as ET
 
 HERE = pathlib.Path(__file__).resolve().parent
 ROOT = HERE.parent.parent
@@ -46,27 +45,29 @@ CONTROLS = {
     350: (545, 1086, 500, 197),
 }
 
+# Each bitmap is drawn this many times as large and each block averaged in linear light: edges
+# get even, gamma-correct anti-aliasing, and no filter overshoot (Lanczos rings dark around the
+# mark).
+SUPERSAMPLE = 4
+
 # The icon's sizes: the app icon's own frames, and the ones Windows asks for at 125% and 250%,
 # drawn from the app icon.
 ICON_SIZES = (16, 20, 24, 32, 40, 48, 64, 256)
 
 WASH_TOP = "#f8fafc"
-WASH_BOTTOM = "#dce9fc"
-CHART_LINE = "#a9c4f5"
-CHART_GRID = "#dbe6f8"
+WASH_BOTTOM = "#e3edfc"
+WAVE_BACK = "#d3e2fb"
+WAVE_FRONT = "#bfd4f7"
 
 SVG_NS = "http://www.w3.org/2000/svg"
 
 
-def favicon() -> tuple[str, str]:
-    """The app's mark (the dashboard's favicon) as an element to nest, and its blue."""
-    text = FAVICON.read_text()
-    brand = ET.fromstring(text).find(f"{{{SVG_NS}}}rect").get("fill")
-    body = re.sub(r"<\?xml[^>]*\?>", "", text).strip()
-    return body, brand
+def favicon() -> str:
+    """The app's mark (the dashboard's favicon) as an element to nest."""
+    return re.sub(r"<\?xml[^>]*\?>", "", FAVICON.read_text()).strip()
 
 
-MARK, BRAND = favicon()
+MARK = favicon()
 
 
 def app_icon(x: float, y: float, size: float) -> str:
@@ -74,74 +75,68 @@ def app_icon(x: float, y: float, size: float) -> str:
 
 
 def sidebar_svg(scale: int) -> tuple[str, int, int]:
+    """A wash, the app's mark large and on whole pixels, and two soft rising waves below it.
+
+    No hairlines, small dots or blurred shadows: at 100% the sidebar is 164 px wide, where such
+    detail stair-steps, and nothing in it needs a sharp pixel to read.
+    """
     width, height, _, _ = CONTROLS[scale]
-    k = scale / 100
-    tile = round(100 * k)
-    tile_x = (width - tile) / 2
-    tile_y = round(height * 0.172)
-    icon = round(72 * k)
-    grid = max(1, round(k))
-    # Grid lines on whole pixels, so they stay one crisp line at every scale.
-    rows = "".join(
-        f'<rect x="0" y="{round(height * f)}" width="{width}" height="{grid}" fill="{CHART_GRID}"/>'
-        for f in (0.65, 0.79, 0.93)
-    )
-    step = width / 5
-    cols = "".join(
-        f'<rect x="{round(step * i)}" y="{round(height * 0.62)}" width="{grid}" height="{height}" fill="{CHART_GRID}"/>'
-        for i in range(1, 5)
-    )
-    points = [(0, 0.89), (0.183, 0.833), (0.40, 0.871), (0.652, 0.753), (0.838, 0.782), (1.02, 0.70)]
-    line = " ".join(f"{width * px:.2f},{height * py:.2f}" for px, py in points)
-    dots = "".join(
-        f'<circle cx="{width * px:.2f}" cy="{height * py:.2f}" r="{4.5 * k:.2f}" fill="#fff" '
-        f'stroke="{CHART_LINE}" stroke-width="{2 * k:.2f}"/>'
-        for px, py in points[1:-1]
-    )
+    mark = round(width * 0.56)
+    x = (width - mark) // 2
+    y = round(height * 0.19)
+
+    def wave(left: float, right: float, dip: float) -> str:
+        # A smooth rise from left to right, closed along the bottom edge.
+        y0, y1 = height * left, height * right
+        return (
+            f"M0 {y0:.2f} C {width * 0.35:.2f} {y0 + height * dip:.2f} "
+            f"{width * 0.6:.2f} {y1 + height * dip * 0.4:.2f} {width} {y1:.2f} "
+            f"L{width} {height} L0 {height} Z"
+        )
+
     svg = f"""<svg xmlns="{SVG_NS}" width="{width}" height="{height}" viewBox="0 0 {width} {height}">
 <defs>
   <linearGradient id="wash" x1="0" y1="0" x2="0" y2="1">
     <stop offset="0" stop-color="{WASH_TOP}"/><stop offset="1" stop-color="{WASH_BOTTOM}"/>
   </linearGradient>
-  <filter id="shadow" x="-30%" y="-30%" width="160%" height="160%">
-    <feDropShadow dx="0" dy="{2 * k:.2f}" stdDeviation="{5 * k:.2f}" flood-color="{BRAND}" flood-opacity="0.14"/>
-  </filter>
 </defs>
 <rect width="{width}" height="{height}" fill="url(#wash)"/>
-{rows}{cols}
-<polyline points="{line}" fill="none" stroke="{CHART_LINE}" stroke-width="{2 * k:.2f}" stroke-linejoin="round"/>
-{dots}
-<rect x="{tile_x}" y="{tile_y}" width="{tile}" height="{tile}" rx="{22 * k:.2f}" fill="#fff" filter="url(#shadow)"/>
-{app_icon(tile_x + (tile - icon) / 2, tile_y + (tile - icon) / 2, icon)}
+<path d="{wave(0.80, 0.64, 0.04)}" fill="{WAVE_BACK}"/>
+<path d="{wave(0.90, 0.76, 0.05)}" fill="{WAVE_FRONT}"/>
+{app_icon(x, y, mark)}
 </svg>"""
     return svg, width, height
 
 
 def header_svg(scale: int) -> tuple[str, int, int]:
+    """White, as the header band is, with the app's mark at the right on whole pixels."""
     _, _, width, height = CONTROLS[scale]
-    k = scale / 100
-    icon = round(height * 0.6)
-    x = width - round(13 * k) - icon
-    y = round((height - icon) / 2)
+    mark = round(height * 0.7)
+    x = width - round(12 * scale / 100) - mark
+    y = (height - mark) // 2
     svg = f"""<svg xmlns="{SVG_NS}" width="{width}" height="{height}" viewBox="0 0 {width} {height}">
 <rect width="{width}" height="{height}" fill="#fff"/>
-{app_icon(x, y, icon)}
+{app_icon(x, y, mark)}
 </svg>"""
     return svg, width, height
 
 
-def render(svg: str, width: int, height: int, out: pathlib.Path, work: pathlib.Path) -> None:
+def render(svg: str, width: int, height: int, out: pathlib.Path, work: pathlib.Path,
+           supersample: int = SUPERSAMPLE) -> None:
+    """Draws the SVG `supersample` times as large and averages each block in linear light,
+    then writes a plain 24-bit BMP (BITMAPINFOHEADER, no alpha): what LoadImage and MUI2 take."""
     source = work / f"{out.stem}.svg"
     png = work / f"{out.stem}.png"
     source.write_text(svg)
     subprocess.run(
-        ["rsvg-convert", "-w", str(width), "-h", str(height), str(source), "-o", str(png)],
+        ["rsvg-convert", "-w", str(width * supersample), "-h", str(height * supersample),
+         str(source), "-o", str(png)],
         check=True,
     )
-    # A plain 24-bit BMP (BITMAPINFOHEADER, no alpha): what LoadImage and MUI2 take.
     subprocess.run(
         ["magick", str(png), "-background", "white", "-alpha", "remove", "-alpha", "off",
-         "-type", "TrueColor", f"BMP3:{out}"],
+         "-colorspace", "RGB", "-filter", "Box", "-resize", f"{width}x{height}!",
+         "-colorspace", "sRGB", "-type", "TrueColor", f"BMP3:{out}"],
         check=True,
     )
 
