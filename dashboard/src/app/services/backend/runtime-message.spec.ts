@@ -10,6 +10,11 @@ const withList = (list: unknown): object => ({
   ...providers,
   providers: { currentOs: 'linux', providers: list },
 })
+const withoutRecheckable = (): object => {
+  const provider: Record<string, unknown> = { ...providers.providers.providers[0] }
+  delete provider['recheckable']
+  return provider
+}
 
 describe('decodeRuntimeMessage', () => {
   it('takes the messages the host sends', () => {
@@ -34,25 +39,10 @@ describe('decodeRuntimeMessage', () => {
       'a recheckable that is no boolean',
       [{ ...providers.providers.providers[0], recheckable: 'false' }],
     ],
+    ['a provider without recheckable', [withoutRecheckable()]],
   ])('refuses providers with %s', (_name, list) => {
     expect(decodeRuntimeMessage('providers', withList(list))).toBeNull()
     expect(decodeRuntimeMessage('state', { activity, providers: withList(list) })).toBeNull()
-  })
-
-  it('reads a source without recheckable, as a host older than the dashboard sends it, as not recheckable', () => {
-    const older: Record<string, unknown> = { ...providers.providers.providers[0] }
-    delete older['recheckable']
-    const list = [older]
-
-    const update = decodeRuntimeMessage('providers', withList(list))
-    const pair = decodeRuntimeMessage('state', { activity, providers: withList(list) })
-
-    expect(
-      update?.event === 'providers' && update.payload.providers.providers[0]?.recheckable
-    ).toBe(false)
-    expect(
-      pair?.event === 'state' && pair.payload.providers.providers.providers[0]?.recheckable
-    ).toBe(false)
   })
 
   it.each([

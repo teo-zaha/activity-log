@@ -28,7 +28,6 @@ pub struct ProviderInfo {
     #[ts(optional)]
     pub problem: Option<ProviderProblem>,
     /// Whether the UI offers to check it again: it has a problem other than `unsupported`.
-    #[serde(default)]
     pub recheckable: bool,
     pub checked_at: String,
 }

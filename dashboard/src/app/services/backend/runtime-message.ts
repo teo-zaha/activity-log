@@ -4,7 +4,6 @@ import type {
   ConnectionCount,
   ConnectionId,
   ProviderInfo,
-  ProvidersResponse,
   ProvidersUpdate,
   RuntimePing,
   RuntimeState,
@@ -26,13 +25,11 @@ export function decodeRuntimeMessage(
 ): RuntimeMessage | null {
   switch (event) {
     case 'state':
-      return isRuntimeState(payload)
-        ? { event, payload: { ...payload, providers: providersOf(payload.providers) } }
-        : null
+      return isRuntimeState(payload) ? { event, payload } : null
     case 'activity':
       return isActivityUpdate(payload) ? { event, payload } : null
     case 'providers':
-      return isProvidersUpdate(payload) ? { event, payload: providersOf(payload) } : null
+      return isProvidersUpdate(payload) ? { event, payload } : null
   }
 }
 
@@ -72,46 +69,18 @@ function isConnectionId(value: unknown): value is ConnectionId {
 }
 
 /**
- * A source as the stream may send it: a host older than the dashboard (a browser can reach an
- * API deployed on its own) sends no `recheckable`.
- */
-type WireProviderInfo = Omit<ProviderInfo, 'recheckable'> & { readonly recheckable?: boolean }
-
-type WireProvidersUpdate = Omit<ProvidersUpdate, 'providers'> & {
-  readonly providers: Omit<ProvidersResponse, 'providers'> & {
-    readonly providers: readonly WireProviderInfo[]
-  }
-}
-
-/**
  * What the views read of a source before anything else: who it is, whether it is usable and
- * whether it can be checked again. A `recheckable` of another type does not fit; a missing one
- * is read as `false` (`providersOf`), as Rust reads it.
+ * whether it can be checked again.
  */
-function isProviderInfo(value: unknown): value is WireProviderInfo {
+function isProviderInfo(value: unknown): value is ProviderInfo {
   if (!isRecord(value)) return false
-  const recheckable = value['recheckable']
   return (
     isConnectionId(value['connection']) &&
     typeof value['label'] === 'string' &&
     typeof value['status'] === 'string' &&
     typeof value['usable'] === 'boolean' &&
-    (recheckable === undefined || typeof recheckable === 'boolean')
+    typeof value['recheckable'] === 'boolean'
   )
-}
-
-/** The update with every source's `recheckable` defined: `false` where the host sent none. */
-function providersOf(update: WireProvidersUpdate): ProvidersUpdate {
-  return {
-    ...update,
-    providers: {
-      ...update.providers,
-      providers: update.providers.providers.map(info => ({
-        ...info,
-        recheckable: info.recheckable ?? false,
-      })),
-    },
-  }
 }
 
 function isConnectionCount(value: unknown): value is ConnectionCount {
@@ -160,7 +129,7 @@ function isActivityUpdate(value: unknown): value is ActivityUpdate {
   return isRecord(value) && hasStamp(value) && isActivityState(value['state'])
 }
 
-function isProvidersUpdate(value: unknown): value is WireProvidersUpdate {
+function isProvidersUpdate(value: unknown): value is ProvidersUpdate {
   if (!isRecord(value) || !hasStamp(value)) return false
   const providers = value['providers']
   return (
@@ -170,9 +139,7 @@ function isProvidersUpdate(value: unknown): value is WireProvidersUpdate {
   )
 }
 
-function isRuntimeState(
-  value: unknown
-): value is Omit<RuntimeState, 'providers'> & { readonly providers: WireProvidersUpdate } {
+function isRuntimeState(value: unknown): value is RuntimeState {
   if (!isRecord(value)) return false
   const { activity, providers } = value
   return (

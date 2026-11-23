@@ -1323,6 +1323,34 @@ fn recheckable_follows_the_problem() {
     assert!(!degraded(ProviderProblem::Unsupported).recheckable());
 }
 
+/// `recheckable` is always on the wire, `false` too: the dashboard refuses a source without it,
+/// which would close its stream.
+#[test]
+fn recheckable_is_sent_even_when_false() {
+    use crate::model::common::{provider_info::ProviderInfo, provider_status::ProviderStatus};
+    for recheckable in [false, true] {
+        let info = ProviderInfo {
+            connection: ConnectionId::new(Source::Git, "default"),
+            label: "Git".to_string(),
+            wsl_distro: None,
+            status: ProviderStatus::Available,
+            usable: true,
+            supported_os: vec![SupportedOs::Macos],
+            reason: None,
+            problem: None,
+            recheckable,
+            checked_at: "2026-03-25T10:00:00Z".to_string(),
+        };
+
+        let wire = serde_json::to_value(&info).unwrap();
+
+        assert_eq!(wire["recheckable"], serde_json::json!(recheckable));
+        let mut without = wire.clone();
+        without.as_object_mut().unwrap().remove("recheckable");
+        assert!(serde_json::from_value::<ProviderInfo>(without).is_err());
+    }
+}
+
 /// A configured kind's check gets its typed settings from the runtime; a context the runtime
 /// did not resolve says so as `notConfigured`, with the cause, instead of a made-up message.
 #[tokio::test]
