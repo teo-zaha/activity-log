@@ -941,8 +941,11 @@ Section Uninstall
     DeleteRegKey /ifempty HKCU "${MANUKEY}"
 
     SetShellVarContext current
-    RmDir /r "$APPDATA\${BUNDLEID}"
-    RmDir /r "$LOCALAPPDATA\${BUNDLEID}"
+    ; >>> activity-log: removed without following a junction or link out of them, as our own
+    ; folders are (`NSIS_HOOK_POSTUNINSTALL` in `hooks.nsh`). Was: RmDir /r on each
+    !insertmacro ActivityLog.RemoveFolder "$APPDATA\${BUNDLEID}"
+    !insertmacro ActivityLog.RemoveFolder "$LOCALAPPDATA\${BUNDLEID}"
+    ; <<< activity-log
   ${EndIf}
 
   !ifmacrodef NSIS_HOOK_POSTUNINSTALL
