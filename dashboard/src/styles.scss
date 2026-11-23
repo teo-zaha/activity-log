@@ -56,6 +56,46 @@ mat-icon.mat-icon,
 // theme tokens below, so dialogs, menus, select panels, the datepicker, tooltips and snack bars
 // follow whichever of the app's themes is active instead of a fixed Material palette.
 
+// Switches (`mat-slide-toggle`) at a settings switch's size, as macOS and Windows draw theirs: a
+// 36×20 track, the handle 12 px off, 14 px on and 16 px pressed, in M3's way of growing it. The off
+// state is drawn in `--text-tertiary` and the on state in `--accent` under `--accent-fg`, which
+// `scripts/theme-contrast.test.mjs` keeps at 4.5:1 or more in every theme, past the 3:1 a control
+// needs. Pointer focus stays quiet: keyboard focus shows the app's `:focus-visible` outline. The
+// 48 px touch target stays (`slide-toggle-touch-target-size`, and its width below).
+$slide-toggle: (
+  track-width: 36px,
+  track-height: 20px,
+  track-outline-width: 1.5px,
+  selected-track-outline-width: 1.5px,
+  disabled-unselected-track-outline-width: 1.5px,
+  unselected-handle-size: 12px,
+  unselected-handle-horizontal-margin: 0 4px,
+  selected-handle-size: 14px,
+  selected-handle-horizontal-margin: 0 19px,
+  pressed-handle-size: 16px,
+  unselected-pressed-handle-horizontal-margin: 0 2px,
+  selected-pressed-handle-horizontal-margin: 0 18px,
+  with-icon-handle-size: 14px,
+  unselected-with-icon-handle-horizontal-margin: 0 3px,
+  selected-with-icon-handle-horizontal-margin: 0 19px,
+  selected-icon-size: 10px,
+  unselected-icon-size: 10px,
+  state-layer-size: 28px,
+  track-outline-color: var(--text-tertiary),
+  unselected-handle-color: var(--text-tertiary),
+  unselected-focus-handle-color: var(--text-tertiary),
+  unselected-focus-state-layer-opacity: 0,
+  selected-focus-handle-color: var(--accent-fg),
+  selected-focus-state-layer-opacity: 0,
+);
+
+$slide-toggle-without-hover: (
+  unselected-hover-handle-color: var(--text-tertiary),
+  unselected-hover-state-layer-opacity: 0,
+  selected-hover-handle-color: var(--accent-fg),
+  selected-hover-state-layer-opacity: 0,
+);
+
 html {
   color-scheme: light;
   @include mat.theme(
@@ -105,10 +145,38 @@ html {
       on-error-container: var(--error-fg),
     )
   );
+  @include mat.slide-toggle-overrides($slide-toggle);
 }
 
 html.dark {
   color-scheme: dark;
+}
+
+// Where the pointer cannot hover, a tapped switch keeps no hover look (`ui.hover`).
+html.touch-input {
+  @include mat.slide-toggle-overrides($slide-toggle-without-hover);
+}
+
+@include ui.no-hover {
+  html {
+    @include mat.slide-toggle-overrides($slide-toggle-without-hover);
+  }
+}
+
+.mat-mdc-slide-toggle {
+  // Material's touch target is as wide as the track; the switch's is 48 px square, centred on it.
+  .mat-mdc-slide-toggle-touch-target {
+    width: max(100%, 48px);
+  }
+
+  // Material turns the outline off and marks focus only with its state layer, quiet here.
+  .mdc-switch {
+    border-radius: 999px;
+
+    &:focus-visible {
+      @include ui.focus-ring;
+    }
+  }
 }
 
 // ── Design tokens ────────────────────────────────────────────────────────────
