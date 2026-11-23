@@ -8,6 +8,7 @@ import {
   type ExportFile,
   type ExportOutcome,
   type ExportRequest,
+  type LegacyImportReportDto,
   type LogsResponse,
   type ProviderConfigFieldIssueDto,
   type ProviderConfigSaveRequestDto,
@@ -124,6 +125,11 @@ export const BackendOperations = {
   takeLaunchDeepLink: command<void, string | null>({
     label: 'Deep link',
     tauri: DESKTOP_COMMANDS.takeLaunchDeepLink,
+  }),
+  /** What the desktop app's one import of 0.0.7's settings did at this start, once. */
+  takeLegacyImportReport: command<void, LegacyImportReportDto | null>({
+    label: 'Importing 0.0.7 settings',
+    tauri: DESKTOP_COMMANDS.takeLegacyImportReport,
   }),
   /** Opens a web link in the default browser; the browser opens links itself. */
   openUrl: command<string, void>({ label: 'Open link', tauri: DESKTOP_COMMANDS.openUrl }),

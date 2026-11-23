@@ -3,6 +3,7 @@ import { type ApplicationConfig, provideBrowserGlobalErrorListeners } from '@ang
 import { REMOVE_STYLES_ON_COMPONENT_DESTROY } from '@angular/platform-browser'
 import { provideAppRouter } from './app.routes'
 import { provideDeepLinks } from './services/deep-link-inbox.service'
+import { provideLegacyImportNotice } from './services/legacy-import-notice.service'
 import { provideDashboardDates } from './utils/date-adapter'
 
 /** What the dashboard runs with; `main.ts` starts it with this. */
@@ -12,6 +13,7 @@ export const appConfig: ApplicationConfig = {
     provideHttpClient(),
     provideAppRouter(),
     provideDeepLinks(),
+    provideLegacyImportNotice(),
     provideDashboardDates(),
     // A component's styles stay after its last instance goes. Taking a style sheet out makes
     // WebKit restyle the whole page, which on a long timeline blocks closing the event details

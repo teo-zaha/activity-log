@@ -7,6 +7,7 @@ import type {
   ConnectionId,
   ExportOutcome,
   ExportRequest,
+  LegacyImportReportDto,
   ProviderConfigFieldIssueDto,
   ProviderConfigSaveRequestDto,
   ProviderConfigSaveResponseDto,
@@ -61,6 +62,11 @@ export class ActivityBackendClient {
 
   export(request: ExportRequest): Promise<ExportOutcome> {
     return this.transport.saveExport(request)
+  }
+
+  /** What the desktop app's import of 0.0.7's settings did at this start, once; desktop only. */
+  takeLegacyImportReport(): Promise<LegacyImportReportDto | null> {
+    return this.transport.call(BackendOperations.takeLegacyImportReport, undefined)
   }
 
   /** Opens an http(s) link outside the app, in whichever shell the dashboard runs. */

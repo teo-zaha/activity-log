@@ -14,7 +14,7 @@ use tauri::{
 use crate::{
     app_menu, commands, deep_link,
     deep_link::{DeepLinkInbox, Delivery},
-    main_window_focused, page_started, window_chrome,
+    legacy_import, main_window_focused, page_started, window_chrome,
 };
 
 /// Held by every test that logs, reads or clears the process-wide diagnostics log, which tests

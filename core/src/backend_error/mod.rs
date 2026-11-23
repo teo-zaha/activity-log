@@ -95,7 +95,9 @@ impl From<EditError> for BackendError {
                 return Self::internal(format!("Saving settings failed: {err:#}"));
             }
             EditError::Busy => BackendErrorKind::Busy,
-            EditError::Conflict(_) | EditError::FileChanged { .. } => BackendErrorKind::Conflict,
+            EditError::Conflict(_) | EditError::FileChanged { .. } | EditError::FileExists => {
+                BackendErrorKind::Conflict
+            }
             EditError::Unprotectable { .. } => BackendErrorKind::Unprotectable,
             EditError::SecretStore(ref store) => match store.kind() {
                 crate::secrets::StoreErrorKind::Unavailable => {

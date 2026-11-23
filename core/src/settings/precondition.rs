@@ -62,6 +62,9 @@ pub enum Precondition {
     /// The writer showed nothing it could be based on: a command with every value given.
     None,
     Unchanged(EditBase),
+    /// The writer creates the file: one that exists under the lock, even empty, is another
+    /// writer's, and nothing is written ([`EditError::FileExists`](super::EditError)).
+    FileAbsent,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

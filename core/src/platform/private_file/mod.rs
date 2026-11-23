@@ -324,6 +324,12 @@ fn windows_reads_alike(name: &str) -> bool {
 }
 
 /// Whether an existing file can be opened by anyone but its owner (mode bits, ACL entries).
+/// Whether the file at `path`, a link followed, is owned by the current user (on Windows, its
+/// owner is the user's own SID). A system that cannot tell answers `false`.
+pub fn owned_by_user(path: &Path) -> io::Result<bool> {
+    imp::owned_by_user(path)
+}
+
 pub fn readable_by_others(path: &Path) -> io::Result<bool> {
     imp::readable_by_others(path)
 }

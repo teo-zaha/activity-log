@@ -12,8 +12,8 @@ use activity_log_core::{
         BadConfig, Forwarder, Host, PING_INTERVAL, RunSpawner, RuntimeMessage, answer_collect,
         answer_recheck,
     },
-    secrets::Secrets,
-    settings::ConfigFile,
+    secrets::{FrontEnd, Secrets},
+    settings::{ConfigFile, legacy_import},
 };
 use rocket::{
     Build, Data, Request, Rocket, Shutdown, State, catch,
@@ -255,6 +255,10 @@ pub async fn build_rocket(config: Option<&Path>) -> anyhow::Result<Rocket<Build>
     let path = ConfigFile::resolve_path(config);
     if let Some(path) = &path {
         println!("Reading connections from {}", path.display());
+    }
+    // The server never imports 0.0.7's settings; it says how to.
+    if let Some(place) = legacy_import::Place::for_front_end(FrontEnd::Api, config) {
+        legacy_import::hint(&place);
     }
     // The one place the server builds its stores of the key.
     let secrets = Secrets::api(path.as_deref());

@@ -9,12 +9,12 @@ use std::{
 use activity_log_core::{
     collect_runtimes, diagnostics,
     export::render_export,
-    model::{CollectOptions, ConnectionId, OutputFormat, Source},
+    model::{CollectOptions, ConnectionId, LegacyImportReportDto, OutputFormat, Source},
     provider::{connection::ConnectionLocation, inspect_provider_runtimes_with},
-    secrets::{Interaction, Secrets},
+    secrets::{FrontEnd, Interaction, Secrets},
     settings::{
         ConfigEditError, ConfigFile, EditError, Editor, ExternalEdit, FieldId, NO_LOCATION,
-        Precondition, edit_config, edit_externally, load_connections,
+        Precondition, edit_config, edit_externally, legacy_import, load_connections,
     },
 };
 use anyhow::{Result, anyhow};
@@ -191,6 +191,20 @@ async fn main() -> ExitCode {
     }
 }
 
+/// 0.0.7's sources, imported once on the default config path. What it says goes to standard
+/// error: its warnings as they are logged, and the line naming what it imported.
+async fn import_legacy(config: Option<&Path>) {
+    let Some(place) = legacy_import::Place::for_front_end(FrontEnd::Cli, config) else {
+        return;
+    };
+    let secrets = Secrets::cli(ConfigFile::resolve_path(config).as_deref());
+    if let Some(LegacyImportReportDto::Imported { message, .. }) =
+        legacy_import::import_once(&place, &secrets).await
+    {
+        let _ = writeln!(io::stderr(), "{message}");
+    }
+}
+
 fn fatal(err: &anyhow::Error) -> ExitCode {
     // With standard error gone there is nowhere left to say it.
     let _ = writeln!(io::stderr(), "Fatal: {err}");
@@ -199,6 +213,16 @@ fn fatal(err: &anyhow::Error) -> ExitCode {
 
 async fn run(cli: Cli) -> Result<ExitCode> {
     let config = cli.config.as_deref();
+    // Every command that reads the sources first imports 0.0.7's, where that is due.
+    let path_only = matches!(
+        cli.command,
+        Some(Command::Config {
+            action: ConfigCommand::Path
+        })
+    );
+    if !path_only {
+        import_legacy(config).await;
+    }
     match cli.command {
         None => return collect(&cli.collect, config).await,
         Some(Command::Sources { action: None }) => list_sources(config).await?,

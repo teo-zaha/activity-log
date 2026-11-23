@@ -23,6 +23,9 @@ base64 = "0.23"
 calcard = { version = "0.3", default-features = false }
 chrono.workspace = true
 chrono-tz.workspace = true
+# 0.0.7's `.env` parser, for its one import (`settings::legacy_import`) only; it touches no
+# environment through `from_path_iter`.
+dotenvy = "=0.15.7"
 cmac = { version = "=0.8.0", default-features = false, features = ["zeroize"] }
 ctr = { version = "=0.10.1", default-features = false, features = ["zeroize"] }
 futures.workspace = true

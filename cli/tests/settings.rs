@@ -8,11 +8,20 @@ use std::{
     process::{Command, Output, Stdio},
 };
 
-/// The CLI run in `dir`, without the `ACTIVITY_LOG_CONFIG` of the environment the tests run in.
-/// Each test passes its own config or clears the environment.
+/// The CLI run in `dir`, without the `ACTIVITY_LOG_CONFIG` of the environment the tests run in,
+/// its OS folders inside `dir`, so no run reaches the user's own settings (nor imports 0.0.7's
+/// there). Each test passes its own config or clears the environment.
 fn cli(dir: &Path) -> Command {
     let mut command = Command::new(env!("CARGO_BIN_EXE_activity-log"));
-    command.env_remove("ACTIVITY_LOG_CONFIG").current_dir(dir);
+    let home = dir.join("home");
+    command
+        .env_remove("ACTIVITY_LOG_CONFIG")
+        .env("HOME", &home)
+        .env("XDG_CONFIG_HOME", home.join(".config"))
+        .env("XDG_DATA_HOME", home.join(".local").join("share"))
+        .env("APPDATA", home.join("AppData").join("Roaming"))
+        .env("LOCALAPPDATA", home.join("AppData").join("Local"))
+        .current_dir(dir);
     command
 }
 
@@ -349,4 +358,45 @@ fn a_new_address_takes_the_token_in_the_same_call() {
     assert!(written.contains("https://gitlab.example.test"), "{written}");
     assert!(!written.contains("glpat-second"), "{written}");
     assert_ne!(written, before);
+}
+
+/// On the default config path a first command imports 0.0.7's `.env` once: the token sealed
+/// with the key file's key, the marker beside, the `.env` as it was; `config path` imports
+/// nothing, and a second run nothing again.
+#[test]
+fn a_first_command_imports_0_0_7s_dotenv_once() {
+    let dir = tempfile::tempdir().unwrap();
+    let key_file = dir.path().join("secret.key");
+    let env = "GITLAB_URL=https://gitlab.example.test\nGITLAB_TOKEN=glpat-test-0000\n";
+    fs::write(dir.path().join(".env"), env).unwrap();
+    let run = |args: &[&str]| {
+        cli(dir.path())
+            .env("ACTIVITY_LOG_SECRET_KEY_FILE", &key_file)
+            .env_remove("ACTIVITY_LOG_PROFILE")
+            .args(args)
+            .stdin(Stdio::null())
+            .output()
+            .unwrap()
+    };
+
+    let path = run(&["config", "path"]);
+    assert!(path.status.success(), "{}", stderr(&path));
+    let config = std::path::PathBuf::from(String::from_utf8_lossy(&path.stdout).trim());
+    assert!(!config.exists());
+
+    let listed = run(&["sources"]);
+    assert!(listed.status.success(), "{}", stderr(&listed));
+    assert!(stderr(&listed).contains("Imported"), "{}", stderr(&listed));
+    let written = fs::read_to_string(&config).unwrap();
+    assert!(!written.contains("glpat-test-0000"), "{written}");
+    assert!(
+        written.contains("token = { sealed = \"v1:file:"),
+        "{written}"
+    );
+    assert!(config.with_file_name("legacy-import.toml").is_file());
+    assert_eq!(fs::read_to_string(dir.path().join(".env")).unwrap(), env);
+
+    let again = run(&["sources"]);
+    assert!(!stderr(&again).contains("Imported"), "{}", stderr(&again));
+    assert_eq!(fs::read_to_string(&config).unwrap(), written);
 }

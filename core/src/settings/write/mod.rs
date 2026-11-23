@@ -53,6 +53,9 @@ pub enum EditError {
     Conflict(Conflict),
     /// The file changed while a copy of it was edited (`config edit`); nothing was written.
     FileChanged { name: String },
+    /// The writer creates the file (`Precondition::FileAbsent`) and another writer wrote it
+    /// first; nothing was written.
+    FileExists,
     /// The change was refused; nothing was written.
     Rejected(ConfigEditError),
     /// The file as found, or the text the user edited, is not a valid configuration; nothing
@@ -88,6 +91,10 @@ impl std::fmt::Display for EditError {
             Self::Busy => write!(f, "The settings file is busy; try again."),
             Self::Conflict(_) => write!(f, "{}", self.message(None)),
             Self::FileChanged { name } => write!(f, "{name} changed while you were editing"),
+            Self::FileExists => write!(
+                f,
+                "Another program wrote the settings first; nothing was written."
+            ),
             Self::Rejected(err) => write!(f, "{err}"),
             Self::Invalid(err) => write!(f, "{err}"),
             Self::Internal(err) => write!(f, "{err:#}"),
@@ -120,6 +127,23 @@ pub fn edit_config<T>(
     edit_config_with(lock(path)?, precondition, sealing, change)
 }
 
+/// [`edit_config`], then, once the file is published and with the lock still held, `record`'s
+/// bytes written owner-only beside it under `name`: a record no other writer may see without
+/// the file. The edit stands whatever the record's write gives, which is returned beside it.
+pub(in crate::settings) fn edit_config_recorded<T>(
+    path: &Path,
+    precondition: Precondition,
+    sealing: Option<&Sealer>,
+    change: impl FnOnce(&mut ConfigFile) -> Result<T, ConfigEditError>,
+    name: &str,
+    record: impl FnOnce(&T) -> Vec<u8>,
+) -> Result<(Edited<T>, Result<(), ReplaceError>), EditError> {
+    let locked = lock(path)?;
+    let edited = edit_locked(&locked, precondition, sealing, change)?;
+    let recorded = locked.folder.replace(name, &record(&edited.value));
+    Ok((edited, recorded))
+}
+
 type TryLock<'a> = &'a dyn Fn(&File) -> Result<(), fs::TryLockError>;
 
 fn edit_config_with<T>(
@@ -128,7 +152,19 @@ fn edit_config_with<T>(
     sealing: Option<&Sealer>,
     change: impl FnOnce(&mut ConfigFile) -> Result<T, ConfigEditError>,
 ) -> Result<Edited<T>, EditError> {
+    edit_locked(&locked, precondition, sealing, change)
+}
+
+fn edit_locked<T>(
+    locked: &Locked,
+    precondition: Precondition,
+    sealing: Option<&Sealer>,
+    change: impl FnOnce(&mut ConfigFile) -> Result<T, ConfigEditError>,
+) -> Result<Edited<T>, EditError> {
     let found = locked.read()?;
+    if matches!(precondition, Precondition::FileAbsent) && found.is_some() {
+        return Err(EditError::FileExists);
+    }
     let mut file = ConfigFile::parse(&locked.path, found.as_deref().unwrap_or_default())
         .map_err(EditError::Invalid)?;
     let as_read = file.to_string();

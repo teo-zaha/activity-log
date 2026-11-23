@@ -5,6 +5,7 @@ mod collection_notice;
 mod commands;
 mod deep_link;
 mod devtools;
+mod legacy_import;
 mod provider_config;
 mod runtime_events;
 mod window_chrome;
@@ -40,6 +41,7 @@ macro_rules! app_commands {
             commands::get_logs,
             commands::clear_logs,
             deep_link::take_launch_deep_link,
+            legacy_import::take_legacy_import_report,
             window_chrome::attach_maximize_button
         ]
     };
@@ -79,6 +81,7 @@ pub fn run() {
         )
         .manage(app_menu::AppMenu::<tauri::Wry>::default())
         .manage(commands::ExportTurn::default())
+        .manage(legacy_import::ImportReport::default())
         .on_menu_event(|app, event| app_menu::chosen(app, event.id()))
         .on_page_load(|webview, payload| {
             if payload.event() == PageLoadEvent::Started {
@@ -103,7 +106,10 @@ pub fn run() {
             let path = ConfigFile::resolve_path(None);
             // The one place the app builds its stores of the key.
             let secrets = activity_log_core::secrets::Secrets::desktop(path.as_deref());
-            // Before the host first reads the file, while nothing else asks the keychain.
+            // Before the host first reads the file, while nothing else asks the keychain: 0.0.7's
+            // settings once, then plain text sealed.
+            let report = legacy_import::import_before_host(&secrets);
+            app.state::<legacy_import::ImportReport>().hold(report);
             if let Some(path) = &path {
                 tauri::async_runtime::block_on(
                     activity_log_core::settings::startup_seal::seal_without_asking(path, &secrets),

@@ -446,9 +446,18 @@ Tokens and secret links (GitLab and Jira tokens, a calendar's ICS address) are s
 - **Don't sync `config.toml` between computers:** each computer has its own key, so a token entered on one cannot be opened on the other, and the settings ask for it again there. The same happens after the keychain is reset or the key file deleted: enter the tokens again.
 - **On macOS** the keychain asks once whether Activity Log may use its key, after each update of the app (and for the CLI after each new build).
 
+### Upgrading from 0.0.7
+
+Activity Log 0.0.7 kept its sources in the desktop app's `settings.json` and in a `.env` for the CLI. The first start of the desktop app, or the first `activity-log` command that reads the sources, imports them once into `config.toml`: only on the default config path (not with `--config`, `ACTIVITY_LOG_CONFIG` or the dev profile), and only while no `config.toml` exists there (an empty one counts, so removing every source never brings them back).
+
+- **What it reads:** the desktop app reads `settings.json`; the CLI reads it too, and the first `.env` up from its working directory, if your own account owns it. When both set something, `settings.json` wins and the Logs name the other file. The process environment is never read, and the old files are left as they are.
+- **What it writes:** a GitLab and a Jira source where any of their settings were set, the local Git source (and on Windows one WSL Git source per distribution), Outlook and System where they run. Tokens are sealed as any other. A value today's settings refuse, or a token without its server's address, is left out and named in the Logs, never with its value; the desktop app offers to open the settings then.
+- **When it waits:** settings that bring a token need the keychain. The desktop app imports nothing without one, or while it refuses, and tries again at the next start; the CLI falls back to its key file where there is no keychain.
+- **Once:** `legacy-import.toml` beside `config.toml` records what was imported and left out. The API server never imports; it says to run `activity-log sources` once.
+
 ### Environment variables
 
-These optional variables control file locations, API port, and cache TTL. Set them in the shell or service that starts Activity Log (for example `ACTIVITY_LOG_CACHE_DIR=/tmp/al-cache activity-log`); no part of Activity Log reads a `.env` file:
+These optional variables control file locations, API port, and cache TTL. Set them in the shell or service that starts Activity Log (for example `ACTIVITY_LOG_CACHE_DIR=/tmp/al-cache activity-log`); no part of Activity Log reads a `.env` file into its environment (the [one import from 0.0.7](#upgrading-from-007) reads a `.env` as data, once):
 
 | Variable                       | Description                                                                                                                   | Default                                               |
 | ------------------------------ | ----------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------- |

@@ -24,6 +24,7 @@ mod config_file;
 mod content_id;
 mod external;
 mod keys;
+pub mod legacy_import;
 mod precondition;
 pub mod startup_seal;
 pub mod view;

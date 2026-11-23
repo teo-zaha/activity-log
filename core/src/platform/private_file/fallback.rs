@@ -77,6 +77,10 @@ impl Staging {
     }
 }
 
+pub(super) fn owned_by_user(_path: &Path) -> io::Result<bool> {
+    Ok(false)
+}
+
 pub(super) fn readable_by_others(_path: &Path) -> io::Result<bool> {
     Ok(true)
 }

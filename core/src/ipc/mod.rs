@@ -18,6 +18,7 @@ pub const DESKTOP_COMMANDS: &[(&str, &str)] = &[
     ("getLogs", "get_logs"),
     ("clearLogs", "clear_logs"),
     ("takeLaunchDeepLink", "take_launch_deep_link"),
+    ("takeLegacyImportReport", "take_legacy_import_report"),
     ("attachMaximizeButton", "attach_maximize_button"),
 ];
 

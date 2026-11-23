@@ -54,11 +54,18 @@ export class AppComponent implements OnInit {
       this.snackRef?.dismiss()
       this.snackRef =
         notice &&
-        this.snackBar.open(notice.failure.message, 'Dismiss', {
+        this.snackBar.open(notice.failure.message, notice.action ? 'Open Settings' : 'Dismiss', {
           horizontalPosition: 'center',
           verticalPosition: 'bottom',
           panelClass: ['error-alert-snackbar'],
         })
+      const action = notice?.action
+      if (action) {
+        this.snackRef?.onAction().subscribe(() => {
+          this.notices.clear(notice.origin)
+          void this.viewState.openSettings(action.selection)
+        })
+      }
     })
   }
 

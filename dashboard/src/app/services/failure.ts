@@ -1,3 +1,4 @@
+import type { SettingsSelection } from '../components/settings-dialog/settings-dialog.types'
 import { BackendFailure, type BackendFailureKind } from './backend/backend-failure'
 
 /**
@@ -35,10 +36,20 @@ export function refusedAs(failure: Failure, kind: BackendFailureKind): boolean {
   return failure.kind === 'backend' && failure.cause.kind === kind
 }
 
-/** A failure of an action that has no place of its own to show it, by the action it belongs to. */
+/**
+ * A failure of an action that has no place of its own to show it, by the action it belongs to,
+ * and what its button does besides dismissing it.
+ */
 export interface Notice {
-  readonly origin: 'export' | 'view' | 'settings' | 'recheck'
+  readonly origin: 'export' | 'view' | 'settings' | 'recheck' | 'import'
   readonly failure: Failure
+  readonly action?: NoticeAction
+}
+
+/** A notice's button that does something: it opens the settings at `selection`. */
+export interface NoticeAction {
+  readonly kind: 'openSettings'
+  readonly selection: SettingsSelection
 }
 
 /**

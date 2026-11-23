@@ -11,9 +11,16 @@ use std::{
 
 fn cli(dir: &Path) -> Command {
     let mut command = Command::new(env!("CARGO_BIN_EXE_activity-log"));
+    // Its OS folders inside `dir`, so no run reaches the user's own settings.
+    let home = dir.join("home");
     command
         .env_remove("ACTIVITY_LOG_CONFIG")
         .env("ACTIVITY_LOG_CACHE_DIR", dir.join("cache"))
+        .env("HOME", &home)
+        .env("XDG_CONFIG_HOME", home.join(".config"))
+        .env("XDG_DATA_HOME", home.join(".local").join("share"))
+        .env("APPDATA", home.join("AppData").join("Roaming"))
+        .env("LOCALAPPDATA", home.join("AppData").join("Local"))
         .current_dir(dir);
     command
 }
