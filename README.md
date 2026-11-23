@@ -54,20 +54,31 @@ cd activity-log
 pnpm install
 ```
 
+### Install
+
+Build the desktop app and install the `activity-log` CLI from the checkout:
+
+```bash
+pnpm desktop:build                                       # the desktop app, under target/release/bundle/
+cargo install --path cli --bin activity-log --locked   # the CLI, into ~/.cargo/bin
+```
+
 A new install starts with no sources. Add them from **Add source** in the desktop app, or from the CLI:
 
 ```bash
-pnpm cli:collect sources add git
-pnpm cli:collect sources add gitlab
+activity-log sources add git
+activity-log sources add gitlab
 ```
 
 ### Run
 
-| Mode                | Command                         | What it starts                                                       |
-| ------------------- | ------------------------------- | -------------------------------------------------------------------- |
-| Desktop app (Tauri) | `pnpm desktop:dev`              | Angular UI in a desktop window backed directly by Rust commands      |
-| Web dashboard + API | `pnpm dev`                      | Rocket API on `http://localhost:3001`, Angular app on `:3200`        |
-| CLI                 | `pnpm cli:collect --range week` | Writes `logs/activity_log.json` (`--format markdown` writes a `.md`) |
+| Mode                | Command                           | What it starts                                                       |
+| ------------------- | --------------------------------- | -------------------------------------------------------------------- |
+| Desktop app (Tauri) | the app `pnpm desktop:build` made | Angular UI in a desktop window backed directly by Rust commands      |
+| CLI                 | `activity-log --range week`       | Writes `logs/activity_log.json` (`--format markdown` writes a `.md`) |
+| Web dashboard + API | `pnpm dev`                        | Rocket API on `http://localhost:3001`, Angular app on `:3200`        |
+
+`pnpm dev`, `pnpm desktop:dev`, `pnpm api:start` and `pnpm cli:collect` are for development: they run debug builds on the [dev profile](#dev-profile), with their own settings and secrets, never the installed app's.
 
 On startup, Activity Log collects the last 30 days automatically. Change the date range in the header at any time to run a new collection; typed dates are parsed day-first (`03/05/2026` is 3 May).
 
@@ -377,7 +388,7 @@ Each source below lists its entry types, Timeline subtitle line, detail panel fi
 
 ### Config file
 
-The desktop app, API server, and CLI share one TOML file: `activity-log/config.toml` inside the OS config directory (`%APPDATA%` on Windows, `~/Library/Application Support` on macOS, `$XDG_CONFIG_HOME` or `~/.config` on Linux). Override it with `ACTIVITY_LOG_CONFIG` or `--config <path>` (CLI and API server). Run `pnpm cli:collect config path` to print the active path.
+The desktop app, API server, and CLI share one TOML file: `activity-log/config.toml` inside the OS config directory (`%APPDATA%` on Windows, `~/Library/Application Support` on macOS, `$XDG_CONFIG_HOME` or `~/.config` on Linux). Override it with `ACTIVITY_LOG_CONFIG` or `--config <path>` (CLI and API server). Run `activity-log config path` to print the active path.
 
 Each connection is a TOML array-of-tables entry under its kind, using lowercase field names without the kind prefix:
 
@@ -429,12 +440,13 @@ Key rules:
 
 These optional variables control file locations, API port, and cache TTL. Set them in the shell or service that starts Activity Log (for example `ACTIVITY_LOG_CACHE_DIR=/tmp/al-cache activity-log`); no part of Activity Log reads a `.env` file:
 
-| Variable                 | Description                                                              | Default             |
-| ------------------------ | ------------------------------------------------------------------------ | ------------------- |
-| `ACTIVITY_LOG_CONFIG`    | Path to `config.toml`                                                    | OS config directory |
-| `PORT`                   | Rocket API port (`pnpm dev` and `pnpm api:dev` set `3001`)               | `3000`              |
-| `CACHE_TTL_MINUTES`      | Minutes that recent (not yet settled) cached GitLab/Jira days stay fresh | `5`                 |
-| `ACTIVITY_LOG_CACHE_DIR` | Directory for per-day cache files                                        | OS cache directory  |
+| Variable                 | Description                                                                                   | Default             |
+| ------------------------ | --------------------------------------------------------------------------------------------- | ------------------- |
+| `ACTIVITY_LOG_CONFIG`    | Path to `config.toml`                                                                         | OS config directory |
+| `ACTIVITY_LOG_PROFILE`   | `dev` for the [dev profile](#dev-profile) (debug builds only; the development scripts set it) | unset               |
+| `PORT`                   | Rocket API port (`pnpm dev` and `pnpm api:dev` set `3001`)                                    | `3000`              |
+| `CACHE_TTL_MINUTES`      | Minutes that recent (not yet settled) cached GitLab/Jira days stay fresh                      | `5`                 |
+| `ACTIVITY_LOG_CACHE_DIR` | Directory for per-day cache files                                                             | OS cache directory  |
 
 ### Per-day cache
 
@@ -462,15 +474,15 @@ Run collections and manage `config.toml` without building the dashboard.
 
 Dates are whole local days. `--range week` and `--range lastweek` start on Monday, as in the dashboard.
 
-Each source gets one line: collected with its entry count, skipped when it has nothing to give on this machine (another OS, an app not installed or not running, no repositories), or failed. With `--output -` the export alone goes to standard output and every other line to standard error (run it as `pnpm -s cli:collect`, or the binary itself, so pnpm's banner stays out of the export).
+Each source gets one line: collected with its entry count, skipped when it has nothing to give on this machine (another OS, an app not installed or not running, no repositories), or failed. With `--output -` the export alone goes to standard output and every other line to standard error (in development run it as `pnpm -s cli:collect`, so pnpm's banner stays out of the export).
 
 Exit status: 0 when every source was collected or skipped (another OS, not installed, not running, nothing to read); 1 when a source failed (refused, unreachable, timed out, not configured, not permitted, its check or its collection failed), after the export of the others is written, or on any error, an invalid flag or value included.
 
 ```bash
-pnpm cli:collect --range week
-pnpm cli:collect --range lastmonth --format markdown --output reports/last-month.md
-pnpm cli:collect --since 2026-11-01 --until 2026-11-14
-pnpm -s cli:collect --range today --output - | jq '.entries | length'
+activity-log --range week
+activity-log --range lastmonth --format markdown --output reports/last-month.md
+activity-log --since 2026-11-01 --until 2026-11-14
+activity-log --range today --output - | jq '.entries | length'
 ```
 
 ### Managing sources
@@ -478,23 +490,23 @@ pnpm -s cli:collect --range today --output - | jq '.entries | length'
 Identify a connection as `kind/name`, or by `name` alone when unique. Input is validated identically to the desktop app before saving.
 
 ```bash
-pnpm cli:collect sources                              # list connections and startup status
-pnpm cli:collect sources add gitlab                   # prompt for url, token (hidden), user
-pnpm cli:collect sources add gitlab --label "Work"    # custom label
-pnpm cli:collect sources add git --wsl NixOS          # WSL Git connection on Windows
-pnpm cli:collect sources set gitlab/oss url https://oss.example.org
-pnpm cli:collect sources set gitlab/oss token         # prompt without echo
-pnpm cli:collect sources set git/this-computer dirs ~/Projects ~/work
-pnpm cli:collect sources unset git/this-computer dirs # restore default
-pnpm cli:collect sources rename gitlab/oss "Open source"
-pnpm cli:collect sources remove gitlab/oss
-pnpm cli:collect config path                          # print config.toml path
-pnpm cli:collect config edit                          # edit a private copy in $VISUAL / $EDITOR
+activity-log sources                              # list connections and startup status
+activity-log sources add gitlab                   # prompt for url, token (hidden), user
+activity-log sources add gitlab --label "Work"    # custom label
+activity-log sources add git --wsl NixOS          # WSL Git connection on Windows
+activity-log sources set gitlab/oss url https://oss.example.org
+activity-log sources set gitlab/oss token         # prompt without echo
+activity-log sources set git/this-computer dirs ~/Projects ~/work
+activity-log sources unset git/this-computer dirs # restore default
+activity-log sources rename gitlab/oss "Open source"
+activity-log sources remove gitlab/oss
+activity-log config path                          # print config.toml path
+activity-log config edit                          # edit a private copy in $VISUAL / $EDITOR
 ```
 
 ## API
 
-Start the Rocket HTTP API alone with `pnpm api:start` (default port `3000`, override with `PORT`), or alongside the Angular dev server with `pnpm dev` (API on `3001`, dashboard on `3200` with `/api` proxied and SSE streaming preserved). The API is local and collection-only; configuration edits stay in the desktop app and CLI.
+Start the Rocket HTTP API alone with `cargo run --release -p api` (default port `3000`, override with `PORT`). For development, `pnpm api:start` runs it on the dev profile, and `pnpm dev` alongside the Angular dev server (API on `3001`, dashboard on `3200` with `/api` proxied and SSE streaming preserved). The API is local and collection-only; configuration edits stay in the desktop app and CLI.
 
 | Method & Route                  | Description                                                                                                                    |
 | ------------------------------- | ------------------------------------------------------------------------------------------------------------------------------ |
@@ -537,6 +549,20 @@ Every API error returns `{ "kind", "error" }`, where `error` is human-readable a
 | `dashboard/` | Angular frontend consuming generated DTOs from `dashboard/src/app/generated/`  |
 
 Architecture rules and conventions live in [`AGENTS.md`](AGENTS.md); domain terminology lives in [`CONTEXT.md`](CONTEXT.md).
+
+### Dev profile
+
+The development scripts (`pnpm dev`, `pnpm desktop:dev`, `pnpm api:start`, `pnpm api:dev`, `pnpm cli:collect`) set `ACTIVITY_LOG_PROFILE=dev`, which gives a debug build its own files, so working on Activity Log never touches the installed app's:
+
+| What          | Dev profile                                                                                      | Installed                  |
+| ------------- | ------------------------------------------------------------------------------------------------ | -------------------------- |
+| Settings      | `activity-log-dev/config.toml` in the OS config directory                                        | `activity-log/config.toml` |
+| Per-day cache | `activity-log-dev/cache` in the OS cache directory                                               | `activity-log/cache`       |
+| Secrets       | always a key file, `activity-log-dev/secret.key` in the local data directory, never the keychain | the OS keychain            |
+
+Each process says once which profile it uses (`Using the dev profile: …`), and the desktop's window title ends in `(dev)`. `--config` and `ACTIVITY_LOG_CONFIG` still choose the settings file; secrets stay in the dev key file. Release builds ignore the variable (and say so), and a debug build refuses any value but `dev`. The test scripts do not set it.
+
+To work with your real connections, copy the installed `config.toml` into `activity-log-dev/`. Tokens the installed app sealed with the keychain do not open in the dev profile, deliberately: enter them again there (`activity-log sources set gitlab/work token`).
 
 ### Verification
 

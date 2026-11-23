@@ -47,7 +47,7 @@ The key file, where it is used, is `secret.key` in a local, non-roaming folder (
 
 ## Stores per front end
 
-- **The desktop app seals only with the OS store.** Without one a save is refused as `secretStoreUnavailable`, and when the store refuses as `secretStoreRefused`, with the draft kept. It opens values sealed with the key file too, which the CLI may have written, so one shared `config.toml` works in both; it only ever reads the key file and never creates it.
+- **The desktop app seals only with the OS store.** Without one a save is refused as `secretStoreUnavailable`, and when the store refuses as `secretStoreRefused`, with the draft kept. It opens values sealed with the key file too, which the CLI may have written, so one shared `config.toml` works in both; it only ever reads the key file and never creates it (the dev profile aside, below).
 - **The CLI seals with the OS store, and falls back to the key file only when the OS store is `Unavailable`**, with one warning per process that `sources` and every edit print. A `Refused` store is never a reason to fall back: the edit fails as `secretStoreRefused`, with the hint to run in the desktop session or to set `ACTIVITY_LOG_SECRET_STORE=file`.
 - **The API server never writes the config, so it never seals.** It opens each value from the store that value names, and reports which store new secrets would use by the CLI's rule.
 - **`ACTIVITY_LOG_SECRET_STORE`** chooses where the key lives and configures no source: `os` forbids the CLI's fallback, `file` forces the key file in the CLI and the API (a Mac over SSH, a CI runner where a prompt would hang). The desktop app ignores it outside the dev profile and logs that it did.

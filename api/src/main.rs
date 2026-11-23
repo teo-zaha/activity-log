@@ -5,6 +5,8 @@ use activity_log_api::build_rocket;
 #[rocket::main]
 async fn main() -> anyhow::Result<()> {
     let config = config_arg(std::env::args().skip(1))?;
+    // First, so every path below is the profile's.
+    activity_log_core::profile::init(config.as_deref())?;
 
     let port = std::env::var("PORT")
         .ok()

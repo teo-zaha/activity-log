@@ -54,8 +54,10 @@ impl ConfigFile {
             // No fallback without an OS folder: tokens are never written to a temporary or
             // shared folder.
             .or_else(|| {
-                crate::platform::dirs::config_home()
-                    .map(|dir| dir.join("activity-log").join("config.toml"))
+                crate::platform::dirs::config_home().map(|dir| {
+                    dir.join(crate::profile::current().folder())
+                        .join("config.toml")
+                })
             })?;
         Some(std::path::absolute(&path).unwrap_or(path))
     }

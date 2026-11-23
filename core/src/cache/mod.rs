@@ -568,6 +568,6 @@ pub fn cache_dir() -> PathBuf {
     }
     crate::platform::dirs::cache_home()
         .unwrap_or_else(env::temp_dir)
-        .join("activity-log")
+        .join(crate::profile::current().folder())
         .join("cache")
 }

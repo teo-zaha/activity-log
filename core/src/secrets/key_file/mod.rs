@@ -56,10 +56,14 @@ impl KeyFileStore {
         Self { path, writer }
     }
 
-    /// `ACTIVITY_LOG_SECRET_KEY_FILE`, else `activity-log/secret.key` in the local data folder.
+    /// `ACTIVITY_LOG_SECRET_KEY_FILE`, else `secret.key` in the profile's folder in the local
+    /// data folder (`activity-log`, or `activity-log-dev` for the dev profile).
     pub fn default_path() -> Option<PathBuf> {
         dirs::env_path(KEY_FILE_VARIABLE).or_else(|| {
-            dirs::local_data_home().map(|dir| dir.join("activity-log").join("secret.key"))
+            dirs::local_data_home().map(|dir| {
+                dir.join(crate::profile::current().folder())
+                    .join("secret.key")
+            })
         })
     }
 

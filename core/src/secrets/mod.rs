@@ -96,7 +96,8 @@ pub struct KeyCreation<'a> {
 }
 
 impl Secrets {
-    /// The desktop app's: the OS store, and the key file read only.
+    /// The desktop app's: the OS store, and the key file read only. With the dev profile, as
+    /// for every front end, only the profile's own key file, which it creates.
     #[cfg(not(test))]
     pub fn desktop(config_path: Option<&Path>) -> Self {
         Self::of_user(config_path, KeyFileAccess::ReadOnly)
@@ -116,12 +117,20 @@ impl Secrets {
 
     #[cfg(not(test))]
     fn of_user(config_path: Option<&Path>, access: KeyFileAccess) -> Self {
+        let (os, access) = match crate::profile::current() {
+            // The keychain is never asked: a rebuild never prompts, nothing is sealed into it.
+            crate::profile::Profile::Dev => (None, KeyFileAccess::Create),
+            crate::profile::Profile::Installed => (
+                Some((
+                    Arc::new(OsStore::user()) as Arc<dyn SecretStore>,
+                    os_key_lock(config_path),
+                )),
+                access,
+            ),
+        };
         let file = KeyFileStore::new(KeyFileStore::default_path(), access);
         let file_lock = file.creation_lock();
-        Self::build(
-            Some((Arc::new(OsStore::user()), os_key_lock(config_path))),
-            (Arc::new(file), file_lock),
-        )
+        Self::build(os, (Arc::new(file), file_lock))
     }
 
     /// Any stores, each with its key-creation lock.
@@ -341,7 +350,7 @@ impl Drop for Settle {
 #[cfg_attr(test, allow(dead_code))]
 fn os_key_lock(config_path: Option<&Path>) -> Option<PathBuf> {
     crate::platform::dirs::shared_config_home()
-        .map(|dir| dir.join("activity-log"))
+        .map(|dir| dir.join(crate::profile::Profile::Installed.folder()))
         .or_else(|| config_path.and_then(Path::parent).map(Path::to_path_buf))
         .map(|dir| dir.join(OS_KEY_LOCK))
 }

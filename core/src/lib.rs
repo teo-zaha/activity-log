@@ -8,6 +8,7 @@ pub mod ipc;
 pub mod menu;
 pub mod model;
 pub(crate) mod platform;
+pub mod profile;
 pub mod provider;
 pub mod runtime;
 pub mod secrets;

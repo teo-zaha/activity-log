@@ -176,6 +176,10 @@ async fn main() -> ExitCode {
             };
         }
     };
+    // First, so every path below is the profile's.
+    if let Err(err) = activity_log_core::profile::init(cli.config.as_deref()) {
+        return fatal(&err.into());
+    }
     match run(cli).await {
         Ok(status) => status,
         Err(err) => fatal(&err),

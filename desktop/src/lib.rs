@@ -49,6 +49,15 @@ macro_rules! app_commands {
 mod tests;
 
 pub fn run() {
+    // First, so every path below is the profile's. Only a debug build refuses a value, before
+    // there is a window to say it in.
+    let profile = match activity_log_core::profile::init(None) {
+        Ok(profile) => profile,
+        Err(err) => {
+            eprintln!("{err}");
+            std::process::exit(2);
+        }
+    };
     tauri::Builder::default()
         // First, so a second launch hands its link (Windows, Linux) to this app and quits.
         .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
@@ -80,6 +89,9 @@ pub fn run() {
         .setup(move |app| {
             deep_link::setup(app.handle());
             if let Some(window) = app.get_webview_window(deep_link::MAIN_WINDOW) {
+                if profile == activity_log_core::profile::Profile::Dev {
+                    show_dev_title(&window);
+                }
                 window_state::restore_before_show(&window);
                 browser_keys::leave_to_page(&window);
                 devtools::open_if_asked(&window);
@@ -184,5 +196,16 @@ fn after_show<R: Runtime>(window: WebviewWindow<R>) {
 pub(crate) fn warn_if_failed<T, E: std::fmt::Display>(action: &str, result: Result<T, E>) {
     if let Err(err) = result {
         activity_log_core::diagnostics::warn("desktop", format!("{action} failed: {err}"));
+    }
+}
+
+/// The dev profile's window says so in its title.
+fn show_dev_title(window: &tauri::WebviewWindow) {
+    let title = window
+        .title()
+        .map(|title| format!("{title} (dev)"))
+        .unwrap_or_else(|_| "Activity Log (dev)".to_string());
+    if let Err(err) = window.set_title(&title) {
+        activity_log_core::diagnostics::warn("desktop", format!("Setting the title failed: {err}"));
     }
 }
