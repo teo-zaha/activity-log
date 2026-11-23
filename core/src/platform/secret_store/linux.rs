@@ -12,7 +12,7 @@ use oo7::{
 };
 use zeroize::Zeroizing;
 
-use super::{ItemName, Place, key_of};
+use super::{ItemName, Place, Search, bus_io_kind, key_of};
 use crate::secrets::{Created, DataKey, Interaction, Lookup, StoreError, StoreErrorKind};
 
 const CALL: Duration = Duration::from_secs(5);
@@ -35,13 +35,13 @@ pub(super) async fn read(place: Place, interaction: Interaction) -> Result<Looku
         collection.search_items(&attributes),
     )
     .await?;
-    let item = match items.as_slice() {
-        [] => return Ok(Lookup::Absent),
-        [item] => item,
-        more => {
+    let item = match searched(&collection, items.len()).await? {
+        Search::Empty => return Ok(Lookup::Absent),
+        Search::EmptyLocked => return Err(still_locked()),
+        Search::One => &items[0],
+        Search::Several(count) => {
             return Err(StoreError::failed(anyhow!(
-                "The keyring holds {} config key items",
-                more.len()
+                "The keyring holds {count} config key items"
             )));
         }
     };
@@ -73,8 +73,10 @@ pub(super) async fn create_if_absent(place: Place, key: DataKey) -> Result<Creat
         collection.search_items(&attributes),
     )
     .await?;
-    if !found.is_empty() {
-        return Ok(Created::AlreadyThere);
+    match searched(&collection, found.len()).await? {
+        Search::Empty => {}
+        Search::EmptyLocked => return Err(still_locked()),
+        Search::One | Search::Several(_) => return Ok(Created::AlreadyThere),
     }
     let secret = Zeroizing::new(key.bytes().to_vec());
     call(
@@ -117,7 +119,7 @@ async fn default_collection() -> Result<(Service, Collection), StoreError> {
     .await?;
     let collection = bounded(
         "Finding the default collection",
-        Step::Connect,
+        Step::Use,
         service.with_alias(Service::DEFAULT_COLLECTION),
     )
     .await?
@@ -145,6 +147,22 @@ async fn unlock(collection: &Collection, interaction: Interaction) -> Result<(),
             .await
             .map_err(|err| error(err, "Unlocking the keyring", Step::Use)),
     }
+}
+
+/// What a search that found `items` came to; an empty one is absent only in a collection that
+/// is not locked once it answered.
+async fn searched(collection: &Collection, items: usize) -> Result<Search, StoreError> {
+    let locked_after = items == 0
+        && call(
+            "Checking whether the keyring is locked",
+            collection.is_locked(),
+        )
+        .await?;
+    Ok(Search::of(items, locked_after))
+}
+
+fn still_locked() -> StoreError {
+    StoreError::refused(anyhow!("The keyring is still locked"))
 }
 
 /// Which part of the exchange failed: reaching the service, where a missing bus or service
@@ -181,23 +199,24 @@ fn error(err: DbusError, doing: &str, step: Step) -> StoreError {
         (DbusError::Dismissed, _) | (DbusError::Service(ServiceError::IsLocked(_)), _) => {
             StoreErrorKind::Refused
         }
-        (DbusError::ZBus(err) | DbusError::Service(ServiceError::ZBus(err)), Step::Connect)
-            if no_service(err) =>
-        {
-            StoreErrorKind::Unavailable
+        (DbusError::ZBus(err) | DbusError::Service(ServiceError::ZBus(err)), Step::Connect) => {
+            connect_kind(err)
         }
         _ => StoreErrorKind::Failed,
     };
     StoreError::new(kind, anyhow!("{doing}: {err}"))
 }
 
-/// No session bus (no address, nothing listening), or no Secret Service on it that the bus
-/// could start: D-Bus's own error names, not text.
-fn no_service(err: &zbus::Error) -> bool {
+/// Building the connection and opening the session: no session bus (no address, nothing at
+/// it, nobody listening) or no Secret Service on it that the bus could start is no store here,
+/// read from D-Bus's own error names and the I/O error's kind, never text; anything else is a
+/// failure.
+fn connect_kind(err: &zbus::Error) -> StoreErrorKind {
     const SERVICE_UNKNOWN: &str = "org.freedesktop.DBus.Error.ServiceUnknown";
     const NAME_HAS_NO_OWNER: &str = "org.freedesktop.DBus.Error.NameHasNoOwner";
-    match err {
-        zbus::Error::Address(_) | zbus::Error::InputOutput(_) => true,
+    let no_service = match err {
+        zbus::Error::Address(_) => true,
+        zbus::Error::InputOutput(err) => return bus_io_kind(err.kind()),
         zbus::Error::FDO(err) => matches!(
             **err,
             zbus::fdo::Error::ServiceUnknown(_) | zbus::fdo::Error::NameHasNoOwner(_)
@@ -206,5 +225,10 @@ fn no_service(err: &zbus::Error) -> bool {
             matches!(name.as_str(), SERVICE_UNKNOWN | NAME_HAS_NO_OWNER)
         }
         _ => false,
+    };
+    if no_service {
+        StoreErrorKind::Unavailable
+    } else {
+        StoreErrorKind::Failed
     }
 }

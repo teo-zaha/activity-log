@@ -128,6 +128,59 @@ fn windows_status(code: u32) -> Status {
     }
 }
 
+/// The Win32 error code inside a `HRESULT_FROM_WIN32` value; another facility's code is kept
+/// whole, which no rule of [`windows_status`] matches.
+#[cfg_attr(not(any(target_os = "windows", test)), allow(dead_code))]
+fn win32_code_of(hresult: i32) -> u32 {
+    const FACILITY_WIN32: u32 = 7;
+    let code = hresult as u32;
+    if (code >> 16) & 0x1fff == FACILITY_WIN32 {
+        code & 0xffff
+    } else {
+        code
+    }
+}
+
+/// What a Secret Service exchange came to, read from its answers before any key is: a search
+/// that found nothing is a definite absence only in a collection that is not locked, since a
+/// locked one (KeePassXC's, after an unlock that did not take) answers every search empty.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[cfg_attr(not(any(target_os = "linux", test)), allow(dead_code))]
+enum Search {
+    /// No item matched, and the collection is unlocked.
+    Empty,
+    /// No item matched, and the collection is still locked.
+    EmptyLocked,
+    One,
+    Several(usize),
+}
+
+#[cfg_attr(not(any(target_os = "linux", test)), allow(dead_code))]
+impl Search {
+    /// `locked_after`: whether the collection was locked once the search answered, asked
+    /// only of an empty answer.
+    fn of(items: usize, locked_after: bool) -> Self {
+        match items {
+            0 if locked_after => Self::EmptyLocked,
+            0 => Self::Empty,
+            1 => Self::One,
+            more => Self::Several(more),
+        }
+    }
+}
+
+/// How an I/O failure reaching the session bus reads: no bus at all (nothing at the address,
+/// nobody listening) means no store here; anything else is the store's failure.
+#[cfg_attr(not(any(target_os = "linux", test)), allow(dead_code))]
+fn bus_io_kind(kind: std::io::ErrorKind) -> StoreErrorKind {
+    match kind {
+        std::io::ErrorKind::NotFound | std::io::ErrorKind::ConnectionRefused => {
+            StoreErrorKind::Unavailable
+        }
+        _ => StoreErrorKind::Failed,
+    }
+}
+
 /// The key an item holds: exactly a key's bytes, or a store that failed.
 #[cfg_attr(
     not(any(target_os = "macos", target_os = "windows", target_os = "linux", test)),

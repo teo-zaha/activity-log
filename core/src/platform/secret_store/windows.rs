@@ -50,16 +50,19 @@ fn read_now(name: ItemName) -> Result<Lookup, StoreError> {
             )),
         };
     }
-    // SAFETY: the system returned a valid credential whose blob has `CredentialBlobSize` bytes.
+    // SAFETY: the system returned a valid credential whose blob has `CredentialBlobSize`
+    // bytes, ours to read and wipe until it is freed.
     unsafe {
         let blob = (*credential).CredentialBlob;
         let size = (*credential).CredentialBlobSize as usize;
-        let bytes = if blob.is_null() {
-            &[][..]
+        let found = if blob.is_null() {
+            key_of(&[])
         } else {
-            std::slice::from_raw_parts(blob, size)
+            let bytes = std::slice::from_raw_parts_mut(blob, size);
+            let found = key_of(bytes);
+            zeroize::Zeroize::zeroize(bytes);
+            found
         };
-        let found = key_of(bytes);
         CredFree(credential.cast());
         found
     }
@@ -117,16 +120,8 @@ pub(super) async fn delete(place: Place) -> Result<(), StoreError> {
     .await
 }
 
-/// The Win32 error code inside a `HRESULT_FROM_WIN32` value; another facility's code is kept
-/// whole, which no rule matches.
 fn win32_code(err: &windows::core::Error) -> u32 {
-    const FACILITY_WIN32: u32 = 7;
-    let code = err.code().0 as u32;
-    if (code >> 16) & 0x1fff == FACILITY_WIN32 {
-        code & 0xffff
-    } else {
-        code
-    }
+    super::win32_code_of(err.code().0)
 }
 
 fn error(err: &windows::core::Error, doing: &str) -> StoreError {

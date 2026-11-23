@@ -1,4 +1,4 @@
-use super::{Status, key_of, macos_status, windows_status};
+use super::{Search, Status, bus_io_kind, key_of, macos_status, win32_code_of, windows_status};
 use crate::secrets::{KEY_LEN, Lookup, StoreErrorKind};
 
 /// Only "no such item" is absent; a missing or locked keychain, a cancelled dialog and every
@@ -46,5 +46,57 @@ fn an_item_is_a_key_only_with_a_keys_length() {
     for bytes in [&[][..], &[7; KEY_LEN - 1][..], &[7; KEY_LEN + 1][..]] {
         let err = key_of(bytes).unwrap_err();
         assert_eq!(err.kind(), StoreErrorKind::Failed);
+    }
+}
+
+/// `HRESULT_FROM_WIN32` codes give their Win32 code; another facility's stays whole.
+#[test]
+fn win32_codes_are_read_out_of_their_hresult() {
+    for (hresult, code) in [
+        (0x8007_0490_u32 as i32, 1168),
+        (0x8007_0520_u32 as i32, 1312),
+        (0x8007_0005_u32 as i32, 5),
+        (0x8000_4005_u32 as i32, 0x8000_4005),
+        (0x8009_0016_u32 as i32, 0x8009_0016),
+    ] {
+        assert_eq!(win32_code_of(hresult), code, "{hresult:#x}");
+    }
+    assert_eq!(
+        windows_status(win32_code_of(0x8007_0490_u32 as i32)),
+        Status::Absent
+    );
+}
+
+/// An empty search is absent only in a collection that is unlocked once it answered: a
+/// locked one (KeePassXC answers every search of a locked collection empty) is no answer.
+#[test]
+fn an_empty_search_of_a_locked_collection_is_not_absent() {
+    assert_eq!(Search::of(0, false), Search::Empty);
+    assert_eq!(Search::of(0, true), Search::EmptyLocked);
+    assert_eq!(Search::of(1, false), Search::One);
+    assert_eq!(Search::of(1, true), Search::One);
+    assert_eq!(Search::of(3, false), Search::Several(3));
+}
+
+/// Only no bus at all is no store; any other I/O failure reaching it is the store's.
+#[test]
+fn only_a_missing_bus_is_no_store() {
+    use std::io::ErrorKind;
+    assert_eq!(
+        bus_io_kind(ErrorKind::NotFound),
+        StoreErrorKind::Unavailable
+    );
+    assert_eq!(
+        bus_io_kind(ErrorKind::ConnectionRefused),
+        StoreErrorKind::Unavailable
+    );
+    for kind in [
+        ErrorKind::PermissionDenied,
+        ErrorKind::ConnectionReset,
+        ErrorKind::TimedOut,
+        ErrorKind::UnexpectedEof,
+        ErrorKind::Other,
+    ] {
+        assert_eq!(bus_io_kind(kind), StoreErrorKind::Failed, "{kind:?}");
     }
 }

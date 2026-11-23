@@ -1,6 +1,13 @@
-//! A generic password in the user's default keychain (the login keychain): service
-//! `Activity Log`, account `config key`. The program that creates it is on its access list;
-//! any other program the user must allow in a dialog naming it.
+//! A generic password, service `Activity Log`, account `config key`: created in the user's
+//! default keychain (the login keychain unless the user changed it) and read through the
+//! keychain search list, so a changed default does not make it look absent. The program that
+//! creates it is on its access list; any other program the user must allow in a dialog naming
+//! it.
+//!
+//! Every keychain call runs under one process-wide lock: [`Interaction::Never`] turns dialogs
+//! off for the whole process, so no other call may run beside it.
+
+use std::sync::{Mutex, PoisonError};
 
 use anyhow::anyhow;
 use security_framework::os::macos::{keychain::SecKeychain, passwords::find_generic_password};
@@ -19,7 +26,8 @@ fn account(name: ItemName) -> &'static str {
 
 pub(super) async fn read(place: Place, interaction: Interaction) -> Result<Lookup, StoreError> {
     blocking(move || {
-        // Process-wide, restored when dropped; only used while nothing else runs.
+        // Process-wide, restored when dropped; the lock `blocking` holds keeps every other
+        // keychain call of this process out meanwhile.
         let _no_dialogs = match interaction {
             Interaction::Allowed => None,
             Interaction::Never => Some(
@@ -27,9 +35,12 @@ pub(super) async fn read(place: Place, interaction: Interaction) -> Result<Looku
                     .map_err(|err| error(err, "Turning keychain dialogs off"))?,
             ),
         };
-        let keychain = keychain(&place)?;
+        // Opened first, so no default keychain is `Unavailable`, never an empty search; then
+        // the tests' own keychain alone, or the search list.
+        let opened = keychain(&place)?;
+        let keychain = place.keychain.as_ref().map(|_| opened);
         match find_generic_password(
-            Some(std::slice::from_ref(&keychain)),
+            keychain.as_ref().map(std::slice::from_ref),
             SERVICE,
             account(place.name),
         ) {
@@ -101,16 +112,22 @@ fn error(err: security_framework::base::Error, doing: &str) -> StoreError {
     StoreError::new(kind, anyhow!("{doing}: {err} (OSStatus {})", err.code()))
 }
 
-/// Keychain calls block while a dialog is open, so they run off the async threads. A caller
-/// that stops waiting leaves the call to finish; it holds nothing but the answer.
+/// One keychain call at a time in this process (see the module's comment).
+static KEYCHAIN: Mutex<()> = Mutex::new(());
+
+/// Keychain calls block while a dialog is open, so they run off the async threads, one at a
+/// time. A caller that stops waiting leaves the call to finish; it holds nothing but the answer.
 async fn blocking<T: Send + 'static>(
     work: impl FnOnce() -> Result<T, StoreError> + Send + 'static,
 ) -> Result<T, StoreError> {
-    tokio::task::spawn_blocking(work)
-        .await
-        .unwrap_or_else(|err| {
-            Err(StoreError::failed(anyhow!(
-                "The keychain call stopped: {err}"
-            )))
-        })
+    tokio::task::spawn_blocking(move || {
+        let _one_at_a_time = KEYCHAIN.lock().unwrap_or_else(PoisonError::into_inner);
+        work()
+    })
+    .await
+    .unwrap_or_else(|err| {
+        Err(StoreError::failed(anyhow!(
+            "The keychain call stopped: {err}"
+        )))
+    })
 }
