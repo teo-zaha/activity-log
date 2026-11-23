@@ -1,6 +1,8 @@
-// A badge over its control's top right corner, inside the control's box; on a compact button
-// (`data-size='sm'`), whose icon or label fills it, over its bottom right corner and half out.
-// One size for every tag.
+// A badge over its control's top right corner, inside the control's box; `overhang` (a compact
+// control whose icon or label fills it) over its bottom right corner, half out. One size for
+// every tag.
+@use '../dashboard-shared' as ui;
+
 $size: 16px;
 $font-size: 10px;
 $inset: 2px;
@@ -34,7 +36,7 @@ $fade: 120ms;
   visibility: hidden;
 }
 
-:host-context([data-size='sm']) {
+:host(.is-overhang) {
   top: auto;
   right: $compact-overhang-x;
   bottom: $compact-overhang-y;
@@ -47,6 +49,13 @@ $fade: 120ms;
 
 :host([hidden]) {
   display: none;
+}
+
+// Shift at rest asks for a hardware keyboard: none where the pointer cannot hover.
+@include ui.no-hover {
+  :host(.is-resting) {
+    display: none;
+  }
 }
 
 @media (prefers-reduced-motion: no-preference) {

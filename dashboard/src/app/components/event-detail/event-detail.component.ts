@@ -27,7 +27,9 @@ import { PageHeaderComponent } from '../page-header/page-header.component'
 import { SourceBadgeComponent } from '../source-badge/source-badge.component'
 import { TopLayer } from '../../layouts/shell/top-layer.service'
 import { NavigationMotionService } from '../../navigation-motion'
-import { ShortcutService, ariaKeysOf } from '../../services/shortcut.service'
+import type { ShortcutId } from '../../models/shortcuts'
+import type { EntryUiAdapter } from '../../providers/types'
+import { ShortcutService } from '../../services/shortcut.service'
 
 /**
  * The event drawer. A single event opens straight into its details; overlapping events open as a
@@ -69,16 +71,11 @@ export class EventDetailComponent {
   protected readonly layers = inject(TopLayer)
   private readonly shortcuts = inject(ShortcutService)
   /**
-   * The keys of the controls that do what a shortcut does: the group's back button goes Back;
-   * the close button and the phone's back arrow, which closes too, answer Escape and Back.
+   * What the controls do by key: the group's back button goes Back; the close button and the
+   * phone's back arrow, which closes too, answer Escape and Back.
    */
-  protected readonly keys = {
-    back: this.shortcuts.ariaKeys('app.back'),
-    closeOrBack: ariaKeysOf([
-      this.shortcuts.ariaKeys('layer.close'),
-      this.shortcuts.ariaKeys('app.back'),
-    ]),
-  }
+  protected readonly keys = { back: this.shortcuts.ariaKeys('app.back') }
+  protected readonly closeOrBack: readonly ShortcutId[] = ['layer.close', 'app.back']
   /** The stepper's keys, single keys that the setting may turn off while the details show. */
   protected readonly stepKeys = computed(() => ({
     previous: this.shortcuts.ariaKeys('details.previous'),
@@ -173,8 +170,16 @@ export class EventDetailComponent {
         this.shortcuts.openLayer({ kind: 'page', scope: 'details', onTop }),
         this.shortcuts.bind('layer.close', () => this.close(), onTop),
         this.shortcuts.bind('app.back', () => this.back(), onTop),
-        this.shortcuts.bind('details.previous', () => (this.step(-1) ? undefined : false), onTop),
-        this.shortcuts.bind('details.next', () => (this.step(1) ? undefined : false), onTop),
+        this.shortcuts.bind(
+          'details.previous',
+          () => void this.step(-1),
+          () => onTop() && this.canStep(-1)
+        ),
+        this.shortcuts.bind(
+          'details.next',
+          () => void this.step(1),
+          () => onTop() && this.canStep(1)
+        ),
       ]
       onCleanup(() => off.forEach(close => close()))
     })
@@ -228,12 +233,22 @@ export class EventDetailComponent {
 
   /** Moves to the previous or next event of the group; false at either end. */
   protected step(delta: -1 | 1): boolean {
-    const group = this.group()
-    const index = this.openIndex()
-    const next = group && index !== null ? group[index + delta] : undefined
+    const next = this.neighbour(delta)
     if (!next) return false
     void this.viewState.stepInGroup(next.trackKey)
     return true
+  }
+
+  /** Whether there is an event to step to, read from signals (`ShortcutService.available`). */
+  private canStep(delta: -1 | 1): boolean {
+    return this.neighbour(delta) !== undefined
+  }
+
+  /** The group's event before or after the open one; none at either end or in the list. */
+  private neighbour(delta: -1 | 1): EntryUiAdapter | undefined {
+    const group = this.group()
+    const index = this.openIndex()
+    return group && index !== null ? group[index + delta] : undefined
   }
 
   /**

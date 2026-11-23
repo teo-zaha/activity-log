@@ -11,7 +11,12 @@ import { describe, expect, it, vi } from 'vitest'
 import { provideAppRouter } from '../../app.routes'
 import { ActivityViewStateService } from '../../services/activity-view-state.service'
 import { BreakpointState } from '../../services/breakpoint-state.service'
-import { SHORTCUT_HELP_DIALOG_ID, SHORTCUT_PLATFORM } from '../../services/shortcut.service'
+import {
+  REVEAL_DELAY_MS,
+  SHORTCUT_HELP_DIALOG_ID,
+  SHORTCUT_PLATFORM,
+  ShortcutService,
+} from '../../services/shortcut.service'
 import { SettingsDialogLauncher } from '../settings-dialog/settings-dialog-launcher.service'
 import { SidebarComponent } from './sidebar.component'
 
@@ -84,7 +89,12 @@ describe('SidebarComponent', () => {
       )
     }
 
-    /** The entry's tooltip, through Material's own harness. */
+    const HINT = 'Hold Shift to see shortcuts, let go to use them'
+
+    /**
+     * The sidebar with the commands its entries run, as the shell's fallbacks give them, and the
+     * help entry's tooltip, through Material's own harness.
+     */
     async function renderSidebar(
       layout: { phone: boolean; rail: boolean },
       os: 'mac' | 'other' = 'mac'
@@ -102,6 +112,12 @@ describe('SidebarComponent', () => {
           },
         ],
       })
+      const shortcuts = TestBed.inject(ShortcutService)
+      for (const id of ['view.list', 'view.day', 'view.workweek', 'view.week'] as const) {
+        shortcuts.fallback(id, vi.fn())
+      }
+      shortcuts.fallback('app.settings', vi.fn())
+      shortcuts.fallback('app.help', vi.fn())
       const loader = TestbedHarnessEnvironment.loader(fixture)
       return {
         tooltip: () => loader.getHarness(MatTooltipHarness.with({ selector: '.help-button' })),
@@ -112,7 +128,7 @@ describe('SidebarComponent', () => {
       await renderSidebar({ phone: false, rail: false })
       const entry = screen.getByRole('button', {
         name: 'Keyboard shortcuts',
-        description: 'Hold Shift to show shortcuts',
+        description: HINT,
       })
       expect(entry.getAttribute('aria-keyshortcuts')).toBe('?')
       expect(document.querySelector('.sidebar-scroll')?.contains(entry)).toBe(false)
@@ -151,23 +167,50 @@ describe('SidebarComponent', () => {
       expect(entry.querySelector('app-key-tag')?.textContent).toBe('Shift')
     })
 
-    it('is an icon in the rail, with its Shift tag, named by its tooltip', async () => {
+    it('is an icon in the rail, with its Shift tag, its hint saying no name twice', async () => {
       const { tooltip } = await renderSidebar({ phone: false, rail: true })
-      const entry = screen.getByRole('button', { name: 'Keyboard shortcuts' })
+      const entry = screen.getByRole('button', { name: 'Keyboard shortcuts', description: HINT })
       expect(entry.getAttribute('aria-keyshortcuts')).toBe('?')
       expect(entry.querySelector('app-key-tag')?.classList.contains('is-shown')).toBe(true)
 
       const hint = await tooltip()
       expect(await hint.isDisabled()).toBe(false)
       await hint.show()
-      expect(await hint.getTooltipText()).toBe('Keyboard shortcuts. Hold Shift to show shortcuts')
+      expect(await hint.getTooltipText()).toBe(HINT)
     })
 
     it('says beside its label on wider screens that Shift shows the keys', async () => {
       const { tooltip } = await renderSidebar({ phone: false, rail: false })
       const hint = await tooltip()
       await hint.show()
-      expect(await hint.getTooltipText()).toBe('Hold Shift to show shortcuts')
+      expect(await hint.getTooltipText()).toBe(HINT)
+    })
+
+    it('promises nothing where holding Shift shows no key: single keys off in the browser', async () => {
+      localStorage.setItem('character-shortcuts', 'off')
+      try {
+        const { tooltip } = await renderSidebar({ phone: false, rail: false })
+        const entry = screen.getByRole('button', { name: 'Keyboard shortcuts' })
+        expect(entry.querySelector('app-key-tag')?.classList.contains('is-shown')).toBe(false)
+        expect(await (await tooltip()).isDisabled()).toBe(true)
+        holdShift()
+        await new Promise(resolve => setTimeout(resolve, REVEAL_DELAY_MS + 50))
+        expect(entry.querySelector('app-key-tag')?.classList.contains('is-shown')).toBe(false)
+      } finally {
+        localStorage.clear()
+      }
+    })
+
+    it('names the rail’s entry by its tooltip where holding Shift shows no key', async () => {
+      localStorage.setItem('character-shortcuts', 'off')
+      try {
+        const { tooltip } = await renderSidebar({ phone: false, rail: true })
+        const hint = await tooltip()
+        await hint.show()
+        expect(await hint.getTooltipText()).toBe('Keyboard shortcuts')
+      } finally {
+        localStorage.clear()
+      }
     })
 
     it('tags the views and Settings with their keys, shown only while Shift is held', async () => {

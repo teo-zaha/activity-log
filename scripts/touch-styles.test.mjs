@@ -3,7 +3,8 @@
 // - every `:hover` goes through the `ui.hover` mixin (`components/_dashboard-shared.scss`), which
 //   applies it only where the pointer hovers and not after a touch, and shows the same look while
 //   a control is pressed; the compiled mixin is pinned below; a hover media query is written only
-//   in it and in `ui.no-hover` (what a touch screen changes, such as the room a finger needs);
+//   in it and in `ui.no-hover` (what a touch screen changes, such as the room a finger needs, or
+//   hides, such as the Shift tag that asks for a keyboard);
 // - every scroller says what its overscroll does (`overscroll-behavior` beside its `overflow`, on
 //   the scroller itself, for each axis it scrolls), so it hands its bounce on only where it means to;
 // - the viewport covers the whole screen (`viewport-fit=cover`) and keeps pinch zoom;
@@ -316,6 +317,18 @@ test('the checker reads every inline stylesheet a component declares', () => {
     () => inlineStyles("@Component({ styles: [base + ':host {}'] }) class C {}"),
     UnreadableStylesheet
   )
+})
+
+test('the resting Shift tag hides wherever the pointer cannot hover, at every width', () => {
+  const sheet = join(SOURCE, 'app', 'components', 'shortcut', 'key-tag.component.scss')
+  const { css } = sass().compile(sheet, { loadPaths: [SOURCE] })
+  const hidden = blocks(css).filter(
+    block =>
+      block.prelude === ':host(.is-resting)' &&
+      block.parent?.prelude === '@media (hover: none)' &&
+      block.declarations.some(({ property, value }) => property === 'display' && value === 'none')
+  )
+  assert.equal(hidden.length, 1)
 })
 
 test('ui.hover compiles to a hover only where the pointer hovers, and to the pressed look', () => {

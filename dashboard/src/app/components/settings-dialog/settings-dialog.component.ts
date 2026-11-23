@@ -18,7 +18,7 @@ import { getProviderAdapter } from '../../providers/provider-adapter'
 import { ActivityDataService } from '../../services/activity-data.service'
 import { ActivityViewStateService } from '../../services/activity-view-state.service'
 import { BreakpointState } from '../../services/breakpoint-state.service'
-import { ShortcutService } from '../../services/shortcut.service'
+import type { ShortcutId } from '../../models/shortcuts'
 import { NavigationMotionService } from '../../navigation-motion'
 import { PageHeaderComponent } from '../page-header/page-header.component'
 import { ButtonComponent } from '../button/button.component'
@@ -79,14 +79,11 @@ export class SettingsDialogComponent {
   readonly chrome = input<'dialog' | 'page'>('dialog')
   protected readonly isPhone = inject(BreakpointState).phone
   protected readonly motion = inject(NavigationMotionService)
-  private readonly shortcuts = inject(ShortcutService)
   /**
-   * The keys of the controls that do what a shortcut does: the page's back arrow goes Back
-   * (`SettingsPageHostComponent`), the dialog's close button answers Escape (the dialog's own).
+   * What the controls do by key: the page's back arrow goes Back (`SettingsPageHostComponent`),
+   * the dialog's close button answers Escape (the dialog's own).
    */
-  protected readonly keys = {
-    back: this.shortcuts.ariaKeys('app.back'),
-  }
+  protected readonly pageBackShortcuts: readonly ShortcutId[] = ['app.back']
   private readonly nav = viewChild(SettingsNavComponent)
   private readonly pageTitle = viewChild<ElementRef<HTMLElement>>('pageTitle')
 

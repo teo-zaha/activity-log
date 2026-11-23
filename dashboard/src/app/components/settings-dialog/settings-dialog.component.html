@@ -22,7 +22,7 @@
         class="content-header"
         [backLabel]="isPhone() ? 'Back to settings' : null"
         [closeLabel]="isPhone() ? null : 'Close settings'"
-        [backKeys]="keys.back"
+        [backShortcuts]="pageBackShortcuts"
         closeShortcut="layer.close"
         (goBack)="back()"
         (dismiss)="close()"

@@ -1,6 +1,6 @@
 import { Component, computed, inject, input, output } from '@angular/core'
 import type { ShortcutId } from '../../models/shortcuts'
-import { ShortcutService } from '../../services/shortcut.service'
+import { ShortcutService, ariaKeysOf } from '../../services/shortcut.service'
 import { IconButtonComponent } from '../button/icon-button.component'
 import { KeyTagComponent } from '../shortcut/key-tag.component'
 
@@ -21,7 +21,11 @@ import { KeyTagComponent } from '../shortcut/key-tag.component'
         [label]="label"
         [attr.aria-keyshortcuts]="backKeys()"
         (click)="goBack.emit()"
-      ></button>
+      >
+        @if (backShortcuts()[0]; as id) {
+          <app-key-tag [shortcut]="id" place="overhang" />
+        }
+      </button>
     }
     <div class="title"><ng-content /></div>
     <ng-content select="[pageAction]" />
@@ -35,7 +39,7 @@ import { KeyTagComponent } from '../shortcut/key-tag.component'
         (click)="dismiss.emit()"
       >
         @if (closeShortcut(); as id) {
-          <app-key-tag [shortcut]="id" />
+          <app-key-tag [shortcut]="id" place="overhang" />
         }
       </button>
     }
@@ -47,14 +51,17 @@ export class PageHeaderComponent {
   readonly backLabel = input<string | null>(null)
   /** Names the close button, which shows only when set. */
   readonly closeLabel = input<string | null>(null)
-  /** The back arrow's `aria-keyshortcuts` (`ShortcutService.ariaKeys`). */
-  readonly backKeys = input<string | null>(null)
+  /** What the back arrow does by key, for its `aria-keyshortcuts`; the first one's key is its tag. */
+  readonly backShortcuts = input<readonly ShortcutId[]>([])
   /** The close button's shortcut, for its key tag and `aria-keyshortcuts`. */
   readonly closeShortcut = input<ShortcutId | null>(null)
   readonly goBack = output<void>()
   readonly dismiss = output<void>()
 
   private readonly shortcuts = inject(ShortcutService)
+  protected readonly backKeys = computed(() =>
+    ariaKeysOf(this.backShortcuts().map(id => this.shortcuts.ariaKeys(id)))
+  )
   protected readonly closeKeys = computed(() => {
     const id = this.closeShortcut()
     return id === null ? null : this.shortcuts.ariaKeys(id)

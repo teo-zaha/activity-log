@@ -55,7 +55,9 @@
         type="button"
         (click)="openHelp()"
         [attr.aria-keyshortcuts]="shortcuts.ariaKeys('app.help')"
-        [matTooltip]="isRail() ? 'Keyboard shortcuts. ' + revealHint : revealHint"
+        [matTooltip]="shortcuts.revealable() ? revealHint : 'Keyboard shortcuts'"
+        [matTooltipDisabled]="!shortcuts.revealable() && !isRail()"
+        [matTooltipTouchGestures]="shortcuts.revealable() ? 'off' : 'auto'"
         matTooltipPosition="right"
       >
         <mat-icon>keyboard</mat-icon>

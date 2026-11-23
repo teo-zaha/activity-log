@@ -30,7 +30,7 @@
         appShortcut="calendar.previous"
         (click)="viewState.navigateWeek(-1)"
       >
-        <app-key-tag shortcut="calendar.previous" />
+        <app-key-tag shortcut="calendar.previous" place="overhang" />
       </button>
       <button
         appButton
@@ -41,7 +41,7 @@
         (click)="viewState.goToToday()"
       >
         Today
-        <app-key-tag shortcut="calendar.today" />
+        <app-key-tag shortcut="calendar.today" place="overhang" />
       </button>
       <button
         appIconButton
@@ -51,7 +51,7 @@
         appShortcut="calendar.next"
         (click)="viewState.navigateWeek(1)"
       >
-        <app-key-tag shortcut="calendar.next" />
+        <app-key-tag shortcut="calendar.next" place="overhang" />
       </button>
     </div>
     <div class="nav-controls zoom-controls">

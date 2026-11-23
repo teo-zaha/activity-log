@@ -89,6 +89,48 @@ describe('Shortcuts in the app', APP_RENDER_TEST, () => {
       await vi.waitFor(() => expect(controls.some(shown)).toBe(false))
     })
 
+    it('shows only the keys that run under the details: theirs, not the view’s', async () => {
+      const group = `/day/2026-05-18?events=${key(git)}&events=${key(jira)}`
+      const { settle } = await openApp(`${group}&event=${key(git)}`, { platform: BROWSER })
+      await screen.findByRole('heading', { name: git?.title }, SLOW)
+      await settle()
+      const views = document.querySelectorAll<HTMLElement>('app-sidebar .view-btn')
+      const today = document.querySelector<HTMLElement>('.today-btn')
+      const next = screen.getByRole('button', { name: 'Next event' })
+      const previous = screen.getByRole('button', { name: 'Previous event' })
+      if (!today) throw new Error('the Day view is under the details')
+      expect(views).toHaveLength(4)
+
+      press('Shift', { shiftKey: true })
+      await vi.waitFor(() => expect(shown(next)).toBe(true))
+      // The first event of the group: there is none before it.
+      expect(shown(previous)).toBe(false)
+      expect([...views].some(shown)).toBe(false)
+      expect(shown(today)).toBe(false)
+    })
+
+    it('shows no Collect key while a collection runs', async () => {
+      const backend = new MockBackendTransport()
+      const { settle } = await openApp('/timeline?from=2026-05-17&to=2026-05-18', {
+        backend,
+        platform: BROWSER,
+      })
+      await settle()
+      let answer = (): void => undefined
+      backend.collectGate = new Promise(resolve => (answer = resolve))
+      const data = TestBed.inject(ActivityDataService)
+      expect(data.collectShownRange()).not.toBeNull()
+      await vi.waitFor(() => expect(data.isLoading()).toBe(true))
+      // Named Collecting activity meanwhile.
+      const collect = document.querySelector<HTMLElement>('.btn-collect')
+      if (!collect) throw new Error('Collect is in the header')
+
+      press('Shift', { shiftKey: true })
+      await vi.waitFor(() => expect(shown(filter().parentElement ?? filter())).toBe(true))
+      expect(shown(collect)).toBe(false)
+      answer()
+    })
+
     it('tags the filter, and shows nothing while it has focus', async () => {
       await openApp('/timeline', { platform: BROWSER })
       const field = await screen.findByRole('searchbox', { name: 'Filter activity' }, SLOW)
