@@ -16,7 +16,11 @@ pub(super) async fn read(_place: Place, _interaction: Interaction) -> Result<Loo
     Err(unavailable())
 }
 
-pub(super) async fn create_if_absent(_place: Place, _key: DataKey) -> Result<Created, StoreError> {
+pub(super) async fn create_if_absent(
+    _place: Place,
+    _key: DataKey,
+    _interaction: Interaction,
+) -> Result<Created, StoreError> {
     Err(unavailable())
 }
 

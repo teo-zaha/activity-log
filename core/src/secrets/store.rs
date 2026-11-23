@@ -167,8 +167,10 @@ pub trait KeyCreator: Send + Sync {
     /// Stores `key` unless the store holds one. Called only under the key-creation lock (see
     /// [`Secrets`](super::Secrets)), right after a read found none: a store that cannot refuse to
     /// overwrite (Windows' credentials, the Secret Service, the key file) checks again first.
+    /// `interaction` is the writer's: under `Never` no dialog may show (an unlock prompt).
     fn create_if_absent<'a>(
         &'a self,
         key: &'a DataKey,
+        interaction: Interaction,
     ) -> BoxFuture<'a, Result<Created, StoreError>>;
 }

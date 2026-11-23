@@ -38,14 +38,21 @@ async fn the_store_reads_creates_once_and_never_overwrites() {
     let creator = store.creator().expect("the OS store creates its key");
     let key = DataKey::generate().unwrap();
     assert_eq!(
-        creator.create_if_absent(&key).await.unwrap(),
+        creator
+            .create_if_absent(&key, Interaction::Allowed)
+            .await
+            .unwrap(),
         Created::Stored
     );
     assert!(found(store.read(Interaction::Allowed).await.unwrap()).same_as(&key));
 
+    // Without dialogs too (the keychain's guard on, the keyring not unlocked).
     let other = DataKey::generate().unwrap();
     assert_eq!(
-        creator.create_if_absent(&other).await.unwrap(),
+        creator
+            .create_if_absent(&other, Interaction::Never)
+            .await
+            .unwrap(),
         Created::AlreadyThere
     );
     assert!(found(store.read(Interaction::Allowed).await.unwrap()).same_as(&key));

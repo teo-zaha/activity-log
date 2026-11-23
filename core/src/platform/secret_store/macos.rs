@@ -26,15 +26,7 @@ fn account(name: ItemName) -> &'static str {
 
 pub(super) async fn read(place: Place, interaction: Interaction) -> Result<Lookup, StoreError> {
     blocking(move || {
-        // Process-wide, restored when dropped; the lock `blocking` holds keeps every other
-        // keychain call of this process out meanwhile.
-        let _no_dialogs = match interaction {
-            Interaction::Allowed => None,
-            Interaction::Never => Some(
-                SecKeychain::disable_user_interaction()
-                    .map_err(|err| error(err, "Turning keychain dialogs off"))?,
-            ),
-        };
+        let _no_dialogs = no_dialogs(interaction)?;
         // Opened first, so no default keychain is `Unavailable`, never an empty search; then
         // the tests' own keychain alone, or the search list.
         let opened = keychain(&place)?;
@@ -54,8 +46,13 @@ pub(super) async fn read(place: Place, interaction: Interaction) -> Result<Looku
     .await
 }
 
-pub(super) async fn create_if_absent(place: Place, key: DataKey) -> Result<Created, StoreError> {
+pub(super) async fn create_if_absent(
+    place: Place,
+    key: DataKey,
+    interaction: Interaction,
+) -> Result<Created, StoreError> {
     blocking(move || {
+        let _no_dialogs = no_dialogs(interaction)?;
         let keychain = keychain(&place)?;
         // Adding refuses an item that exists (`errSecDuplicateItem`): it never overwrites.
         match keychain.add_generic_password(SERVICE, account(place.name), key.bytes()) {
@@ -89,6 +86,17 @@ pub(super) async fn delete(place: Place) -> Result<(), StoreError> {
         }
     })
     .await
+}
+
+/// Dialogs off for the whole process under `Never`, until the guard is dropped; the lock
+/// `blocking` holds keeps every other keychain call of this process out meanwhile.
+fn no_dialogs(interaction: Interaction) -> Result<Option<impl Drop>, StoreError> {
+    match interaction {
+        Interaction::Allowed => Ok(None),
+        Interaction::Never => SecKeychain::disable_user_interaction()
+            .map(Some)
+            .map_err(|err| error(err, "Turning keychain dialogs off")),
+    }
 }
 
 /// The default keychain, or the tests' own file. Opening a file does not check it exists, so

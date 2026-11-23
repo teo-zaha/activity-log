@@ -64,8 +64,12 @@ pub(crate) async fn read(place: &Place, interaction: Interaction) -> Result<Look
 }
 
 /// Stores `key` unless the item exists. Called under the key-creation lock.
-pub(crate) async fn create_if_absent(place: &Place, key: &DataKey) -> Result<Created, StoreError> {
-    imp::create_if_absent(place.clone(), key.clone()).await
+pub(crate) async fn create_if_absent(
+    place: &Place,
+    key: &DataKey,
+    interaction: Interaction,
+) -> Result<Created, StoreError> {
+    imp::create_if_absent(place.clone(), key.clone(), interaction).await
 }
 
 /// Whether the store is there and answering, without reading the item or showing a dialog.

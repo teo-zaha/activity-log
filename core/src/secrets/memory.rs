@@ -50,6 +50,7 @@ struct MemoryState {
     panic_next_read: bool,
     calls: StoreCalls,
     read_interactions: Vec<Interaction>,
+    create_interactions: Vec<Interaction>,
 }
 
 impl MemoryStore {
@@ -100,6 +101,10 @@ impl MemoryStore {
 
     pub fn calls(&self) -> StoreCalls {
         self.state().calls
+    }
+
+    pub fn create_interactions(&self) -> Vec<Interaction> {
+        self.state().create_interactions.clone()
     }
 
     pub fn read_interactions(&self) -> Vec<Interaction> {
@@ -190,10 +195,12 @@ impl KeyCreator for MemoryStore {
     fn create_if_absent<'a>(
         &'a self,
         key: &'a DataKey,
+        interaction: Interaction,
     ) -> BoxFuture<'a, Result<Created, StoreError>> {
         async move {
             let mut state = self.state();
             state.calls.creates += 1;
+            state.create_interactions.push(interaction);
             if let Some(err) = self.scripted_failure(&mut state, StoreCall::Create) {
                 return Err(err);
             }

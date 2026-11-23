@@ -68,7 +68,12 @@ fn read_now(name: ItemName) -> Result<Lookup, StoreError> {
     }
 }
 
-pub(super) async fn create_if_absent(place: Place, key: DataKey) -> Result<Created, StoreError> {
+/// The credential manager shows no dialog, whatever the interaction.
+pub(super) async fn create_if_absent(
+    place: Place,
+    key: DataKey,
+    _interaction: Interaction,
+) -> Result<Created, StoreError> {
     blocking(move || {
         // `CredWriteW` replaces a credential that exists, so it is looked for first; the
         // key-creation lock keeps our other processes out meanwhile.

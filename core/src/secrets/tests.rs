@@ -442,4 +442,5 @@ async fn a_pass_without_dialogs_never_allows_one() {
             .iter()
             .all(|interaction| *interaction == Interaction::Never)
     );
+    assert_eq!(s.os.create_interactions(), [Interaction::Never]);
 }

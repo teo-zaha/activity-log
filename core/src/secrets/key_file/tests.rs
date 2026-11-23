@@ -18,7 +18,7 @@ async fn create(
     let creator = store
         .creator()
         .expect("a store that may create the key file");
-    creator.create_if_absent(key).await
+    creator.create_if_absent(key, Interaction::Allowed).await
 }
 
 async fn read(store: &KeyFileStore) -> Result<Lookup, crate::secrets::StoreError> {

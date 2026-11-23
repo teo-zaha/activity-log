@@ -82,3 +82,20 @@ async fn a_store_that_gives_no_key_leaves_the_plain_text() {
         assert_eq!(fs::read_to_string(&path).unwrap(), PLAIN);
     }
 }
+
+/// A store that does not answer delays the start only as long as the wait: the pass skips,
+/// and the file stays as it was.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_store_that_does_not_answer_is_waited_for_briefly() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("config.toml");
+    fs::write(&path, PLAIN).unwrap();
+    let (secrets, os) = desktop(&dir);
+    let _held = os.hold_reads();
+
+    assert_eq!(
+        super::seal_within(&path, &secrets, std::time::Duration::from_millis(50)).await,
+        StartupSeal::Skipped
+    );
+    assert_eq!(fs::read_to_string(&path).unwrap(), PLAIN);
+}

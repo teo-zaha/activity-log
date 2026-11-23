@@ -97,7 +97,8 @@ impl KeyCreator for OsStore {
     fn create_if_absent<'a>(
         &'a self,
         key: &'a DataKey,
+        interaction: Interaction,
     ) -> BoxFuture<'a, Result<Created, StoreError>> {
-        secret_store::create_if_absent(&self.place, key).boxed()
+        secret_store::create_if_absent(&self.place, key, interaction).boxed()
     }
 }

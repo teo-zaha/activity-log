@@ -62,9 +62,13 @@ pub(super) async fn read(place: Place, interaction: Interaction) -> Result<Looku
     key_of(secret.as_bytes())
 }
 
-pub(super) async fn create_if_absent(place: Place, key: DataKey) -> Result<Created, StoreError> {
+pub(super) async fn create_if_absent(
+    place: Place,
+    key: DataKey,
+    interaction: Interaction,
+) -> Result<Created, StoreError> {
     let (_service, collection) = default_collection().await?;
-    unlock(&collection, Interaction::Allowed).await?;
+    unlock(&collection, interaction).await?;
     let attributes = attributes(place.name);
     // `CreateItem` without replacing adds a second item beside one that exists, so it is
     // looked for first; the key-creation lock keeps our other processes out meanwhile.

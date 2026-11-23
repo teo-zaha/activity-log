@@ -524,7 +524,10 @@ impl KeyCreation<'_> {
         }
         before_creating();
         let key = DataKey::generate()?;
-        let created = self.creator.create_if_absent(&key).await?;
+        let created = self
+            .creator
+            .create_if_absent(&key, self.interaction)
+            .await?;
         let stored = match slot.store.read(self.interaction).await? {
             Lookup::Found(stored) => stored,
             Lookup::Absent => {

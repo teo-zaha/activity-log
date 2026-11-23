@@ -116,6 +116,8 @@ impl KeyCreator for KeyFileWriter {
     fn create_if_absent<'a>(
         &'a self,
         key: &'a DataKey,
+        // A file shows no dialog.
+        _interaction: Interaction,
     ) -> BoxFuture<'a, Result<Created, StoreError>> {
         let located = located(self.path.as_deref());
         let key = key.clone();
