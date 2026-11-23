@@ -6,7 +6,7 @@
 
 use std::{
     fs::{self, File},
-    io::{self, Write},
+    io,
     path::{Path, PathBuf},
     time::{Duration, Instant},
 };
@@ -29,8 +29,6 @@ const LOCK_WAIT: Duration = Duration::from_secs(5);
 const LOCK_RETRY: Duration = Duration::from_millis(50);
 /// Shortens the wait, for tests that run the CLI against a held lock.
 const LOCK_WAIT_VARIABLE: &str = "ACTIVITY_LOG_LOCK_WAIT_MS";
-/// The new file's name inside the staging folder.
-const NEW_FILE: &str = "config.toml.new";
 
 pub struct Edited<T> {
     pub value: T,
@@ -208,31 +206,24 @@ impl Locked {
         })
     }
 
-    /// Writes `content` into a new file of a private staging folder in the locked folder and
-    /// moves it over the file. A failure leaves the old file as it was.
+    /// Replaces the file with `content` through a private staging folder in the locked folder
+    /// ([`Folder::replace`]). A failure leaves the old file as it was and names its step.
     fn publish(&self, content: &[u8]) -> Result<(), EditError> {
-        let failed = |err: io::Error| {
-            EditError::Internal(anyhow!(err).context(format!("Writing {}", self.path.display())))
-        };
-        let staging = self
-            .folder
-            .staging(&self.name)
-            .map_err(unprotectable_or(failed))?;
-        let mut file = staging.create(NEW_FILE).map_err(failed)?;
-        file.write_all(content).map_err(failed)?;
-        file.sync_all().map_err(failed)?;
-        drop(file);
-        staging.publish(NEW_FILE).map_err(failed)
+        self.folder
+            .replace(&self.name, content)
+            .map_err(unprotectable_or(|err| {
+                EditError::Internal(err.context(format!("Writing {}", self.path.display())))
+            }))
     }
 }
 
 /// [`EditError::Unprotectable`] for such a location, `other` for the rest.
 pub(super) fn unprotectable_or(
-    other: impl Fn(io::Error) -> EditError,
+    other: impl Fn(anyhow::Error) -> EditError,
 ) -> impl Fn(PrivateFileError) -> EditError {
     move |err| match err {
         PrivateFileError::Unprotectable { location } => EditError::Unprotectable { location },
-        PrivateFileError::Io(err) => other(err),
+        err @ (PrivateFileError::Io(_) | PrivateFileError::Failed { .. }) => other(anyhow!(err)),
     }
 }
 

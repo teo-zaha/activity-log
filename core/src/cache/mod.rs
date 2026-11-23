@@ -15,7 +15,7 @@ use std::{
     env,
     fs::{File, TryLockError},
     future::Future,
-    io::{self, Write},
+    io,
     path::{Path, PathBuf},
     sync::{Mutex, PoisonError},
     time::{Duration, Instant},
@@ -439,9 +439,6 @@ fn decode(bytes: &[u8]) -> Decoded {
     }
 }
 
-/// The file's new name inside the staging folder.
-const NEW_FILE: &str = "cache.json.new";
-
 /// Merges `fetched` into the file as it is now, under the file's lock, and publishes the result
 /// as a new owner-only file. Only a missing file or one of an older version is replaced
 /// wholesale; a file that cannot be read again, or one of a later version, is left as it is,
@@ -483,20 +480,14 @@ fn store(
     }
     let json = serde_json::to_vec(&file)?;
 
-    let staging = match folder.staging(name) {
-        Ok(staging) => staging,
+    match folder.replace(name, &json) {
+        Ok(()) => Ok(()),
         Err(PrivateFileError::Unprotectable { location }) => {
             warn_unprotectable(&location, scope);
-            return Ok(());
+            Ok(())
         }
-        Err(PrivateFileError::Io(err)) => return Err(err.into()),
-    };
-    let mut new = staging.create(NEW_FILE)?;
-    new.write_all(&json)?;
-    new.sync_all()?;
-    drop(new);
-    staging.publish(NEW_FILE)?;
-    Ok(())
+        Err(err) => Err(err.into()),
+    }
 }
 
 /// Whether `folder` can keep cached activity private; checked on every read and write, so a
@@ -508,7 +499,7 @@ fn is_private(folder: &Folder, scope: &str) -> bool {
             warn_unprotectable(&location, scope);
             false
         }
-        Err(PrivateFileError::Io(err)) => {
+        Err(err @ (PrivateFileError::Io(_) | PrivateFileError::Failed { .. })) => {
             diagnostics::warn(
                 scope,
                 format!("Could not check the cache folder: {err}; collecting without a cache"),

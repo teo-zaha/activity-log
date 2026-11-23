@@ -422,6 +422,20 @@ pub(super) fn readable_by_others(path: &Path) -> io::Result<bool> {
     result
 }
 
+/// Whether the file at `path` is protected with one full-access entry for the user, as the
+/// files this module creates are.
+#[cfg(test)]
+pub(super) fn is_created_owner_only(path: &Path) -> io::Result<bool> {
+    let handle = open(
+        path,
+        FILE_GENERIC_READ.0,
+        FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+        OPEN_EXISTING,
+        FILE_FLAG_OPEN_REPARSE_POINT,
+    )?;
+    only_user(&handle, &user_sid()?, Expected::CreatedFile)
+}
+
 pub(super) fn private_command(program: &std::ffi::OsStr) -> std::process::Command {
     std::process::Command::new(program)
 }

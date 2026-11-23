@@ -53,6 +53,119 @@ fn a_staging_folder_with_anything_but_plain_files_is_kept() {
     assert!(!removable(&[Found::Other]));
 }
 
+/// What every system's writers rely on: a replace that lands owner-only, or fails at a named
+/// step leaving the old file, and names that stay inside the staging folder.
+#[cfg(any(target_os = "macos", target_os = "linux", target_os = "windows"))]
+mod replace {
+    use std::{fs, path::Path};
+
+    use super::super::{PrivateFileError, ReplaceStep, open_folder, private_staging};
+
+    fn names(folder: &Path) -> Vec<String> {
+        let mut names = fs::read_dir(folder)
+            .unwrap()
+            .map(|entry| entry.unwrap().file_name().to_string_lossy().into_owned())
+            .collect::<Vec<_>>();
+        names.sort();
+        names
+    }
+
+    /// The user's alone: mode 0600 on Unix; on Windows protected, with one full-access entry
+    /// for the user.
+    fn assert_owner_only(path: &Path) {
+        assert!(!super::super::readable_by_others(path).unwrap());
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let mode = fs::symlink_metadata(path).unwrap().permissions().mode() & 0o7777;
+            assert_eq!(mode, 0o600);
+        }
+        #[cfg(windows)]
+        assert!(super::super::windows::is_created_owner_only(path).unwrap());
+    }
+
+    #[test]
+    fn replaces_a_file_with_an_owner_only_one_and_removes_the_staging_folder() {
+        let dir = tempfile::tempdir().unwrap();
+        let target = dir.path().join("config.toml");
+        fs::write(&target, "old").unwrap();
+
+        open_folder(dir.path())
+            .unwrap()
+            .replace("config.toml", b"new")
+            .unwrap();
+
+        assert_eq!(fs::read_to_string(&target).unwrap(), "new");
+        assert_owner_only(&target);
+        assert_eq!(names(dir.path()), ["config.toml"]);
+    }
+
+    #[test]
+    fn creates_a_missing_file_owner_only() {
+        let dir = tempfile::tempdir().unwrap();
+        let target = dir.path().join("cache.json");
+
+        open_folder(dir.path())
+            .unwrap()
+            .replace("cache.json", b"new")
+            .unwrap();
+
+        assert_eq!(fs::read_to_string(&target).unwrap(), "new");
+        assert_owner_only(&target);
+        assert_eq!(names(dir.path()), ["cache.json"]);
+    }
+
+    /// The new file is written; moving it over the target fails (a folder with something in
+    /// it): the failure is the publishing step's, the target stays, and the staging folder
+    /// goes, file and all.
+    #[test]
+    fn a_failed_replace_names_its_step_and_leaves_the_target() {
+        let dir = tempfile::tempdir().unwrap();
+        let target = dir.path().join("config.toml");
+        fs::create_dir(&target).unwrap();
+        fs::write(target.join("kept"), "old").unwrap();
+
+        let failed = open_folder(dir.path())
+            .unwrap()
+            .replace("config.toml", b"new");
+
+        assert!(
+            matches!(
+                failed,
+                Err(PrivateFileError::Failed {
+                    step: ReplaceStep::Publishing,
+                    ..
+                })
+            ),
+            "{failed:?}"
+        );
+        assert_eq!(fs::read_to_string(target.join("kept")).unwrap(), "old");
+        assert_eq!(names(dir.path()), ["config.toml"]);
+    }
+
+    /// Names are single entries of the staging folder, never paths out of it.
+    #[test]
+    fn names_outside_the_staging_folder_are_refused() {
+        let dir = tempfile::tempdir().unwrap();
+        let staging = private_staging(&dir.path().join("config.toml")).unwrap();
+        let outside = dir.path().join("outside");
+
+        for name in [
+            "",
+            ".",
+            "..",
+            "../outside",
+            "a/b",
+            outside.to_str().unwrap(),
+        ] {
+            assert!(staging.create(name).is_err(), "{name:?}");
+            assert!(staging.open(name).is_err(), "{name:?}");
+            assert!(staging.publish(name).is_err(), "{name:?}");
+        }
+        assert!(!outside.exists());
+    }
+}
+
 #[cfg(any(target_os = "macos", target_os = "linux"))]
 mod unix {
     use std::{
@@ -130,26 +243,6 @@ mod unix {
         }
     }
 
-    /// The staged file is written; replacing the target fails (it is a folder with something
-    /// in it): the target stays and the staging folder goes, file and all.
-    #[test]
-    fn a_failed_publish_leaves_the_target_and_removes_the_staging_folder() {
-        let dir = tempfile::tempdir().unwrap();
-        let target = dir.path().join("config.toml");
-        fs::create_dir(&target).unwrap();
-        fs::write(target.join("kept"), "old").unwrap();
-
-        let staging = private_staging(&target).unwrap();
-        let mut file = staging.create("new").unwrap();
-        file.write_all(b"new").unwrap();
-        drop(file);
-        assert!(staging.publish("new").is_err());
-        drop(staging);
-
-        assert_eq!(fs::read_to_string(target.join("kept")).unwrap(), "old");
-        assert_eq!(names(dir.path()), ["config.toml"]);
-    }
-
     /// An editor run through the private command creates owner-only backups, whatever the
     /// app's own umask.
     #[test]
@@ -165,28 +258,6 @@ mod unix {
 
         assert!(status.success());
         assert_eq!(mode(&staging.path().join("config.toml~")), 0o600);
-    }
-
-    /// Names are single entries of the staging folder, never paths out of it.
-    #[test]
-    fn names_outside_the_staging_folder_are_refused() {
-        let dir = tempfile::tempdir().unwrap();
-        let staging = private_staging(&dir.path().join("config.toml")).unwrap();
-        let outside = dir.path().join("outside");
-
-        for name in [
-            "",
-            ".",
-            "..",
-            "../outside",
-            "a/b",
-            outside.to_str().unwrap(),
-        ] {
-            assert!(staging.create(name).is_err(), "{name:?}");
-            assert!(staging.open(name).is_err(), "{name:?}");
-            assert!(staging.publish(name).is_err(), "{name:?}");
-        }
-        assert!(!outside.exists());
     }
 
     /// The staging folder is renamed between writing and publishing, and a link to another
