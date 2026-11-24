@@ -38,7 +38,6 @@ pub struct ProviderRuntime {
     adapter: Arc<dyn ProviderAdapter>,
     context: ProviderContext,
     info: ProviderInfo,
-    identity: IdentityEvidence,
 }
 
 impl ProviderRuntime {
@@ -53,7 +52,7 @@ impl ProviderRuntime {
     ) -> Self {
         let requirements = adapter.config_requirements();
         let supported = adapter.supported_os().contains(&current_os());
-        let (info, identity, context) = diagnostics::in_connection(connection.id.clone(), async {
+        let (info, context) = diagnostics::in_connection(connection.id.clone(), async {
             let opened = if supported {
                 open_connection(connection.source(), connection.values(), secrets).await
             } else {
@@ -75,7 +74,8 @@ impl ProviderRuntime {
             };
             let (info, identity) =
                 build_provider_info(adapter.as_ref(), connection, &mut context, unopened).await;
-            (info, identity, context)
+            context.set_identity(identity);
+            (info, context)
         })
         .await;
 
@@ -83,7 +83,6 @@ impl ProviderRuntime {
             adapter,
             context,
             info,
-            identity,
         }
     }
 
@@ -100,7 +99,6 @@ impl ProviderRuntime {
             adapter: Arc::new(Recorded(info.connection.source.clone())),
             context: ProviderContext::for_connection(&connection, &[]),
             info,
-            identity: IdentityEvidence::None,
         }
     }
 
@@ -122,7 +120,7 @@ impl ProviderRuntime {
 
     /// Whose token the startup check saw.
     pub fn identity(&self) -> &IdentityEvidence {
-        &self.identity
+        self.context.identity()
     }
 
     /// The day cache's scope for this connection: its safe fingerprint and the principal the
@@ -133,7 +131,7 @@ impl ProviderRuntime {
             .context
             .fingerprint(self.adapter.config_requirements())
             .map_err(Uncached::Url)?;
-        match &self.identity {
+        match self.identity() {
             IdentityEvidence::Verified(identity) => Ok(crate::utils::fnv1a(
                 format!("{fingerprint:016x}\n{}", identity.id).into_bytes(),
             )),

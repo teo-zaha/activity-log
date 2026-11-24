@@ -4,6 +4,7 @@ use std::sync::Arc;
 
 use anyhow::{Result, anyhow};
 
+use crate::model::IdentityEvidence;
 use crate::provider::{
     connection::{Connection, ConnectionLocation},
     provider_adapter::CollectionState,
@@ -21,6 +22,7 @@ pub struct ProviderContext {
     typed: Option<Arc<dyn TypedConfig>>,
     connection: Option<Connection>,
     collection_state: Option<CollectionState>,
+    identity: IdentityEvidence,
 }
 
 impl fmt::Debug for ProviderContext {
@@ -36,9 +38,7 @@ impl ProviderContext {
     pub fn resolve(source: &dyn ConfigSource, requirements: &[ProviderConfigKey]) -> Self {
         Self {
             config: ProviderConfig::resolve(source, requirements),
-            typed: None,
-            connection: None,
-            collection_state: None,
+            ..Self::default()
         }
     }
 
@@ -77,6 +77,15 @@ impl ProviderContext {
     pub(crate) fn with_collection_state(mut self, state: Option<CollectionState>) -> Self {
         self.collection_state = state;
         self
+    }
+
+    pub(crate) fn set_identity(&mut self, identity: IdentityEvidence) {
+        self.identity = identity;
+    }
+
+    /// The startup check's evidence for the token's owner, once the check has finished.
+    pub fn identity(&self) -> &IdentityEvidence {
+        &self.identity
     }
 
     /// The kind's state for the running collection, see `ProviderAdapter::collection_state`.

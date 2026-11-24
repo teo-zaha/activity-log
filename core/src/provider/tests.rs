@@ -872,8 +872,9 @@ impl ProviderAdapter for CachedTestProvider {
     fn collect(
         &self,
         options: CollectOptions,
-        _context: ProviderContext,
+        context: ProviderContext,
     ) -> BoxFuture<'_, anyhow::Result<Vec<ActivityEntry>>> {
+        assert_eq!(context.identity(), &self.identity);
         self.fetches.fetch_add(1, Ordering::SeqCst);
         // One entry three days into the span, as a collector makes it: not yet stamped.
         let entry = ActivityEntry::System(crate::model::SystemEntry {
@@ -885,6 +886,16 @@ impl ProviderAdapter for CachedTestProvider {
             label: "Unlocked".to_string(),
         });
         Box::pin(async move { Ok(vec![entry]) })
+    }
+
+    fn annotate<'a>(
+        &'a self,
+        _entries: &'a mut [ActivityEntry],
+        context: ProviderContext,
+    ) -> BoxFuture<'a, ()> {
+        Box::pin(async move {
+            assert_eq!(context.identity(), &self.identity);
+        })
     }
 }
 
@@ -943,6 +954,29 @@ fn file_names(dir: &std::path::Path) -> Vec<String> {
         .collect();
     names.sort();
     names
+}
+
+#[tokio::test]
+async fn collectors_receive_the_startup_checks_identity_evidence() {
+    for identity in [verified("alice"), IdentityEvidence::Unnamed] {
+        let dir = tempdir().unwrap();
+        let (runtime, fetches) =
+            cached_runtime("work", "https://jira.example", "token-1", identity).await;
+        runtime
+            .collect_in(dir.path(), last_week(), None)
+            .await
+            .unwrap();
+        assert!(fetches.load(Ordering::SeqCst) > 0);
+    }
+}
+
+#[tokio::test]
+async fn annotation_receives_the_verified_identity_from_the_startup_check() {
+    let identity = verified("alice");
+    let (runtime, _) =
+        cached_runtime("work", "https://jira.example", "token-1", identity.clone()).await;
+    assert_eq!(runtime.identity(), &identity);
+    runtime.annotate(&mut []).await;
 }
 
 /// B4: the cache scope is the safe fingerprint and the verified principal. Pinned, so a change
