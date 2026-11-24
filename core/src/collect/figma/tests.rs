@@ -10,9 +10,9 @@ use crate::{
 
 use super::*;
 
-const START: &str = "2026-11-23T08:00:00Z";
-const END: &str = "2026-11-23T10:00:00Z";
-const OLDER: &str = "2026-11-23T07:59:59Z";
+const START: &str = "2020-11-23T08:00:00Z";
+const END: &str = "2020-11-23T10:00:00Z";
+const OLDER: &str = "2020-11-23T07:59:59Z";
 const MINE: &str = "1001";
 const OTHER: &str = "2002";
 
@@ -34,7 +34,13 @@ async fn collect(server: &TestServer, files: &[&str]) -> Result<Vec<FigmaEntry>>
     let config = config(files);
     let scope = FigmaScope::of(&config).unwrap();
     let api = FigmaApi::at(&server.url, &config).unwrap();
-    collect_files(&options(), &api, scope, MINE).await
+    let state = FigmaCollection::default();
+    let run = state.run(None, None);
+    let tabs = TabSnapshot {
+        outcome: local_tabs::Outcome::Absent,
+        seen_at: Utc::now(),
+    };
+    collect_files(&options(), &api, scope, MINE, &run, &tabs).await
 }
 
 fn reply(body: Value) -> Reply {
@@ -69,19 +75,19 @@ async fn keeps_the_owners_entries_in_range_and_resolves_replies_against_root_com
         ),
         "/v1/files/ZRecent/versions" => reply(json!({"versions": [
             version("16", MINE, END, Some("End boundary")),
-            version("15", OTHER, "2026-11-23T09:00:00Z", Some("Another author's version")),
-            version("14", MINE, "2026-11-23T08:05:00Z", Some("\t")),
+            version("15", OTHER, "2020-11-23T09:00:00Z", Some("Another author's version")),
+            version("14", MINE, "2020-11-23T08:05:00Z", Some("\t")),
             version("13", MINE, START, Some("Checkout v2")),
         ], "pagination": {}})),
         "/v1/files/ZRecent/comments" => {
             let mut root = comment("10", OTHER, OLDER);
             root["parent_id"] = json!("");
             root["client_meta"] = json!({"node_id": "3:4"});
-            let mut reply_row = comment("12", MINE, "2026-11-23T08:15:00.123Z");
+            let mut reply_row = comment("12", MINE, "2020-11-23T08:15:00.123Z");
             reply_row["parent_id"] = json!("10");
             reply_row["message"] = json!("  ");
             reply_row["client_meta"] = Value::Null;
-            let mut resolved = comment("11", MINE, "2026-11-23T08:15:00.123Z");
+            let mut resolved = comment("11", MINE, "2020-11-23T08:15:00.123Z");
             resolved["resolved_at"] = json!(END);
             resolved.as_object_mut().unwrap().remove("client_meta");
             reply(json!({"comments": [
@@ -133,7 +139,7 @@ async fn keeps_the_owners_entries_in_range_and_resolves_replies_against_root_com
     assert!(matches!(&entries[3].activity, FigmaActivity::Replied {
         parent_id, message: None, node_id: Some(node), ..
     } if parent_id == "10" && node == "3:4"));
-    assert_eq!(entries[3].timestamp, "2026-11-23T08:15:00.123Z");
+    assert_eq!(entries[3].timestamp, "2020-11-23T08:15:00.123Z");
     assert_eq!(
         entries[3].file_url,
         "https://www.figma.com/design/ZRecent/Checkout?node-id=3%3A4"
@@ -218,7 +224,7 @@ async fn a_file_request_failure_keeps_the_original_position_and_remote_problem()
         assert!(matches!(
             error.downcast_ref::<FigmaCollectError>(),
             Some(FigmaCollectError::FileRequest {
-                position: 3,
+                file: FilePlace::Pasted(3),
                 failure: RemoteFailure { error: ApiError::Status { status: got, .. }, .. },
             }) if got.as_u16() == status
         ));
@@ -240,4 +246,127 @@ async fn collection_requires_a_verified_identity() {
             Some(FigmaCollectError::NoIdentity)
         ));
     }
+}
+
+fn tabs_for(files: &[&str]) -> TabSnapshot {
+    let temp = tempfile::tempdir().unwrap();
+    let path = temp.path().join("settings.json");
+    let tabs: Vec<_> = files
+        .iter()
+        .map(|file| json!({"path": format!("/design/{file}"), "userId": MINE}))
+        .collect();
+    std::fs::write(&path, json!({"lastOpenWindow":{"tabs":tabs}}).to_string()).unwrap();
+    TabSnapshot {
+        outcome: local_tabs::read(&path),
+        seen_at: Utc::now(),
+    }
+}
+
+#[tokio::test]
+async fn discovered_denials_share_one_identity_check_and_one_warning() {
+    let connection = ConnectionId::new(Source::Figma, "discovered-denial-test");
+    diagnostics::in_connection(connection.clone(), async {
+        let server = TestServer::start(|req| match req.path() {
+            "/v1/me" => Reply::json(200, r#"{"id":"1001","handle":"ada"}"#),
+            "/v1/files/Gone/meta" => Reply::json(404, "{}"),
+            _ => Reply::json(403, "{}"),
+        });
+        let config = config(&[]);
+        let api = FigmaApi::at(&server.url, &config).unwrap();
+        let state = FigmaCollection::default();
+        let run = state.run(Some(&connection), None);
+        let tabs = tabs_for(&["First", "Second", "Gone"]);
+        for _ in 0..2 {
+            let entries = collect_files(
+                &options(),
+                &api,
+                FigmaScope::of(&config).unwrap(),
+                MINE,
+                &run,
+                &tabs,
+            )
+            .await
+            .unwrap();
+            assert!(entries.is_empty());
+        }
+        let requests = server.requests();
+        assert_eq!(
+            requests.iter().filter(|req| req.path() == "/v1/me").count(),
+            1
+        );
+        assert_eq!(requests.len(), 4);
+    })
+    .await;
+    assert_eq!(
+        diagnostics::entries()
+            .iter()
+            .filter(|line| { line.scope == connection.to_string() && line.level == LogLevel::Warn })
+            .count(),
+        1
+    );
+}
+
+#[tokio::test]
+async fn a_busy_discovered_403_fails_the_chunk_without_an_identity_probe() {
+    let server =
+        TestServer::start(|_| Reply::json(403, "{}").with_header("X-RateLimit-Remaining", "0"));
+    let config = config(&[]);
+    let api = FigmaApi::at(&server.url, &config).unwrap();
+    let state = FigmaCollection::default();
+    let run = state.run(None, None);
+    let error = collect_files(
+        &options(),
+        &api,
+        FigmaScope::of(&config).unwrap(),
+        MINE,
+        &run,
+        &tabs_for(&["Busy"]),
+    )
+    .await
+    .unwrap_err();
+    assert_eq!(problem_of(&error), Some(ProviderProblem::Throttled));
+    assert!(matches!(
+        error.downcast_ref::<FigmaCollectError>(),
+        Some(FigmaCollectError::FileRequest {
+            file: FilePlace::Discovered(key),
+            ..
+        }) if key.as_str() == "Busy"
+    ));
+    assert_eq!(server.requests().len(), 1);
+    assert_eq!(server.requests()[0].path(), "/v1/files/Busy/meta");
+}
+
+#[tokio::test]
+async fn sightings_are_saved_before_a_request_and_contributions_before_returning_entries() {
+    let temp = tempfile::tempdir().unwrap();
+    let path = temp.path().join("figma-design-0123456789abcdef.files.json");
+    let seen = path.clone();
+    let server = TestServer::start(move |req| match req.path() {
+        "/v1/files/Example/meta" if seen.exists() => meta(
+            "Example",
+            "figma",
+            OLDER,
+            "https://www.figma.com/file/Example",
+        ),
+        "/v1/files/Example/comments" => reply(json!({"comments":[comment("11", MINE, START)]})),
+        _ => Reply::json(500, "{}"),
+    });
+    let config = config(&[]);
+    let api = FigmaApi::at(&server.url, &config).unwrap();
+    let state = FigmaCollection::default();
+    let run = state.run(None, Some(&path));
+    let entries = collect_files(
+        &options(),
+        &api,
+        FigmaScope::of(&config).unwrap(),
+        MINE,
+        &run,
+        &tabs_for(&["Example"]),
+    )
+    .await
+    .unwrap();
+    assert_eq!(entries.len(), 1);
+    let saved = serde_json::from_slice::<Value>(&std::fs::read(path).unwrap()).unwrap();
+    assert!(saved["files"]["Example"]["last_contribution"].is_string());
+    assert_eq!(server.requests().len(), 2);
 }

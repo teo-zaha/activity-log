@@ -8,7 +8,10 @@ use std::{
     io::{self, Read},
     os::{
         fd::{AsFd, AsRawFd, BorrowedFd, FromRawFd, OwnedFd},
-        unix::{ffi::OsStrExt, fs::DirBuilderExt},
+        unix::{
+            ffi::OsStrExt,
+            fs::{DirBuilderExt, OpenOptionsExt},
+        },
     },
     path::{Path, PathBuf},
 };
@@ -260,6 +263,23 @@ impl Drop for Staging {
             };
         }
     }
+}
+
+pub(super) fn open_owned_input(path: &Path) -> io::Result<Option<File>> {
+    // A FIFO under the settings name cannot hold the open.
+    let file = fs::OpenOptions::new()
+        .read(true)
+        .custom_flags(libc::O_NOFOLLOW | libc::O_NONBLOCK)
+        .open(path)?;
+    let stat = fstat(file.as_fd())?;
+    if stat.st_mode & libc::S_IFMT != libc::S_IFREG
+        || !owned_by_user(&file)?
+        || stat.st_mode & 0o022 != 0
+        || os::acl_grants_others_write(file.as_fd())?
+    {
+        return Ok(None);
+    }
+    Ok(Some(file))
 }
 
 pub(super) fn owned_by_user(file: &fs::File) -> io::Result<bool> {

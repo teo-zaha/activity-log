@@ -1,12 +1,21 @@
 use std::{collections::BTreeSet, fmt};
 
 use reqwest::Url;
+use serde::{Deserialize, Deserializer, Serialize};
 
 use super::config::FigmaConfig;
 
 /// The file or branch Figma's API reads as a single path segment.
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Serialize)]
+#[serde(transparent)]
 pub(crate) struct FigmaFileKey(String);
+
+impl<'de> Deserialize<'de> for FigmaFileKey {
+    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        let key = String::deserialize(deserializer)?;
+        Self::from_key(&key).ok_or_else(|| serde::de::Error::custom("invalid Figma file key"))
+    }
+}
 
 impl FigmaFileKey {
     fn from_key(key: &str) -> Option<Self> {
@@ -76,7 +85,6 @@ impl FigmaFileKey {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum ScopeError {
-    Empty,
     NotAFile { item: usize },
     OtherHost { item: usize },
 }
@@ -84,7 +92,6 @@ pub(crate) enum ScopeError {
 impl fmt::Display for ScopeError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Self::Empty => f.write_str("Add at least one Figma file link or key."),
             Self::NotAFile { item } => write!(f, "Item {item} is not a Figma file link or key."),
             Self::OtherHost { item } => {
                 write!(
@@ -107,11 +114,7 @@ pub(crate) struct FigmaScope {
 
 impl FigmaScope {
     pub(crate) fn of(config: &FigmaConfig) -> Result<Self, ScopeError> {
-        let items = config
-            .files
-            .as_deref()
-            .filter(|items| !items.is_empty())
-            .ok_or(ScopeError::Empty)?;
+        let items = config.files.as_deref().unwrap_or_default();
         let mut seen = BTreeSet::new();
         let mut files = Vec::new();
         for (index, input) in items.iter().enumerate() {

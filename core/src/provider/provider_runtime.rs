@@ -72,6 +72,7 @@ impl ProviderRuntime {
                     Some(unopened),
                 ),
             };
+            context.set_state_dir(adapter.cache_policy().map(|_| crate::cache::cache_dir()));
             let (info, identity) =
                 build_provider_info(adapter.as_ref(), connection, &mut context, unopened).await;
             context.set_identity(identity);
@@ -156,29 +157,37 @@ impl ProviderRuntime {
         options: CollectOptions,
         state: Option<CollectionState>,
     ) -> anyhow::Result<Vec<ActivityEntry>> {
-        let context = self.context.clone().with_collection_state(state);
         // Collectors know no connection: their entries are stamped here, before the day cache
         // stores them, so none is stored or sent without one. A connection's name is a slug of
         // its label, never empty.
         let name = &ConnectionStamp::new(&self.id().name).ok_or_else(|| {
             anyhow::anyhow!("{} has no name to stamp its entries with", self.id())
         })?;
-        let fetch = |span| {
-            let fetched = self.adapter.collect(span, context.clone());
-            async move {
-                let mut entries = fetched.await?;
-                for entry in &mut entries {
-                    entry.set_connection(name);
-                }
-                Ok(entries)
-            }
-        };
         let collect = async {
-            let Some(policy) = self.adapter.cache_policy() else {
-                return fetch(options).await;
+            let cache = self
+                .adapter
+                .cache_policy()
+                .and_then(|policy| match self.cache_scope() {
+                    Ok(scope) => Some((policy, scope)),
+                    Err(uncached) => {
+                        uncached.log(&self.id().to_string());
+                        None
+                    }
+                });
+            let mut context = self.context.clone().with_collection_state(state);
+            context.set_state_dir(cache.map(|_| cache_dir.to_owned()));
+            let fetch = |span| {
+                let fetched = self.adapter.collect(span, context.clone());
+                async move {
+                    let mut entries = fetched.await?;
+                    for entry in &mut entries {
+                        entry.set_connection(name);
+                    }
+                    Ok(entries)
+                }
             };
-            match self.cache_scope() {
-                Ok(scope) => {
+            match cache {
+                Some((policy, scope)) => {
                     crate::cache::collect_with_day_cache(
                         cache_dir,
                         self.id(),
@@ -189,10 +198,7 @@ impl ProviderRuntime {
                     )
                     .await
                 }
-                Err(uncached) => {
-                    uncached.log(&self.id().to_string());
-                    fetch(options).await
-                }
+                None => fetch(options).await,
             }
         };
         diagnostics::in_connection(self.id().clone(), collect).await

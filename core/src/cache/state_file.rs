@@ -17,12 +17,11 @@ use crate::{
     platform::private_file::{Folder, PrivateFileError, ReplaceError},
 };
 
-/// Runs `work` on the blocking pool, so cache I/O never holds up an async worker; `None` if it
-/// panicked.
+/// Runs `work` on the blocking pool, so cache I/O never holds up an async worker.
 pub(crate) async fn blocking<T: Send + 'static>(
     work: impl FnOnce() -> T + Send + 'static,
-) -> Option<T> {
-    tokio::task::spawn_blocking(work).await.ok()
+) -> Result<T, tokio::task::JoinError> {
+    tokio::task::spawn_blocking(work).await
 }
 
 pub(crate) fn read<T: DeserializeOwned>(
@@ -35,19 +34,20 @@ pub(crate) fn read<T: DeserializeOwned>(
         .map(|bytes| bytes.map(|bytes| decode(&bytes, version)))
 }
 
-/// Atomically writes owner-only state. The caller holds the file's lock.
+/// Atomically writes owner-only state. Returns false if the folder can no longer keep it
+/// private. The caller holds the file's lock.
 pub(crate) fn publish<T: Serialize>(
     folder: &Folder,
     name: &str,
     state: &T,
     scope: &str,
-) -> Result<()> {
+) -> Result<bool> {
     let json = serde_json::to_vec(state)?;
     match folder.replace(name, &json) {
-        Ok(()) => Ok(()),
+        Ok(()) => Ok(true),
         Err(ReplaceError::Unprotectable { location }) => {
             warn_unprotectable(&location, scope);
-            Ok(())
+            Ok(false)
         }
         Err(err @ ReplaceError::Failed { .. }) => Err(err.into()),
     }
@@ -65,7 +65,7 @@ pub(crate) enum Decoded<T> {
     Unreadable(String),
 }
 
-fn decode<T: DeserializeOwned>(bytes: &[u8], current_version: u32) -> Decoded<T> {
+pub(crate) fn decode<T: DeserializeOwned>(bytes: &[u8], current_version: u32) -> Decoded<T> {
     #[derive(Deserialize)]
     struct Version {
         version: u32,

@@ -51,10 +51,10 @@ fn keeps_the_first_position_for_each_distinct_key() {
 
 #[test]
 fn rejects_invalid_keys_and_reports_the_original_list_position() {
-    assert_eq!(FigmaScope::of(&config(&[])).unwrap_err(), ScopeError::Empty);
+    assert_eq!(FigmaScope::of(&config(&[])).unwrap().files.len(), 0);
     let mut unset = config(&[]);
     unset.files = None;
-    assert_eq!(FigmaScope::of(&unset).unwrap_err(), ScopeError::Empty);
+    assert_eq!(FigmaScope::of(&unset).unwrap().files.len(), 0);
     for input in [
         "",
         ".",

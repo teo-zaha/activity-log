@@ -1,4 +1,10 @@
+pub(crate) mod file_book;
+pub(crate) mod local_tabs;
+mod run;
+
 use std::{collections::HashMap, fmt};
+
+use chrono::Utc;
 
 use anyhow::Result;
 use futures::{StreamExt, stream};
@@ -24,6 +30,10 @@ use crate::{
     },
 };
 
+use file_book::{DiscoveredFile, FileObservation, Observation};
+pub(crate) use run::FigmaCollection;
+use run::{ConnectionRun, TabSnapshot};
+
 const FILE_CONCURRENCY: usize = 3;
 const WEB_ORIGIN: &str = "https://www.figma.com";
 
@@ -32,11 +42,11 @@ pub(crate) enum FigmaCollectError {
     NoIdentity,
     Setup(SetupError),
     FileRequest {
-        position: usize,
+        file: FilePlace,
         failure: RemoteFailure,
     },
     RepeatedVersions {
-        position: usize,
+        file: FilePlace,
     },
 }
 
@@ -47,9 +57,9 @@ impl fmt::Display for FigmaCollectError {
                 "Figma did not say whose token this is. Activity Log cannot identify your versions or comments.",
             ),
             Self::Setup(error) => f.write_str(&error.reason(FigmaApi::SERVICE)),
-            Self::FileRequest { position, .. } => write!(f, "Could not read Figma file list item {position}"),
-            Self::RepeatedVersions { position } => {
-                write!(f, "Figma repeated version history for file list item {position}")
+            Self::FileRequest { file, .. } => write!(f, "Could not read {file}"),
+            Self::RepeatedVersions { file } => {
+                write!(f, "Figma repeated version history for {file}")
             }
         }
     }
@@ -64,6 +74,25 @@ impl std::error::Error for FigmaCollectError {
     }
 }
 
+#[derive(Debug)]
+pub(crate) enum FilePlace {
+    Pasted(usize),
+    Discovered(FigmaFileKey),
+}
+
+impl fmt::Display for FilePlace {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Pasted(position) => write!(f, "Figma file list item {position}"),
+            Self::Discovered(key) => write!(
+                f,
+                "Figma file {} discovered from desktop tabs",
+                key.as_str()
+            ),
+        }
+    }
+}
+
 pub(crate) async fn collect_figma(
     options: &CollectOptions,
     context: &ProviderContext,
@@ -74,7 +103,17 @@ pub(crate) async fn collect_figma(
     let config = context.config::<FigmaConfig>()?;
     let scope = FigmaScope::of(config)?;
     let api = FigmaApi::new(config).map_err(FigmaCollectError::Setup)?;
-    collect_files(options, &api, scope, &principal.id).await
+    let fallback = FigmaCollection::default();
+    let state = context
+        .collection_state::<FigmaCollection>()
+        .unwrap_or(&fallback);
+    let path = file_book::path(context, principal);
+    let run = state.run(
+        context.connection().map(|connection| &connection.id),
+        path.as_deref(),
+    );
+    let tabs = state.tabs().await;
+    collect_files(options, &api, scope, &principal.id, &run, tabs).await
 }
 
 async fn collect_files(
@@ -82,44 +121,90 @@ async fn collect_files(
     api: &FigmaApi,
     scope: FigmaScope,
     principal: &str,
+    run: &ConnectionRun,
+    tabs: &TabSnapshot,
 ) -> Result<Vec<FigmaEntry>> {
     let FigmaScope { files, duplicates } = scope;
-    let mut reads = stream::iter(files.into_iter().map(|(position, file)| async move {
-        (position, collect_file(options, api, &file, principal).await)
+    let pasted = files.iter().map(|(_, file)| file.clone()).collect();
+    let sightings = tabs.outcome.files_for(principal).cloned().collect();
+    let seen_at = tabs.outcome.has_snapshot().then_some(tabs.seen_at);
+    let from_book = run
+        .book
+        .begin_chunk(sightings, seen_at, pasted, Utc::now())
+        .await?;
+    run.record_lost(from_book.lost);
+
+    let files = files
+        .into_iter()
+        .map(|(position, key)| SelectedFile::Pasted { position, key })
+        .chain(from_book.read.into_iter().map(SelectedFile::Discovered));
+    // Keep the other requests polled during the identity probe and book writes.
+    let mut reads = stream::iter(files.map(|file| async move {
+        let result = collect_file(options, api, file.key(), principal).await;
+        match (file, result) {
+            (file, Ok(collected)) => Ok::<_, anyhow::Error>(Some((file, collected))),
+            (SelectedFile::Discovered(file), Err(FileError::Request(error))) => {
+                let error = match run.proves_loss(api, principal, &error).await {
+                    Ok(true) => {
+                        let observed_at = Utc::now();
+                        let key = file.key.clone();
+                        run.book
+                            .finish_chunk(
+                                vec![FileObservation {
+                                    file,
+                                    outcome: Observation::Lost { observed_at },
+                                }],
+                                observed_at,
+                            )
+                            .await?;
+                        run.record_lost([key]);
+                        return Ok(None);
+                    }
+                    Ok(false) => error,
+                    Err(identity_error) => identity_error,
+                };
+                Err(request_failure(FilePlace::Discovered(file.key), error).into())
+            }
+            (file, Err(FileError::Request(error))) => {
+                Err(request_failure(file.place(), error).into())
+            }
+            (file, Err(FileError::RepeatedVersions)) => {
+                Err(FigmaCollectError::RepeatedVersions { file: file.place() }.into())
+            }
+        }
     }))
     .buffered(FILE_CONCURRENCY);
+    let mut observations = Vec::new();
     let mut entries = Vec::new();
     let mut unknown_editors = 0;
     let mut rejected_links = 0;
     let mut first_other_origin = None;
 
-    while let Some((position, result)) = reads.next().await {
-        match result {
-            Ok(file) => {
-                entries.extend(file.entries);
-                unknown_editors += usize::from(file.unknown_editor);
-                if let Some(rejection) = file.rejected_link {
-                    rejected_links += 1;
-                    if let Unshown::Elsewhere(origin) = rejection {
-                        first_other_origin.get_or_insert(origin);
-                    }
-                }
-            }
-            Err(FileError::Request(error)) => {
-                return Err(FigmaCollectError::FileRequest {
-                    position,
-                    failure: RemoteFailure {
-                        service: FigmaApi::SERVICE.into(),
-                        error,
-                    },
-                }
-                .into());
-            }
-            Err(FileError::RepeatedVersions) => {
-                return Err(FigmaCollectError::RepeatedVersions { position }.into());
+    while let Some(result) = reads.next().await {
+        let Some((selected, file)) = result? else {
+            continue;
+        };
+        if let SelectedFile::Discovered(selected) = selected {
+            observations.push(FileObservation {
+                file: selected,
+                outcome: Observation::Read {
+                    observed_at: file.observed_at,
+                    contributed: !file.entries.is_empty(),
+                },
+            });
+        }
+        entries.extend(file.entries);
+        unknown_editors += usize::from(file.unknown_editor);
+        if let Some(rejection) = file.rejected_link {
+            rejected_links += 1;
+            if let Unshown::Elsewhere(origin) = rejection {
+                first_other_origin.get_or_insert(origin);
             }
         }
     }
+    // Only successful chunks can contribute entries to the day cache. Record these
+    // contributions before returning the entries for that cache to write.
+    run.book.finish_chunk(observations, Utc::now()).await?;
     let source = Source::Figma.as_ref();
     if duplicates > 0 {
         diagnostics::warn(
@@ -148,6 +233,37 @@ async fn collect_files(
     Ok(entries)
 }
 
+enum SelectedFile {
+    Pasted { position: usize, key: FigmaFileKey },
+    Discovered(DiscoveredFile),
+}
+
+impl SelectedFile {
+    fn key(&self) -> &FigmaFileKey {
+        match self {
+            Self::Pasted { key, .. } => key,
+            Self::Discovered(file) => &file.key,
+        }
+    }
+
+    fn place(&self) -> FilePlace {
+        match self {
+            Self::Pasted { position, .. } => FilePlace::Pasted(*position),
+            Self::Discovered(file) => FilePlace::Discovered(file.key.clone()),
+        }
+    }
+}
+
+fn request_failure(file: FilePlace, error: ApiError) -> FigmaCollectError {
+    FigmaCollectError::FileRequest {
+        file,
+        failure: RemoteFailure {
+            service: FigmaApi::SERVICE.into(),
+            error,
+        },
+    }
+}
+
 enum FileError {
     Request(ApiError),
     RepeatedVersions,
@@ -160,6 +276,7 @@ impl From<ApiError> for FileError {
 }
 
 struct CollectedFile {
+    observed_at: chrono::DateTime<Utc>,
     entries: Vec<FigmaEntry>,
     unknown_editor: bool,
     rejected_link: Option<Unshown>,
@@ -238,6 +355,7 @@ async fn collect_file(
             .then_with(|| a.id.cmp(&b.id))
     });
     Ok(CollectedFile {
+        observed_at: Utc::now(),
         entries,
         unknown_editor: editor.is_none(),
         rejected_link,

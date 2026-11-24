@@ -429,6 +429,24 @@ fn delete(handle: &OwnedHandle) -> io::Result<()> {
     }
 }
 
+pub(super) fn open_owned_input(path: &Path) -> io::Result<Option<File>> {
+    let handle = open(
+        path,
+        FILE_GENERIC_READ.0,
+        FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+        OPEN_EXISTING,
+        FILE_ATTRIBUTE_NORMAL | FILE_FLAG_OPEN_REPARSE_POINT,
+    )?;
+    if attributes(&handle)? & (FILE_ATTRIBUTE_DIRECTORY.0 | FILE_ATTRIBUTE_REPARSE_POINT.0) != 0 {
+        return Ok(None);
+    }
+    let sid = user_sid()?;
+    let safe = with_security(&handle, |owner, dacl, _| {
+        Ok(sid_string(owner)? == sid && !grants_others(dacl, &sid, WRITE_RIGHTS)?)
+    })?;
+    Ok(safe.then(|| File::from(handle)))
+}
+
 pub(super) fn owned_by_user(file: &File) -> io::Result<bool> {
     // Opened for reading, which includes `READ_CONTROL`.
     let handle = OwnedHandle::from(file.try_clone()?);

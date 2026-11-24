@@ -166,6 +166,7 @@ where
         move || load(&path, &scope)
     })
     .await
+    .ok()
     .flatten();
     let Some(mut file) = loaded else {
         return fetch(*options).await;
@@ -205,7 +206,7 @@ where
             move || store(&path, fetched, now, &scope)
         })
         .await;
-        if let Some(Err(err)) = stored {
+        if let Ok(Err(err)) = stored {
             diagnostics::warn(
                 &scope,
                 format!("Could not write cache {}: {err:#}", path.display()),
@@ -443,7 +444,7 @@ fn store(
     if !(replaced || merged || pruned) {
         return Ok(());
     }
-    publish(&folder, name, &file, scope)
+    publish(&folder, name, &file, scope).map(|_| ())
 }
 
 fn cache_folder_is_private(folder: &Folder, scope: &str) -> bool {

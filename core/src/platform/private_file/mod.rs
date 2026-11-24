@@ -8,7 +8,7 @@
 
 use std::{
     fs::File,
-    io::{self, Write},
+    io::{self, Read, Write},
     path::{Path, PathBuf},
 };
 
@@ -134,6 +134,31 @@ pub enum OwnerOnly {
     /// Another account can read or change it, or it is not a regular file of the user's:
     /// nothing was read.
     Exposed,
+}
+
+/// A bounded read of user-owned input that can be public to readers.
+pub(crate) enum OwnedInput {
+    Absent,
+    NotOwned,
+    TooLarge,
+    Bytes(Vec<u8>),
+}
+
+/// Reads from the same handle that proves this is a regular file of the current user, with
+/// no other account allowed to write it. The final name may not be a link.
+pub(crate) fn read_owned_input(path: &Path, limit: u32) -> io::Result<OwnedInput> {
+    let file = match imp::open_owned_input(path) {
+        Ok(Some(file)) => file,
+        Ok(None) => return Ok(OwnedInput::NotOwned),
+        Err(err) if err.kind() == io::ErrorKind::NotFound => return Ok(OwnedInput::Absent),
+        Err(err) => return Err(err),
+    };
+    let mut bytes = Vec::new();
+    file.take(u64::from(limit) + 1).read_to_end(&mut bytes)?;
+    if bytes.len() > limit as usize {
+        return Ok(OwnedInput::TooLarge);
+    }
+    Ok(OwnedInput::Bytes(bytes))
 }
 
 /// A folder held open, so that locking, reading and publishing a file in it all happen in the

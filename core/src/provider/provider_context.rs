@@ -1,10 +1,11 @@
 use std::any::Any;
 use std::fmt;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use anyhow::{Result, anyhow};
 
-use crate::model::IdentityEvidence;
+use crate::model::{IdentityEvidence, RemoteIdentity};
 use crate::provider::{
     connection::{Connection, ConnectionLocation},
     provider_adapter::CollectionState,
@@ -23,6 +24,7 @@ pub struct ProviderContext {
     connection: Option<Connection>,
     collection_state: Option<CollectionState>,
     identity: IdentityEvidence,
+    state_dir: Option<PathBuf>,
 }
 
 impl fmt::Debug for ProviderContext {
@@ -77,6 +79,24 @@ impl ProviderContext {
     pub(crate) fn with_collection_state(mut self, state: Option<CollectionState>) -> Self {
         self.collection_state = state;
         self
+    }
+
+    pub(crate) fn set_state_dir(&mut self, dir: Option<PathBuf>) {
+        self.state_dir = dir;
+    }
+
+    /// State beside the day cache, scoped to the connection and identity across config edits.
+    pub(crate) fn identity_state_path(
+        &self,
+        identity: &RemoteIdentity,
+        extension: &str,
+    ) -> Option<PathBuf> {
+        let connection = &self.connection()?.id;
+        let dir: &Path = self.state_dir.as_deref()?;
+        let scope = crate::utils::fnv1a(identity.id.bytes());
+        let mut path = dir.join(crate::cache::file_name(connection, scope));
+        path.set_extension(extension);
+        Some(path)
     }
 
     pub(crate) fn set_identity(&mut self, identity: IdentityEvidence) {

@@ -77,6 +77,10 @@ impl Staging {
     }
 }
 
+pub(super) fn open_owned_input(_path: &Path) -> io::Result<Option<File>> {
+    Ok(None)
+}
+
 pub(super) fn owned_by_user(_file: &fs::File) -> io::Result<bool> {
     Ok(false)
 }

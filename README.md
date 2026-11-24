@@ -403,13 +403,15 @@ Each source below lists its entry types, Timeline subtitle line, detail panel fi
 - **Entries.** Named versions, unlabeled version checkpoints, comments, and replies credited to your Figma account.
 - **Timeline line.** `Saved version "…"`, `Edited`, `Commented`, or `Replied`.
 - **Detail panel.** File and Kind, plus Version and Description for named versions, Comment for comments and replies, and Resolved for top-level comments. **Open in Figma** opens the file or the comment's node when available.
-- **Configuration.** `token` holds your personal access token. `files` lists one or more Figma file or branch links or keys.
+- **Configuration.** `token` holds your personal access token. `files` optionally lists Figma file or branch links or keys. On macOS and Windows, Activity Log can also find files in open Figma desktop tabs for the same account.
 
 Choose **Settings → Add source → Figma** or run `activity-log sources add figma`. Use a personal access token with `current_user:read`, `file_versions:read`, `file_comments:read`, and `file_metadata:read`. Figma lets you set an expiry of up to 90 days. Replace the saved token when it expires. [Create a Figma personal access token](https://developers.figma.com/docs/rest-api/personal-access-tokens/) · [Figma token expiry](https://developers.figma.com/docs/rest-api/changelog/#april-28-2025)
 
+Add a file link or open a file in the Figma desktop app to start collecting. The file book keeps recently discovered files available after their tabs close. A newly discovered file can take up to seven days to appear on older days while their cached results are still fresh.
+
 If the token can no longer read a configured file, the Figma connection’s collection fails and reports the file’s position in `files`. Remove that item from the list and collect again.
 
-Each configured file uses one metadata request and one comments request per fetched range. If the file was touched since the range began, collection also uses one version-history request per page. Comments and version history count toward Figma's Tier 2 limits. A View or Collab seat can get up to five Tier 2 requests per minute, so a couple of active files can use most of that allowance. [Figma rate limits](https://developers.figma.com/docs/rest-api/rate-limits/)
+Each configured file uses one metadata request and one comments request per fetched range. Collection also uses one version-history request per page unless fresh metadata shows the file was last modified before the range began. Comments and version history count toward Figma's Tier 2 limits. A View or Collab seat can get up to five Tier 2 requests per minute, so a couple of active files can use most of that allowance. [Figma rate limits](https://developers.figma.com/docs/rest-api/rate-limits/)
 
 ## Configuration
 
