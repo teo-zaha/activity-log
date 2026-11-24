@@ -143,7 +143,7 @@ fn valid_change(change: &StackedChange) -> bool {
 }
 
 /// An http(s) address with a host and no user info. Which origin it may have is known only
-/// where the stack is collected (`collect::change_stack::web_link`).
+/// where the stack is collected (`collect::web_link`).
 fn is_web_link(text: &str) -> bool {
     Url::parse(text).is_ok_and(|url| {
         matches!(url.scheme(), "http" | "https")

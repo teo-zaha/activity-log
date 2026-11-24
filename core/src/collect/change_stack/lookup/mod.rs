@@ -3,8 +3,9 @@
 
 use futures::future::BoxFuture;
 
-use super::{budget::Budget, web_link::WebLink};
+use super::budget::Budget;
 use crate::{
+    collect::web_link::WebLink,
     model::{StackCut, StackedChange},
     provider::remote_error::ApiError,
 };

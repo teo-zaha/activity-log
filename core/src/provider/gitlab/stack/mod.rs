@@ -17,8 +17,9 @@ use url::Origin;
 use crate::{
     collect::change_stack::{
         Budget, ChangeLookup, ChangeRef, FailureKind, LookupCause, LookupFailure, OpenChange,
-        OpenPage, Unshown, change_stacks, web_link,
+        OpenPage, change_stacks,
     },
+    collect::web_link::{Unshown, web_link},
     diagnostics,
     model::{ActivityEntry, ChangeStack, GitLabEntry},
     provider::{

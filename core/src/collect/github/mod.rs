@@ -10,7 +10,7 @@ use serde::Serialize;
 use url::{Host, Origin};
 
 use crate::{
-    collect::change_stack::{Unshown, web_link},
+    collect::web_link::{Unshown, web_link},
     diagnostics,
     model::{
         CollectOptions, ConnectionName, GitHubTag, Timestamp,

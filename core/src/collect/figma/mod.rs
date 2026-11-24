@@ -1,11 +1,11 @@
 use std::{collections::HashMap, fmt};
 
-use anyhow::{Context, Result};
+use anyhow::Result;
 use futures::{StreamExt, stream};
-use reqwest::{StatusCode, Url};
+use reqwest::Url;
 
 use crate::{
-    collect::change_stack::web_link,
+    collect::web_link::{Unshown, web_link},
     diagnostics,
     model::{
         CollectOptions, ConnectionName, FigmaActivity, FigmaEditor, FigmaEntry, FigmaTag,
@@ -31,7 +31,13 @@ const WEB_ORIGIN: &str = "https://www.figma.com";
 pub(crate) enum FigmaCollectError {
     NoIdentity,
     Setup(SetupError),
-    RepeatedVersions { position: usize },
+    FileRequest {
+        position: usize,
+        failure: RemoteFailure,
+    },
+    RepeatedVersions {
+        position: usize,
+    },
 }
 
 impl fmt::Display for FigmaCollectError {
@@ -41,6 +47,7 @@ impl fmt::Display for FigmaCollectError {
                 "Figma did not say whose token this is. Activity Log cannot identify your versions or comments.",
             ),
             Self::Setup(error) => f.write_str(&error.reason(FigmaApi::SERVICE)),
+            Self::FileRequest { position, .. } => write!(f, "Could not read Figma file list item {position}"),
             Self::RepeatedVersions { position } => {
                 write!(f, "Figma repeated version history for file list item {position}")
             }
@@ -48,7 +55,14 @@ impl fmt::Display for FigmaCollectError {
     }
 }
 
-impl std::error::Error for FigmaCollectError {}
+impl std::error::Error for FigmaCollectError {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        match self {
+            Self::FileRequest { failure, .. } => Some(failure),
+            _ => None,
+        }
+    }
+}
 
 pub(crate) async fn collect_figma(
     options: &CollectOptions,
@@ -75,29 +89,31 @@ async fn collect_files(
     }))
     .buffered(FILE_CONCURRENCY);
     let mut entries = Vec::new();
-    let mut missing = Vec::new();
     let mut unknown_editors = 0;
     let mut rejected_links = 0;
+    let mut first_other_origin = None;
 
     while let Some((position, result)) = reads.next().await {
         match result {
             Ok(file) => {
                 entries.extend(file.entries);
                 unknown_editors += usize::from(file.unknown_editor);
-                rejected_links += usize::from(file.rejected_link);
-            }
-            Err(FileError::Request(ApiError::Status {
-                status: StatusCode::NOT_FOUND,
-                ..
-            })) => {
-                missing.push(position);
+                if let Some(rejection) = file.rejected_link {
+                    rejected_links += 1;
+                    if let Unshown::Elsewhere(origin) = rejection {
+                        first_other_origin.get_or_insert(origin);
+                    }
+                }
             }
             Err(FileError::Request(error)) => {
-                return Err(RemoteFailure {
-                    service: FigmaApi::SERVICE.into(),
-                    error,
-                })
-                .with_context(|| format!("Figma file list item {position}"));
+                return Err(FigmaCollectError::FileRequest {
+                    position,
+                    failure: RemoteFailure {
+                        service: FigmaApi::SERVICE.into(),
+                        error,
+                    },
+                }
+                .into());
             }
             Err(FileError::RepeatedVersions) => {
                 return Err(FigmaCollectError::RepeatedVersions { position }.into());
@@ -111,15 +127,6 @@ async fn collect_files(
             format!("The Figma file list contained duplicate items ({duplicates} ignored)"),
         );
     }
-    if !missing.is_empty() {
-        diagnostics::warn(
-            source,
-            format!(
-                "Figma could not find files at list positions {missing:?} ({} affected). Remove those items.",
-                missing.len()
-            ),
-        );
-    }
     if unknown_editors > 0 {
         diagnostics::warn(
             source,
@@ -127,10 +134,16 @@ async fn collect_files(
         );
     }
     if rejected_links > 0 {
-        diagnostics::warn(
-            source,
-            format!("Figma returned invalid file links ({rejected_links} omitted)"),
+        let mut message = format!(
+            "Using default file links where Figma returned invalid links ({rejected_links} affected)."
         );
+        if let Some(origin) = first_other_origin {
+            message.push_str(&format!(
+                " The first unexpected origin was {}.",
+                origin.ascii_serialization()
+            ));
+        }
+        diagnostics::warn(source, message);
     }
     Ok(entries)
 }
@@ -149,7 +162,7 @@ impl From<ApiError> for FileError {
 struct CollectedFile {
     entries: Vec<FigmaEntry>,
     unknown_editor: bool,
-    rejected_link: bool,
+    rejected_link: Option<Unshown>,
 }
 
 async fn collect_file(
@@ -199,7 +212,7 @@ async fn collect_file(
             if present(comment.parent_id.as_deref()).is_some() {
                 return None;
             }
-            present(comment.client_meta.node_id.as_deref()).map(|node| (comment.id.as_str(), node))
+            present(comment.node_id()).map(|node| (comment.id.as_str(), node))
         })
         .collect();
     entries.extend(
@@ -267,7 +280,7 @@ fn comment_activity<'a>(
             },
         )
     } else {
-        let node = present(comment.client_meta.node_id.as_deref());
+        let node = present(comment.node_id());
         (
             node,
             FigmaActivity::Commented {
@@ -284,26 +297,27 @@ fn present(text: Option<&str>) -> Option<&str> {
     text.filter(|text| !text.trim().is_empty())
 }
 
-fn file_link(file: &FigmaFileKey, supplied: Option<&str>) -> (Url, bool) {
+fn file_link(file: &FigmaFileKey, supplied: Option<&str>) -> (Url, Option<Unshown>) {
     let mut url = Url::parse(WEB_ORIGIN).expect("Figma's fixed web origin");
-    if let Some(link) = supplied.and_then(|raw| web_link(raw, &url.origin()).ok()) {
-        return (
-            Url::parse(link.as_str()).expect("validated Figma web URL"),
-            false,
-        );
-    }
+    let rejected = match supplied.map(|raw| web_link(raw, &url.origin())) {
+        Some(Ok(link)) => {
+            let mut url = Url::parse(link.as_str()).expect("validated Figma web URL");
+            url.set_query(None);
+            url.set_fragment(None);
+            return (url, None);
+        }
+        Some(Err(reason)) => Some(reason),
+        None => None,
+    };
     url.path_segments_mut()
         .expect("Figma's web origin has a path")
         .extend(["file", file.as_str()]);
-    (url, supplied.is_some())
+    (url, rejected)
 }
 
 fn comment_link(file_url: &Url, node: &str) -> Url {
     let mut url = file_url.clone();
-    url.query_pairs_mut()
-        .clear()
-        .extend_pairs(file_url.query_pairs().filter(|(key, _)| key != "node-id"))
-        .append_pair("node-id", node);
+    url.query_pairs_mut().append_pair("node-id", node);
     url
 }
 

@@ -1,9 +1,9 @@
-//! Which links of a change may be shown: only to its host's web pages.
+//! Validates links from a provider against its web origin.
 
 use reqwest::Url;
 use url::Origin;
 
-/// A change's page as a host gave it, kept only when it may be shown: http(s), with a host, on
+/// A page as a host gave it, kept only when it may be shown: http(s), with a host, on
 /// the host's web origin and without user info. Made only by [`web_link`].
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct WebLink(String);

@@ -6,8 +6,8 @@ pub(crate) mod scope;
 mod tests;
 
 use crate::{
-    collect::figma::collect_figma,
-    model::{IntoActivityEntries, ProviderProblem, Source, SupportedOs},
+    collect::figma::{FigmaCollectError, collect_figma},
+    model::{IdentityEvidence, IntoActivityEntries, ProviderProblem, Source, SupportedOs},
     provider::{
         connection::Instances,
         provider_check_result::ProviderCheckResult,
@@ -56,5 +56,12 @@ async fn check(
         Ok(api) => api,
         Err(error) => return error.check_result(FigmaApi::SERVICE),
     };
-    identity_check(FigmaApi::SERVICE, api.me().await)
+    match api.me().await {
+        Ok(None) => ProviderCheckResult::unavailable_as(
+            ProviderProblem::Failed,
+            FigmaCollectError::NoIdentity.to_string(),
+        )
+        .with_identity(IdentityEvidence::Unnamed),
+        answer => identity_check(FigmaApi::SERVICE, answer),
+    }
 }

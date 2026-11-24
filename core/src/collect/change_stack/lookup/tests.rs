@@ -1,5 +1,8 @@
 use super::{FailureKind, OpenChange};
-use crate::model::{StackCut, StackedChange};
+use crate::{
+    collect::web_link::web_link,
+    model::{StackCut, StackedChange},
+};
 
 fn change(title: &str, source: &str, target: &str) -> Option<OpenChange> {
     OpenChange::new(7, title.into(), source.into(), target.into(), true, None)
@@ -16,7 +19,7 @@ fn a_change_with_a_blank_title_or_branch_is_refused() {
 
 #[test]
 fn a_change_shows_as_its_number_title_and_link() {
-    let link = super::super::web_link::web_link(
+    let link = web_link(
         "https://gitlab.example.org/acme/widgets/-/merge_requests/7",
         &reqwest::Url::parse("https://gitlab.example.org")
             .unwrap()

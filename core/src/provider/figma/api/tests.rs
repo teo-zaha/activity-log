@@ -89,7 +89,7 @@ async fn reads_identity_metadata_and_comments_with_the_figma_header() {
     assert_eq!(comment.parent_id.as_deref(), Some("11"));
     assert_eq!(comment.message, "Checked the title");
     assert!(comment.resolved_at.is_none());
-    assert_eq!(comment.client_meta.node_id.as_deref(), Some("3:4"));
+    assert_eq!(comment.node_id(), Some("3:4"));
 
     let requests = server.requests();
     assert_eq!(requests.len(), 3);

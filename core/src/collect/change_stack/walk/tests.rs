@@ -20,8 +20,8 @@ use crate::{
         lookup::{
             ChangeLookup, ChangeRef, FailureKind, LookupCause, LookupFailure, OpenChange, OpenPage,
         },
-        web_link::{WebLink, web_link},
     },
+    collect::web_link::{WebLink, web_link},
     model::{
         ChangeStack, ChangeStackAbove, ChangeStackBottom, ChangeStackEnd, ChangeStackNode,
         LogLevel, StackCut, StackedChange,

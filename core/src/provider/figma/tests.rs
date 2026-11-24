@@ -45,7 +45,12 @@ async fn startup_check_keeps_the_identity_evidence_from_figma_me() {
                 username: "ada".into(),
             }),
         ),
-        (200, "{}", None, IdentityEvidence::Unnamed),
+        (
+            200,
+            "{}",
+            Some(ProviderProblem::Failed),
+            IdentityEvidence::Unnamed,
+        ),
         (
             403,
             r#"{"status":403,"err":"Invalid token"}"#,

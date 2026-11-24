@@ -65,7 +65,7 @@ async fn keeps_the_owners_entries_in_range_and_resolves_replies_against_root_com
             "Checkout",
             "figma",
             END,
-            "https://www.figma.com/design/ZRecent/Checkout?node-id=9%3A9&mode=design",
+            "https://www.figma.com/design/ZRecent/Checkout?node-id=9%3A9&mode=design#history",
         ),
         "/v1/files/ZRecent/versions" => reply(json!({"versions": [
             version("16", MINE, END, Some("End boundary")),
@@ -75,12 +75,15 @@ async fn keeps_the_owners_entries_in_range_and_resolves_replies_against_root_com
         ], "pagination": {}})),
         "/v1/files/ZRecent/comments" => {
             let mut root = comment("10", OTHER, OLDER);
+            root["parent_id"] = json!("");
             root["client_meta"] = json!({"node_id": "3:4"});
             let mut reply_row = comment("12", MINE, "2026-11-23T08:15:00.123Z");
             reply_row["parent_id"] = json!("10");
             reply_row["message"] = json!("  ");
+            reply_row["client_meta"] = Value::Null;
             let mut resolved = comment("11", MINE, "2026-11-23T08:15:00.123Z");
             resolved["resolved_at"] = json!(END);
+            resolved.as_object_mut().unwrap().remove("client_meta");
             reply(json!({"comments": [
                 reply_row, comment("40", MINE, END), resolved, root,
                 comment("41", OTHER, START), comment("42", MINE, OLDER),
@@ -113,6 +116,9 @@ async fn keeps_the_owners_entries_in_range_and_resolves_replies_against_root_com
     } if version_id == "13" && label == "Checkout v2"));
     assert_eq!(entries[0].timestamp, START);
     assert_eq!(entries[0].editor, Some(FigmaEditor::Figma));
+    let base_url = "https://www.figma.com/design/ZRecent/Checkout";
+    assert_eq!(entries[0].file_url, base_url);
+    assert_eq!(entries[1].file_url, base_url);
     assert!(
         matches!(&entries[1].activity, FigmaActivity::Edited { version_id } if version_id == "14")
     );
@@ -130,7 +136,7 @@ async fn keeps_the_owners_entries_in_range_and_resolves_replies_against_root_com
     assert_eq!(entries[3].timestamp, "2026-11-23T08:15:00.123Z");
     assert_eq!(
         entries[3].file_url,
-        "https://www.figma.com/design/ZRecent/Checkout?mode=design&node-id=3%3A4"
+        "https://www.figma.com/design/ZRecent/Checkout?node-id=3%3A4"
     );
     assert_eq!(entries[4].editor, None);
     assert_eq!(entries[4].file_url, "https://www.figma.com/file/AOld");
@@ -149,24 +155,17 @@ async fn keeps_the_owners_entries_in_range_and_resolves_replies_against_root_com
 }
 
 #[tokio::test]
-async fn missing_files_are_omitted_wholly_and_warnings_are_grouped_by_kind() {
+async fn file_warnings_are_grouped_by_kind_and_name_the_unexpected_origin() {
     let server = TestServer::start(|request| match request.path() {
         "/v1/files/Keep/meta" => meta("Keep", "unfamiliar", OLDER, "https://example.org/file/Keep"),
         "/v1/files/Keep/comments" => reply(json!({"comments":[comment("11", MINE, START)]})),
-        "/v1/files/Gone/meta" => meta("Gone", "figma", END, "https://www.figma.com/file/Gone"),
-        "/v1/files/Gone/versions" => {
-            reply(json!({"versions":[version("13", MINE, START, None)], "pagination":{}}))
-        }
         _ => Reply::json(404, "{}"),
     });
 
     let id = ConnectionId::new(Source::Figma, "warning-test");
     let entries = diagnostics::in_connection(
         id.clone(),
-        collect(
-            &server,
-            &["Keep", "https://www.figma.com/file/Keep", "Gone", "Missing"],
-        ),
+        collect(&server, &["Keep", "https://www.figma.com/file/Keep"]),
     )
     .await
     .unwrap();
@@ -178,27 +177,51 @@ async fn missing_files_are_omitted_wholly_and_warnings_are_grouped_by_kind() {
         .filter(|line| line.scope == id.to_string() && line.level == LogLevel::Warn)
         .map(|line| line.message)
         .collect();
-    assert_eq!(lines.len(), 4, "{lines:?}");
-    assert!(lines.iter().any(|line| line.contains("[3, 4]")));
+    assert_eq!(lines.len(), 3, "{lines:?}");
+    assert!(
+        lines
+            .iter()
+            .any(|line| line.contains("https://example.org"))
+    );
 }
 
 #[tokio::test]
-async fn a_refused_or_throttled_file_fails_the_range_and_keeps_the_remote_problem() {
+async fn a_file_request_failure_keeps_the_original_position_and_remote_problem() {
     for (status, expected) in [
-        (403, ProviderProblem::Refused),
-        (429, ProviderProblem::Throttled),
+        (403, Some(ProviderProblem::Refused)),
+        (404, None),
+        (429, Some(ProviderProblem::Throttled)),
     ] {
         let server = TestServer::start(move |request| match request.path() {
             "/v1/files/Keep/meta" => {
                 meta("Keep", "figma", OLDER, "https://www.figma.com/file/Keep")
             }
             "/v1/files/Keep/comments" => reply(json!({"comments":[comment("11", MINE, START)]})),
+            "/v1/files/Unreadable/meta" => meta(
+                "File",
+                "figma",
+                END,
+                "https://www.figma.com/file/Unreadable",
+            ),
+            "/v1/files/Unreadable/versions" => reply(json!({
+                "versions": [version("13", MINE, START, None)], "pagination": {}
+            })),
             _ => Reply::json(status, r#"{"err":"File unavailable"}"#),
         });
-        let error = collect(&server, &["Keep", "Denied"]).await.unwrap_err();
-        assert_eq!(problem_of(&error), Some(expected));
-        assert!(error.downcast_ref::<RemoteFailure>().is_some());
-        assert!(error.to_string().contains("item 2"));
+        let error = collect(
+            &server,
+            &["Keep", "https://www.figma.com/file/Keep", "Unreadable"],
+        )
+        .await
+        .unwrap_err();
+        assert_eq!(problem_of(&error), expected);
+        assert!(matches!(
+            error.downcast_ref::<FigmaCollectError>(),
+            Some(FigmaCollectError::FileRequest {
+                position: 3,
+                failure: RemoteFailure { error: ApiError::Status { status: got, .. }, .. },
+            }) if got.as_u16() == status
+        ));
     }
 }
 

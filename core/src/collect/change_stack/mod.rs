@@ -10,11 +10,9 @@
 mod budget;
 mod lookup;
 mod walk;
-mod web_link;
 
 pub(crate) use budget::{Budget, STACK_BUDGET};
 pub(crate) use lookup::{
     ChangeLookup, ChangeRef, FailureKind, LookupCause, LookupFailure, OpenChange, OpenPage,
 };
 pub(crate) use walk::change_stacks;
-pub(crate) use web_link::{Unshown, web_link};
