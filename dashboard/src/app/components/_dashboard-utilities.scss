@@ -13,6 +13,7 @@ $source-colours: (
   outlook: outlook,
   calendar: outlook,
   system: system,
+  figma: figma,
 );
 
 @each $source, $theme in $source-colours {

@@ -33,10 +33,12 @@ const SNAPSHOT: ProviderConfigSnapshotDto = {
   kinds: [
     kind('git', 'Git'),
     kind('gitlab', 'GitLab'),
+    kind('github', 'GitHub'),
     kind('jira', 'Jira'),
     kind('outlook', 'Outlook'),
     kind('system', 'System'),
     kind('calendar', 'Calendar'),
+    kind('figma', 'Figma'),
   ],
   connections: [],
 }

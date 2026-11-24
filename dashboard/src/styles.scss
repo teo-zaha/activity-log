@@ -257,6 +257,10 @@ html.touch-input {
   --badge-system-fg: #1e293b;
   --badge-system-accent: #475569;
 
+  --badge-figma-bg: #f4e6f8;
+  --badge-figma-fg: #5c226f;
+  --badge-figma-accent: #88409d;
+
   // Source chip active colors
   --chip-git: #1d4ed8;
   --chip-gitlab: #b91c1c;
@@ -362,6 +366,10 @@ html.dark,
   --badge-system-fg: #cbd5e1;
   --badge-system-accent: #94a3b8;
 
+  --badge-figma-bg: #392046;
+  --badge-figma-fg: #ecc9fb;
+  --badge-figma-accent: #c685e2;
+
   --chip-git: #93c5fd;
   --chip-gitlab: #fca5a5;
   --chip-jira: #c7d2fe;
@@ -444,6 +452,10 @@ html[data-theme='green'],
   --badge-system-fg: #1a2e1c;
   --badge-system-accent: #3e6442;
 
+  --badge-figma-bg: #f1e4ef;
+  --badge-figma-fg: #5b2459;
+  --badge-figma-accent: #873d83;
+
   --chip-git: #1e6e28;
   --chip-gitlab: #b82818;
   --chip-jira: #2c34a8;
@@ -505,6 +517,10 @@ html[data-theme='lilac'],
   --badge-system-bg: #e0d8f8;
   --badge-system-fg: #1c1030;
   --badge-system-accent: #5840a0;
+
+  --badge-figma-bg: #f5def3;
+  --badge-figma-fg: #641b65;
+  --badge-figma-accent: #8b318e;
 
   --chip-git: #1e30b0;
   --chip-gitlab: #b01828;
@@ -568,6 +584,10 @@ html[data-theme='dim'],
   --badge-system-fg: #c8d6e4;
   --badge-system-accent: #8099b4;
 
+  --badge-figma-bg: #422746;
+  --badge-figma-fg: #efcbf4;
+  --badge-figma-accent: #d482d5;
+
   --chip-git: #a8c8f0;
   --chip-gitlab: #f0b4b4;
   --chip-jira: #c4cef8;
@@ -630,6 +650,10 @@ html[data-theme='solarized'],
   --badge-system-fg: #1a2f38;
   --badge-system-accent: #4a6570;
 
+  --badge-figma-bg: #f1e0ee;
+  --badge-figma-fg: #621b56;
+  --badge-figma-accent: #843978;
+
   --chip-git: #1a5f8a;
   --chip-gitlab: #b32020;
   --chip-jira: #3d30aa;
@@ -691,6 +715,10 @@ html[data-theme='midnight'],
   --badge-system-bg: #0a0f18;
   --badge-system-fg: #b8c8d8;
   --badge-system-accent: #6880a0;
+
+  --badge-figma-bg: #2d1936;
+  --badge-figma-fg: #e9baf6;
+  --badge-figma-accent: #c484d8;
 
   --chip-git: #88bbf0;
   --chip-gitlab: #f09898;
@@ -760,6 +788,10 @@ html[data-theme='mocha'],
   --badge-system-bg: #2a2028;
   --badge-system-fg: #f2cdcd;
   --badge-system-accent: #f2cdcd;
+
+  --badge-figma-bg: #40263b;
+  --badge-figma-fg: #f4c7e6;
+  --badge-figma-accent: #d985c1;
 
   --chip-git: #cba6f7;
   --chip-gitlab: #fab387;

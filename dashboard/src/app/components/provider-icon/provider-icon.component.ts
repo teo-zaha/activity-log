@@ -3,17 +3,23 @@ import { MatIconModule } from '@angular/material/icon'
 import type { Source } from '../../generated/activity'
 import { getProviderAdapter } from '../../providers/provider-adapter'
 
-const BRAND_ICONS: Partial<Record<Source, string>> = {
-  git: 'assets/provider-icons/git.svg',
-  gitlab: 'assets/provider-icons/gitlab.svg',
-  github: 'assets/provider-icons/github.svg',
-  jira: 'assets/provider-icons/jira.svg',
-  outlook: 'assets/provider-icons/outlook.svg',
+interface BrandIcon {
+  readonly url: string
+  readonly monochrome?: true
+}
+
+const BRAND_ICONS: Partial<Record<Source, BrandIcon>> = {
+  git: { url: 'assets/provider-icons/git.svg' },
+  gitlab: { url: 'assets/provider-icons/gitlab.svg' },
+  github: { url: 'assets/provider-icons/github.svg', monochrome: true },
+  jira: { url: 'assets/provider-icons/jira.svg' },
+  outlook: { url: 'assets/provider-icons/outlook.svg' },
+  figma: { url: 'assets/provider-icons/figma.svg' },
 }
 
 /** The logo of `source`, or null when it shows a Material icon instead. */
 export function sourceLogoUrl(source: Source): string | null {
-  return BRAND_ICONS[source] ?? null
+  return BRAND_ICONS[source]?.url ?? null
 }
 
 /**
@@ -39,9 +45,11 @@ export class ProviderIconComponent {
   readonly iconUrl = input<string | null>(null)
   readonly size = input<'sm' | 'md' | 'lg' | null>(null)
 
-  protected readonly logoUrl = computed(() => {
+  protected readonly logo = computed<BrandIcon | null>(() => {
+    const override = this.iconUrl()
+    if (override) return { url: override }
     const source = this.source()
-    return this.iconUrl() ?? (source ? sourceLogoUrl(source) : null)
+    return source ? (BRAND_ICONS[source] ?? null) : null
   })
   protected readonly icon = computed(() => {
     const source = this.source()

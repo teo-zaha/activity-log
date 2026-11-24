@@ -5,7 +5,7 @@
 <h1 align="center">Activity Log</h1>
 
 <p align="center">
-  A local activity timeline for developers. Collects your Git commits, GitLab events, GitHub activity, Jira Data Center issues, calendar meetings, and system sessions into one private desktop app, web dashboard, or CLI report.
+  A local activity timeline for developers. Collects your Git commits, GitLab events, GitHub activity, Jira Data Center issues, calendar meetings, system sessions, and Figma activity into one private desktop app, web dashboard, or CLI report.
 </p>
 
 <p align="center">
@@ -28,9 +28,9 @@
 
 ## Why Activity Log
 
-Reconstructing a week of work usually means hopping across Git logs, GitLab, GitHub, Jira, and calendar apps. Activity Log puts all of it in one place without sending your history to a third party.
+Reconstructing a week of work usually means hopping across Git logs, GitLab, GitHub, Jira, calendars, and Figma. Activity Log puts all of it in one place without sending your history to a third party.
 
-- **One timeline across seven sources.** Combines local Git commits, GitLab and GitHub activity, Jira Data Center issues, Outlook meetings, ICS calendar feeds, and OS boot/sleep history. Matching local Git commits and GitLab push events merge into a single **git/lab** entry instead of showing up twice.
+- **One timeline across your sources.** Combines local Git commits, GitLab and GitHub activity, Jira Data Center issues, Outlook meetings, ICS calendar feeds, OS boot/sleep history, and Figma edits and comments. Matching local Git commits and GitLab push events merge into a single **git/lab** entry instead of showing up twice.
 - **Local and private.** Everything runs on your machine. Nothing leaves your computer except requests to the servers you configure. Your config file and per-day cache are written as owner-only files.
 - **Fast and live.** The app opens immediately without blocking on slow servers. Provider startup checks run in the background, entries stream in live as each source finishes, and remote API sources cache completed days on disk.
 - **Desktop app, web dashboard, or CLI.** Run the Tauri desktop app on macOS, Windows, or Linux, use the browser dashboard against the local Rocket API, or export Markdown and JSON straight from the command line.
@@ -117,7 +117,7 @@ Switch between **Timeline** (newest day first), **Day**, **Work week** (Monday�
 
 ### Filtering, source chips, and entry details
 
-- **Instant filter:** Type in **Filter activity…** on Timeline (<kbd>/</kbd> to focus, <kbd>Esc</kbd> to clear) to match case-insensitively across commit messages, repositories, branches, GitLab titles and comments, Jira keys and statuses, and meeting titles, locations, organizers, and descriptions.
+- **Instant filter:** Type in **Filter activity…** on Timeline (<kbd>/</kbd> to focus, <kbd>Esc</kbd> to clear) to match case-insensitively across commit messages, repositories, branches, GitLab titles and comments, Jira keys and statuses, Figma file names, versions, and comments, and meeting titles, locations, organizers, and descriptions.
 - **Source chips:** Every connection gets a chip with its label and entry count. Click to toggle a connection; double-click to isolate it, and double-click again to restore all sources.
 - **Entry details and git/lab merge:** Click any entry to open its detail panel. When a local Git commit SHA matches a GitLab push event, Activity Log folds them into one **git/lab** entry whose detail panel shows separate Git and GitLab sections.
 
@@ -140,7 +140,7 @@ Switch between **Timeline** (newest day first), **Day**, **Work week** (Monday�
 
 ### Multiple connections, startup checks, and Settings
 
-Add Git, GitLab, Jira, and Calendar as many times as you need—for example, two GitLab servers, multiple Jira instances, local Git alongside WSL distributions, or separate calendars. Outlook and System support one connection each.
+Add Git, GitLab, GitHub, Jira, Calendar, and Figma as many times as you need—for example, two GitLab servers, multiple Jira instances, local Git alongside WSL distributions, or separate calendars. Outlook and System support one connection each.
 
 - **Typed startup checks:** Each connection runs a non-invasive startup check in the background. When a check or collection fails, Settings names the specific problem (such as access refused, server busy, server unreachable, timed out, not installed, not running, permission needed, or nothing to read) and offers **Check again** whenever re-checking can resolve it.
 - **In-app editing with conflict handling:** In the desktop app, every connection has its own Settings pane with live backend validation, write-only secret fields, rename, and remove. If another tool (such as the CLI) edits `config.toml` while you have unsaved changes, Settings detects the conflict, shows what changed on disk, and lets you keep your changes or discard them. In the web dashboard, Settings shows connection status as read-only.
@@ -278,6 +278,7 @@ Total: 70 events
 | **Outlook**  | Calendar meetings from the running Outlook desktop app       | Windows, macOS        | No                   | No             |
 | **Calendar** | Events from `https://`/`webcal://` ICS feeds or `.ics` files | Windows, macOS, Linux | Yes                  | No             |
 | **System**   | Boot, shutdown, and (macOS) sleep/wake sessions              | Windows, macOS        | No                   | No             |
+| **Figma**    | Versions, edit checkpoints, comments, and replies            | Windows, macOS, Linux | Yes                  | Yes            |
 
 Each source below lists its entry types, Timeline subtitle line, detail panel fields (empty fields are omitted), and configuration keys.
 
@@ -396,6 +397,19 @@ Each source below lists its entry types, Timeline subtitle line, detail panel fi
 </tr>
 </table>
 
+### Figma
+
+- **Entries.** Named versions, unlabeled version checkpoints, comments, and replies credited to your Figma account.
+- **Timeline line.** `Saved version "…"`, `Edited`, `Commented`, or `Replied`.
+- **Detail panel.** File and Kind, plus Version and Description for named versions, Comment for comments and replies, and Resolved for top-level comments.
+- **Configuration.** `token` holds your personal access token. `files` lists one or more Figma file or branch links or keys.
+
+Choose **Settings → Add source → Figma** or run `activity-log sources add figma`. Use a personal access token with `current_user:read`, `file_versions:read`, `file_comments:read`, and `file_metadata:read`. Figma lets you set an expiry of up to 90 days. Replace the saved token when it expires. [Create a Figma personal access token](https://developers.figma.com/docs/rest-api/personal-access-tokens/) · [Figma token expiry](https://developers.figma.com/docs/rest-api/changelog/#april-28-2025)
+
+If the token can no longer read a configured file, the Figma connection’s collection fails and reports the file’s position in `files`. Remove that item from the list and collect again.
+
+Each configured file uses one metadata request and one comments request per fetched range. If the file was touched since the range began, collection also uses one version-history request per page. Comments and version history count toward Figma's Tier 2 limits. A View or Collab seat can get up to five Tier 2 requests per minute, so a couple of active files can use most of that allowance. [Figma rate limits](https://developers.figma.com/docs/rest-api/rate-limits/)
+
 ## Configuration
 
 ### Config file
@@ -444,6 +458,11 @@ ics_url = "https://calendar.example.org/team/calendar.ics"
 [[outlook]]
 
 [[system]]
+
+[[figma]]
+label = "Design"
+token = "figd_example"
+files = ["https://www.figma.com/design/ExampleFile/Checkout", "ExampleBranch"]
 ```
 
 Key rules:
@@ -455,7 +474,7 @@ Key rules:
 
 ### Secrets
 
-Tokens and secret links (GitLab, GitHub, and Jira tokens, a calendar's ICS address) are stored in `config.toml` sealed, as `token = { sealed = "v1:…" }`, with one key that lives in the OS keychain (macOS Keychain, Windows Credential Manager, a Secret Service such as GNOME Keyring or KWallet on Linux). A copy of `config.toml` (a backup, a dotfiles repository, a paste into an issue) gives away no token.
+Tokens and secret links (GitLab, GitHub, Jira, and Figma tokens, and a calendar's ICS address) are stored in `config.toml` sealed, as `token = { sealed = "v1:…" }`, with one key that lives in the OS keychain (macOS Keychain, Windows Credential Manager, a Secret Service such as GNOME Keyring or KWallet on Linux). A copy of `config.toml` (a backup, a dotfiles repository, a paste into an issue) gives away no token.
 
 - **Where the key lives:** the desktop app keeps it only in the keychain; without one it cannot save a token and says how to set one up. The CLI uses the keychain too, and where there is none (a headless Linux, a CI runner, Docker) a key file, `activity-log/secret.key` in the local data directory, saying so once. `ACTIVITY_LOG_SECRET_STORE=file` forces the key file (over SSH on a Mac, where the keychain cannot ask), `=os` forbids it. The API server never saves tokens. The settings show where the key lives when it is not the keychain.
 - **Bound to the server:** a token opens only for the server address it was entered for (and a Jira token only with the same `insecure` setting), so a file that points it elsewhere never sends it there. Changing the address in the settings or with `sources set` asks for the token again (outside a terminal, give it in the same call with `--secret -`), and a token is saved only once its connection has an address.
@@ -488,7 +507,7 @@ These optional variables control file locations, API port, and cache TTL. Set th
 
 ### Per-day cache
 
-GitLab, GitHub, and Jira results are cached on disk by UTC calendar day under `activity-log/cache` in the OS cache directory (`%LOCALAPPDATA%` on Windows, `~/Library/Caches` on macOS, `$XDG_CACHE_HOME` or `~/.cache` on Linux), or `ACTIVITY_LOG_CACHE_DIR`.
+GitLab, GitHub, Jira, and Figma results are cached on disk by UTC calendar day under `activity-log/cache` in the OS cache directory (`%LOCALAPPDATA%` on Windows, `~/Library/Caches` on macOS, `$XDG_CACHE_HOME` or `~/.cache` on Linux), or `ACTIVITY_LOG_CACHE_DIR`.
 
 - **Minimal fetches:** Each collection serves fresh cached days and fetches only missing or stale days, newest first. Fresh days between two stale spans are not re-fetched. GitLab and GitHub fetch up to **92 contiguous UTC days** at once and save each chunk as it finishes. Jira fetches each whole stale span because its API query has only a lower time bound.
 - **Recent vs settled days:** A UTC day is **settled** once it was fetched at least **1 hour after that UTC day ended**; settled days stay fresh for **30 days** for GitHub and **7 days** for GitLab and Jira. Any day fetched while still running or within 1 hour after it ended is **recent** and stays fresh for `CACHE_TTL_MINUTES` (default **5 minutes**). Days not refreshed for **60 days** are pruned.
@@ -676,7 +695,7 @@ The default token's push skips CI for the release commit. A push with `RELEASE_P
 
 These items are in progress or planned and are not yet part of the current build:
 
-- Additional sources: Microsoft Teams, Figma, Miro, and Odoo
+- Additional sources: Microsoft Teams, Miro, and Odoo
 
 ## Contributing
 

@@ -1,8 +1,12 @@
-@if (logoUrl(); as url) {
-  @if (source() === 'github' && !iconUrl()) {
-    <span class="source-mark" [style.--mark-image]="'url(' + url + ')'" aria-hidden="true"></span>
+@if (logo(); as mark) {
+  @if (mark.monochrome) {
+    <span
+      class="source-mark"
+      [style.--mark-image]="'url(' + mark.url + ')'"
+      aria-hidden="true"
+    ></span>
   } @else {
-    <img [src]="url" alt="" aria-hidden="true" />
+    <img [src]="mark.url" alt="" aria-hidden="true" />
   }
 } @else {
   <mat-icon>{{ icon() }}</mat-icon>

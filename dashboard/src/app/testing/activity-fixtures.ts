@@ -12,6 +12,7 @@ import type {
   ExportOutcome,
   ExportRequest,
   GitHubEntry,
+  FigmaEntry,
   LogEntry,
   MeetingWeight,
   ProviderConfigSaveResponseDto,
@@ -72,6 +73,49 @@ export const providersResponse: ProvidersResponse = {
   providers: providerInfo,
   secretStore: { store: 'os', state: 'ready' },
 }
+
+const figmaFile = {
+  source: 'figma' as const,
+  connection: 'design',
+  timestamp: '2026-05-18T11:00:00Z',
+  fileKey: 'FILEkey0001',
+  fileName: 'Checkout',
+  fileUrl: 'https://www.figma.com/file/FILEkey0001',
+}
+
+export const figmaEntries = {
+  versionSaved: {
+    ...figmaFile,
+    id: 'FILEkey0001:version:7',
+    type: 'versionSaved',
+    editor: 'figma',
+    versionId: '7',
+    label: 'Checkout v2',
+    description: 'Updated form labels',
+  },
+  edited: { ...figmaFile, id: 'FILEkey0001:version:8', type: 'edited', versionId: '8' },
+  commented: {
+    ...figmaFile,
+    id: 'FILEkey0001:comment:9',
+    type: 'commented',
+    editor: 'figma',
+    commentId: '9',
+    message: 'Looks good',
+    nodeId: '3:4',
+    resolved: true,
+    fileUrl: 'https://www.figma.com/file/FILEkey0001?node-id=3%3A4',
+  },
+  replied: {
+    ...figmaFile,
+    id: 'FILEkey0001:comment:10',
+    type: 'replied',
+    editor: 'figma',
+    commentId: '10',
+    parentId: '9',
+    nodeId: '3:4',
+    fileUrl: 'https://www.figma.com/file/FILEkey0001?node-id=3%3A4',
+  },
+} satisfies Record<FigmaEntry['type'], FigmaEntry>
 
 export const activityLog: ActivityLog = {
   meta: {

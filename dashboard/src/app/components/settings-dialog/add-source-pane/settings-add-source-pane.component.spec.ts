@@ -44,6 +44,7 @@ const snapshot = (
       supported: false,
       supportedOs: ['windows', 'macos'],
     }),
+    kind({ source: 'figma', label: 'Figma' }),
   ],
   connections: connections.map(connection => ({
     connection,
@@ -260,6 +261,20 @@ describe('SettingsAddSourcePaneComponent', () => {
 
     expect(addConnection).toHaveBeenCalledWith({ source: 'git', wslDistro: 'NixOS' })
     expect(opened).toHaveBeenCalledWith('git/wsl-nixos')
+  })
+
+  it('adds Figma from its enabled tile in Add source', async () => {
+    const { addConnection, opened } = await setup(
+      snapshot([]),
+      snapshot([{ source: 'figma', name: 'design' }])
+    )
+
+    const upcoming = await screen.findByRole('list', { name: 'Coming soon' })
+    expect(within(upcoming).queryByText('Figma')).toBeNull()
+    await userEvent.click(screen.getByRole('button', { name: 'Figma' }))
+
+    expect(addConnection).toHaveBeenCalledWith({ source: 'figma' })
+    expect(opened).toHaveBeenCalledWith('figma/design')
   })
 
   it('offers GitHub as an active source and shows upcoming sources as disabled', async () => {
