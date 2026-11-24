@@ -5,7 +5,7 @@
 <h1 align="center">Activity Log</h1>
 
 <p align="center">
-  A local activity timeline for developers. Collects your Git commits, GitLab events, Jira Data Center issues, calendar meetings, and system sessions into one private desktop app, web dashboard, or CLI report.
+  A local activity timeline for developers. Collects your Git commits, GitLab events, GitHub activity, Jira Data Center issues, calendar meetings, and system sessions into one private desktop app, web dashboard, or CLI report.
 </p>
 
 <p align="center">
@@ -28,9 +28,9 @@
 
 ## Why Activity Log
 
-Reconstructing a week of work usually means hopping across Git logs, GitLab, Jira, and calendar apps. Activity Log puts all of it in one place without sending your history to a third party.
+Reconstructing a week of work usually means hopping across Git logs, GitLab, GitHub, Jira, and calendar apps. Activity Log puts all of it in one place without sending your history to a third party.
 
-- **One timeline across six sources.** Combines local Git commits, GitLab activity, Jira Data Center issues, Outlook meetings, ICS calendar feeds, and OS boot/sleep history. Matching local Git commits and GitLab push events merge into a single **git/lab** entry instead of showing up twice.
+- **One timeline across seven sources.** Combines local Git commits, GitLab and GitHub activity, Jira Data Center issues, Outlook meetings, ICS calendar feeds, and OS boot/sleep history. Matching local Git commits and GitLab push events merge into a single **git/lab** entry instead of showing up twice.
 - **Local and private.** Everything runs on your machine. Nothing leaves your computer except requests to the servers you configure. Your config file and per-day cache are written as owner-only files.
 - **Fast and live.** The app opens immediately without blocking on slow servers. Provider startup checks run in the background, entries stream in live as each source finishes, and remote API sources cache completed days on disk.
 - **Desktop app, web dashboard, or CLI.** Run the Tauri desktop app on macOS, Windows, or Linux, use the browser dashboard against the local Rocket API, or export Markdown and JSON straight from the command line.
@@ -273,6 +273,7 @@ Total: 70 events
 | ------------ | ------------------------------------------------------------ | --------------------- | -------------------- | -------------- |
 | **Git**      | Commits from local repositories (and WSL on Windows)         | Windows, macOS, Linux | Yes                  | No             |
 | **GitLab**   | Merge requests, pushes, comments, and reviews                | Windows, macOS, Linux | Yes                  | Yes            |
+| **GitHub**   | Pull requests and issues opened, and submitted reviews       | Windows, macOS, Linux | Yes                  | Yes            |
 | **Jira**     | Issues assigned to or reported by you (Jira Data Center)     | Windows, macOS, Linux | Yes                  | Yes            |
 | **Outlook**  | Calendar meetings from the running Outlook desktop app       | Windows, macOS        | No                   | No             |
 | **Calendar** | Events from `https://`/`webcal://` ICS feeds or `.ics` files | Windows, macOS, Linux | Yes                  | No             |
@@ -315,6 +316,16 @@ Each source below lists its entry types, Timeline subtitle line, detail panel fi
 <td width="44%" valign="top"><img src="pics/source-gitlab.png" alt="Detail panel of a GitLab merged event"></td>
 </tr>
 </table>
+
+### GitHub
+
+- **Entries** cover the pull requests and issues you opened and each review you submitted, with its state, from repositories the token can read.
+- The **Timeline line** shows repository · action · item number.
+- The **detail panel** shows the action, repository, and PR or issue number. It links to the item when GitHub supplies a URL on the configured web origin.
+- For **configuration**, add **GitHub** in the desktop app or run `activity-log sources add github`. Set up one connection per account with the `url` and `token` fields. Use `https://github.com` or your GitHub Enterprise web URL. Activity Log derives the API URL and seals the token for the web origin. [GitHub API origins](docs/adr/0007-github-api-origin.md)
+
+- For a **fine-grained token**, select the repositories to include and grant **Read-only** access to **Contents**, **Issues**, and **Pull requests**. GitHub adds **Metadata** read access automatically. [Create a fine-grained token](https://github.com/settings/personal-access-tokens/new?name=Activity%20Log&contents=read&issues=read&pull_requests=read)
+- If you need a **classic token**, use the broader `repo` scope. Activity Log makes read-only requests. Authorize the token for SSO if your organization requires it. [Authorize a classic token for SSO](https://docs.github.com/en/authentication/authenticating-with-single-sign-on/authorizing-a-personal-access-token-for-use-with-single-sign-on)
 
 ### Jira Data Center
 
@@ -407,6 +418,11 @@ url = "https://oss.example.org"
 token = "glpat-example-oss"
 user = "alex"
 
+[[github]]
+label = "GitHub"
+url = "https://github.com"
+token = "github_pat_example"
+
 [[jira]]
 label = "Work Jira"
 url = "https://jira.example.org"
@@ -439,7 +455,7 @@ Key rules:
 
 ### Secrets
 
-Tokens and secret links (GitLab and Jira tokens, a calendar's ICS address) are stored in `config.toml` sealed, as `token = { sealed = "v1:…" }`, with one key that lives in the OS keychain (macOS Keychain, Windows Credential Manager, a Secret Service such as GNOME Keyring or KWallet on Linux). A copy of `config.toml` (a backup, a dotfiles repository, a paste into an issue) gives away no token.
+Tokens and secret links (GitLab, GitHub, and Jira tokens, a calendar's ICS address) are stored in `config.toml` sealed, as `token = { sealed = "v1:…" }`, with one key that lives in the OS keychain (macOS Keychain, Windows Credential Manager, a Secret Service such as GNOME Keyring or KWallet on Linux). A copy of `config.toml` (a backup, a dotfiles repository, a paste into an issue) gives away no token.
 
 - **Where the key lives:** the desktop app keeps it only in the keychain; without one it cannot save a token and says how to set one up. The CLI uses the keychain too, and where there is none (a headless Linux, a CI runner, Docker) a key file, `activity-log/secret.key` in the local data directory, saying so once. `ACTIVITY_LOG_SECRET_STORE=file` forces the key file (over SSH on a Mac, where the keychain cannot ask), `=os` forbids it. The API server never saves tokens. The settings show where the key lives when it is not the keychain.
 - **Bound to the server:** a token opens only for the server address it was entered for (and a Jira token only with the same `insecure` setting), so a file that points it elsewhere never sends it there. Changing the address in the settings or with `sources set` asks for the token again (outside a terminal, give it in the same call with `--secret -`), and a token is saved only once its connection has an address.
@@ -467,16 +483,16 @@ These optional variables control file locations, API port, and cache TTL. Set th
 | `ACTIVITY_LOG_SECRET_KEY_FILE` | Path of the key file (a Docker volume, tests)                                                                                 | `activity-log/secret.key` in the local data directory |
 | `ACTIVITY_LOG_PROFILE`         | `dev` for the [dev profile](#dev-profile) (debug builds only; the development scripts set it)                                 | unset                                                 |
 | `PORT`                         | Rocket API port (`pnpm dev` and `pnpm api:dev` set `3001`)                                                                    | `3000`                                                |
-| `CACHE_TTL_MINUTES`            | Minutes that recent (not yet settled) cached GitLab/Jira days stay fresh                                                      | `5`                                                   |
+| `CACHE_TTL_MINUTES`            | Minutes that recent cached API days stay fresh                                                                                | `5`                                                   |
 | `ACTIVITY_LOG_CACHE_DIR`       | Directory for per-day cache files                                                                                             | OS cache directory                                    |
 
 ### Per-day cache
 
-GitLab and Jira results are cached on disk by UTC calendar day under `activity-log/cache` in the OS cache directory (`%LOCALAPPDATA%` on Windows, `~/Library/Caches` on macOS, `$XDG_CACHE_HOME` or `~/.cache` on Linux), or `ACTIVITY_LOG_CACHE_DIR`.
+GitLab, GitHub, and Jira results are cached on disk by UTC calendar day under `activity-log/cache` in the OS cache directory (`%LOCALAPPDATA%` on Windows, `~/Library/Caches` on macOS, `$XDG_CACHE_HOME` or `~/.cache` on Linux), or `ACTIVITY_LOG_CACHE_DIR`.
 
-- **Minimal fetches:** Each collection serves fresh cached days and fetches only missing or stale days, newest first. Fresh days between two stale spans are not re-fetched. GitLab fetches up to **92 contiguous UTC days** at once and saves each chunk as it finishes. Jira fetches each whole stale span because its API query has only a lower time bound.
-- **Recent vs settled days:** A UTC day is **settled** once it was fetched at least **1 hour after that UTC day ended**; settled days stay fresh for **7 days**. Any day fetched while still running or within 1 hour after it ended is **recent** and stays fresh for `CACHE_TTL_MINUTES` (default **5 minutes**). Days not refreshed for **60 days** are pruned.
-- **Account-scoped and private:** Each cache file is keyed by connection settings and the authenticated principal from the startup check (Jira `/myself`, GitLab `/user`), so switching tokens to another account never serves the previous account's cache. Connections without a verified identity—or with a query or fragment in their URL—run uncached (URLs containing a username or password are rejected). Cache files are owner-only; if the cache directory cannot enforce privacy, Activity Log collects uncached and logs a warning once.
+- **Minimal fetches:** Each collection serves fresh cached days and fetches only missing or stale days, newest first. Fresh days between two stale spans are not re-fetched. GitLab and GitHub fetch up to **92 contiguous UTC days** at once and save each chunk as it finishes. Jira fetches each whole stale span because its API query has only a lower time bound.
+- **Recent vs settled days:** A UTC day is **settled** once it was fetched at least **1 hour after that UTC day ended**; settled days stay fresh for **30 days** for GitHub and **7 days** for GitLab and Jira. Any day fetched while still running or within 1 hour after it ended is **recent** and stays fresh for `CACHE_TTL_MINUTES` (default **5 minutes**). Days not refreshed for **60 days** are pruned.
+- **Account-scoped and private:** Each cache file is keyed by connection settings and the authenticated principal from the startup check (Jira `/myself`, GitLab and GitHub `/user`), so switching tokens to another account never serves the previous account's cache. Connections without a verified identity—or with a query or fragment in their URL—run uncached (URLs containing a username or password are rejected). Cache files are owner-only; if the cache directory cannot enforce privacy, Activity Log collects uncached and logs a warning once.
 - **Safe across processes:** The desktop app, API server, and CLI can share one cache directory. Each process fetches without holding a lock, then locks the file, merges only the days it fetched (keeping newer timestamps), and writes atomically.
 
 ## CLI
@@ -660,7 +676,7 @@ The default token's push skips CI for the release commit. A push with `RELEASE_P
 
 These items are in progress or planned and are not yet part of the current build:
 
-- Additional sources: GitHub, Microsoft Teams, Figma, Miro, and Odoo
+- Additional sources: Microsoft Teams, Figma, Miro, and Odoo
 
 ## Contributing
 

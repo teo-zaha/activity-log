@@ -2,13 +2,12 @@ import type { SupportedOs } from '../generated/activity'
 
 /** Sources that cannot be added yet; shown as disabled tiles. */
 export interface UpcomingSource {
-  readonly id: 'github' | 'teams' | 'figma' | 'miro' | 'odoo'
+  readonly id: 'teams' | 'figma' | 'miro' | 'odoo'
   readonly label: string
   readonly iconUrl: string
 }
 
 export const UPCOMING_SOURCES: readonly UpcomingSource[] = [
-  { id: 'github', label: 'GitHub', iconUrl: 'assets/provider-icons/github.svg' },
   { id: 'teams', label: 'Microsoft Teams', iconUrl: 'assets/provider-icons/teams.svg' },
   { id: 'figma', label: 'Figma', iconUrl: 'assets/provider-icons/figma.svg' },
   { id: 'miro', label: 'Miro', iconUrl: 'assets/provider-icons/miro.svg' },

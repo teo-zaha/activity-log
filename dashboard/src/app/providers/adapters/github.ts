@@ -15,6 +15,7 @@ function pullDetails(pull: PullRequestRef, action: string) {
     target: pull,
     action,
     itemLabel: 'PR',
+    linkLabel: 'Open pull request',
     entryIcon: 'code',
     changeStack: pull.changeStack ? changeStackVmOf(pull.changeStack, '#') : null,
   }
@@ -29,6 +30,7 @@ function detailsOf(entry: GitHubEntry) {
             target: entry.target,
             action: 'Opened',
             itemLabel: 'Issue',
+            linkLabel: 'Open issue',
             entryIcon: 'adjust',
             changeStack: null,
           }
@@ -39,7 +41,7 @@ function detailsOf(entry: GitHubEntry) {
 
 class GitHubEntryUiAdapter extends EntryUiAdapter<GitHubEntry> {
   constructor(provider: GitHubProviderAdapter, entry: GitHubEntry) {
-    const { target, action, itemLabel, entryIcon, changeStack } = detailsOf(entry)
+    const { target, action, itemLabel, linkLabel, entryIcon, changeStack } = detailsOf(entry)
     const number = changeReference('#', target.number)
     const badge = createBadge(provider.source, provider.label, entryIcon)
 
@@ -50,6 +52,7 @@ class GitHubEntryUiAdapter extends EntryUiAdapter<GitHubEntry> {
       searchTerms: [target.title, entry.repository, action, number],
       calendarDurationMinutes: null,
       changeStack,
+      detailLink: target.webUrl ? { label: linkLabel, url: target.webUrl } : null,
       detailFields: [
         { label: 'Action', value: action },
         { label: 'Repository', value: entry.repository },

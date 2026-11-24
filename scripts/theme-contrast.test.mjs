@@ -123,6 +123,11 @@ function resolve(theme, name, backdrop) {
 }
 
 const RULES = rules(STYLES)
+const badgeSources = new Set(
+  RULES.flatMap(rule =>
+    [...rule.tokens.keys()].flatMap(name => /^--badge-(.+)-(bg|fg|accent)$/.exec(name)?.[1] ?? [])
+  )
+)
 const offered = [...THEME_SERVICE.matchAll(/\{ id: '([\w-]+)', label: /g)].map(match => match[1])
 const dark = /const DARK_THEMES: Theme\[\] = \[([^\]]*)\]/.exec(THEME_SERVICE)?.[1] ?? ''
 const darkThemes = [...dark.matchAll(/'([\w-]+)'/g)].map(match => match[1])
@@ -217,6 +222,28 @@ test('a token resolves through var() and color-mix() in its theme', () => {
   assert.deepEqual(resolve('green', '--btn-primary'), resolve('green', '--accent'))
   assert.deepEqual(resolve('dark', '--btn-primary'), resolve('light', '--brand'))
 })
+
+assert.ok(badgeSources.size > 0, 'the styles declare source badge colours')
+for (const theme of offered) {
+  for (const source of badgeSources) {
+    test(`${theme}: the ${source} badge and accent have enough contrast`, () => {
+      const fillName = `--badge-${source}-bg`
+      const fill = resolve(theme, fillName)
+      const label = resolve(theme, `--badge-${source}-fg`)
+      const accent = resolve(theme, `--badge-${source}-accent`)
+      assert.ok(fill && label && accent, `${theme} resolves all ${source} badge colours`)
+
+      const labelRatio = contrast(label, fill)
+      assert.ok(labelRatio >= AA_NORMAL_TEXT, `${source} badge text: ${labelRatio.toFixed(2)}:1`)
+      for (const surface of [fillName, ...SURFACES]) {
+        const background = resolve(theme, surface)
+        assert.ok(background, `${theme} ${surface} resolves to a colour`)
+        const ratio = contrast(accent, background)
+        assert.ok(ratio >= AA_NON_TEXT, `${source} accent on ${surface}: ${ratio.toFixed(2)}:1`)
+      }
+    })
+  }
+}
 
 test('a dark theme takes what it does not declare from the dark block, then from :root', () => {
   assert.ok(

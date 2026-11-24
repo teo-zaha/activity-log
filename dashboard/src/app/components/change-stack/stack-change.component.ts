@@ -5,8 +5,8 @@ import { ExternalLinkDirective } from '../external-link/external-link.directive'
 
 /**
  * One change of a stack: `!12 Title`, opening its page outside the app where the host gave one,
- * plain text otherwise. The entry's own change is marked as the current one, and links too: the
- * details have no other way to its page. The flex row drops the spaces between the parts, which
+ * plain text otherwise. The stack labels the entry's own change as current and links to it
+ * when its URL is available. The flex row drops the spaces between the parts, which
  * keep them apart for a screen reader.
  */
 @Component({

@@ -8,10 +8,16 @@
   flex-shrink: 0;
 }
 
-img {
+img,
+.source-mark {
   display: block;
   width: 1em;
   height: 1em;
+}
+
+.source-mark {
+  background: var(--badge-fg, currentColor);
+  mask: var(--mark-image) center / contain no-repeat;
 }
 
 mat-icon {

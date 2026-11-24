@@ -241,6 +241,10 @@ html.touch-input {
   --badge-gitlab-fg: #7f1d1d;
   --badge-gitlab-accent: #b91c1c;
 
+  --badge-github-bg: #dcdadd;
+  --badge-github-fg: #272329;
+  --badge-github-accent: #504951;
+
   --badge-jira-bg: #c7d2fe;
   --badge-jira-fg: #312e81;
   --badge-jira-accent: #4338ca;
@@ -342,6 +346,10 @@ html.dark,
   --badge-gitlab-fg: #fca5a5;
   --badge-gitlab-accent: #f87171;
 
+  --badge-github-bg: #353039;
+  --badge-github-fg: #eee7ef;
+  --badge-github-accent: #b8aebd;
+
   --badge-jira-bg: #1e1b4b;
   --badge-jira-fg: #c7d2fe;
   --badge-jira-accent: #818cf8;
@@ -420,6 +428,10 @@ html[data-theme='green'],
   --badge-gitlab-fg: #7a1a10;
   --badge-gitlab-accent: #c03828;
 
+  --badge-github-bg: #e0dcd8;
+  --badge-github-fg: #2d2621;
+  --badge-github-accent: #544b44;
+
   --badge-jira-bg: #d0d8f8;
   --badge-jira-fg: #1a1e6e;
   --badge-jira-accent: #3840b8;
@@ -477,6 +489,10 @@ html[data-theme='lilac'],
   --badge-gitlab-bg: #f8ccd0;
   --badge-gitlab-fg: #780c18;
   --badge-gitlab-accent: #c02030;
+
+  --badge-github-bg: #e2dbe4;
+  --badge-github-fg: #302634;
+  --badge-github-accent: #5a4a61;
 
   --badge-jira-bg: #dcd0f8;
   --badge-jira-fg: #220e60;
@@ -536,6 +552,10 @@ html[data-theme='dim'],
   --badge-gitlab-fg: #f0b4b4;
   --badge-gitlab-accent: #e07878;
 
+  --badge-github-bg: #383337;
+  --badge-github-fg: #eee6e8;
+  --badge-github-accent: #bdb0b6;
+
   --badge-jira-bg: #252060;
   --badge-jira-fg: #c4cef8;
   --badge-jira-accent: #8b97f0;
@@ -594,6 +614,10 @@ html[data-theme='solarized'],
   --badge-gitlab-fg: #7f1d1d;
   --badge-gitlab-accent: #c0392b;
 
+  --badge-github-bg: #e5dccd;
+  --badge-github-fg: #34291e;
+  --badge-github-accent: #5b4a37;
+
   --badge-jira-bg: #d8d4f5;
   --badge-jira-fg: #2e2a7f;
   --badge-jira-accent: #5142c8;
@@ -651,6 +675,10 @@ html[data-theme='midnight'],
   --badge-gitlab-bg: #300808;
   --badge-gitlab-fg: #f09898;
   --badge-gitlab-accent: #d86060;
+
+  --badge-github-bg: #312d39;
+  --badge-github-fg: #ece5f3;
+  --badge-github-accent: #bdb1ce;
 
   --badge-jira-bg: #130f38;
   --badge-jira-fg: #b0b8f5;
@@ -716,6 +744,10 @@ html[data-theme='mocha'],
   --badge-gitlab-bg: #302520;
   --badge-gitlab-fg: #fab387;
   --badge-gitlab-accent: #fab387;
+
+  --badge-github-bg: #35313b;
+  --badge-github-fg: #ece5eb;
+  --badge-github-accent: #c0b3c0;
 
   --badge-jira-bg: #17302e;
   --badge-jira-fg: #94e2d5;

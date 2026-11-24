@@ -22,6 +22,11 @@ export interface ProviderDetailField {
   value: string
 }
 
+export interface ExternalDetailLink {
+  readonly label: string
+  readonly url: string
+}
+
 export interface EntryBadgeVm {
   source: Source
   label: string
@@ -60,6 +65,7 @@ export interface EntryUiAdapterInit {
   joinUrl?: string | null
   /** Changes only: where the change stands among its repository's open changes, if anywhere. */
   changeStack?: ChangeStackVm | null
+  detailLink?: ExternalDetailLink | null
   detailFields: readonly ProviderDetailField[]
   badge: EntryBadgeVm
   badges: readonly EntryBadgeVm[]
@@ -111,6 +117,7 @@ export abstract class EntryUiAdapter<TEntry extends ActivityEntry = ActivityEntr
   readonly joinUrl: string | null
   /** The change's stack as of the last collection; null for other entries and outside one. */
   readonly changeStack: ChangeStackVm | null
+  readonly detailLink: ExternalDetailLink | null
   readonly detailFields: readonly ProviderDetailField[]
   readonly badge: EntryBadgeVm
   readonly badges: readonly EntryBadgeVm[]
@@ -150,6 +157,7 @@ export abstract class EntryUiAdapter<TEntry extends ActivityEntry = ActivityEntr
     this.descriptionBlocks = init.descriptionBlocks ?? []
     this.joinUrl = init.joinUrl ?? null
     this.changeStack = init.changeStack ?? null
+    this.detailLink = init.detailLink ?? null
     this.detailFields = init.detailFields
     this.badge = init.badge
     this.badges = init.badges

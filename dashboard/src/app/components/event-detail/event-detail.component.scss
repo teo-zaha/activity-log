@@ -361,6 +361,10 @@
   user-select: text;
 }
 
+.flyout-detail-link {
+  margin-top: 12px;
+}
+
 // ── Phone: a page of its own ─────────────────────────────────────────────────
 // The details cover the screen and are left with a back arrow; they slide in and out
 // (`page-enter`, `page-leave` in `styles.scss`).

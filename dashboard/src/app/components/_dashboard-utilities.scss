@@ -8,6 +8,7 @@
 $source-colours: (
   git: git,
   gitlab: gitlab,
+  github: github,
   jira: jira,
   outlook: outlook,
   calendar: outlook,
@@ -20,6 +21,11 @@ $source-colours: (
     --badge-fg: var(--badge-#{$theme}-fg);
     --badge-accent: var(--badge-#{$theme}-accent);
   }
+}
+
+// The Timeline renders its badges as plain images. Use the app theme for its monochrome mark.
+html.dark [data-src='github'] > img[src='assets/provider-icons/github.svg'] {
+  filter: invert(1);
 }
 
 // `gitab`: a Git commit that absorbed its GitLab push, drawn in both sources' colours.

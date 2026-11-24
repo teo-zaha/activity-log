@@ -28,6 +28,7 @@ class GitLabEntryUiAdapter extends EntryUiAdapter<GitLabEntry> {
 
     const entryIcon = 'code'
     const badge = createBadge(provider.source, provider.label, entryIcon)
+    const webUrl = entry.changeStack?.current.webUrl
 
     super(provider, entry, {
       title: entry.title || entry.type,
@@ -43,6 +44,7 @@ class GitLabEntryUiAdapter extends EntryUiAdapter<GitLabEntry> {
       ]),
       calendarDurationMinutes: null,
       changeStack: entry.changeStack ? changeStackVmOf(entry.changeStack, MERGE_REQUEST) : null,
+      detailLink: webUrl ? { label: 'Open merge request', url: webUrl } : null,
       detailFields: fields.filter(field => field.value),
       badge,
       badges: [badge],

@@ -156,6 +156,19 @@
             </dl>
           }
 
+          @if (entry.detailLink; as link) {
+            <a
+              appButton
+              variant="secondary"
+              size="sm"
+              icon="open_in_new"
+              class="flyout-detail-link"
+              [appExternalLink]="link.url"
+            >
+              {{ link.label }}
+            </a>
+          }
+
           @if (entry.changeStack; as stack) {
             <app-change-stack class="flyout-section flyout-stack" [stack]="stack" />
           }

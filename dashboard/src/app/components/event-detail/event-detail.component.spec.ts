@@ -15,6 +15,7 @@ import type { DayKey } from '../../utils/local-day'
 import {
   MockBackendTransport,
   activityLog,
+  githubPullRequestEntry,
   provideMockBackend,
 } from '../../testing/activity-fixtures'
 import { EventDetailComponent } from './event-detail.component'
@@ -453,6 +454,8 @@ describe('EventDetailComponent', () => {
   })
 
   it('shows a merge request’s stack below its fields, and no section for an entry without one', async () => {
+    const backend = new MockBackendTransport()
+    const url = 'https://gitlab.example.org/group/app/-/merge_requests/12'
     const mergeRequest = createEntryAdapter({
       source: 'gitlab',
       connection: 'work',
@@ -463,7 +466,7 @@ describe('EventDetailComponent', () => {
       targetType: 'MergeRequest',
       mrIid: 12,
       changeStack: {
-        current: { number: 12, title: 'Stack the parser' },
+        current: { number: 12, title: 'Stack the parser', webUrl: url },
         below: [
           {
             number: 11,
@@ -476,10 +479,16 @@ describe('EventDetailComponent', () => {
       },
     })
     const plain = createEntryAdapter(activityLog.entries[0])
-    const { activity, settle } = await renderDetails([mergeRequest, plain], {
-      event: mergeRequest.trackKey,
-    })
+    const { activity, settle } = await renderDetails(
+      [mergeRequest, plain],
+      { event: mergeRequest.trackKey },
+      [provideMockBackend(backend)]
+    )
 
+    const link = screen.getByRole('link', { name: 'Open merge request' })
+    expect(link.getAttribute('href')).toBe(url)
+    fireEvent.click(link)
+    expect(backend.openedUrls).toEqual([url])
     const stack = screen.getByRole('region', { name: 'Stack' })
     expect(within(stack).getByRole('link', { name: '!11 Groundwork' })).toBeTruthy()
     // Below the fields, before what follows them.
@@ -489,6 +498,68 @@ describe('EventDetailComponent', () => {
     activity.openEventKey.set(plain.trackKey)
     await settle()
     expect(screen.queryByRole('region', { name: 'Stack' })).toBeNull()
+    expect(screen.queryByRole('link', { name: 'Open merge request' })).toBeNull()
+  })
+
+  it('opens a GitHub pull request using its supplied URL', async () => {
+    const backend = new MockBackendTransport()
+    const entry = createEntryAdapter(githubPullRequestEntry)
+    await renderDetails([entry], { event: entry.trackKey }, [provideMockBackend(backend)])
+
+    const link = screen.getByRole('link', { name: 'Open pull request' })
+    expect(link.getAttribute('href')).toBe(githubPullRequestEntry.target.webUrl)
+    expect(link.getAttribute('target')).toBe('_blank')
+    expect(link.getAttribute('rel')).toBe('noopener noreferrer')
+    fireEvent.click(link)
+    expect(backend.openedUrls).toEqual([githubPullRequestEntry.target.webUrl])
+  })
+
+  it('opens a GitHub issue using its supplied URL', async () => {
+    const backend = new MockBackendTransport()
+    const url = 'https://github.com/acme/widgets/issues/7'
+    const entry = createEntryAdapter({
+      ...githubPullRequestEntry,
+      id: 'I_example',
+      target: { kind: 'issue', number: 7, title: 'Fix widget', webUrl: url },
+    })
+    await renderDetails([entry], { event: entry.trackKey }, [provideMockBackend(backend)])
+
+    const link = screen.getByRole('link', { name: 'Open issue' })
+    expect(link.getAttribute('href')).toBe(url)
+    fireEvent.click(link)
+    expect(backend.openedUrls).toEqual([url])
+  })
+
+  it('opens the pull request from a GitHub review', async () => {
+    const backend = new MockBackendTransport()
+    const {
+      target: { number, title, webUrl },
+      ...opened
+    } = githubPullRequestEntry
+    const entry = createEntryAdapter({
+      ...opened,
+      id: 'PRR_example',
+      type: 'reviewed',
+      state: 'approved',
+      pullRequest: { number, title, webUrl },
+    })
+    await renderDetails([entry], { event: entry.trackKey }, [provideMockBackend(backend)])
+
+    const link = screen.getByRole('link', { name: 'Open pull request' })
+    expect(link.getAttribute('href')).toBe(webUrl)
+    fireEvent.click(link)
+    expect(backend.openedUrls).toEqual([webUrl])
+  })
+
+  it('shows no external link for a GitHub issue without a URL', async () => {
+    const entry = createEntryAdapter({
+      ...githubPullRequestEntry,
+      id: 'I_example',
+      target: { kind: 'issue', number: 7, title: 'Fix widget' },
+    })
+    await renderDetails([entry], { event: entry.trackKey })
+
+    expect(screen.queryByRole('link')).toBeNull()
   })
 
   it('shows no meeting block for an entry without description or join link', async () => {

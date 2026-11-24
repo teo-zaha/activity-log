@@ -1,5 +1,5 @@
 import { signal, type WritableSignal } from '@angular/core'
-import { render, screen } from '@testing-library/angular'
+import { render, screen, within } from '@testing-library/angular'
 import userEvent from '@testing-library/user-event'
 import { describe, expect, it, vi } from 'vitest'
 import type {
@@ -35,6 +35,7 @@ const snapshot = (
   kinds: [
     kind({ source: 'git', label: 'Git', wslDistros }),
     kind({ source: 'gitlab', label: 'GitLab' }),
+    kind({ source: 'github', label: 'GitHub' }),
     kind({ source: 'system', label: 'System', multiple: false }),
     kind({
       source: 'outlook',
@@ -261,13 +262,21 @@ describe('SettingsAddSourcePaneComponent', () => {
     expect(opened).toHaveBeenCalledWith('git/wsl-nixos')
   })
 
-  it('shows upcoming sources as disabled', async () => {
-    await setup(snapshot([]), snapshot([]))
+  it('offers GitHub as an active source and shows upcoming sources as disabled', async () => {
+    const { addConnection, opened } = await setup(
+      snapshot([]),
+      snapshot([{ source: 'github', name: 'github' }])
+    )
 
-    await screen.findByRole('button', { name: 'GitLab' })
-    expect(screen.getByText('GitHub')).toBeTruthy()
-    expect(screen.getByRole('list', { name: 'Coming soon' }).textContent).toContain('GitHub')
-    expect(screen.queryByRole('button', { name: 'GitHub' })).toBeNull()
+    const tile = await screen.findByRole('button', { name: 'GitHub' })
+    const upcoming = within(screen.getByRole('list', { name: 'Coming soon' }))
+    expect(upcoming.queryByText('GitHub')).toBeNull()
+    expect(upcoming.getByText('Microsoft Teams')).toBeTruthy()
+    expect(upcoming.queryByRole('button')).toBeNull()
+
+    await userEvent.click(tile)
+    expect(addConnection).toHaveBeenCalledWith({ source: 'github' })
+    expect(opened).toHaveBeenCalledWith('github/github')
   })
 
   it('points to the desktop app and the CLI in the browser', async () => {

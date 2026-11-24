@@ -11,6 +11,7 @@ import type {
   BusyStatus,
   ExportOutcome,
   ExportRequest,
+  GitHubEntry,
   LogEntry,
   MeetingWeight,
   ProviderConfigSaveResponseDto,
@@ -111,6 +112,21 @@ export const activityLog: ActivityLog = {
     },
   ],
 }
+
+export const githubPullRequestEntry = {
+  source: 'github',
+  connection: 'oss',
+  id: 'PR_example',
+  timestamp: '2026-05-18T10:30:00Z',
+  repository: 'acme/widgets',
+  type: 'opened',
+  target: {
+    kind: 'pullRequest',
+    number: 12,
+    title: 'Add widget',
+    webUrl: 'https://github.com/acme/widgets/pull/12',
+  },
+} satisfies GitHubEntry
 
 /** `activityLog` while its collection still runs: Git is in, Jira is pending. */
 export const collectingLog: ActivityLog = {
