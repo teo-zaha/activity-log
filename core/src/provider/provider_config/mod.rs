@@ -3,6 +3,9 @@ mod key;
 mod resolve;
 mod resolved_config;
 
+#[cfg(test)]
+mod tests;
+
 pub use config_source::ConfigSource;
 pub use key::{ConfigValueCheck, ProviderConfigKey, ProviderConfigShape, ProviderConfigValueType};
 pub use resolve::{ConfigBinding, ProviderConfigResolve, shown_unless_secret};

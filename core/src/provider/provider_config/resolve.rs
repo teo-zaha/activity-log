@@ -44,7 +44,7 @@ macro_rules! provider_config {
     (
         $vis:vis struct $name:ident {
             $(
-                $field_vis:vis $field:ident => $key:ident $label:literal : $vtype:ident
+                $field_vis:vis $field:ident => $key:ident $label:literal : $vtype:tt
                     $( = $default:literal )? $( [ $( $mark:ident ),+ ] )?
                     $( placeholder $placeholder:literal )?
                     $( check $check:ident )?
@@ -59,9 +59,7 @@ macro_rules! provider_config {
                     placeholder: $crate::provider_config!(@placeholder $( $placeholder )?),
                     check: $crate::provider_config!(@check $( $check )?),
                     required: $crate::provider_config!(@required $vtype $( , $default )? ),
-                    shape: $crate::provider::provider_config::ProviderConfigShape::Single(
-                        $crate::provider_config!(@value_type $vtype),
-                    ),
+                    shape: $crate::provider_config!(@shape $vtype),
                     account: $crate::provider_config!(@account $( $( $mark )+ )?),
                     binds: $crate::provider_config!(@binds $( $( $mark )+ )?),
                 };
@@ -111,7 +109,17 @@ macro_rules! provider_config {
         }
     };
 
-    // ── Value type mapping ────────────────────────────────────────────────
+    // ── Key shape and value type ──────────────────────────────────────────
+    (@shape [String]) => {
+        $crate::provider::provider_config::ProviderConfigShape::List(
+            $crate::provider_config!(@value_type String),
+        )
+    };
+    (@shape $vtype:ident) => {
+        $crate::provider::provider_config::ProviderConfigShape::Single(
+            $crate::provider_config!(@value_type $vtype),
+        )
+    };
     (@value_type String)   => { $crate::provider::provider_config::ProviderConfigValueType::String };
     (@value_type Url)      => { $crate::provider::provider_config::ProviderConfigValueType::Url };
     (@value_type Password) => { $crate::provider::provider_config::ProviderConfigValueType::Password };
@@ -136,15 +144,17 @@ macro_rules! provider_config {
 
     // ── Required inference ────────────────────────────────────────────────
     (@required Bool)                  => { false };
+    (@required [String])              => { false };
     (@required $vtype:ident , $default:literal) => { false };
     (@required $vtype:ident)          => { true };
 
     // ── Debug value (a secret's is never read: `is_secret` above) ────────
     (@debug $value:expr, Url) => { &$crate::provider::provider_config::url_for_debug(&$value) };
-    (@debug $value:expr, $vtype:ident) => { &$value };
+    (@debug $value:expr, $vtype:tt) => { &$value };
 
     // ── Rust field type ───────────────────────────────────────────────────
     (@field_type Bool)                            => { bool };
+    (@field_type [String])                        => { Option<Vec<String>> };
     (@field_type Int)                             => { i64 };
     (@field_type Int , $default:literal)          => { i64 };
     (@field_type $vtype:ident , $default:literal) => { String };
@@ -153,6 +163,9 @@ macro_rules! provider_config {
     // ── from_config resolution ────────────────────────────────────────────
     (@resolve $config:ident, $key:ident, Bool) => {
         $config.bool($key)
+    };
+    (@resolve $config:ident, $key:ident, [String]) => {
+        $config.list($key)
     };
     (@resolve $config:ident, $key:ident, Int) => {
         $config.require($key)?.parse::<i64>()?
