@@ -10,6 +10,10 @@ on:
   pull_request:
   workflow_dispatch:
 
+# Read the code, nothing more: no job here writes to the repository.
+permissions:
+  contents: read
+
 # A newer push to a pull request stops its run still in progress; runs on main all finish.
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
