@@ -197,6 +197,8 @@ pnpm verify
 
 If `pnpm verify` cannot be run in the current environment, say so explicitly in the final handoff.
 
+CI (`.github/workflows/`) runs the Linux check (clippy, the backend's tests, the Secret Service) on every pull request and push to main. Windows and macOS minutes cost two and ten Linux ones, so the Windows check (clippy and the tests on Windows, Credential Manager) runs on each push to main and the macOS keychain tests on a push to main that changes the secret store or the dependencies; on a pull request neither runs by itself. A change to Windows-gated code, file and path handling, the desktop crate or the secret store is not done until that workflow passed on its branch, run by hand (`gh workflow run windows.yml --ref <branch>`, or Actions › Run workflow). `cargo xwin clippy` (`pnpm win:check` in `nix develop .#windows`) compile-checks the Windows code locally. A superseded run of a pull request or a branch run by hand is cancelled, and every job has a timeout. The desktop bundles build on all three systems on a `v*` tag and by hand.
+
 ## Change Rules
 
 - Do not reintroduce the old TypeScript backend

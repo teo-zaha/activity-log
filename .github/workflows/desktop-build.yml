@@ -1,3 +1,5 @@
+# Builds the desktop bundles on all three systems, on a `v*` tag and by hand. The macOS
+# build costs ten Linux minutes for each of its own, the Windows one two.
 name: Desktop Build (All OS)
 
 on:
@@ -6,8 +8,14 @@ on:
     tags:
       - 'v*'
 
+# A newer run started by hand on the same branch stops the one before it.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   build:
+    timeout-minutes: 60
     strategy:
       fail-fast: false
       matrix:

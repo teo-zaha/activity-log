@@ -1,17 +1,36 @@
 # Runs core's real-store tests against the macOS keychain: in a keychain file made for the
 # run, never the login keychain, which the tests refuse to touch. `pnpm verify` covers the
 # rest of the macOS build.
+#
+# A macOS minute costs ten Linux ones, so this runs only on a push to main that changes the
+# keychain's code or the dependencies (the `paths` below), and on any branch by hand
+# (Actions › macOS › Run workflow, or `gh workflow run macos.yml --ref <branch>`). Run it
+# before merging a change to the secret store.
 name: macOS
 
 on:
   push:
     branches: [main]
-  pull_request:
+    paths:
+      - 'core/src/platform/secret_store/**'
+      - 'core/src/platform/dirs.rs'
+      - 'core/src/secrets/**'
+      - 'core/tests/real_secret_store.rs'
+      - 'core/Cargo.toml'
+      - 'Cargo.lock'
+      - '.github/workflows/macos.yml'
   workflow_dispatch:
+
+# A newer run of the same branch started by hand stops the one before it; runs on main all
+# finish.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
 jobs:
   secret-store:
     runs-on: macos-latest
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
 

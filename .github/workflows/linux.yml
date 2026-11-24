@@ -1,6 +1,7 @@
 # Builds the workspace for Linux, where the macOS and Windows children are left
 # out, through clippy with warnings as errors, and runs the backend's tests
-# there. `pnpm verify` only covers the dev host OS.
+# there. `pnpm verify` only covers the dev host OS. It runs on every pull request and
+# push to main; Windows and macOS run on main and by hand (see their workflows).
 name: Linux
 
 on:
@@ -9,9 +10,15 @@ on:
   pull_request:
   workflow_dispatch:
 
+# A newer push to a pull request stops its run still in progress; runs on main all finish.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
   check:
     runs-on: ubuntu-latest
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@v4
 

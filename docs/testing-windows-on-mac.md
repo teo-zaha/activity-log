@@ -94,7 +94,9 @@ Event Log path works out of the box.
 - **GitHub Actions `windows-latest`**: wired up as
   [`.github/workflows/windows.yml`](../.github/workflows/windows.yml) — runs
   clippy + `cargo test` on real Windows for the whole workspace, the desktop
-  crate included, on every push/PR (hosted runners have no Outlook, so COM
-  stays uncovered there). `.github/workflows/linux.yml` does the same for
-  Linux, the desktop's tests left out.
+  crate included, on each push to main and by hand on any branch
+  (`gh workflow run windows.yml --ref <branch>`; a Windows minute costs two
+  Linux ones, so pull requests do not run it by themselves; hosted runners
+  have no Outlook, so COM stays uncovered there). `.github/workflows/linux.yml`
+  does the same for Linux, the desktop's tests left out, on every push/PR.
 - **Self-hosted Windows runner with Outlook**: would enable automated COM tests.
