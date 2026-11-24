@@ -34,11 +34,16 @@
     }
   }
 
+  // The chosen segment is a card on the track, never a border. Dark themes'
+  // surface is darker than the track, so they raise it with the hover surface.
   &[aria-checked='true'] {
     background: var(--surface);
-    border-color: var(--hairline);
     color: var(--text-primary);
-    box-shadow: var(--control-shadow);
+    box-shadow: var(--panel-shadow);
+
+    :host-context(html.dark) & {
+      background: var(--surface-hover);
+    }
   }
 
   &:focus-visible {
