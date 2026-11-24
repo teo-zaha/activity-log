@@ -1,0 +1,29 @@
+name: Feature request
+description: An idea for Activity Log, such as a new source or view.
+labels:
+  - enhancement
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Please open the issue before writing code for a feature, so we can agree on it first.
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: What you are trying to do
+      description: The situation and what gets in the way today.
+    validations:
+      required: true
+
+  - type: textarea
+    id: idea
+    attributes:
+      label: What would help
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: What you do instead today

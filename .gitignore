@@ -14,5 +14,17 @@ desktop/gen/
 # Playwright MCP browser logs and screenshots
 .playwright-mcp/
 
-# Local registry credentials (a symlink to a private .npmrc)
+# Local registry credentials (a private .npmrc, and any copy of one)
 .npmrc
+.npmrc.*
+
+# Local environment files and secret keys: never committed
+.env.*
+secret.key
+*.pem
+
+# Agents' local notes and plans
+.agent-notes/
+
+# macOS Finder metadata
+.DS_Store

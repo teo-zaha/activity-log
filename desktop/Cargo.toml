@@ -2,6 +2,7 @@
 name = "activity-log-desktop"
 edition.workspace = true
 version.workspace = true
+license.workspace = true
 default-run = "activity-log-desktop"
 
 [lib]

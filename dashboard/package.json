@@ -1,7 +1,7 @@
 {
   "name": "activity-log-dashboard",
   "version": "1.0.0",
-  "author": "Teodora Zaharinova <177096303+teo-zaha@users.noreply.github.com>",
+  "license": "MIT",
   "private": true,
   "scripts": {
     "start": "ng serve",

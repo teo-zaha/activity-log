@@ -2,7 +2,7 @@
   "name": "activity-log",
   "version": "1.0.0",
   "description": "Unified activity tracker across local Git, GitLab and Jira",
-  "author": "Teodora Zaharinova <177096303+teo-zaha@users.noreply.github.com>",
+  "license": "MIT",
   "type": "module",
   "engines": {
     "node": "^22.22.3 || ^24.15.0 || >=26.0.0",

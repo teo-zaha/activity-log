@@ -1,0 +1,76 @@
+name: Bug report
+description: Something does not work as it should, crashes or shows wrong activity.
+labels:
+  - bug
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Search the open issues first, and keep the report to one problem.
+        Activity Log shows your work: **redact tokens, server addresses, names, commit messages,
+        issue titles and meeting titles** from what you paste or upload.
+
+  - type: dropdown
+    id: area
+    attributes:
+      label: Where
+      options:
+        - Desktop app
+        - Web dashboard and API
+        - CLI
+        - A source (Git, GitLab, Jira, Outlook, calendar feed, system)
+        - Settings and secrets
+        - Windows installer
+        - Build, CI or docs
+        - Not sure
+    validations:
+      required: true
+
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. Add a GitLab source with …
+        2. Collect the last week
+        3. Open the Work week view
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: What you expected
+    validations:
+      required: true
+
+  - type: textarea
+    id: actual
+    attributes:
+      label: What happened
+    validations:
+      required: true
+
+  - type: input
+    id: version
+    attributes:
+      label: Version or commit
+      placeholder: main @ abc1234
+    validations:
+      required: true
+
+  - type: input
+    id: system
+    attributes:
+      label: System
+      description: Operating system and version; for a source, its server version if you know it.
+      placeholder: Windows 11 24H2, GitLab 17.8, Jira Data Center 10.3
+    validations:
+      required: true
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs
+      description: The relevant lines from Settings › Logs or the CLI's output, redacted.
+      render: text

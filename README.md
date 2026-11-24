@@ -16,7 +16,8 @@
   <a href="#configuration">Configuration</a> ·
   <a href="#cli">CLI</a> ·
   <a href="#api">API</a> ·
-  <a href="#development">Development</a>
+  <a href="#development">Development</a> ·
+  <a href="#license">License</a>
 </p>
 
 <p align="center">
@@ -643,3 +644,11 @@ nix shell --inputs-from . nixpkgs#python3 nixpkgs#imagemagick -c python3 desktop
 These items are in progress or planned and are not yet part of the current build:
 
 - Additional sources: GitHub, Microsoft Teams, Figma, Miro, and Odoo
+
+## Contributing
+
+Bug reports and focused pull requests are welcome; see [CONTRIBUTING.md](CONTRIBUTING.md). Report security problems privately as [SECURITY.md](SECURITY.md) describes.
+
+## License
+
+Activity Log is released under the [MIT License](LICENSE).

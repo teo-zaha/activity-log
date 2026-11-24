@@ -1,5 +1,6 @@
 {
   "name": "activity-log-desktop-shell",
+  "license": "MIT",
   "private": true,
   "scripts": {
     "tauri": "tauri"
