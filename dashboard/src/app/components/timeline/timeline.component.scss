@@ -183,13 +183,14 @@
     transform: translateX(-50%);
     background: var(--hairline);
   }
+}
 
-  > li {
-    position: absolute;
-    inset-inline: 1px;
-  }
+.entry-row {
+  position: absolute;
+  inset-inline: 1px;
+  list-style: none;
 
-  > li:not([data-first]) {
+  &:not([data-first]) {
     border-top: 1px solid var(--hairline);
   }
 }
@@ -216,15 +217,10 @@
     position: static;
   }
 
-  > li {
+  > .entry-row {
+    top: 0;
     height: 100%;
-    margin-inline: 1px;
-    list-style: none;
     background: var(--surface);
-  }
-
-  > li:not([data-first]) {
-    border-top: 1px solid var(--hairline);
   }
 }
 
@@ -286,7 +282,7 @@
 }
 
 // The last row ends the list's line at its dot, in the row's own colour.
-.entries > li[data-last] .entry-rail::after {
+.entry-row[data-last] .entry-rail::after {
   content: '';
   position: absolute;
   top: 18px;
@@ -299,7 +295,7 @@
 }
 
 // The hover and pressed colours of `.entry`, on the list's surface.
-.entries > li[data-last] .entry {
+.entry-row[data-last] .entry {
   @include ui.hover($pressed: false) {
     .entry-rail::after {
       background: color-mix(in srgb, var(--surface-hover) 65%, var(--surface));

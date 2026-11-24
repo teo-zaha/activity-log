@@ -27,6 +27,7 @@ interface KeepPlaceOptions {
   readonly layout: Signal<TimelineItems>
   readonly coordinates: () => Coordinates
   readonly placed: (position: Placement) => void
+  readonly scrolled: () => void
 }
 
 /** A removed row hands over its offset to the next row that survives, then to its day. */
@@ -73,6 +74,7 @@ export function keepPlace({
   layout,
   coordinates,
   placed,
+  scrolled,
 }: KeepPlaceOptions): ScrollPlaces {
   let anchor: Anchor | null = null
   let readAmong: TimelineItems | undefined
@@ -106,11 +108,13 @@ export function keepPlace({
       // Keep the user's scroll if a new list is waiting to render. Moving to the new end can
       // come from the browser clamping a shorter list, so preserve the earlier offset there.
       if (top < untracked(coordinates).maxScroll - 1) {
+        scrolled()
         written = null
         anchor = top <= 0 ? null : { ...anchor, scrollTop: top }
       }
       return
     }
+    scrolled()
     written = null
     anchor = untracked(() => read(top))
   })
@@ -148,7 +152,7 @@ export function keepPlace({
         position = scrollTop
         anchor = scrollTop === 0 ? null : { key, contentY, scrollTop }
       })
-      placed({ beforeScroll, scrollTop: position, anchor: anchor?.key })
+      untracked(() => placed({ beforeScroll, scrollTop: position, anchor: anchor?.key }))
     },
   })
 

@@ -1,3 +1,6 @@
+import { DestroyRef, EnvironmentInjector, type Signal, computed, inject } from '@angular/core'
+import { mediaQuery } from '@signality/core/browser/media-query'
+import { watcher } from '@signality/core/reactivity/watcher'
 import { LIST_MOTION } from './list-motion-options'
 
 /** Limit animated changes in a replacement to the scale of one virtual window. */
@@ -33,8 +36,6 @@ export interface ListMotionFrame {
   readonly beforeScroll: number
   readonly scrollTop: number
   readonly anchor?: string
-  readonly pauseOn: unknown
-  readonly paused: boolean
   /** The host can supply a presentational copy for a removed item. */
   readonly ghost: (item: PositionedItem, top: number) => HTMLElement | null
 }
@@ -80,28 +81,55 @@ export class ListMotion {
   private readonly moves = new Map<string, Moving>()
   private readonly fades = new Map<string, Fading>()
   private readonly ghosts = new Map<string, Ghost>()
+  private readonly reducedMotion = mediaQuery('(prefers-reduced-motion: reduce)')
+  private readonly disabled = computed(() => this.reducedMotion() || this.paused?.() === true)
+
+  constructor(
+    private readonly host: HTMLElement,
+    private readonly paused?: Signal<boolean>
+  ) {
+    // Route reuse can remove a host from change detection while its animations still run.
+    const pauseWatcher = watcher(
+      this.disabled,
+      paused => {
+        if (paused) this.cancel()
+      },
+      { injector: inject(EnvironmentInjector) }
+    )
+    inject(DestroyRef).onDestroy(() => {
+      pauseWatcher.destroy()
+      this.reset()
+    })
+  }
 
   reset(): void {
     this.previous = undefined
     this.cancel()
   }
 
+  /** Removes screen-positioned copies when the host scrolls independently of a data change. */
+  dropGhosts(): void {
+    for (const [key, ghost] of this.ghosts) this.dropGhost(key, ghost)
+  }
+
   update(next: ListMotionFrame): void {
     const before = this.previous
     this.previous = next
-    if (!before || next.paused || before.pauseOn !== next.pauseOn) {
+    if (
+      !before ||
+      this.disabled() ||
+      !this.host.isConnected ||
+      typeof this.host.animate !== 'function'
+    ) {
       this.cancel()
       return
     }
-    if (before.paused) return
     if (next.anchor !== undefined) this.moves.get(next.anchor)?.animation.cancel()
     if (Object.is(before.revision, next.revision)) return
 
-    let changed = 0
     const actions: (() => void)[] = []
     for (const [key, item] of before.items) {
       if (next.keys.has(key)) continue
-      changed++
       const top = item.topAt(next.beforeScroll) + this.translation(key, item.element)
       if (onScreen(top, item.size, before)) {
         actions.push(() => this.remove(key, item, top, next.ghost))
@@ -112,7 +140,6 @@ export class ListMotion {
       const ghost = this.ghosts.get(key)
       const top = item.topAt(next.scrollTop)
       if (!before.keys.has(key)) {
-        changed++
         if (!onScreen(top, item.size, next)) continue
         actions.push(() => {
           const opacity = ghost ? ghost.opacity * (1 - progress(ghost.animation)) : 0
@@ -122,16 +149,15 @@ export class ListMotion {
           }
           this.add(key, item.element, opacity)
         })
-      } else if (old && key !== next.anchor) {
+      } else if (old?.element === item.element && key !== next.anchor) {
         const oldTop = old.topAt(next.beforeScroll)
         if (Math.abs(oldTop - top) < 0.5) continue
         const from = oldTop + this.translation(key, old.element)
         if (!onScreen(from, old.size, before) && !onScreen(top, item.size, next)) continue
-        changed++
         actions.push(() => this.move(key, item.element, from - top))
       }
     }
-    if (changed + this.ghosts.size > ANIMATED_CHANGES_MAX) {
+    if (actions.length > ANIMATED_CHANGES_MAX) {
       this.cancel()
       return
     }
@@ -141,7 +167,7 @@ export class ListMotion {
   private cancel(): void {
     for (const { animation } of this.moves.values()) animation.cancel()
     for (const { animation } of this.fades.values()) animation.cancel()
-    for (const [key, ghost] of this.ghosts) this.dropGhost(key, ghost)
+    this.dropGhosts()
     this.moves.clear()
     this.fades.clear()
   }

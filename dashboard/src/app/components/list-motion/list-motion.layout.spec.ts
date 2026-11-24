@@ -1,13 +1,22 @@
-import { afterEach, describe, expect, it } from 'vitest'
+import { signal } from '@angular/core'
+import { TestBed } from '@angular/core/testing'
+import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { ListMotion, type ListMotionFrame, type PositionedItem } from './list-motion'
 
-const motion = new ListMotion()
-const host = document.createElement('div')
-document.body.append(host)
+const paused = signal(false)
+let motion: ListMotion
+let host: HTMLElement
+
+beforeEach(() => {
+  paused.set(false)
+  host = document.createElement('div')
+  document.body.append(host)
+  motion = TestBed.runInInjectionContext(() => new ListMotion(host, paused))
+})
 
 afterEach(() => {
   motion.reset()
-  host.replaceChildren()
+  host.remove()
 })
 
 function element(key: string): HTMLElement {
@@ -34,8 +43,6 @@ function frame(revision: number, mounted: ReadonlyMap<string, PositionedItem>): 
     beforeScroll: 0,
     scrollTop: 0,
     viewport: { top: 0, bottom: 200 },
-    paused: false,
-    pauseOn: '',
     ghost: (item): HTMLElement => {
       const clone = element(item.element.textContent ?? '')
       clone.className = 'test-ghost'
@@ -113,7 +120,7 @@ describe('keyed list motion', () => {
       ...frame(
         2,
         items([
-          ['b', b, 40],
+          ['b', b, 45],
           ['c', c, 80],
         ])
       ),
@@ -148,9 +155,9 @@ describe('keyed list motion', () => {
     running.currentTime = 40
     old.remove()
     const current = element('a')
-    motion.update(frame(2, items([['a', current, 50]])))
+    motion.update(frame(3, items([['a', current, 60]])))
     expect(current.getAnimations()).toHaveLength(0)
-    motion.update(frame(3, items([['a', current, 70]])))
+    motion.update(frame(4, items([['a', current, 80]])))
     expect(firstTransform(current)).toBe('translateY(-20px)')
   })
 
@@ -160,28 +167,54 @@ describe('keyed list motion', () => {
       element(`old-${i}`),
       i * 20,
     ])
-    motion.update(frame(1, items(before)))
+    const viewport = { top: 0, bottom: 400 }
+    motion.update({ ...frame(1, items(before)), viewport })
     for (const [, node] of before) node.remove()
     const after = Array.from({ length: 25 }, (_, i): [string, HTMLElement, number] => [
       `new-${i}`,
       element(`new-${i}`),
       i * 20,
     ])
-    motion.update(frame(2, items(after)))
+    motion.update({ ...frame(2, items(after)), viewport })
     expect(host.getAnimations({ subtree: true })).toHaveLength(0)
     expect(host.querySelector('.test-ghost')).toBeNull()
   })
 
-  it('cancels motion when paused or when the pause key changes', () => {
+  it('animates on-screen additions and removals despite many off-screen changes', () => {
+    const removed = element('visible removal')
+    const offscreen = (prefix: string): [string, HTMLElement, number][] =>
+      Array.from({ length: 34 }, (_, i) => {
+        const key = `${prefix}-${i}`
+        return [key, element(key), 200 + i * 20]
+      })
+    motion.update(frame(1, items([['removed', removed, 10], ...offscreen('old')])))
+    const added = element('visible addition')
+    motion.update(frame(2, items([['added', added, 10], ...offscreen('new')])))
+    expect(added.getAnimations()).toHaveLength(1)
+    expect([...host.querySelectorAll('.test-ghost')].map(node => node.textContent)).toEqual([
+      'visible removal',
+    ])
+    expect(host.getAnimations({ subtree: true })).toHaveLength(2)
+  })
+
+  it('cancels motion when paused and resumes from the paused layout', () => {
     const node = element('a')
     motion.update(frame(1, items([['a', node, 30]])))
     motion.update(frame(2, items([['a', node, 70]])))
     expect(node.getAnimations()).toHaveLength(1)
-    motion.update({ ...frame(3, items([['a', node, 40]])), pauseOn: 'search' })
+    paused.set(true)
+    motion.update(frame(3, items([['a', node, 40]])))
     expect(node.getAnimations()).toHaveLength(0)
-    motion.update({ ...frame(4, items([['a', node, 50]])), pauseOn: 'search' })
-    expect(node.getAnimations()).toHaveLength(1)
-    motion.update({ ...frame(5, items([['a', node, 0]])), pauseOn: 'search', paused: true })
+    paused.set(false)
+    motion.update(frame(4, items([['a', node, 50]])))
+    expect(firstTransform(node)).toBe('translateY(-10px)')
+  })
+
+  it('leaves the list still without Web Animations', () => {
+    Object.defineProperty(host, 'animate', { value: undefined })
+    const node = element('a')
+    motion.update(frame(1, items([['a', node, 0]])))
+    motion.update(frame(2, items([['a', node, 30]])))
     expect(node.getAnimations()).toHaveLength(0)
   })
 })

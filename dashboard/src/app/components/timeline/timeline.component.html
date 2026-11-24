@@ -108,6 +108,7 @@
                 @let row = drawnRow.row;
                 <li
                   #measured
+                  class="entry-row"
                   [attr.data-item-index]="drawnRow.index"
                   [attr.data-first]="drawnRow.position === 1 ? '' : null"
                   [attr.data-last]="drawnRow.position === day.rows.length ? '' : null"

@@ -1,7 +1,6 @@
 import {
   type AnimationCallbackEvent,
   Component,
-  DestroyRef,
   ElementRef,
   Injector,
   Renderer2,
@@ -21,7 +20,6 @@ import { debounced } from '@signality/core/reactivity/debounced'
 import { watcher } from '@signality/core/reactivity/watcher'
 import { defaultRangeExtractor, injectVirtualizer } from '@tanstack/angular-virtual'
 import { listener } from '@signality/core/browser/listener'
-import { mediaQuery } from '@signality/core/browser/media-query'
 import { EmptyStateComponent } from '../empty-state/empty-state.component'
 import { ButtonComponent } from '../button/button.component'
 import { ActivityDataService } from '../../services/activity-data.service'
@@ -129,9 +127,7 @@ export class TimelineComponent {
   private readonly measured = viewChildren<ElementRef<HTMLElement>>('measured')
   private readonly injector = inject(Injector)
   private readonly ghosts = viewChild.required<ElementRef<HTMLElement>>('ghosts')
-  private readonly motion = new ListMotion()
   private readonly renderer = inject(Renderer2)
-  private readonly reduceMotion = mediaQuery('(prefers-reduced-motion: reduce)')
   private readonly settledQuery = debounced(this.viewState.searchQuery, inject(SEARCH_URL_DELAY_MS))
 
   /**
@@ -225,6 +221,10 @@ export class TimelineComponent {
 
   /** False while the router keeps the list out of the document. */
   protected readonly attached = trackAttachment(this.scroller)
+  private readonly motion = new ListMotion(
+    this.host,
+    computed(() => !this.attached() || this.settledQuery() !== this.viewState.searchQuery())
+  )
 
   private readonly dayKeys = computed(() => this.days().map(day => day.date))
 
@@ -298,9 +298,9 @@ export class TimelineComponent {
         }
       },
       placed: placement => this.animateFrame(placement),
+      scrolled: () => this.motion.dropGhosts(),
     })
     restoresScroll(this.scroller, () => 0, place)
-    inject(DestroyRef).onDestroy(() => this.motion.reset())
     followFeedKeys({
       scroller: this.scroller,
       count: () => this.days().length,
@@ -332,7 +332,6 @@ export class TimelineComponent {
 
   /** Records the committed virtual positions after keepPlace finishes scrolling. */
   private animateFrame(placement: Placement): void {
-    const query = this.viewState.searchQuery()
     const layout = this.layout()
     const { headerTop, height } = this.viewport()
     const positions = this.virtualRows.measurementsCache()
@@ -357,15 +356,8 @@ export class TimelineComponent {
       keys: layout.indexes,
       items,
       viewport: { top: headerTop, bottom: height },
-      pauseOn: query,
       ...placement,
       revision: this.data.allEntries(),
-      paused:
-        !this.attached() ||
-        !this.host.isConnected ||
-        this.reduceMotion() ||
-        this.settledQuery() !== query ||
-        typeof this.host.animate !== 'function',
       ghost: (item, top) => this.makeGhost(item, top),
     })
   }
@@ -377,6 +369,7 @@ export class TimelineComponent {
     clone.removeAttribute('data-item-index')
     clone.removeAttribute('aria-posinset')
     clone.removeAttribute('aria-setsize')
+    clone.style.removeProperty('top')
     clone.querySelector('[data-entry]')?.removeAttribute('data-entry')
     const element: HTMLElement = this.renderer.createElement('div')
     element.className = 'timeline-ghost'
