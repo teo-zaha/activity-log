@@ -3,7 +3,7 @@ import { mediaQuery } from '@signality/core/browser/media-query'
 import { watcher } from '@signality/core/reactivity/watcher'
 import { LIST_MOTION } from './list-motion-options'
 
-/** Limit animated changes in a replacement to the scale of one virtual window. */
+/** Avoid a screenful of simultaneous animations when a collection changes many items. */
 const ANIMATED_CHANGES_MAX = 32
 
 // FormKit AutoAnimate's timings with the settings Logs pane's duration and easing.
@@ -24,6 +24,8 @@ export interface PositionedItem {
   readonly size: number
   /** Screen coordinates at a host-supplied scroll offset, including any sticky positioning. */
   readonly topAt: (scrollTop: number) => number
+  /** The full layout box is available for DOM-positioned items that can also slide sideways or resize. */
+  readonly across?: { readonly left: number; readonly width: number }
 }
 
 export interface ListMotionFrame {
@@ -43,7 +45,17 @@ export interface ListMotionFrame {
 interface Moving {
   readonly element: HTMLElement
   readonly animation: Animation
-  readonly offset: number
+  readonly x: number
+  readonly y: number
+  readonly scaleX: number
+  readonly scaleY: number
+}
+
+interface ItemBox {
+  readonly left: number
+  readonly top: number
+  readonly width: number
+  readonly height: number
 }
 
 interface Fading {
@@ -55,7 +67,7 @@ interface Fading {
 interface Ghost {
   readonly element: HTMLElement
   readonly animation: Animation
-  readonly top: number
+  readonly box: ItemBox
   readonly opacity: number
 }
 
@@ -69,6 +81,25 @@ function progress(animation: Animation): number {
 
 function onEnd(animation: Animation, clean: () => void): void {
   void animation.finished.then(clean, clean)
+}
+
+function boxAt(item: PositionedItem, scrollTop: number): ItemBox {
+  return {
+    top: item.topAt(scrollTop),
+    left: item.across?.left ?? 0,
+    width: item.across?.width ?? 0,
+    height: item.size,
+  }
+}
+
+function moved(from: ItemBox, to: ItemBox): boolean {
+  return (
+    Math.abs(from.top - to.top) >= 0.5 ||
+    (to.width > 0 &&
+      (Math.abs(from.left - to.left) >= 0.5 ||
+        Math.abs(from.width - to.width) >= 0.5 ||
+        Math.abs(from.height - to.height) >= 0.5))
+  )
 }
 
 /**
@@ -130,31 +161,30 @@ export class ListMotion {
     const actions: (() => void)[] = []
     for (const [key, item] of before.items) {
       if (next.keys.has(key)) continue
-      const top = item.topAt(next.beforeScroll) + this.translation(key, item.element)
-      if (onScreen(top, item.size, before)) {
-        actions.push(() => this.remove(key, item, top, next.ghost))
+      const box = this.visualBox(key, item, next.beforeScroll)
+      if (onScreen(box.top, box.height, before)) {
+        actions.push(() => this.remove(key, item, box, next.ghost))
       }
     }
     for (const [key, item] of next.items) {
       const old = before.items.get(key)
       const ghost = this.ghosts.get(key)
-      const top = item.topAt(next.scrollTop)
+      const to = boxAt(item, next.scrollTop)
       if (!before.keys.has(key)) {
-        if (!onScreen(top, item.size, next)) continue
+        if (!onScreen(to.top, to.height, next)) continue
         actions.push(() => {
           const opacity = ghost ? ghost.opacity * (1 - progress(ghost.animation)) : 0
           if (ghost) {
             this.dropGhost(key, ghost)
-            if (key !== next.anchor) this.move(key, item.element, ghost.top - top)
+            if (key !== next.anchor) this.move(key, item.element, ghost.box, to)
           }
           this.add(key, item.element, opacity)
         })
       } else if (old?.element === item.element && key !== next.anchor) {
-        const oldTop = old.topAt(next.beforeScroll)
-        if (Math.abs(oldTop - top) < 0.5) continue
-        const from = oldTop + this.translation(key, old.element)
-        if (!onScreen(from, old.size, before) && !onScreen(top, item.size, next)) continue
-        actions.push(() => this.move(key, item.element, from - top))
+        if (!moved(boxAt(old, next.beforeScroll), to)) continue
+        const from = this.visualBox(key, old, next.beforeScroll)
+        if (!onScreen(from.top, from.height, before) && !onScreen(to.top, to.height, next)) continue
+        actions.push(() => this.move(key, item.element, from, to))
       }
     }
     if (actions.length > ANIMATED_CHANGES_MAX) {
@@ -172,10 +202,17 @@ export class ListMotion {
     this.fades.clear()
   }
 
-  private translation(key: string, element: HTMLElement): number {
+  private visualBox(key: string, item: PositionedItem, scrollTop: number): ItemBox {
+    const box = boxAt(item, scrollTop)
     const move = this.moves.get(key)
-    if (move?.element !== element || move.animation.playState === 'idle') return 0
-    return move.offset * (1 - progress(move.animation))
+    if (move?.element !== item.element || move.animation.playState === 'idle') return box
+    const remaining = 1 - progress(move.animation)
+    return {
+      top: box.top + move.y * remaining,
+      left: box.left + move.x * remaining,
+      width: box.width * (1 + (move.scaleX - 1) * remaining),
+      height: box.height * (1 + (move.scaleY - 1) * remaining),
+    }
   }
 
   private opacity(key: string, element: HTMLElement): number {
@@ -184,14 +221,22 @@ export class ListMotion {
     return fade.opacity + (1 - fade.opacity) * Math.max(0, 2 * progress(fade.animation) - 1)
   }
 
-  private move(key: string, element: HTMLElement, offset: number): void {
+  private move(key: string, element: HTMLElement, from: ItemBox, to: ItemBox): void {
     this.moves.get(key)?.animation.cancel()
-    if (Math.abs(offset) < 0.5) return
-    const animation = element.animate(
-      [{ transform: `translateY(${offset}px)` }, { transform: 'none' }],
-      MOVE
-    )
-    const move = { element, animation, offset }
+    if (!moved(from, to)) return
+    const x = from.left - to.left
+    const y = from.top - to.top
+    const scaleX = to.width > 0 ? from.width / to.width : 1
+    const scaleY = to.width > 0 && to.height > 0 ? from.height / to.height : 1
+    const start =
+      to.width > 0
+        ? {
+            transform: `translate(${x}px, ${y}px) scale(${scaleX}, ${scaleY})`,
+            transformOrigin: 'top left',
+          }
+        : { transform: `translateY(${y}px)` }
+    const animation = element.animate([start, { ...start, transform: 'none' }], MOVE)
+    const move = { element, animation, x, y, scaleX, scaleY }
     this.moves.set(key, move)
     onEnd(animation, () => {
       if (this.moves.get(key) !== move) return
@@ -215,7 +260,7 @@ export class ListMotion {
   private remove(
     key: string,
     item: PositionedItem,
-    top: number,
+    box: ItemBox,
     copy: ListMotionFrame['ghost']
   ): void {
     const opacity = this.opacity(key, item.element)
@@ -223,10 +268,13 @@ export class ListMotion {
     this.fades.get(key)?.animation.cancel()
     const old = this.ghosts.get(key)
     if (old) this.dropGhost(key, old)
-    const element = copy(item, top)
+    const visualItem = item.across
+      ? { ...item, size: box.height, across: { left: box.left, width: box.width } }
+      : item
+    const element = copy(visualItem, box.top)
     if (!element) return
     const animation = element.animate([{ opacity }, { opacity: 0 }], REMOVE)
-    const ghost = { element, animation, top, opacity }
+    const ghost = { element, animation, box, opacity }
     this.ghosts.set(key, ghost)
     onEnd(animation, () => {
       if (this.ghosts.get(key) === ghost) this.dropGhost(key, ghost)

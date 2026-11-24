@@ -71,6 +71,7 @@ export function fakeCalendarState(init: CalendarStateInit): FakeCalendarState {
     workWeekDays: computed(() => weekDays().slice(0, 5)),
     dateFrom: signal(init.from ?? null),
     dateTo: signal(init.to ?? null),
+    searchQuery: signal(''),
     hourHeight,
     activeConnections,
     navigateDay: (delta: number): void => selectedDay.update(day => addDaysToKey(day, delta)),
@@ -91,6 +92,8 @@ export function fakeCalendarState(init: CalendarStateInit): FakeCalendarState {
   } satisfies Partial<ActivityViewStateService>
   const collected: DayRange[] = []
   const data = {
+    allEntries: signal([]),
+    meta: signal(null),
     isLoading,
     collectionStatus,
     anySourceReady,

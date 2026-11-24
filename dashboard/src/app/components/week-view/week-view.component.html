@@ -123,9 +123,7 @@
       </div>
 
       <!-- All-day banner row for multi-day events -->
-      @if (allDay().bars.length) {
-        <app-calendar-all-day-row [row]="allDay()" (openEvent)="openEvent($event)" />
-      }
+      <app-calendar-all-day-row [row]="allDay()" (openEvent)="openEvent($event)" />
 
       <!-- Over the visible grid, below the day headers, which stay usable. -->
       @if (emptyHint(); as hint) {
@@ -164,5 +162,6 @@
         }
       </div>
     </div>
+    <div class="cal-block-ghosts" aria-hidden="true" inert></div>
   </div>
 </div>

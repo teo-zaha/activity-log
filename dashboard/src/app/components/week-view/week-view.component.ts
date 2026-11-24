@@ -23,6 +23,7 @@ import { CALENDAR_TIME_ZONE } from '../calendar/calendar-time-zone'
 import { calendarEmptyHint } from '../calendar/calendar-empty-hint'
 import { CalendarHintComponent } from '../calendar/calendar-hint/calendar-hint.component'
 import { collectedDays } from '../calendar/collected-days'
+import { followCalendarMotion } from '../calendar/calendar-motion'
 import { injectMinuteClock } from '../../utils/clock'
 import { dateOfKey, wallClock, type DayKey } from '../../utils/local-day'
 import {
@@ -89,6 +90,7 @@ export class WeekViewComponent {
   constructor() {
     // A new navigation shows the grid from the default hour, Back and Forward where it was left.
     restoresScroll(this.scrollEl, () => DEFAULT_SCROLL_HOUR * this.viewState.hourHeight())
+    followCalendarMotion(this.scrollEl)
   }
 
   protected readonly days = computed<DayKey[]>(() =>

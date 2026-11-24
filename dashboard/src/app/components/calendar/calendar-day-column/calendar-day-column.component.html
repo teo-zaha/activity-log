@@ -6,6 +6,7 @@
     <button
       type="button"
       class="cal-overflow"
+      [attr.data-calendar-block]="item.key"
       [style.top.px]="item.top"
       [style.height.px]="item.height"
       [style.left]="item.left"
@@ -20,6 +21,7 @@
     <button
       type="button"
       [class]="item.className"
+      [attr.data-calendar-block]="item.key"
       [attr.data-src]="item.entry.styleKey"
       [style.top.px]="item.top"
       [style.height.px]="item.height"

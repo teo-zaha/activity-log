@@ -116,6 +116,7 @@ $column-rule: 1px;
 
 @mixin scroll-container {
   flex: 1;
+  position: relative;
   // Lets the hint's layer size itself to the visible height (`cqh`) from inside the scroller.
   container-type: size;
   overflow-y: auto;
@@ -123,6 +124,13 @@ $column-rule: 1px;
   overscroll-behavior-y: contain;
   margin: 0 var(--cal-inset);
   background: transparent;
+
+  > .cal-block-ghosts {
+    position: absolute;
+    inset: 0;
+    z-index: 11;
+    pointer-events: none;
+  }
 }
 
 // The layer an empty view's hint lies on, hung below the sticky header (its containing block,
@@ -213,13 +221,14 @@ $column-rule: 1px;
     transition:
       filter 0.1s ease,
       box-shadow 0.1s ease,
-      transform 0.1s ease;
+      translate 0.1s ease;
     z-index: 1;
 
     @include ui.hover {
       filter: brightness(0.98);
       box-shadow: var(--control-shadow);
-      transform: translateY(-1px);
+      // Keep the hover lift independent of ListMotion's transform.
+      translate: 0 -1px;
       z-index: 2;
     }
 
@@ -258,12 +267,12 @@ $column-rule: 1px;
     transition:
       background 0.1s ease,
       color 0.1s ease,
-      transform 0.1s ease;
+      translate 0.1s ease;
 
     @include ui.hover {
       background: var(--surface-hover);
       color: var(--text-primary);
-      transform: translateY(-1px);
+      translate: 0 -1px;
     }
 
     &:focus-visible {

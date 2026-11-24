@@ -30,6 +30,7 @@ import { CALENDAR_TIME_ZONE } from '../calendar/calendar-time-zone'
 import { calendarEmptyHint } from '../calendar/calendar-empty-hint'
 import { CalendarHintComponent } from '../calendar/calendar-hint/calendar-hint.component'
 import { collectedDays } from '../calendar/collected-days'
+import { followCalendarMotion } from '../calendar/calendar-motion'
 import { injectCalendarZoom } from '../calendar-zoom'
 import { NavigationMotionService } from '../../navigation-motion'
 import { restoresScroll } from '../../services/views-scroller.service'
@@ -76,6 +77,7 @@ export class DayViewComponent {
   constructor() {
     // A new navigation shows the grid from the default hour, Back and Forward where it was left.
     restoresScroll(this.scrollEl, () => DEFAULT_SCROLL_HOUR * this.viewState.hourHeight())
+    followCalendarMotion(this.scrollEl)
   }
 
   protected readonly gridHeight = computed(() => gridHeight(this.viewState.hourHeight()))

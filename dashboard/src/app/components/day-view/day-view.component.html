@@ -94,22 +94,18 @@
   <div class="cal-scroll" #scrollEl>
     <!-- All-day banner row for multi-day events; the empty day's hint hangs below it. -->
     @let hint = emptyHint();
-    @if (allDay().bars.length || hint) {
-      <div class="cal-sticky-header">
-        @if (allDay().bars.length) {
-          <app-calendar-all-day-row [row]="allDay()" (openEvent)="openEvent($event)" />
-        }
-        @if (hint) {
-          <div
-            class="cal-hint-layer"
-            animate.enter="hint-layer-enter"
-            animate.leave="hint-layer-leave"
-          >
-            <app-calendar-hint [hint]="hint" (collect)="collectRange($event)" />
-          </div>
-        }
-      </div>
-    }
+    <div class="cal-sticky-header">
+      <app-calendar-all-day-row [row]="allDay()" (openEvent)="openEvent($event)" />
+      @if (hint) {
+        <div
+          class="cal-hint-layer"
+          animate.enter="hint-layer-enter"
+          animate.leave="hint-layer-leave"
+        >
+          <app-calendar-hint [hint]="hint" (collect)="collectRange($event)" />
+        </div>
+      }
+    </div>
 
     <div class="cal-grid" #gridEl [style.height.px]="gridHeight()">
       <app-calendar-hours
@@ -130,5 +126,6 @@
         />
       </div>
     </div>
+    <div class="cal-block-ghosts" aria-hidden="true" inert></div>
   </div>
 </div>

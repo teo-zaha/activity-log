@@ -2,6 +2,7 @@ import { signal } from '@angular/core'
 import { TestBed } from '@angular/core/testing'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { ListMotion, type ListMotionFrame, type PositionedItem } from './list-motion'
+import { measurePositionedElements } from './positioned-elements'
 
 const paused = signal(false)
 let motion: ListMotion
@@ -144,6 +145,40 @@ describe('keyed list motion', () => {
     motion.update(frame(3, items([['a', node, 50]])))
     const offset = Number.parseFloat(firstTransform(node).slice('translateY('.length))
     expect(offset).toBeCloseTo(70 - 40 * (1 - progress) - 50, 4)
+  })
+
+  it('reads an absolute box and retargets a horizontal slide and resize from its current box', () => {
+    host.style.cssText = 'position: relative; width: 300px; height: 200px;'
+    const node = element('a')
+    node.style.cssText = 'position: absolute; left: 10px; top: 15px; width: 100px; height: 40px;'
+    const capture = (revision: number): void => {
+      const measured = measurePositionedElements(host, [{ key: 'a', element: node }])
+      motion.update({ ...measured, revision, ghost: () => null })
+    }
+    const before = node.getBoundingClientRect()
+    capture(1)
+    node.style.left = '100px'
+    node.style.width = '50px'
+    node.style.height = '30px'
+    capture(2)
+    const animation = node.getAnimations()[0]!
+    animation.pause()
+    animation.currentTime = 0
+    expect(node.getBoundingClientRect().left).toBeCloseTo(before.left)
+    expect(node.getBoundingClientRect().width).toBeCloseTo(before.width)
+    expect(node.getBoundingClientRect().height).toBeCloseTo(before.height)
+
+    animation.currentTime = 60
+    const interrupted = node.getBoundingClientRect()
+    node.style.left = '80px'
+    node.style.width = '75px'
+    capture(3)
+    const retargeted = node.getAnimations()[0]!
+    retargeted.pause()
+    retargeted.currentTime = 0
+    expect(node.getBoundingClientRect().left).toBeCloseTo(interrupted.left)
+    expect(node.getBoundingClientRect().width).toBeCloseTo(interrupted.width)
+    expect(node.getBoundingClientRect().height).toBeCloseTo(interrupted.height)
   })
 
   it('starts from the current node when a virtual row has remounted', () => {

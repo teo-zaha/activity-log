@@ -10,7 +10,7 @@ import type { AllDayRow } from '../calendar-grid'
   imports: [MatIconModule],
   templateUrl: './calendar-all-day-row.component.html',
   styleUrl: './calendar-all-day-row.component.scss',
-  host: { '[style.height.px]': 'row().height' },
+  host: { '[style.height.px]': 'row().height', '[class.has-bars]': 'row().bars.length > 0' },
 })
 export class CalendarAllDayRowComponent {
   readonly row = input.required<AllDayRow<EntryUiAdapter>>()

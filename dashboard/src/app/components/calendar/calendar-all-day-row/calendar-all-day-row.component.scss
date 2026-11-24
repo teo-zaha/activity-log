@@ -4,8 +4,11 @@
 :host {
   display: flex;
   flex-shrink: 0;
-  border-bottom: 1px solid var(--border-subtle);
   overflow: hidden;
+
+  &.has-bars {
+    border-bottom: 1px solid var(--border-subtle);
+  }
 }
 
 .time-gutter-allday {
