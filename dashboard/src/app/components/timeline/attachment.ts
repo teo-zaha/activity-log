@@ -7,9 +7,7 @@ import { resizeObserver } from '@signality/core/observers/resize-observer'
  *
  * Back in the document the scroller starts at the top, without a scroll event: one is sent, so
  * the virtual list draws the days of where the scroller is, and the router then moves it to
- * where the history entry left it, or to the top (`ViewsScroller`). Lists do not animate while
- * out of the document: AutoAnimate would measure their rows there (as 0 × 0 at the corner) and fly
- * them in from there, so it measures them again once the list is back.
+ * where the history entry left it, or to the top (`ViewsScroller`).
  */
 export function trackAttachment(scroller: Signal<ElementRef<HTMLElement>>): Signal<boolean> {
   const attached = signal(true)
@@ -25,9 +23,6 @@ export function trackAttachment(scroller: Signal<ElementRef<HTMLElement>>): Sign
     // Attached first, so what follows the scroll event reads the list as back.
     attached.set(true)
     element.dispatchEvent(new Event('scroll'))
-    // AutoAnimate measures a list's rows again when an animation inside an element holding the
-    // list ends.
-    element.dispatchEvent(new Event('animationend'))
   })
   return attached.asReadonly()
 }

@@ -2,6 +2,7 @@ import { signal, type Provider, type WritableSignal } from '@angular/core'
 import type { ConnectionKey, EntryKey } from '../../providers/connection'
 import type { DayGroup } from '../../models/day-group'
 import type { EntryUiAdapter } from '../../providers/types'
+import type { ActivityEntry } from '../../generated/activity'
 import type { CollectionStatus } from '../../services/types'
 import type { SettingsSelection } from '../settings-dialog/settings-dialog.types'
 import type { ViewMode } from '../../utils/app-url'
@@ -29,6 +30,7 @@ import { TimelineComponent } from './timeline.component'
 interface TimelineActivityMock {
   isLoading: WritableSignal<boolean>
   groupedByDay: WritableSignal<readonly DayGroup<EntryUiAdapter>[]>
+  allEntries: WritableSignal<ActivityEntry[]>
   searchQuery: WritableSignal<string>
   setSearchQuery: (query: string) => void
   currentView: WritableSignal<ViewMode>
@@ -53,6 +55,7 @@ function mockActivity(overrides: { status?: CollectionStatus; query?: string } =
     entry,
     activity: {
       isLoading: signal(false),
+      allEntries: signal(activityLog.entries),
       groupedByDay: signal<readonly DayGroup<EntryUiAdapter>[]>([
         { date: '2026-05-18', entries: [entry] },
       ]),
@@ -88,6 +91,7 @@ function servicesOf(activity: TimelineActivityMock): Provider[] {
     openEvent: activity.openEvent,
   } satisfies Partial<ActivityViewStateService>
   const data = {
+    allEntries: activity.allEntries,
     isLoading: activity.isLoading,
     collectionStatus: activity.collectionStatus,
     anySourceReady: activity.anySourceReady,
@@ -129,29 +133,26 @@ function twoDays(activity: TimelineActivityMock): void {
   ])
 }
 
-/**
- * Gives the scroller a 600 px tall box and each day 200 px, as jsdom lays nothing out: the virtual
- * list draws the days that fit in its scroller's height, and none in a scroller without one.
- */
+/** Gives the scroller a box so that the virtualizer draws rows in jsdom. */
 function stubViewport(): void {
   vi.spyOn(Element.prototype, 'clientHeight', 'get').mockReturnValue(600)
   vi.spyOn(Element.prototype, 'clientWidth', 'get').mockReturnValue(800)
-  vi.spyOn(HTMLElement.prototype, 'offsetHeight', 'get').mockReturnValue(200)
 }
 
-/** Makes every element report a list taller than its viewport. */
+/** Makes even the two one-row days taller than the visible scroller. */
 function stubOverflow(): void {
-  vi.spyOn(Element.prototype, 'scrollHeight', 'get').mockReturnValue(2000)
+  vi.spyOn(Element.prototype, 'clientHeight', 'get').mockReturnValue(100)
 }
 
 /** `count` days with one Git commit each, newest first, from 18 May 2026 back. */
 function manyDays(activity: TimelineActivityMock, count: number): void {
-  const [git] = activityLog.entries.map(createEntryAdapter)
+  const [git] = activityLog.entries
   activity.groupedByDay.set(
-    Array.from({ length: count }, (_, index) => ({
-      date: addDaysToKey('2026-05-18', -index),
-      entries: [git!],
-    }))
+    Array.from({ length: count }, (_, index) => {
+      const date = addDaysToKey('2026-05-18', -index)
+      const entry = createEntryAdapter({ ...git, id: date, timestamp: `${date}T09:00:00Z` })
+      return { date, entries: [entry] }
+    })
   )
 }
 
@@ -493,17 +494,19 @@ describe('TimelineComponent', () => {
       const { activity } = mockActivity()
       const [git, jira] = activityLog.entries.map(createEntryAdapter)
       activity.groupedByDay.set([{ date: '2026-05-18', entries: [git!] }])
+      activity.allEntries.set([activityLog.entries[0]])
       const { fixture } = await render(TimelineComponent, { providers: servicesOf(activity) })
       return {
         activity,
         gainRow: async (): Promise<void> => {
           activity.groupedByDay.set([{ date: '2026-05-18', entries: [jira!, git!] }])
+          activity.allEntries.set(activityLog.entries)
           await fixture.whenStable()
         },
       }
     }
 
-    it('keeps its list, so AutoAnimate animates the row it gains', async () => {
+    it('keeps its list and fades in an entry added by a collection', async () => {
       const { gainRow } = await renderDay()
       const list = document.querySelector('.day-group ol')
 
@@ -511,6 +514,9 @@ describe('TimelineComponent', () => {
 
       expect(document.querySelector('.day-group ol')).toBe(list)
       expect(list?.querySelectorAll('.entry')).toHaveLength(2)
+      expect(list?.querySelector('.entry-added .entry')?.getAttribute('aria-label')).toMatch(
+        /open jira event/i
+      )
     })
 
     it('keeps the focus on an entry as its day gains a row', async () => {

@@ -60,7 +60,11 @@ class TrackedList {
     scroller: this.scroller,
     days: signal(DAYS),
     positions: this.positions,
-    viewport: signal({ height: 600, headerTop: 40 }),
+    viewport: signal({
+      height: 600,
+      headerTop: 40,
+      scrollHeight: LIST_TOP + DAYS.length * DAY_HEIGHT,
+    }),
     enabled: signal(true),
     attached: this.attached,
   })
@@ -70,8 +74,6 @@ class TrackedList {
 function scrollable(element: HTMLElement): (top: number) => void {
   let scrollTop = 0
   Object.defineProperty(element, 'scrollTop', { get: () => scrollTop })
-  Object.defineProperty(element, 'clientHeight', { get: () => 600 })
-  Object.defineProperty(element, 'scrollHeight', { get: () => LIST_TOP + DAYS.length * DAY_HEIGHT })
   return top => {
     scrollTop = top
     element.dispatchEvent(new Event('scroll'))

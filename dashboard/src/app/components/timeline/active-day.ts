@@ -48,7 +48,11 @@ export interface ActiveDayOptions {
   readonly days: Signal<readonly DayKey[]>
   readonly positions: DayPositions
   /** The scroller's height and where the sticky day header sits below its top. */
-  readonly viewport: Signal<{ readonly height: number; readonly headerTop: number }>
+  readonly viewport: Signal<{
+    readonly height: number
+    readonly headerTop: number
+    readonly scrollHeight: number
+  }>
   /** Whether the day is tracked: only while the day index shows. */
   readonly enabled: Signal<boolean>
   /** False while the list is out of the document: its scroll position means nothing then. */
@@ -78,14 +82,11 @@ export function trackActiveDay(options: ActiveDayOptions): ActiveDay {
   const track = (): void => {
     if (pinned || !enabled() || !attached()) return
     const element = scroller().nativeElement
-    const line = viewport().headerTop + TRACK_LINE_GAP
-    const slide = slideLine({
-      height: element.clientHeight,
-      line,
-      scrollHeight: element.scrollHeight,
-      scrollTop: element.scrollTop,
-    })
-    const index = positions.indexAt(element.scrollTop + line + slide)
+    const { height, headerTop, scrollHeight } = viewport()
+    const line = headerTop + TRACK_LINE_GAP
+    const scrollTop = element.scrollTop
+    const slide = slideLine({ height, line, scrollHeight, scrollTop })
+    const index = positions.indexAt(scrollTop + line + slide)
     const day = index === null ? undefined : days()[index]
     if (day !== undefined) tracked.set(day)
   }
@@ -101,10 +102,12 @@ export function trackActiveDay(options: ActiveDayOptions): ActiveDay {
   listener.passive(scroller, 'scroll', track)
   // The list or its size changed without a scroll (a filter, a collection, a resize), or the
   // list is back in the document.
-  afterRenderEffect(() => {
-    days()
-    viewport()
-    if (enabled() && attached()) untracked(track)
+  afterRenderEffect({
+    read: () => {
+      days()
+      viewport()
+      if (enabled() && attached()) untracked(track)
+    },
   })
 
   return {

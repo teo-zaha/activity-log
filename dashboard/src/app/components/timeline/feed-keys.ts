@@ -1,48 +1,30 @@
-import { type ElementRef, Injector, type Signal, afterNextRender, inject } from '@angular/core'
+import type { ElementRef, Signal } from '@angular/core'
 import { listener } from '@signality/core/browser/listener'
 
-/** The keys of the ARIA feed pattern: to the next or the previous article. */
 const STEPS: Readonly<Record<string, 1 | -1>> = { PageDown: 1, PageUp: -1 }
 
-export interface FeedKeysOptions {
-  /** What holds the feed; its keys are followed here, the shortcut service's being the page's. */
+interface FeedKeysOptions {
   readonly scroller: Signal<ElementRef<HTMLElement>>
-  /** How many articles the feed has, drawn or not. */
   readonly count: () => number
-  /** Where a drawn article is in the feed; null for an element that is none of its articles. */
-  readonly indexOf: (article: HTMLElement) => number | null
-  /** Brings the article of `index` to the top of the screen, drawing it. */
-  readonly scrollTo: (index: number) => void
+  readonly focusDay: (index: number) => void
+  readonly tab: (target: HTMLElement, step: 1 | -1) => boolean
 }
 
-/** The article of `index` among those drawn under `root`, by its `data-index`. */
-function articleAt(root: HTMLElement, index: number): HTMLElement | null {
-  return root.querySelector<HTMLElement>(`article[data-index="${index}"]`)
-}
-
-/**
- * Page Down and Page Up inside the feed move focus to the next or previous article, as the ARIA
- * feed pattern has it: an article not drawn yet is scrolled to first, then focused once drawn.
- * Unmodified keys only; the page's own Page Down and Page Up still scroll outside the feed.
- */
-export function followFeedKeys({ scroller, count, indexOf, scrollTo }: FeedKeysOptions): void {
-  const injector = inject(Injector)
+/** Page keys step through feed articles. Tab follows entry order even across virtual gaps. */
+export function followFeedKeys({ scroller, count, focusDay, tab }: FeedKeysOptions): void {
   listener(scroller, 'keydown', (event: KeyboardEvent) => {
-    const step = STEPS[event.key]
-    if (step === undefined || event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) {
+    const target = event.target
+    if (!(target instanceof HTMLElement) || event.altKey || event.ctrlKey || event.metaKey) return
+    if (event.key === 'Tab') {
+      if (tab(target, event.shiftKey ? -1 : 1)) event.preventDefault()
       return
     }
-    const article =
-      event.target instanceof Element ? event.target.closest<HTMLElement>('article') : null
-    const index = article === null ? null : indexOf(article)
-    if (index === null) return
-    const next = index + step
+    const step = STEPS[event.key]
+    const article = target.closest<HTMLElement>('article[data-index]')
+    if (step === undefined || event.shiftKey || !article) return
+    const next = Number(article.dataset['index']) + step
     if (next < 0 || next >= count()) return
     event.preventDefault()
-    const root = scroller().nativeElement
-    scrollTo(next)
-    const drawn = articleAt(root, next)
-    if (drawn !== null) drawn.focus({ preventScroll: true })
-    else afterNextRender(() => articleAt(root, next)?.focus({ preventScroll: true }), { injector })
+    focusDay(next)
   })
 }

@@ -77,14 +77,12 @@ describe('trackAttachment', () => {
     expect(host.attached()).toBe(true)
   })
 
-  it('has the list read where the scroller is, and AutoAnimate measure, once it is back', async () => {
+  it('has the list read where the scroller is once it is back', async () => {
     const { element } = await renderHost()
     const observer = FakeResizeObserver.observing(element)
     const parent = element.parentElement!
     const scroll = vi.fn()
-    const animationEnd = vi.fn()
     element.addEventListener('scroll', scroll)
-    element.addEventListener('animationend', animationEnd)
 
     element.remove()
     observer.report()
@@ -92,7 +90,6 @@ describe('trackAttachment', () => {
     observer.report()
 
     expect(scroll).toHaveBeenCalledOnce()
-    expect(animationEnd).toHaveBeenCalledOnce()
   })
 
   it('sends nothing while the scroller stays in the document', async () => {

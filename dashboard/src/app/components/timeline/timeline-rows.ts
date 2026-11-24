@@ -15,11 +15,6 @@ export interface TimelineRow {
 }
 
 export interface TimelineDay {
-  /**
-   * Names this drawing of the day: a day drawn again with other rows (a filter, a collection)
-   * gets another, so the virtual list measures it afresh instead of keeping its old height.
-   */
-  readonly key: string
   readonly date: DayKey
   /** `Monday, 16 November 2026` */
   readonly label: string
@@ -49,14 +44,12 @@ function sameRows(a: readonly TimelineRow[], b: readonly TimelineRow[]): boolean
 }
 
 function timelineDay(
-  key: string,
   date: DayKey,
   relative: string | null,
   rows: readonly TimelineRow[]
 ): TimelineDay {
   const count = rows.length
   return {
-    key,
     date,
     label: longDayLabel(date),
     relative,
@@ -77,8 +70,6 @@ export class TimelineRows {
    * so its list is not compared row by row again when another day changes.
    */
   private drawn = new Map<DayKey, TimelineDay>()
-  /** How many days were drawn, for each new drawing's key. */
-  private drawings = 0
 
   /** The days of `groups`, labelled relative to `today`. */
   days(groups: readonly DayGroup<EntryUiAdapter>[], today: DayKey): TimelineDay[] {
@@ -90,7 +81,7 @@ export class TimelineRows {
       const day =
         previous && previous.relative === relative && sameRows(previous.rows, rows)
           ? previous
-          : timelineDay(`${group.date}/${++this.drawings}`, group.date, relative, rows)
+          : timelineDay(group.date, relative, rows)
       drawn.set(group.date, day)
       return day
     })

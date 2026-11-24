@@ -7,10 +7,7 @@ import { TestBed } from '@angular/core/testing'
 import type { ActivityLog, GitEntry } from '../../generated/activity'
 import { afterEach, describe, expect, it } from 'vitest'
 import { cdp, page } from 'vitest/browser'
-import type { autoAnimate } from '@formkit/auto-animate'
-import { provideAppRouter } from '../../app.routes'
 import { parseEntryKey } from '../../providers/connection'
-import { AUTO_ANIMATE } from '../auto-animate/auto-animate.directive'
 import { ActivityViewStateService } from '../../services/activity-view-state.service'
 import { MockBackendTransport } from '../../testing/activity-fixtures'
 import { openApp, type OpenApp } from '../../testing/app'
@@ -105,30 +102,13 @@ async function scrollTo(top: number): Promise<void> {
   await frames()
 }
 
-/**
- * AutoAnimate as it is under reduced motion: off. It reads the preference once, as it loads, so
- * emulating reduced motion afterwards does not turn it off.
- */
-const stillRows: typeof autoAnimate = parent => ({
-  parent,
-  enable: (): void => {},
-  disable: (): void => {},
-  isEnabled: (): boolean => false,
-})
-
-async function openTimeline(
-  backend = new MockBackendTransport(),
-  { motion = true } = {}
-): Promise<OpenApp> {
+async function openTimeline(backend = new MockBackendTransport()): Promise<OpenApp> {
   await page.viewport(1280, 800)
   const log = logOf(entries)
   backend.activityResponses = [log]
   backend.activityResponse = log
   backend.collectResponse = log
-  const router = motion
-    ? provideAppRouter()
-    : [provideAppRouter(), { provide: AUTO_ANIMATE, useValue: stillRows }]
-  const app = await openApp(`/timeline?${RANGE}`, { backend, router })
+  const app = await openApp(`/timeline?${RANGE}`, { backend })
   await expect
     .poll(() => document.querySelector('app-timeline .day-group')?.getAttribute('aria-setsize'))
     .toBe(String(DAYS))
@@ -189,7 +169,7 @@ describe('the reader’s place in the timeline', () => {
 
   it('keeps the row read in place on every frame as the drawn days just above it grow', async () => {
     await reducedMotion(true)
-    const { backend } = await openTimeline(undefined, { motion: false })
+    const { backend } = await openTimeline()
     await scrollTo(9000)
     const read = await settledReading()
 
