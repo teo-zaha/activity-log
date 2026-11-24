@@ -1,21 +1,23 @@
-# Builds the desktop bundles on all three systems, on a `v*` tag and by hand. The macOS
-# build costs ten Linux minutes for each of its own, the Windows one two.
+# Builds the desktop bundles on all three systems, for a release or by hand.
+# The macOS build costs ten Linux minutes for each of its own, the Windows one two.
 name: Desktop Build (All OS)
 
 on:
   workflow_dispatch:
-  push:
-    tags:
-      - 'v*'
+  workflow_call:
+    inputs:
+      release_sha:
+        description: 'Commit in the release-input artifact'
+        type: string
+        required: true
 
-# Read the code, nothing more: no job here writes to the repository.
 permissions:
   contents: read
 
-# A newer run started by hand on the same branch stops the one before it.
+# Only smoke builds started by hand can cancel an earlier run of this workflow.
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  group: ${{ inputs.release_sha && format('desktop-release-{0}', github.run_id) || format('desktop-build-dispatch-{0}', github.ref) }}
+  cancel-in-progress: ${{ !inputs.release_sha }}
 
 jobs:
   build:
@@ -23,12 +25,36 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, macos-latest, windows-latest]
+        include:
+          - os: ubuntu-latest
+            bundles: deb,rpm,appimage
+          - os: macos-latest
+            bundles: dmg
+          - os: windows-latest
+            bundles: nsis
 
     runs-on: ${{ matrix.os }}
 
     steps:
       - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - uses: actions/download-artifact@v4
+        if: inputs.release_sha
+        with:
+          name: release-input
+          path: ${{ runner.temp }}/release-input
+
+      - name: Check out the prepared release commit
+        if: inputs.release_sha
+        shell: bash
+        env:
+          RELEASE_SHA: ${{ inputs.release_sha }}
+        run: |
+          git fetch --no-tags "$RUNNER_TEMP/release-input/release.bundle" HEAD
+          test "$(git rev-parse FETCH_HEAD)" = "$RELEASE_SHA"
+          git checkout --detach "$RELEASE_SHA"
 
       - uses: pnpm/action-setup@v4
         with:
@@ -61,13 +87,23 @@ jobs:
         shell: bash
         run: desktop/installer/template.sh check
 
-      - name: Build desktop bundle
-        run: pnpm desktop:build
+      - name: Build desktop bundles
+        shell: bash
+        env:
+          BUNDLES: ${{ matrix.bundles }}
+        run: |
+          pnpm desktop:build --bundles "$BUNDLES"
+          git diff --exit-code -- Cargo.lock
 
-      - name: Upload artifacts
+      - name: Upload desktop bundles
         uses: actions/upload-artifact@v4
         with:
           name: desktop-${{ matrix.os }}
           path: |
-            target/release/bundle/**
-            desktop/target/release/bundle/**
+            target/release/bundle/nsis/*-setup.exe
+            target/release/bundle/dmg/*.dmg
+            target/release/bundle/deb/*.deb
+            target/release/bundle/rpm/*.rpm
+            target/release/bundle/appimage/*.AppImage
+          if-no-files-found: error
+          overwrite: true

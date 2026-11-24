@@ -1,6 +1,6 @@
 {
   "name": "activity-log",
-  "version": "1.0.0",
+  "private": true,
   "description": "Unified activity tracker across local Git, GitLab and Jira",
   "license": "MIT",
   "type": "module",
@@ -50,7 +50,10 @@
     "rust:test": "cargo test --workspace",
     "format": "pnpm run rust:fmt && prettier --write .",
     "format:check": "pnpm run rust:fmt:check && prettier --check .",
-    "verify": "pnpm run types:check && pnpm run format:check && pnpm run rust:check && pnpm run rust:clippy && pnpm run rust:test && pnpm run dashboard:lint && pnpm run dashboard:test && pnpm run dashboard:test:layout && pnpm run dashboard:typecheck && pnpm run dashboard:build"
+    "release:check": "python3 scripts/release.py check",
+    "release:preview": "python3 scripts/release.py preview",
+    "release:changelog": "python3 scripts/release.py changelog",
+    "verify": "pnpm run release:check && pnpm run types:check && pnpm run format:check && pnpm run rust:check && pnpm run rust:clippy && pnpm run rust:test && pnpm run dashboard:lint && pnpm run dashboard:test && pnpm run dashboard:test:layout && pnpm run dashboard:typecheck && pnpm run dashboard:build"
   },
   "dependencies": {
     "@fontsource/inter": "^5.3.0",

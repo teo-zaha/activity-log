@@ -1,34 +1,107 @@
-# One-time setup:
-#   1. Create a fine-grained PAT with Contents: read & write on this repo.
-#   2. Add it as repo secret `RELEASE_PAT`.
-#   3. If branch protection on `main` is enabled, allow the PAT identity
-#      to push directly (or bypass required reviews for it).
-#
-# Loop prevention layers (all three active):
-#   - paths-ignore on CHANGELOG.md (auto-commit does not retrigger)
-#   - job-level `if:` skips chore(release): commits
-#   - [skip ci] in the auto-commit message
 name: Release
 
 on:
-  push:
-    branches: [main]
-    paths-ignore:
-      - 'CHANGELOG.md'
   workflow_dispatch:
+    inputs:
+      version:
+        description: 'Override with a version such as 1.2.3 (optional)'
+        type: string
+      draft:
+        description: 'Leave the GitHub Release as a draft for editing'
+        type: boolean
+        default: false
+      dry_run:
+        description: 'Build and check everything without pushing or creating a release'
+        type: boolean
+        default: false
 
 concurrency:
   group: release-main
   cancel-in-progress: false
 
-# The token GitHub gives each job reads only; the release job pushes the changelog commit and
-# tag and creates the release, so it alone may write (it pushes with `RELEASE_PAT`).
 permissions:
   contents: read
 
+defaults:
+  run:
+    shell: bash
+
 jobs:
-  release:
-    if: "!startsWith(github.event.head_commit.message, 'chore(release):')"
+  prepare:
+    if: github.ref == 'refs/heads/main'
+    permissions:
+      contents: read
+      actions: read
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    outputs:
+      tag: ${{ steps.release.outputs.tag }}
+      sha: ${{ steps.release.outputs.sha }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Check the source commit
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if [[ $(git rev-parse refs/remotes/origin/main) != "$GITHUB_SHA" ]]; then
+            echo "::error::main advanced. Dispatch Release from its new head."
+            exit 1
+          fi
+          count=$(gh api --method GET "repos/$GITHUB_REPOSITORY/actions/workflows/linux.yml/runs" \
+            -f branch=main -f head_sha="$GITHUB_SHA" -f status=success --jq .total_count)
+          if [[ $count == 0 ]]; then
+            echo "::error::Linux CI must pass on main at $GITHUB_SHA before a release."
+            exit 1
+          fi
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: git-cliff
+
+      - name: Prepare release commit and notes
+        id: release
+        env:
+          VERSION: ${{ inputs.version }}
+        run: |
+          dir="$RUNNER_TEMP/release-input"
+          mkdir -p "$dir"
+          tag=$(python3 scripts/release.py prepare --version "$VERSION" --notes "$dir/notes.md")
+          if [[ -z $tag ]]; then
+            echo "No pending release."
+            exit 0
+          fi
+          git add -- Cargo.toml Cargo.lock CHANGELOG.md
+          git -c user.name='github-actions[bot]' \
+            -c user.email='41898282+github-actions[bot]@users.noreply.github.com' \
+            commit -m "chore(release): $tag"
+          git bundle create "$dir/release.bundle" HEAD
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+          cat "$dir/notes.md" >> "$GITHUB_STEP_SUMMARY"
+
+      - uses: actions/upload-artifact@v4
+        if: steps.release.outputs.tag != ''
+        with:
+          name: release-input
+          path: ${{ runner.temp }}/release-input/
+          if-no-files-found: error
+          overwrite: true
+
+  build:
+    needs: prepare
+    if: needs.prepare.outputs.tag != ''
+    uses: ./.github/workflows/desktop-build.yml
+    with:
+      release_sha: ${{ needs.prepare.outputs.sha }}
+
+  publish:
+    needs: [prepare, build]
     permissions:
       contents: write
     runs-on: ubuntu-latest
@@ -37,55 +110,126 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-          token: ${{ secrets.RELEASE_PAT }}
+          token: ${{ (!inputs.dry_run && secrets.RELEASE_PAT) || github.token }}
 
-      - name: Configure git identity
-        run: |
-          git config user.name  'github-actions[bot]'
-          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-
-      - name: Install git-cliff
-        uses: taiki-e/install-action@v2
+      - uses: actions/download-artifact@v4
         with:
-          tool: git-cliff
+          name: release-input
+          path: ${{ runner.temp }}/release-input
 
-      - name: Compute next tag
-        id: bump
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: desktop-*
+          merge-multiple: true
+          path: ${{ runner.temp }}/release-assets
+
+      - name: Verify the release commit and bundles
+        env:
+          RELEASE_SHA: ${{ needs.prepare.outputs.sha }}
+          TAG: ${{ needs.prepare.outputs.tag }}
         run: |
-          NEXT_TAG=$(git cliff --bumped-version)
-          CURRENT_TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "")
-          if [ -z "$NEXT_TAG" ] || [ "$NEXT_TAG" = "$CURRENT_TAG" ]; then
-            echo "Nothing to release (current=$CURRENT_TAG, computed=$NEXT_TAG)"
-            echo "release_needed=false" >> "$GITHUB_OUTPUT"
-          else
-            echo "Releasing $NEXT_TAG (previous=$CURRENT_TAG)"
-            echo "release_needed=true" >> "$GITHUB_OUTPUT"
-            echo "next_tag=$NEXT_TAG" >> "$GITHUB_OUTPUT"
+          git fetch --no-tags "$RUNNER_TEMP/release-input/release.bundle" HEAD
+          test "$(git rev-parse FETCH_HEAD)" = "$RELEASE_SHA"
+          test "$(git show -s --format=%P "$RELEASE_SHA")" = "$GITHUB_SHA"
+          git diff --exit-code "$GITHUB_SHA" "$RELEASE_SHA" -- . \
+            ':(exclude)Cargo.toml' ':(exclude)Cargo.lock' ':(exclude)CHANGELOG.md'
+
+          shopt -s globstar nullglob
+          manifest="$RUNNER_TEMP/release-assets.txt"
+          staging="$RUNNER_TEMP/release-upload"
+          mkdir -p "$staging"
+          for pattern in '*-setup.exe' '*.dmg' '*.deb' '*.rpm' '*.AppImage'; do
+            # Expand each pattern against the downloaded bundles.
+            # shellcheck disable=SC2206
+            matches=("$RUNNER_TEMP"/release-assets/**/$pattern)
+            if [[ ${#matches[@]} != 1 ]]; then
+              echo "::error::Expected one $pattern asset, got ${#matches[@]}." >&2
+              exit 1
+            fi
+            name=${matches[0]##*/}
+            if [[ $name != *"${TAG#v}"* ]]; then
+              echo "::error::Asset $name does not contain the release version $TAG." >&2
+              exit 1
+            fi
+            # Use a stable filename on GitHub, which rewrites spaces in asset names.
+            asset="$staging/${name// /-}"
+            mv -- "${matches[0]}" "$asset"
+            printf '%s\n' "$asset"
+          done > "$manifest"
+          cat "$manifest"
+
+      - name: Check remote refs and push the release
+        env:
+          TAG: ${{ needs.prepare.outputs.tag }}
+          RELEASE_SHA: ${{ needs.prepare.outputs.sha }}
+          DRY_RUN: ${{ inputs.dry_run }}
+        run: |
+          git fetch --no-tags origin refs/heads/main
+          remote_main=$(git rev-parse FETCH_HEAD)
+          tag_refs=$(git ls-remote origin "refs/tags/$TAG" "refs/tags/$TAG^{}")
+          if [[ -n $tag_refs ]]; then
+            # ls-remote lists the peeled commit last for an annotated tag.
+            tag_commit=$(awk 'END {print $1}' <<< "$tag_refs")
+            if [[ $tag_commit != "$RELEASE_SHA" ]]; then
+              echo "::error::$TAG points to $tag_commit, expected $RELEASE_SHA."
+              exit 1
+            fi
+            if ! git merge-base --is-ancestor "$RELEASE_SHA" "$remote_main"; then
+              echo "::error::$TAG is already present but its release commit is missing from main."
+              exit 1
+            fi
+            echo "$TAG is already pushed."
+            exit 0
           fi
+          if [[ $remote_main != "$GITHUB_SHA" ]]; then
+            echo "::error::main advanced. Dispatch Release from its new head."
+            exit 1
+          fi
+          if [[ $DRY_RUN == true ]]; then
+            echo "Dry run verified $TAG without pushing."
+            exit 0
+          fi
+          git -c user.name='github-actions[bot]' \
+            -c user.email='41898282+github-actions[bot]@users.noreply.github.com' \
+            tag -a "$TAG" "$RELEASE_SHA" -m "Release $TAG"
+          git push --atomic --no-follow-tags \
+            --force-with-lease="refs/heads/main:$GITHUB_SHA" \
+            --force-with-lease="refs/tags/$TAG:" origin \
+            "$RELEASE_SHA:refs/heads/main" "refs/tags/$TAG:refs/tags/$TAG"
 
-      - name: Regenerate CHANGELOG.md
-        if: steps.bump.outputs.release_needed == 'true'
-        run: git cliff --tag "${{ steps.bump.outputs.next_tag }}" -o CHANGELOG.md
-
-      - name: Build release notes for GitHub Release body
-        if: steps.bump.outputs.release_needed == 'true'
-        # --unreleased --tag emits only the section for the upcoming tag.
-        # --latest would emit notes for the prior tag because the new tag isn't pushed yet.
-        run: git cliff --unreleased --tag "${{ steps.bump.outputs.next_tag }}" --strip header > .release-notes.md
-
-      - name: Commit, tag, push
-        if: steps.bump.outputs.release_needed == 'true'
+      - name: Upload bundles to the draft
+        if: '!inputs.dry_run'
+        env:
+          GH_TOKEN: ${{ secrets.RELEASE_PAT || github.token }}
+          TAG: ${{ needs.prepare.outputs.tag }}
+          DRAFT: ${{ inputs.draft }}
         run: |
-          NEXT_TAG='${{ steps.bump.outputs.next_tag }}'
-          git add CHANGELOG.md
-          git commit -m "chore(release): $NEXT_TAG [skip ci]"
-          git tag -a "$NEXT_TAG" -m "Release $NEXT_TAG"
-          git push origin HEAD:main --follow-tags
-
-      - name: Create GitHub Release
-        if: steps.bump.outputs.release_needed == 'true'
-        uses: softprops/action-gh-release@v2
-        with:
-          tag_name: ${{ steps.bump.outputs.next_tag }}
-          body_path: .release-notes.md
-          token: ${{ secrets.RELEASE_PAT }}
+          state=$(gh api --paginate "repos/$GITHUB_REPOSITORY/releases?per_page=100" --slurp \
+            | jq -r --arg tag "$TAG" '.[][] | select(.tag_name == $tag) | .draft')
+          mapfile -t assets < "$RUNNER_TEMP/release-assets.txt"
+          case "$state" in
+            '')
+              gh release create "$TAG" --verify-tag --draft --title "$TAG" \
+                --notes-file "$RUNNER_TEMP/release-input/notes.md"
+              ;;
+            true) ;;
+            false)
+              names=$(gh release view "$TAG" --json assets --jq '.assets[].name')
+              for asset in "${assets[@]}"; do
+                if ! grep -Fxq "${asset##*/}" <<< "$names"; then
+                  echo "::error::Published release $TAG is missing ${asset##*/}."
+                  exit 1
+                fi
+              done
+              echo "$TAG is already published with all bundles."
+              exit 0
+              ;;
+            *)
+              echo "::error::Multiple releases found for $TAG."
+              exit 1
+              ;;
+          esac
+          gh release upload "$TAG" --clobber "${assets[@]}"
+          if [[ $DRAFT != true ]]; then
+            gh release edit "$TAG" --draft=false
+          fi

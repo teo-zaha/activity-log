@@ -32,7 +32,7 @@ conventional_commits = true
 filter_unconventional = false
 protect_breaking_commits = true
 filter_commits = false
-tag_pattern = "v[0-9].*"
+tag_pattern = "^v(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)$"
 topo_order = false
 sort_commits = "oldest"
 
@@ -62,6 +62,8 @@ commit_parsers = [
 ]
 
 [bump]
-# Pre-1.0 semantics: feat -> minor (0.1.0 -> 0.2.0); breaking -> minor (don't auto-jump to 1.0); fix -> patch
+# A newer, untagged Cargo workspace version is released first. After that,
+# git-cliff bumps the last tag: fixes use patch, features minor, and breaking
+# changes major (or minor on 0.x).
 features_always_bump_minor = true
 breaking_always_bump_major = false

@@ -59,6 +59,7 @@
             ];
 
             packages = with pkgs; [
+              git-cliff
               just
             ];
 

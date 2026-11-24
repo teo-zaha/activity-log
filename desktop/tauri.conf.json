@@ -1,7 +1,6 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
   "productName": "Activity Log",
-  "version": "1.0.0",
   "identifier": "com.activitylog.desktop",
   "build": {
     "beforeDevCommand": "pnpm --dir ../dashboard run dev:tauri",

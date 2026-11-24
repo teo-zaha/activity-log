@@ -37,7 +37,7 @@ Reconstructing a week of work usually means hopping across Git logs, GitLab, Jir
 
 ## Getting started
 
-> **Note:** There is no packaged release yet. Build and run Activity Log from source.
+Packaged desktop builds are available from [GitHub Releases](https://github.com/teo-zaha/activity-log/releases) once a release is published. To build from source, follow the steps below.
 
 ### Requirements
 
@@ -597,7 +597,7 @@ Run the repository verification gate before considering any change complete:
 pnpm verify
 ```
 
-`pnpm verify` checks generated TypeScript contract drift (`pnpm types:check`), formatting (`cargo fmt` + Prettier), Rust compilation, Clippy, Rust tests, Angular ESLint + lint tests, dashboard unit tests, Playwright layout tests (`*.layout.spec.ts`), Angular type-checking, and the dashboard build.
+`pnpm verify` checks workspace version consistency, generated TypeScript contract drift (`pnpm types:check`), formatting (`cargo fmt` + Prettier), Rust compilation, Clippy, Rust tests, Angular ESLint + lint tests, dashboard unit tests, Playwright layout tests (`*.layout.spec.ts`), Angular type-checking, and the dashboard build. The version check needs Python 3.11 or later, included in `nix develop`.
 
 Install the headless Chromium shell once for the layout tests:
 
@@ -638,6 +638,21 @@ After changing the app icon, redraw the installer's icon (a frame for the logo a
 ```bash
 nix shell --inputs-from . nixpkgs#python3 nixpkgs#imagemagick -c python3 desktop/installer/generate-images.py
 ```
+
+### Releases
+
+From a checkout with tags, use `nix develop -c pnpm release:preview` to see the proposed version and unreleased changes. `nix develop -c pnpm release:changelog` regenerates `CHANGELOG.md` locally. Both commands use git-cliff.
+
+Run **Actions → Release → Run workflow** on `main` after Linux CI passes at its head. The release uses the Cargo workspace version if it is newer than the latest tag. Otherwise, git-cliff bumps the previous tag from Conventional Commits. This makes the first packaged release `v1.0.0`, matching the Windows test installer. An override takes plain `X.Y.Z`. It must be newer than every release tag and at least as high as the Cargo version. It can equal the Cargo version while that version has no tag.
+
+Release prepares the version and changelog commit, then builds Windows x64 NSIS, macOS arm64 DMG, and Linux x64 AppImage, DEB and RPM from that commit. After all builds pass, it pushes the commit and tag together, attaches the installers and git-cliff notes to a draft, and publishes it.
+
+- Turn on `draft` to edit the notes before publishing from Releases.
+- Turn on `dry_run` to build and validate the bundles and notes as workflow artifacts without pushing or creating a release.
+- If an upload fails after the tag was pushed, re-run the failed job in the same workflow run to finish the draft. If `main` advanced before the push, start a new run once the new head passes Linux CI.
+- Use **Actions → Desktop Build (All OS)** to build installers for a branch without cutting a release.
+
+The publish job uses GitHub's workflow token by default. Rules that require a pull request, checks, or special permissions for a tag can block the push. In that case, set the `RELEASE_PAT` repository secret to a contents-write token whose identity can bypass those rules, or configure a GitHub App with the corresponding bypass.
 
 ## Coming next
 

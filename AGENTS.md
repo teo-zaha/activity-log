@@ -182,6 +182,7 @@ Use the namespaced root scripts so intent is obvious:
 - `pnpm core:*`
 - `pnpm desktop:*`
 - `pnpm dashboard:*`
+- `pnpm release:check`, `pnpm release:preview`, `pnpm release:changelog`
 - `pnpm types:generate`, `pnpm types:check`
 - `pnpm verify`
 
@@ -197,7 +198,9 @@ pnpm verify
 
 If `pnpm verify` cannot be run in the current environment, say so explicitly in the final handoff.
 
-CI (`.github/workflows/`) runs the Linux check (clippy, the backend's tests, the Secret Service) on every pull request and push to main. Windows and macOS minutes cost two and ten Linux ones, so the Windows check (clippy and the tests on Windows, Credential Manager) runs on each push to main and the macOS keychain tests on a push to main that changes the secret store or the dependencies; on a pull request neither runs by itself. A change to Windows-gated code, file and path handling, the desktop crate or the secret store is not done until that workflow passed on its branch, run by hand (`gh workflow run windows.yml --ref <branch>`, or Actions › Run workflow). `cargo xwin clippy` (`pnpm win:check` in `nix develop .#windows`) compile-checks the Windows code locally. A superseded run of a pull request or a branch run by hand is cancelled, and every job has a timeout. The desktop bundles build on all three systems on a `v*` tag and by hand.
+CI (`.github/workflows/`) runs the Linux check (clippy, the backend's tests, the Secret Service) on every pull request and push to main. Windows and macOS minutes cost two and ten Linux ones, so the Windows check (clippy and the tests on Windows, Credential Manager) runs on each push to main and the macOS keychain tests on a push to main that changes the secret store or the dependencies; on a pull request neither runs by itself. A change to Windows-gated code, file and path handling, the desktop crate or the secret store is not done until that workflow passed on its branch, run by hand (`gh workflow run windows.yml --ref <branch>`, or Actions › Run workflow). `cargo xwin clippy` (`pnpm win:check` in `nix develop .#windows`) compile-checks the Windows code locally. A superseded run of a pull request or a branch run by hand is cancelled, and every job has a timeout.
+
+`Cargo.toml` owns the workspace version. Every crate inherits it, as does Tauri, and the private JavaScript packages have no version. `pnpm release:check` checks this and the lockfile without needing Git history. Release runs by hand on `main` once Linux CI passes at its head. It uses a Cargo version newer than all tags or takes git-cliff's bump, then calls Desktop Build for that exact release commit. Only after the builds pass does Release push the commit and tag and attach the installers to a draft before publishing. Desktop Build also runs by hand for a branch. The [README](README.md#releases) lists the release inputs.
 
 ## Change Rules
 
