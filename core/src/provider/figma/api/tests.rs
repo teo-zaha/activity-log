@@ -1,8 +1,11 @@
 use reqwest::StatusCode;
-use serde_json::json;
+use serde_json::{Value, json};
 
 use super::*;
-use crate::provider::remote_api::test_server::{Reply, TestServer};
+use crate::{
+    model::{ProviderProblem, Timestamp},
+    provider::remote_api::test_server::{Reply, TestServer},
+};
 
 const TOKEN: &str = "test-figma-token";
 
@@ -113,41 +116,51 @@ async fn does_not_follow_a_redirect_to_another_origin() {
     assert!(elsewhere.requests().is_empty());
 }
 
+fn version(id: &str, created_at: &str) -> Value {
+    json!({
+        "id": id,
+        "created_at": created_at,
+        "label": null,
+        "description": null,
+        "user": {"id":"1001","handle":"ada","img_url":"https://example.org/ada.png"}
+    })
+}
+
+fn page(rows: Vec<Value>, has_next: bool) -> Reply {
+    let pagination = if has_next {
+        json!({"next_page": "https://example.org/other"})
+    } else {
+        json!({})
+    };
+    Reply::json(
+        200,
+        json!({"versions": rows, "pagination": pagination}).to_string(),
+    )
+}
+
+const START: &str = "2026-11-23T09:00:00Z";
+const AFTER: &str = "2026-11-23T10:00:00Z";
+const BEFORE: &str = "2026-11-23T08:00:00Z";
+
 #[tokio::test]
-async fn version_requests_use_the_supplied_checkpoint_as_before() {
-    let server = TestServer::start(|request| {
-        let answer = if request.query("before").is_none() {
-            json!({
-                "versions":[{
-                    "id":"00142",
-                    "created_at":"2026-11-23T09:00:00Z",
-                    "label":null,
-                    "description":null,
-                    "user":{"id":"1001","handle":"ada","img_url":"https://example.org/ada.png"}
-                }],
-                "pagination":{"next_page":"https://example.org/other"}
-            })
-        } else {
-            json!({"versions":[],"pagination":{}})
-        };
-        Reply::json(200, answer.to_string())
+async fn versions_walk_the_oldest_cursor_and_stop_after_crossing_the_start() {
+    let server = TestServer::start(|request| match request.query("before").as_deref() {
+        None => page(vec![version("143", AFTER), version("00142", START)], true),
+        Some("00142") => page(vec![version("00142", START), version("141", BEFORE)], true),
+        _ => Reply::json(404, "{}"),
     });
     let api = FigmaApi::at(&server.url, &config()).unwrap();
-    let file = file();
 
-    let first = api.version_page(&file, None).await.unwrap();
-    let [version] = first.versions.as_slice() else {
-        panic!("expected one version");
-    };
-    assert_eq!(version.id, "00142");
-    assert_eq!(version.user.id, "1001");
-    assert_eq!(version.created_at, "2026-11-23T09:00:00Z");
-    assert!(version.label.is_none() && version.description.is_none());
-    assert!(first.pagination.next_page.is_some());
-
-    let second = api.version_page(&file, Some(version)).await.unwrap();
-    assert!(second.versions.is_empty());
-    assert!(second.pagination.next_page.is_none());
+    let rows = api
+        .versions_since(&file(), Timestamp::from(START).utc())
+        .await
+        .unwrap();
+    let ids: Vec<_> = rows.iter().map(|row| row.id.as_str()).collect();
+    assert_eq!(ids, ["143", "00142"]);
+    let oldest = &rows[1];
+    assert_eq!(oldest.user.id, "1001");
+    assert_eq!(oldest.created_at, START);
+    assert!(oldest.label.is_none() && oldest.description.is_none());
 
     let requests = server.requests();
     assert_eq!(requests.len(), 2);
@@ -159,27 +172,88 @@ async fn version_requests_use_the_supplied_checkpoint_as_before() {
 }
 
 #[tokio::test]
+async fn versions_stop_on_an_empty_page_or_without_a_next_page() {
+    for (empty, next) in [(true, true), (false, false)] {
+        let server = TestServer::start(move |_| {
+            let rows = if empty {
+                vec![]
+            } else {
+                vec![version("143", AFTER)]
+            };
+            page(rows, next)
+        });
+        let api = FigmaApi::at(&server.url, &config()).unwrap();
+        let rows = api
+            .versions_since(&file(), Timestamp::from(START).utc())
+            .await
+            .unwrap();
+        assert_eq!(rows.is_empty(), empty);
+        assert_eq!(server.requests().len(), 1);
+    }
+}
+
+#[tokio::test]
+async fn versions_fail_on_repeated_rows_or_a_repeated_cursor() {
+    for cursor_repeated in [false, true] {
+        let server = TestServer::start(move |request| {
+            let mut rows = vec![version("142", START)];
+            if cursor_repeated && request.query("before").is_some() {
+                rows.insert(0, version("143", AFTER));
+            }
+            page(rows, true)
+        });
+        let api = FigmaApi::at(&server.url, &config()).unwrap();
+
+        assert!(matches!(
+            api.versions_since(&file(), Timestamp::from(START).utc())
+                .await,
+            Err(VersionsError::Repeated)
+        ));
+        assert_eq!(server.requests().len(), 2);
+    }
+}
+
+#[tokio::test]
 async fn refuses_a_version_id_that_cannot_be_a_numeric_cursor() {
+    let server = TestServer::start(|_| page(vec![version("two", START)], false));
+    let api = FigmaApi::at(&server.url, &config()).unwrap();
+
+    assert!(matches!(
+        api.versions_since(&file(), Timestamp::from(START).utc())
+            .await,
+        Err(VersionsError::Request(ApiError::Decode))
+    ));
+}
+
+#[tokio::test]
+async fn figmas_err_field_is_reported_with_credentials_redacted() {
     let server = TestServer::start(|_| {
         Reply::json(
-            200,
-            json!({
-                "versions":[{
-                    "id":"two",
-                    "created_at":"2026-11-23T09:00:00Z",
-                    "label":null,
-                    "description":null,
-                    "user":{"id":"1001","handle":"ada","img_url":"https://example.org/ada.png"}
-                }],
-                "pagination":{}
-            })
-            .to_string(),
+            403,
+            json!({"status": 403, "err": format!("Invalid token {TOKEN}")}).to_string(),
         )
     });
     let api = FigmaApi::at(&server.url, &config()).unwrap();
 
+    let error = api.me().await.unwrap_err();
+    assert_eq!(error.problem(), Some(ProviderProblem::Refused));
     assert!(matches!(
-        api.version_page(&file(), None).await,
-        Err(ApiError::Decode)
+        error,
+        ApiError::Status { status: StatusCode::FORBIDDEN, message, .. }
+            if message == "Invalid token [redacted]"
     ));
+}
+
+#[tokio::test]
+async fn figma_uses_the_shared_short_retry_and_throttled_problem() {
+    for (retry_after, count) in [("0", 2), ("60", 1)] {
+        let server = TestServer::start(move |_| {
+            Reply::json(429, "{}").with_header("Retry-After", retry_after)
+        });
+        let api = FigmaApi::at(&server.url, &config()).unwrap();
+
+        let error = api.comments(&file()).await.unwrap_err();
+        assert_eq!(error.problem(), Some(ProviderProblem::Throttled));
+        assert_eq!(server.requests().len(), count);
+    }
 }
