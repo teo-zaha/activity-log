@@ -26,6 +26,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Check workspace versions
+        run: python3 scripts/release.py check
+
       # What the desktop crate links against (Tauri's WebKitGTK shell), as in
       # the Desktop Build workflow.
       - name: Linux deps

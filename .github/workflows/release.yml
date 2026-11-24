@@ -28,7 +28,6 @@ defaults:
 
 jobs:
   prepare:
-    if: github.ref == 'refs/heads/main'
     permissions:
       contents: read
       actions: read
@@ -38,6 +37,12 @@ jobs:
       tag: ${{ steps.release.outputs.tag }}
       sha: ${{ steps.release.outputs.sha }}
     steps:
+      - name: Reject dispatches outside main
+        if: github.ref != 'refs/heads/main'
+        run: |
+          echo "::error::Release runs only on main"
+          exit 1
+
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
@@ -62,7 +67,7 @@ jobs:
 
       - uses: taiki-e/install-action@v2
         with:
-          tool: git-cliff
+          tool: git-cliff@2
 
       - name: Prepare release commit and notes
         id: release
@@ -147,8 +152,16 @@ jobs:
               exit 1
             fi
             name=${matches[0]##*/}
-            if [[ $name != *"${TAG#v}"* ]]; then
-              echo "::error::Asset $name does not contain the release version $TAG." >&2
+            # Tauri uses name-version-release.arch.rpm or name_version_arch.ext.
+            if [[ $name == *.rpm ]]; then
+              prefix=${name%-*}
+              asset_version=${prefix##*-}
+            else
+              prefix=${name%_*}
+              asset_version=${prefix##*_}
+            fi
+            if [[ $asset_version != "${TAG#v}" ]]; then
+              echo "::error::Asset $name has version $asset_version, expected ${TAG#v}." >&2
               exit 1
             fi
             # Use a stable filename on GitHub, which rewrites spaces in asset names.

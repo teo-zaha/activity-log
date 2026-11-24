@@ -4,8 +4,15 @@ import argparse
 import json
 import re
 import subprocess
-import tomllib
+import sys
 from pathlib import Path
+
+try:
+    import tomllib
+except ModuleNotFoundError:
+    raise SystemExit(
+        "Release commands require Python 3.11 or later. Use nix develop or install a newer Python."
+    ) from None
 
 
 MANIFEST = Path("Cargo.toml")
@@ -107,7 +114,7 @@ def write_version(version):
         before + section + workspace_package + following_section + rest,
         encoding="utf-8",
     )
-    subprocess.run(["cargo", "update", "--workspace"], check=True)
+    subprocess.run(["cargo", "update", "--workspace"], check=True, stdout=sys.stderr)
     check_versions()
 
 

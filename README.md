@@ -654,6 +654,8 @@ Release prepares the version and changelog commit, then builds Windows x64 NSIS,
 
 The publish job uses GitHub's workflow token by default. Rules that require a pull request, checks, or special permissions for a tag can block the push. In that case, set the `RELEASE_PAT` repository secret to a contents-write token whose identity can bypass those rules, or configure a GitHub App with the corresponding bypass.
 
+The default token's push skips CI for the release commit. A push with `RELEASE_PAT` triggers CI.
+
 ## Coming next
 
 These items are in progress or planned and are not yet part of the current build:
