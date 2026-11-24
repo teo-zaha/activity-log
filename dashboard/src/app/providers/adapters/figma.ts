@@ -71,6 +71,7 @@ class FigmaEntryUiAdapter extends EntryUiAdapter<FigmaEntry> {
       searchTerms: [entry.fileName, activity.meta, ...activity.searchTerms],
       calendarDurationMinutes: null,
       detailFields: [...fileFields, ...activity.detailFields],
+      detailLink: { label: 'Open in Figma', url: entry.fileUrl },
       badge,
       badges: [badge],
       detailSections: [],

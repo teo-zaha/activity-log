@@ -36,6 +36,10 @@ describe('Figma adapter', () => {
     expect(adapter.detailFields).toContainEqual({ label: 'Comment', value: 'Looks good' })
     expect(adapter.detailFields).toContainEqual({ label: 'Resolved', value: 'Yes' })
     expect(adapter.searchTerms).toContain('Looks good')
+    expect(adapter.detailLink).toEqual({
+      label: 'Open in Figma',
+      url: figmaEntries.commented.fileUrl,
+    })
   })
 
   it('shows a reply with an explicit fallback for missing comment text', () => {

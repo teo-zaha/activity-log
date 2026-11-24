@@ -401,7 +401,7 @@ Each source below lists its entry types, Timeline subtitle line, detail panel fi
 
 - **Entries.** Named versions, unlabeled version checkpoints, comments, and replies credited to your Figma account.
 - **Timeline line.** `Saved version "…"`, `Edited`, `Commented`, or `Replied`.
-- **Detail panel.** File and Kind, plus Version and Description for named versions, Comment for comments and replies, and Resolved for top-level comments.
+- **Detail panel.** File and Kind, plus Version and Description for named versions, Comment for comments and replies, and Resolved for top-level comments. **Open in Figma** opens the file or the comment's node when available.
 - **Configuration.** `token` holds your personal access token. `files` lists one or more Figma file or branch links or keys.
 
 Choose **Settings → Add source → Figma** or run `activity-log sources add figma`. Use a personal access token with `current_user:read`, `file_versions:read`, `file_comments:read`, and `file_metadata:read`. Figma lets you set an expiry of up to 90 days. Replace the saved token when it expires. [Create a Figma personal access token](https://developers.figma.com/docs/rest-api/personal-access-tokens/) · [Figma token expiry](https://developers.figma.com/docs/rest-api/changelog/#april-28-2025)
