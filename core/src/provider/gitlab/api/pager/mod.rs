@@ -1,14 +1,12 @@
 //! Reading a paged GitLab list: pages follow GitLab's pagination headers, each is paid for
 //! before it is sent, and a list that comes back to a page or rows it already sent stops.
 
-use std::collections::HashSet;
-
 use reqwest::Url;
 use serde::de::DeserializeOwned;
 
 use super::GitLabApi;
 use crate::provider::{
-    remote_api::{RequestBudget, Retry},
+    remote_api::{RequestBudget, Retry, paging::PageGuard},
     remote_error::ApiError,
 };
 
@@ -42,8 +40,7 @@ pub(crate) struct Pager<'a, B: RequestBudget> {
     budget: &'a B,
     retry: Retry,
     next: Option<Url>,
-    asked: HashSet<Url>,
-    seen: HashSet<u64>,
+    guard: PageGuard<Url, u64>,
 }
 
 impl<'a, B: RequestBudget> Pager<'a, B> {
@@ -53,8 +50,7 @@ impl<'a, B: RequestBudget> Pager<'a, B> {
             budget,
             retry,
             next: Some(first),
-            asked: HashSet::new(),
-            seen: HashSet::new(),
+            guard: PageGuard::new(),
         }
     }
 
@@ -73,9 +69,9 @@ impl<'a, B: RequestBudget> Pager<'a, B> {
     }
 
     async fn read<T: PagedRow>(&mut self, url: Url) -> Result<Page<T>, PageError<B::Refusal>> {
-        if !self.asked.insert(url.clone()) {
-            return Err(PageError::Repeated);
-        }
+        self.guard
+            .begin(url.clone())
+            .map_err(|_| PageError::Repeated)?;
         self.budget.try_spend().map_err(PageError::Refused)?;
         // A page that is no JSON list fails the read; a row that is no `T` is skipped.
         let (values, following) = self
@@ -83,28 +79,23 @@ impl<'a, B: RequestBudget> Pager<'a, B> {
             .get_page::<Vec<serde_json::Value>>(url, self.retry)
             .await
             .map_err(PageError::Request)?;
-        let mut page = Page {
-            rows: Vec::new(),
-            skipped: 0,
-        };
-        // A row already read is not read twice (a new row can shift GitLab's offsets by one); a
-        // page that brings nothing new would repeat without end.
-        let mut parsed = 0;
-        for value in values {
-            let Ok(row) = serde_json::from_value::<T>(value) else {
-                page.skipped += 1;
-                continue;
-            };
-            parsed += 1;
-            if self.seen.insert(row.row_id()) {
-                page.rows.push(row);
-            }
-        }
-        if parsed > 0 && page.rows.is_empty() {
-            return Err(PageError::Repeated);
-        }
+        let mut skipped = 0;
+        let parsed =
+            values
+                .into_iter()
+                .filter_map(|value| match serde_json::from_value::<T>(value) {
+                    Ok(row) => Some(row),
+                    Err(_) => {
+                        skipped += 1;
+                        None
+                    }
+                });
+        let rows = self
+            .guard
+            .new_rows(parsed, T::row_id)
+            .map_err(|_| PageError::Repeated)?;
         self.next = following;
-        Ok(page)
+        Ok(Page { rows, skipped })
     }
 }
 

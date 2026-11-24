@@ -14,6 +14,8 @@ use std::{
 
 #[derive(Debug, Clone)]
 pub(crate) struct Request {
+    pub method: String,
+    pub body: Vec<u8>,
     /// The request target as sent: path and query, still encoded.
     pub target: String,
     pub headers: Vec<(String, String)>,
@@ -177,7 +179,9 @@ impl Drop for TestServer {
 fn read_request(reader: &mut impl BufRead) -> Option<Request> {
     let mut line = String::new();
     reader.read_line(&mut line).ok()?;
-    let target = line.split_whitespace().nth(1)?.to_string();
+    let mut start = line.split_whitespace();
+    let method = start.next()?.to_string();
+    let target = start.next()?.to_string();
     let mut headers = Vec::new();
     loop {
         line.clear();
@@ -189,7 +193,18 @@ fn read_request(reader: &mut impl BufRead) -> Option<Request> {
         let (name, value) = header.split_once(':')?;
         headers.push((name.trim().to_string(), value.trim().to_string()));
     }
-    Some(Request { target, headers })
+    let mut request = Request {
+        method,
+        body: Vec::new(),
+        target,
+        headers,
+    };
+    if let Some(length) = request.header("content-length") {
+        let length = length.parse().ok()?;
+        request.body.resize(length, 0);
+        reader.read_exact(&mut request.body).ok()?;
+    }
+    Some(request)
 }
 
 /// A port nothing listens on.

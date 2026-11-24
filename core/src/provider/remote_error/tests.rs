@@ -28,6 +28,17 @@ fn keeps_only_the_explanation_fields() {
 }
 
 #[test]
+fn figma_err_is_cleaned_like_other_error_fields() {
+    assert_eq!(
+        remote_message(
+            r#"{"err":"Cannot read https://example.org/files?token=private as example-token"}"#,
+            &["example-token"]
+        ),
+        "Cannot read https://example.org/files as [redacted]"
+    );
+}
+
+#[test]
 fn an_html_or_unexpected_body_never_appears() {
     assert_eq!(
         remote_message("<html><body>Proxy error at 10.0.0.1</body></html>", &[]),

@@ -1,24 +1,26 @@
-//! HTTP plumbing shared by `JiraApi` and `GitLabApi`: one configured origin that credentials
-//! are only sent to, paths built from segments, and every failure through `remote_error`.
+//! Shared HTTP plumbing keeps credentials on the configured origin, builds paths from
+//! segments and sends remote failures through `remote_error`.
 
 use std::time::Duration;
 
 use chrono::{DateTime, Utc};
 use reqwest::{
     Client, ClientBuilder, Response, StatusCode, Url,
-    header::{HeaderMap, HeaderName, HeaderValue},
+    header::{CONTENT_TYPE, HeaderMap, HeaderName, HeaderValue},
     redirect::{Action, Attempt, Policy},
 };
-use serde::de::DeserializeOwned;
+use serde::{Serialize, de::DeserializeOwned};
 
 use crate::{
     model::{IdentityEvidence, ProviderProblem, RemoteIdentity},
     provider::{
         provider_check_result::ProviderCheckResult,
         provider_runtime::check_time_left,
-        remote_error::{ApiError, Quota, busy, retry_after},
+        remote_error::{ApiError, Quota, busy, query_data, retry_after},
     },
 };
+
+pub(crate) mod paging;
 
 #[cfg(test)]
 pub(crate) mod test_server;
@@ -94,6 +96,25 @@ impl SetupError {
             _ => ProviderCheckResult::unavailable(self.reason(service)),
         }
     }
+}
+
+/// A JSON POST can also fail locally, before any request is sent.
+#[derive(Debug)]
+#[cfg_attr(not(test), expect(dead_code, reason = "read by the GitHub adapter"))]
+pub(crate) enum PostJsonError {
+    Encode(serde_json::Error),
+    Remote(ApiError),
+}
+
+impl From<ApiError> for PostJsonError {
+    fn from(error: ApiError) -> Self {
+        Self::Remote(error)
+    }
+}
+
+enum Request {
+    Get,
+    PostJson(Vec<u8>),
 }
 
 pub(crate) struct RemoteClient {
@@ -177,13 +198,49 @@ impl RemoteClient {
         url: Url,
         retry: Retry,
     ) -> Result<(T, reqwest::header::HeaderMap), ApiError> {
+        self.request_json(Request::Get, url, retry).await
+    }
+
+    /// Sends a JSON request through the same origin and retry checks as a GET. Use
+    /// `Retry::OnceShort` only for idempotent requests. GraphQL callers use `post_graphql`.
+    pub(crate) async fn post_json<B: Serialize + ?Sized, T: DeserializeOwned>(
+        &self,
+        url: Url,
+        body: &B,
+        retry: Retry,
+    ) -> Result<T, PostJsonError> {
+        let body = serde_json::to_vec(body).map_err(PostJsonError::Encode)?;
+        self.request_json(Request::PostJson(body), url, retry)
+            .await
+            .map(|(value, _)| value)
+            .map_err(PostJsonError::from)
+    }
+
+    /// A GraphQL answer with errors fails the request, even when it contains partial data.
+    #[cfg_attr(not(test), expect(dead_code, reason = "called by the GitHub adapter"))]
+    pub(crate) async fn post_graphql<B: Serialize + ?Sized, T: DeserializeOwned>(
+        &self,
+        url: Url,
+        body: &B,
+        retry: Retry,
+    ) -> Result<T, PostJsonError> {
+        let response = self.post_json(url, body, retry).await?;
+        query_data(response, &[&self.secret]).map_err(PostJsonError::from)
+    }
+
+    async fn request_json<T: DeserializeOwned>(
+        &self,
+        request: Request,
+        url: Url,
+        retry: Retry,
+    ) -> Result<(T, HeaderMap), ApiError> {
         // Only `endpoint` builds URLs, so this holds; it keeps the credentials at home if a
         // caller ever changes that.
         if url.origin() != self.base.origin() {
             return Err(ApiError::Unreachable);
         }
 
-        let response = self.send(&url).await?;
+        let response = self.send(&request, &url).await?;
         let received_at = Utc::now();
         let budget = check_time_left().map(|left| left.saturating_sub(CHECK_MARGIN));
         if retry == Retry::OnceShort
@@ -204,7 +261,7 @@ impl RemoteClient {
             drop(response);
             let retried = async {
                 tokio::time::sleep(wait).await;
-                let response = self.send(&url).await?;
+                let response = self.send(&request, &url).await?;
                 self.read_response(response, Utc::now()).await
             };
             return match fallback {
@@ -217,9 +274,16 @@ impl RemoteClient {
         self.read_response(response, received_at).await
     }
 
-    async fn send(&self, url: &Url) -> Result<Response, ApiError> {
-        self.client
-            .get(url.clone())
+    async fn send(&self, request: &Request, url: &Url) -> Result<Response, ApiError> {
+        let builder = match request {
+            Request::Get => self.client.get(url.clone()),
+            Request::PostJson(body) => self
+                .client
+                .post(url.clone())
+                .header(CONTENT_TYPE, "application/json")
+                .body(body.clone()),
+        };
+        builder
             .header(&self.auth_name, &self.auth_value)
             .send()
             .await

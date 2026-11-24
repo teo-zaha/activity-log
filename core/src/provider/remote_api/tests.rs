@@ -1,8 +1,8 @@
 use reqwest::{StatusCode, Url, header::HeaderName};
-use serde_json::Value;
+use serde_json::{Value, json};
 
 use super::{
-    RemoteClient, Retry, SetupError, follows, identity_check, identity_from,
+    PostJsonError, RemoteClient, Retry, SetupError, follows, identity_check, identity_from,
     test_server::{Reply, TestServer, closed_port},
 };
 use crate::{
@@ -203,6 +203,94 @@ async fn a_redirect_to_another_port_or_host_is_not_followed() {
         .map(|request| request.path().to_string())
         .collect();
     assert_eq!(paths, ["/port", "/temporary", "/permanent", "/host"]);
+}
+
+#[tokio::test]
+async fn a_json_post_retries_with_the_same_body_and_credentials() {
+    let calls = std::sync::atomic::AtomicUsize::new(0);
+    let server = TestServer::start(move |_| {
+        if calls.fetch_add(1, std::sync::atomic::Ordering::SeqCst) == 0 {
+            Reply::json(429, "{}").with_header("Retry-After", "0")
+        } else {
+            Reply::json(200, r#"{"data":{"user":{"login":"jdoe"}}}"#)
+        }
+    });
+    let api = client(&server.url);
+    let body = json!({
+        "query": "query Find($login: String!) { user(login: $login) { login } }",
+        "variables": {"login": "jdoe"}
+    });
+
+    let data: Value = api
+        .post_graphql(api.endpoint(&["graphql"]), &body, Retry::OnceShort)
+        .await
+        .unwrap();
+
+    assert_eq!(data["user"]["login"], "jdoe");
+    let requests = server.requests();
+    assert_eq!(requests.len(), 2);
+    for request in requests {
+        assert_eq!(request.method, "POST");
+        assert_eq!(request.path(), "/graphql");
+        assert_eq!(request.header("private-token"), Some(TOKEN));
+        assert_eq!(request.header("content-type"), Some("application/json"));
+        assert_eq!(
+            request.header("user-agent"),
+            Some(concat!("activity-log/", env!("CARGO_PKG_VERSION")))
+        );
+        assert_eq!(
+            serde_json::from_slice::<Value>(&request.body).unwrap(),
+            body
+        );
+    }
+}
+
+#[tokio::test]
+async fn a_post_does_not_send_credentials_or_body_to_another_origin() {
+    let elsewhere = TestServer::start(|_| Reply::json(200, "{}"));
+    let destination = format!("{}/graphql", elsewhere.url);
+    let redirect = destination.clone();
+    let server = TestServer::start(move |_| Reply::redirect_with(307, redirect.clone()));
+    let api = client(&server.url);
+    let body = json!({"variables":{"repo":"acme/widgets"}});
+
+    let direct = api
+        .post_json::<_, Value>(Url::parse(&destination).unwrap(), &body, Retry::Never)
+        .await;
+    let redirected = api
+        .post_json::<_, Value>(api.endpoint(&["graphql"]), &body, Retry::Never)
+        .await;
+
+    assert!(matches!(
+        direct,
+        Err(PostJsonError::Remote(ApiError::Unreachable))
+    ));
+    assert!(matches!(
+        redirected,
+        Err(PostJsonError::Remote(ApiError::Status {
+            status: StatusCode::TEMPORARY_REDIRECT,
+            ..
+        }))
+    ));
+    assert_eq!(server.requests().len(), 1);
+    assert!(elsewhere.requests().is_empty());
+}
+
+#[tokio::test]
+async fn a_json_post_reports_an_encoding_error_without_sending_a_request() {
+    let server = TestServer::start(|_| Reply::json(200, "{}"));
+    let api = client(&server.url);
+    let cannot_encode = std::collections::BTreeMap::from([((1, 2), "value")]);
+
+    let result = api
+        .post_json::<_, Value>(api.endpoint(&["graphql"]), &cannot_encode, Retry::Never)
+        .await;
+
+    let Err(PostJsonError::Encode(error)) = result else {
+        panic!("expected a payload encoding failure, got {result:?}");
+    };
+    assert!(!error.is_io());
+    assert!(server.requests().is_empty());
 }
 
 #[tokio::test]

@@ -10,6 +10,10 @@ use serde_json::Value;
 
 use crate::model::ProviderProblem;
 
+mod query;
+pub(crate) use query::query_data;
+pub use query::{QueryErrorKind, QueryRefusal};
+
 /// How long a cleaned remote message may be, in characters.
 const MESSAGE_LIMIT: usize = 300;
 const REDACTED: &str = "[redacted]";
@@ -27,6 +31,7 @@ pub enum ApiError {
         quota: Option<Quota>,
         refusal: Option<OAuthRefusal>,
     },
+    Query(QueryRefusal),
     Timeout,
     Unreachable,
     Decode,
@@ -69,6 +74,7 @@ impl ApiError {
                 quota,
                 ..
             } => busy(*status, *retry_after, *quota),
+            Self::Query(refusal) => refusal.kinds().contains(&QueryErrorKind::RateLimited),
             Self::Timeout | Self::Unreachable | Self::Decode => false,
         }
     }
@@ -84,9 +90,19 @@ impl ApiError {
             {
                 Some(ProviderProblem::Refused)
             }
+            Self::Query(refusal)
+                if refusal.kinds().iter().any(|kind| {
+                    matches!(
+                        kind,
+                        QueryErrorKind::InsufficientScopes | QueryErrorKind::Forbidden
+                    )
+                }) =>
+            {
+                Some(ProviderProblem::Refused)
+            }
             Self::Timeout => Some(ProviderProblem::TimedOut),
             Self::Unreachable => Some(ProviderProblem::Unreachable),
-            Self::Status { .. } | Self::Decode => None,
+            Self::Status { .. } | Self::Query(_) | Self::Decode => None,
         }
     }
 
@@ -102,6 +118,10 @@ impl ApiError {
             Self::Status {
                 status, message, ..
             } => format!("{service} answered {status}: {message}"),
+            Self::Query(refusal) => match refusal.message() {
+                Some(message) => format!("{service} refused the query: {message}"),
+                None => format!("{service} refused the query"),
+            },
             Self::Timeout => format!("{service} did not answer within 30 s"),
             Self::Unreachable => format!("Could not reach {service}"),
             Self::Decode => format!("{service} sent an answer Activity Log could not read"),
@@ -268,8 +288,8 @@ impl std::fmt::Display for RemoteFailure {
 
 impl std::error::Error for RemoteFailure {}
 
-/// The explanation in an error body, cleaned for display: only Jira's `errorMessages` and
-/// `errors` or GitLab's `message` and `error` are read (an HTML page gives nothing), each of
+/// The explanation in a JSON error body, cleaned for display. Reads Jira's `errorMessages`
+/// and `errors`, GitLab's and GitHub's `message` and `error`, and Figma's `err`. Each of
 /// `secrets` becomes `[redacted]`, addresses lose their user info, query and fragment (one
 /// that does not parse becomes `[redacted]`), control and bidirectional characters become
 /// visible `\u{…}` escapes, and the result is at most 300 characters.
@@ -278,12 +298,15 @@ pub fn remote_message(body: &str, secrets: &[&str]) -> String {
         return String::new();
     };
     let mut parts = Vec::new();
-    for name in ["errorMessages", "errors", "message", "error"] {
+    for name in ["errorMessages", "errors", "message", "error", "err"] {
         if let Some(value) = fields.get(name) {
             collect_texts(value, None, &mut parts);
         }
     }
-    let mut text = parts.join("; ");
+    clean_message(parts.join("; "), secrets)
+}
+
+fn clean_message(mut text: String, secrets: &[&str]) -> String {
     for secret in secrets.iter().filter(|secret| !secret.is_empty()) {
         text = text.replace(secret, REDACTED);
     }

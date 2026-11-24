@@ -38,6 +38,7 @@ pub use provider_runtime::{
 /// HTTP client defaults for remote providers; reqwest has no timeouts by default.
 pub(crate) fn http_client_builder() -> reqwest::ClientBuilder {
     let builder = reqwest::Client::builder()
+        .user_agent(concat!("activity-log/", env!("CARGO_PKG_VERSION")))
         .connect_timeout(Duration::from_secs(10))
         .timeout(Duration::from_secs(30));
     // Tests talk to local servers only; a proxy from the environment must never see them.

@@ -399,7 +399,9 @@ fn kind_of(error: &ApiError) -> FailureKind {
             StatusCode::FORBIDDEN | StatusCode::NOT_FOUND => FailureKind::Unreadable,
             _ => FailureKind::Failed,
         },
-        ApiError::Timeout | ApiError::Unreachable | ApiError::Decode => FailureKind::Failed,
+        ApiError::Query(_) | ApiError::Timeout | ApiError::Unreachable | ApiError::Decode => {
+            FailureKind::Failed
+        }
     }
 }
 
