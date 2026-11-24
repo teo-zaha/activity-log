@@ -261,7 +261,7 @@ async fn a_partial_contribution_answer_fails_collection_with_its_typed_cause() {
     let remote = error.downcast::<RemoteFailure>().unwrap();
     assert_eq!(remote.error.problem(), Some(ProviderProblem::Throttled));
     assert!(
-        matches!(remote.error, ApiError::Query(refusal) if refusal.kinds() == [QueryErrorKind::RateLimited])
+        matches!(remote.error, ApiError::Query(refusal) if refusal.kinds().eq([QueryErrorKind::RateLimited]))
     );
     assert_eq!(server.requests().len(), 2);
 }

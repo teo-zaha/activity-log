@@ -1,6 +1,6 @@
 use serde_json::{Value, json};
 
-use super::{ApiError, QueryErrorKind, query_data};
+use super::{ApiError, QueryAnswer, QueryErrorKind, QueryPathSegment, query_data};
 use crate::model::ProviderProblem;
 
 #[test]
@@ -23,7 +23,7 @@ fn graphql_errors_refuse_the_whole_answer_and_keep_each_code() {
         panic!("expected a typed query refusal, got {error:?}");
     };
     assert_eq!(
-        refusal.kinds(),
+        refusal.kinds().collect::<Vec<_>>(),
         [
             QueryErrorKind::Forbidden,
             QueryErrorKind::RateLimited,
@@ -65,5 +65,47 @@ fn malformed_graphql_envelopes_cannot_be_read_as_complete() {
         json!({"ok": true}),
     ] {
         assert_eq!(query_data::<Value>(body, &[]), Err(ApiError::Decode));
+    }
+}
+
+#[test]
+fn graphql_keeps_typed_paths_even_when_data_was_returned() {
+    let path = json!(["nodes", 0, "defaultBranchRef", "target", "history"]);
+    let data = json!({"nodes": [false, 42, null]});
+    let body = json!({
+        "data": data,
+        "errors": [{"type": "FORBIDDEN", "path": path}],
+    });
+    let ApiError::Query(refusal) = query_data::<Value>(body.clone(), &[]).unwrap_err() else {
+        panic!("strict queries must keep the refusal");
+    };
+    assert_eq!(
+        refusal.errors()[0].path.as_deref(),
+        Some(
+            [
+                QueryPathSegment::Field("nodes".into()),
+                QueryPathSegment::Index(0),
+                QueryPathSegment::Field("defaultBranchRef".into()),
+                QueryPathSegment::Field("target".into()),
+                QueryPathSegment::Field("history".into()),
+            ]
+            .as_slice(),
+        )
+    );
+    let (partial, partial_refusal) = QueryAnswer::read(body, &[]).unwrap().into_parts();
+    assert_eq!(partial, Some(data));
+    assert_eq!(partial_refusal, Some(refusal));
+}
+
+#[test]
+fn missing_or_malformed_graphql_paths_supply_no_attribution() {
+    for error in [
+        json!({"type": "FORBIDDEN"}),
+        json!({"type": "FORBIDDEN", "path": ["nodes", -1]}),
+        json!({"type": "FORBIDDEN", "path": ["nodes", null]}),
+    ] {
+        let answer = QueryAnswer::read(json!({"errors": [error]}), &[]).unwrap();
+        let (_, refusal) = answer.into_parts();
+        assert_eq!(refusal.unwrap().errors()[0].path, None);
     }
 }

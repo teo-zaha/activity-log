@@ -12,7 +12,7 @@ use crate::model::ProviderProblem;
 
 mod query;
 pub(crate) use query::query_data;
-pub use query::{QueryErrorKind, QueryRefusal};
+pub use query::{QueryAnswer, QueryError, QueryErrorKind, QueryPathSegment, QueryRefusal};
 
 /// How long a cleaned remote message may be, in characters.
 const MESSAGE_LIMIT: usize = 300;
@@ -74,7 +74,9 @@ impl ApiError {
                 quota,
                 ..
             } => busy(*status, *retry_after, *quota),
-            Self::Query(refusal) => refusal.kinds().contains(&QueryErrorKind::RateLimited),
+            Self::Query(refusal) => refusal
+                .kinds()
+                .any(|kind| kind == QueryErrorKind::RateLimited),
             Self::Timeout | Self::Unreachable | Self::Decode => false,
         }
     }
@@ -91,7 +93,7 @@ impl ApiError {
                 Some(ProviderProblem::Refused)
             }
             Self::Query(refusal)
-                if refusal.kinds().iter().any(|kind| {
+                if refusal.kinds().any(|kind| {
                     matches!(
                         kind,
                         QueryErrorKind::InsufficientScopes | QueryErrorKind::Forbidden
