@@ -29,7 +29,7 @@ const MAX_RETRY_WAIT_SECONDS: u64 = 10;
 /// How much of an error body is read, and for how long.
 const ERROR_BODY_LIMIT: usize = 16 * 1024;
 const ERROR_BODY_WAIT: Duration = Duration::from_secs(3);
-/// Time a startup check keeps for answering once its error body is given up.
+/// Time a startup check keeps for returning a status it has already received.
 const CHECK_MARGIN: Duration = Duration::from_millis(100);
 
 /// Whether a busy answer is sent again.
@@ -177,45 +177,63 @@ impl RemoteClient {
         url: Url,
         retry: Retry,
     ) -> Result<(T, reqwest::header::HeaderMap), ApiError> {
-        let response = self.get(url, retry).await?;
-        let headers = response.headers().clone();
-        let body = response
-            .bytes()
-            .await
-            .map_err(|err| ApiError::from_transport(&err))?;
-        let value = serde_json::from_slice(&body).map_err(|_| ApiError::Decode)?;
-        Ok((value, headers))
-    }
-
-    async fn get(&self, url: Url, retry: Retry) -> Result<Response, ApiError> {
         // Only `endpoint` builds URLs, so this holds; it keeps the credentials at home if a
         // caller ever changes that.
         if url.origin() != self.base.origin() {
             return Err(ApiError::Unreachable);
         }
-        let mut retried = false;
-        loop {
-            let response = self
-                .client
-                .get(url.clone())
-                .header(&self.auth_name, &self.auth_value)
-                .send()
-                .await
-                .map_err(|err| ApiError::from_transport(&err))?;
-            let status = response.status();
-            if status.is_success() {
-                return Ok(response);
-            }
-            let received_at = Utc::now();
-            if retry == Retry::OnceShort
-                && !retried
-                && let Some(wait) = retry_wait(status, response.headers(), received_at)
-            {
-                retried = true;
-                tokio::time::sleep(Duration::from_secs(wait)).await;
-                continue;
-            }
-            let headers = response.headers().clone();
+
+        let response = self.send(&url).await?;
+        let received_at = Utc::now();
+        let budget = check_time_left().map(|left| left.saturating_sub(CHECK_MARGIN));
+        if retry == Retry::OnceShort
+            && let Some(wait) = retry_wait(response.status(), response.headers(), received_at)
+                .map(Duration::from_secs)
+            && budget.is_none_or(|left| wait < left)
+        {
+            let fallback = budget.map(|left| {
+                let error = ApiError::from_status(
+                    response.status(),
+                    response.headers(),
+                    received_at,
+                    "",
+                    &[&self.secret],
+                );
+                (left, error)
+            });
+            drop(response);
+            let retried = async {
+                tokio::time::sleep(wait).await;
+                let response = self.send(&url).await?;
+                self.read_response(response, Utc::now()).await
+            };
+            return match fallback {
+                Some((left, busy)) => tokio::time::timeout(left, retried)
+                    .await
+                    .unwrap_or(Err(busy)),
+                None => retried.await,
+            };
+        }
+        self.read_response(response, received_at).await
+    }
+
+    async fn send(&self, url: &Url) -> Result<Response, ApiError> {
+        self.client
+            .get(url.clone())
+            .header(&self.auth_name, &self.auth_value)
+            .send()
+            .await
+            .map_err(|err| ApiError::from_transport(&err))
+    }
+
+    async fn read_response<T: DeserializeOwned>(
+        &self,
+        response: Response,
+        received_at: DateTime<Utc>,
+    ) -> Result<(T, HeaderMap), ApiError> {
+        let status = response.status();
+        let headers = response.headers().clone();
+        if !status.is_success() {
             let body = error_body(response).await;
             return Err(ApiError::from_status(
                 status,
@@ -225,6 +243,12 @@ impl RemoteClient {
                 &[&self.secret],
             ));
         }
+        let body = response
+            .bytes()
+            .await
+            .map_err(|err| ApiError::from_transport(&err))?;
+        let value = serde_json::from_slice(&body).map_err(|_| ApiError::Decode)?;
+        Ok((value, headers))
     }
 }
 

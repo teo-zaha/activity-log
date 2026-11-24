@@ -246,3 +246,77 @@ async fn a_denial_whose_headers_come_near_the_deadline_is_still_denied() {
     assert_eq!(result.outcome.problem(), Some(ProviderProblem::Refused));
     assert_eq!(result.outcome.reason(), Some("Jira credentials invalid"));
 }
+
+#[tokio::test]
+async fn a_busy_check_keeps_its_answer_when_the_retry_cannot_fit() {
+    let server = TestServer::start(|_| Reply::json(429, "{}").with_header("Retry-After", "3"));
+    let mut context =
+        ProviderContext::for_connection(&jira_connection(&server.url), JiraConfig::requirements());
+    context.with_typed::<JiraConfig>().unwrap();
+
+    let result = with_startup_timeout(
+        JiraProvider.startup_check(context),
+        std::time::Duration::from_secs(2),
+    )
+    .await;
+
+    assert_eq!(result.outcome.problem(), Some(ProviderProblem::Throttled));
+    assert_eq!(result.identity, IdentityEvidence::None);
+    assert_eq!(server.requests().len(), 1);
+}
+
+#[tokio::test]
+async fn a_busy_check_retries_and_can_verify_the_identity() {
+    let (result, server) = check_busy_retry(
+        Reply::json(200, r#"{"key":"JIRAUSER1","name":"jdoe"}"#),
+        std::time::Duration::from_secs(5),
+    )
+    .await;
+
+    assert_eq!(server.requests().len(), 2);
+    assert_eq!(result.outcome.status(), ProviderStatus::Available);
+    assert_eq!(
+        result.identity,
+        IdentityEvidence::Verified(RemoteIdentity {
+            id: "JIRAUSER1".into(),
+            username: "jdoe".into(),
+        })
+    );
+}
+
+#[tokio::test]
+async fn a_busy_check_keeps_its_answer_when_the_retried_body_stalls() {
+    let (result, server) = check_busy_retry(
+        Reply::json(200, r#"{"key":"#).cut_off(1000, std::time::Duration::from_secs(5)),
+        std::time::Duration::from_secs(2),
+    )
+    .await;
+
+    assert_eq!(server.requests().len(), 2);
+    assert_eq!(result.outcome.problem(), Some(ProviderProblem::Throttled));
+    assert_eq!(result.identity, IdentityEvidence::None);
+}
+
+async fn check_busy_retry(
+    reply: Reply,
+    timeout: std::time::Duration,
+) -> (
+    crate::provider::provider_check_result::ProviderCheckResult,
+    TestServer,
+) {
+    let reply = std::cell::RefCell::new(Some(reply));
+    let tried = std::cell::Cell::new(false);
+    let server = TestServer::start(move |_| {
+        if tried.replace(true) {
+            reply.borrow_mut().take().unwrap()
+        } else {
+            Reply::json(429, "{}").with_header("Retry-After", "0")
+        }
+    });
+    let mut context =
+        ProviderContext::for_connection(&jira_connection(&server.url), JiraConfig::requirements());
+    context.with_typed::<JiraConfig>().unwrap();
+
+    let result = with_startup_timeout(JiraProvider.startup_check(context), timeout).await;
+    (result, server)
+}

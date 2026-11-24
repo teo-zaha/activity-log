@@ -77,7 +77,7 @@ function statusIcon(status: ProviderStatus): string {
 const PROBLEM_ICONS: Partial<Record<ProviderProblem, string>> = {
   timedOut: 'timer_off',
   refused: 'lock',
-  throttled: 'hourglass_empty',
+  throttled: 'speed',
   secretUnavailable: 'key_off',
   unreachable: 'cloud_off',
   notInstalled: 'download',
