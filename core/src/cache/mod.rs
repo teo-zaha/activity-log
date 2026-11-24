@@ -11,15 +11,13 @@
 //! days, so widening the date range or reopening the app costs one small request.
 
 use std::{
-    collections::{BTreeMap, BTreeSet},
+    collections::BTreeMap,
     env,
-    fs::{File, TryLockError},
     future::Future,
     io,
     num::NonZeroUsize,
     path::{Path, PathBuf},
-    sync::{Mutex, PoisonError},
-    time::{Duration, Instant},
+    time::Duration,
 };
 
 use anyhow::Result;
@@ -29,13 +27,14 @@ use serde::{Deserialize, Serialize};
 use crate::{
     diagnostics,
     model::{ActivityEntry, CollectOptions, ConnectionId},
-    platform::private_file::{
-        Folder, PrivateFileError, ReplaceError, create_private_folder, open_folder,
-    },
+    platform::private_file::{Folder, create_private_folder, open_folder},
 };
 
+pub(crate) mod state_file;
 #[cfg(test)]
 mod tests;
+
+use state_file::{Decoded, blocking, is_private, lock, path_parts, publish, read};
 
 /// Bump when the file layout changes; older files are then ignored and rewritten.
 const FILE_VERSION: u32 = 7;
@@ -43,7 +42,7 @@ const FILE_VERSION: u32 = 7;
 /// writes (clock skew, slow API indexing) are not frozen into the cache.
 const SETTLE_GRACE: Duration = Duration::from_secs(60 * 60);
 /// Days not refreshed for this long are dropped from the file.
-const PRUNE_AFTER: Duration = Duration::from_secs(60 * 24 * 60 * 60);
+pub(crate) const PRUNE_AFTER: Duration = Duration::from_secs(60 * 24 * 60 * 60);
 const DEFAULT_MAX_RUN_DAYS: NonZeroUsize = NonZeroUsize::new(92).unwrap();
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -231,12 +230,6 @@ where
     Ok(file.entries_for(options))
 }
 
-/// Runs `work` on the blocking pool, so cache I/O never holds up an async worker; `None` if it
-/// panicked.
-async fn blocking<T: Send + 'static>(work: impl FnOnce() -> T + Send + 'static) -> Option<T> {
-    tokio::task::spawn_blocking(work).await.ok()
-}
-
 /// The days `first..=last` as fetched at `started`, each holding the fetched entries of its
 /// UTC day.
 fn fetched_days(
@@ -380,31 +373,29 @@ fn load(path: &Path, scope: &str) -> Option<CacheFile> {
             return Some(CacheFile::default());
         }
     };
-    if !is_private(&folder, scope) {
+    if !cache_folder_is_private(&folder, scope) {
         return None;
     }
-    match folder.read(name) {
-        Ok(Some(bytes)) => match decode(&bytes) {
-            Decoded::Current(file) => Some(file),
-            Decoded::Older => Some(CacheFile::default()),
-            Decoded::Newer => {
-                diagnostics::warn(
-                    scope,
-                    format!(
-                        "Not using cache {}: it was written by a later version of Activity Log",
-                        path.display()
-                    ),
-                );
-                Some(CacheFile::default())
-            }
-            Decoded::Unreadable(problem) => {
-                diagnostics::warn(
-                    scope,
-                    format!("Ignoring unreadable cache {}: {problem}", path.display()),
-                );
-                Some(CacheFile::default())
-            }
-        },
+    match read(&folder, name, FILE_VERSION) {
+        Ok(Some(Decoded::Current(file))) => Some(file),
+        Ok(Some(Decoded::Older)) => Some(CacheFile::default()),
+        Ok(Some(Decoded::Newer)) => {
+            diagnostics::warn(
+                scope,
+                format!(
+                    "Not using cache {}: it was written by a later version of Activity Log",
+                    path.display()
+                ),
+            );
+            Some(CacheFile::default())
+        }
+        Ok(Some(Decoded::Unreadable(problem))) => {
+            diagnostics::warn(
+                scope,
+                format!("Ignoring unreadable cache {}: {problem}", path.display()),
+            );
+            Some(CacheFile::default())
+        }
         Ok(None) => Some(CacheFile::default()),
         Err(err) => {
             diagnostics::warn(
@@ -413,40 +404,6 @@ fn load(path: &Path, scope: &str) -> Option<CacheFile> {
             );
             Some(CacheFile::default())
         }
-    }
-}
-
-/// What a cache file's bytes are to this version.
-enum Decoded {
-    Current(CacheFile),
-    /// A retired layout: its days are fetched again and the file is replaced.
-    Older,
-    /// A later version's file: not read, and never replaced by this version.
-    Newer,
-    /// Not a file this version can read: the problem, without the file's content (serde's
-    /// messages can quote it).
-    Unreadable(String),
-}
-
-fn decode(bytes: &[u8]) -> Decoded {
-    #[derive(Deserialize)]
-    struct Version {
-        version: u32,
-    }
-    // An older file stores entries in an older shape: its version is read on its own first.
-    match serde_json::from_slice::<Version>(bytes) {
-        Ok(file) if file.version < FILE_VERSION => return Decoded::Older,
-        Ok(file) if file.version > FILE_VERSION => return Decoded::Newer,
-        _ => {}
-    }
-    match serde_json::from_slice::<CacheFile>(bytes) {
-        Ok(file) => Decoded::Current(file),
-        Err(err) => Decoded::Unreadable(format!(
-            "{:?} error at line {} column {}",
-            err.classify(),
-            err.line(),
-            err.column()
-        )),
     }
 }
 
@@ -466,106 +423,39 @@ fn store(
         create_private_folder(dir)?;
     }
     let folder = open_folder(dir)?;
-    if !is_private(&folder, scope) {
+    if !cache_folder_is_private(&folder, scope) {
         return Ok(());
     }
     let _lock = lock(&folder, name)?;
     // Again under the lock: the folder may have changed during the wait.
-    if !is_private(&folder, scope) {
+    if !cache_folder_is_private(&folder, scope) {
         return Ok(());
     }
-    let (mut file, replaced) = match folder.read(name)? {
-        None => (CacheFile::default(), true),
-        Some(bytes) => match decode(&bytes) {
-            Decoded::Current(file) => (file, false),
-            Decoded::Older => (CacheFile::default(), true),
-            // Reported by the read before the fetch.
-            Decoded::Newer => return Ok(()),
-            Decoded::Unreadable(problem) => anyhow::bail!("it cannot be read ({problem})"),
-        },
+    let (mut file, replaced) = match read::<CacheFile>(&folder, name, FILE_VERSION)? {
+        Some(Decoded::Current(file)) => (file, false),
+        None | Some(Decoded::Older) => (CacheFile::default(), true),
+        // Reported by the read before the fetch.
+        Some(Decoded::Newer) => return Ok(()),
+        Some(Decoded::Unreadable(problem)) => anyhow::bail!("it cannot be read ({problem})"),
     };
     let merged = file.merge(fetched, Utc::now());
     let pruned = file.prune(now);
     if !(replaced || merged || pruned) {
         return Ok(());
     }
-    let json = serde_json::to_vec(&file)?;
-
-    match folder.replace(name, &json) {
-        Ok(()) => Ok(()),
-        Err(ReplaceError::Unprotectable { location }) => {
-            warn_unprotectable(&location, scope);
-            Ok(())
-        }
-        Err(err @ ReplaceError::Failed { .. }) => Err(err.into()),
-    }
+    publish(&folder, name, &file, scope)
 }
 
-/// Whether `folder` can keep cached activity private; checked on every read and write, so a
-/// folder that is repaired is used again. The first refusal per folder is logged.
-fn is_private(folder: &Folder, scope: &str) -> bool {
-    match folder.check_private() {
-        Ok(()) => true,
-        Err(PrivateFileError::Unprotectable { location }) => {
-            warn_unprotectable(&location, scope);
-            false
-        }
-        Err(PrivateFileError::Io(err)) => {
+fn cache_folder_is_private(folder: &Folder, scope: &str) -> bool {
+    match is_private(folder, scope) {
+        Ok(private) => private,
+        Err(err) => {
             diagnostics::warn(
                 scope,
                 format!("Could not check the cache folder: {err}; collecting without a cache"),
             );
             false
         }
-    }
-}
-
-/// The cache file's lock (`{name}.lock` beside it), waiting as long as a settings writer does.
-fn lock(folder: &Folder, name: &str) -> Result<File> {
-    let file = folder.open_lock(&format!("{name}.lock"))?;
-    let deadline = Instant::now() + crate::settings::lock_wait();
-    loop {
-        match file.try_lock() {
-            Ok(()) => return Ok(file),
-            Err(TryLockError::WouldBlock) if Instant::now() < deadline => {
-                std::thread::sleep(LOCK_RETRY);
-            }
-            Err(TryLockError::WouldBlock) => anyhow::bail!("another process holds its lock"),
-            Err(TryLockError::Error(err)) => return Err(err.into()),
-        }
-    }
-}
-
-const LOCK_RETRY: Duration = Duration::from_millis(50);
-
-fn path_parts(path: &Path) -> io::Result<(&Path, &str)> {
-    let name = path.file_name().and_then(|name| name.to_str());
-    match (path.parent(), name) {
-        (Some(dir), Some(name)) => Ok((dir, name)),
-        _ => Err(io::Error::new(
-            io::ErrorKind::InvalidInput,
-            format!("{} is not a file path", path.display()),
-        )),
-    }
-}
-
-/// Folders already reported as unable to keep cached activity private, in this process: the
-/// warning is given once per folder. Whether a folder is used is checked every time.
-static WARNED: Mutex<BTreeSet<PathBuf>> = Mutex::new(BTreeSet::new());
-
-fn warn_unprotectable(location: &Path, scope: &str) {
-    let new = WARNED
-        .lock()
-        .unwrap_or_else(PoisonError::into_inner)
-        .insert(location.to_path_buf());
-    if new {
-        diagnostics::warn(
-            scope,
-            format!(
-                "{} cannot keep cached activity private; collecting without a cache",
-                location.display()
-            ),
-        );
     }
 }
 
