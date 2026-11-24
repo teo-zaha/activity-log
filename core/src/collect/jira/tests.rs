@@ -7,7 +7,7 @@ use super::{
 };
 use crate::{
     model::{
-        CollectOptions, ConnectionId, JiraEntryType, Source,
+        CollectOptions, ConnectionId, JiraEntryType, ProviderProblem, Source,
         jira::{
             jira_changelog::JiraChangelog, jira_history::JiraHistory,
             jira_history_item::JiraHistoryItem, jira_issue::JiraIssue,
@@ -17,11 +17,12 @@ use crate::{
     },
     provider::{
         connection::{Connection, ConnectionLocation, ConnectionValues},
-        jira::JiraConfig,
+        jira::{JiraConfig, api::JiraResponseError},
         provider_config::ProviderConfigResolve,
         provider_context::ProviderContext,
         remote_api::test_server::{Reply, TestServer},
-        remote_error::RemoteFailure,
+        remote_error::{ApiError, RemoteFailure},
+        source_failure::problem_of,
     },
 };
 
@@ -258,6 +259,60 @@ fn paging_follows_what_the_server_sent() {
     assert_eq!(next(70, page(0, None, None)), None);
     assert_eq!(next(0, page(20, None, Some(true))), None, "isLast ends it");
     assert_eq!(next(0, page(20, Some(50), Some(false))), Some(20));
+}
+
+#[tokio::test]
+async fn a_search_page_without_issues_fails_to_decode() {
+    let server = TestServer::start(|_| Reply::json(200, r#"{"total":0}"#));
+    let error = collect_jira(&march(), &context(&server.url))
+        .await
+        .unwrap_err();
+
+    assert!(matches!(
+        error.downcast_ref::<RemoteFailure>(),
+        Some(RemoteFailure {
+            error: ApiError::Decode,
+            ..
+        })
+    ));
+}
+
+#[tokio::test]
+async fn an_anonymous_search_is_refused_even_when_the_page_has_no_issues_field() {
+    for body in [r#"{"issues":[]}"#, r#"{"total":0}"#] {
+        let server = TestServer::start(move |_| {
+            Reply::json(200, body).with_header("X-AUSERNAME", "anonymous")
+        });
+        let error = collect_jira(&march(), &context(&server.url))
+            .await
+            .unwrap_err();
+
+        assert!(matches!(
+            error.downcast_ref::<JiraResponseError>(),
+            Some(JiraResponseError::Anonymous)
+        ));
+        assert_eq!(problem_of(&error), Some(ProviderProblem::Refused));
+    }
+}
+
+#[tokio::test]
+async fn an_empty_search_page_without_an_identity_header_succeeds() {
+    let server = TestServer::start(|_| Reply::json(200, r#"{"issues":[]}"#));
+    let entries = collect_jira(&march(), &context(&server.url)).await.unwrap();
+
+    assert!(entries.is_empty());
+    assert_eq!(server.requests().len(), 1);
+}
+
+#[tokio::test]
+async fn an_empty_search_page_with_a_named_account_header_succeeds() {
+    let server = TestServer::start(|_| {
+        Reply::json(200, r#"{"issues":[]}"#).with_header("X-AUSERNAME", "jdoe")
+    });
+    let entries = collect_jira(&march(), &context(&server.url)).await.unwrap();
+
+    assert!(entries.is_empty());
+    assert_eq!(server.requests().len(), 1);
 }
 
 #[tokio::test]

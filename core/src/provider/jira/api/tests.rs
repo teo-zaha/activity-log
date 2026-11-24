@@ -87,10 +87,51 @@ async fn the_check_names_the_token_owner() {
 }
 
 #[tokio::test]
-async fn a_success_without_a_key_is_unnamed() {
-    let (runtime, _server) = check(|| Reply::json(200, r#"{"name":"jdoe"}"#)).await;
-    assert!(runtime.usable());
-    assert_eq!(runtime.identity(), &IdentityEvidence::Unnamed);
+async fn a_named_header_verifies_the_account() {
+    for name in ["jdoe", "Anonymous"] {
+        let (runtime, _server) = check(move || {
+            Reply::json(200, format!(r#"{{"key":"JIRAUSER10100","name":"{name}"}}"#))
+                .with_header("X-AUSERNAME", name)
+        })
+        .await;
+
+        assert_eq!(runtime.info().status, ProviderStatus::Available, "{name}");
+        assert_eq!(
+            runtime.identity(),
+            &IdentityEvidence::Verified(RemoteIdentity {
+                id: "JIRAUSER10100".into(),
+                username: name.into(),
+            })
+        );
+    }
+}
+
+#[tokio::test]
+async fn an_anonymous_reply_refuses_the_token_even_with_a_key() {
+    let (runtime, _server) = check(|| {
+        Reply::json(200, r#"{"key":"JIRAUSER10100","name":"jdoe"}"#)
+            .with_header("X-AUSERNAME", "anonymous")
+    })
+    .await;
+
+    assert_eq!(runtime.info().status, ProviderStatus::Unavailable);
+    assert_eq!(runtime.info().problem, Some(ProviderProblem::Refused));
+    assert_eq!(runtime.identity(), &IdentityEvidence::None);
+}
+
+#[tokio::test]
+async fn a_success_without_a_usable_key_refuses_the_connection() {
+    for body in [
+        r#"{"name":"jdoe"}"#,
+        r#"{"key":10100,"name":"jdoe"}"#,
+        r#"{"key":" ","name":"jdoe"}"#,
+    ] {
+        let (runtime, _server) = check(move || Reply::json(200, body)).await;
+
+        assert_eq!(runtime.info().status, ProviderStatus::Unavailable, "{body}");
+        assert_eq!(runtime.info().problem, Some(ProviderProblem::Refused));
+        assert_eq!(runtime.identity(), &IdentityEvidence::None);
+    }
 }
 
 #[tokio::test]
@@ -212,13 +253,6 @@ async fn a_sign_in_page_instead_of_the_api_leaves_the_connection_unavailable() {
         )
     );
     assert_eq!(runtime.identity(), &IdentityEvidence::None);
-}
-
-#[tokio::test]
-async fn a_key_that_is_no_text_names_no_one() {
-    let (runtime, _server) = check(|| Reply::json(200, r#"{"key":10100,"name":"jdoe"}"#)).await;
-    assert!(runtime.usable());
-    assert_eq!(runtime.identity(), &IdentityEvidence::Unnamed);
 }
 
 #[tokio::test]

@@ -7,13 +7,13 @@ use crate::{
     diagnostics,
     model::{
         CollectOptions, JiraEntry, JiraEntryType, JiraTag,
-        jira::{
-            jira_changelog::JiraChangelog, jira_issue::JiraIssue,
-            jira_search_response::JiraSearchResponse,
-        },
+        jira::{jira_changelog::JiraChangelog, jira_issue::JiraIssue},
     },
     provider::{
-        jira::{JiraConfig, api::JiraApi},
+        jira::{
+            JiraConfig,
+            api::{JiraApi, JiraResponseError},
+        },
         provider_context::ProviderContext,
         remote_error::RemoteFailure,
     },
@@ -64,13 +64,13 @@ pub async fn collect_jira(
             .append_pair("maxResults", &PAGE_SIZE.to_string())
             .append_pair("fields", "summary,status,issuetype,created,updated")
             .append_pair("expand", "changelog");
-        let page = api
-            .get_json::<JiraSearchResponse>(url)
-            .await
-            .map_err(|error| RemoteFailure {
+        let page = api.search(url).await.map_err(|error| match error {
+            JiraResponseError::Remote(error) => anyhow!(RemoteFailure {
                 service: JiraApi::SERVICE.into(),
                 error,
-            })?;
+            }),
+            JiraResponseError::Anonymous => anyhow!(error),
+        })?;
 
         // A page of another offset, or one with nothing new, would repeat issues or never end;
         // an issue that moved into a later page is kept once.

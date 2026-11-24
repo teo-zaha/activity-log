@@ -341,6 +341,7 @@ Each source below lists its entry types, Timeline subtitle line, detail panel fi
 - **Timeline line:** issue type · status
 - **Detail panel:** Event, Key, Title, Status, Issue type, From status, To status
 - **Configuration:** `url` and `token` (required), `insecure` (optional boolean to accept self-signed certificates). Uses the [per-day cache](#per-day-cache).
+- Jira must identify the token's account on startup. A JSON reply marked anonymous reports a credential refusal. Search responses must include an `issues` list, which can be empty. [Jira Data Center REST response headers](https://developer.atlassian.com/server/jira/platform/about-the-jira-server-rest-apis/#special-request-and-response-headers)
 
 </td>
 <td width="44%" valign="top"><img src="pics/source-jira.png" alt="Detail panel of a Jira status change"></td>

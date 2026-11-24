@@ -1,11 +1,14 @@
 //! What kind of problem a check's or a collection's failure is, told from the typed causes in
 //! its `anyhow` chain: the server's answer (`RemoteFailure`), a local source's state
-//! (`SourceFailure`), an AppleScript error code. Messages are for people; nothing here reads
-//! them.
+//! (`SourceFailure`), an anonymous Jira response, or an AppleScript error code. Messages are
+//! for people; nothing here reads them.
 
 use std::fmt;
 
-use crate::{model::ProviderProblem, provider::remote_error::RemoteFailure};
+use crate::{
+    model::ProviderProblem,
+    provider::{jira::api::JiraResponseError, remote_error::RemoteFailure},
+};
 
 /// A local source that cannot be read, and why, in a form the UI can act on.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -62,6 +65,12 @@ pub fn problem_of(err: &anyhow::Error) -> Option<ProviderProblem> {
     err.chain().find_map(|cause| {
         if let Some(failure) = cause.downcast_ref::<RemoteFailure>() {
             return failure.error.problem();
+        }
+        if matches!(
+            cause.downcast_ref::<JiraResponseError>(),
+            Some(JiraResponseError::Anonymous)
+        ) {
+            return Some(ProviderProblem::Refused);
         }
         if let Some(failure) = cause.downcast_ref::<SourceFailure>() {
             return Some(failure.problem.into());

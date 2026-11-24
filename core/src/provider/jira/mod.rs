@@ -5,10 +5,10 @@ pub use config::*;
 
 use crate::{
     collect::jira::collect_jira,
-    model::{IntoActivityEntries, Source, SupportedOs},
-    provider::remote_api::identity_check,
+    model::{IntoActivityEntries, ProviderProblem, Source, SupportedOs},
+    provider::{provider_check_result::ProviderCheckResult, remote_api::identity_check},
 };
-use api::JiraApi;
+use api::{JiraApi, JiraResponseError};
 
 crate::provider! {
     JiraProvider(Source::Jira, &[SupportedOs::Windows, SupportedOs::Macos, SupportedOs::Linux], config: JiraConfig, cache: crate::cache::CachePolicy::api().without_run_chunks()) {
@@ -17,7 +17,17 @@ crate::provider! {
                 Ok(api) => api,
                 Err(err) => return err.check_result(JiraApi::SERVICE),
             };
-            identity_check(JiraApi::SERVICE, api.myself().await)
+            match api.myself().await {
+                Ok(Some(identity)) => identity_check(JiraApi::SERVICE, Ok(Some(identity))),
+                Ok(None) => ProviderCheckResult::unavailable_as(
+                    ProviderProblem::Refused,
+                    "Jira did not identify an account for the token.",
+                ),
+                Err(error @ JiraResponseError::Anonymous) => {
+                    ProviderCheckResult::unavailable_as(ProviderProblem::Refused, error.to_string())
+                }
+                Err(JiraResponseError::Remote(error)) => identity_check(JiraApi::SERVICE, Err(error)),
+            }
         }
 
         async fn collect(&self, options, context) {
