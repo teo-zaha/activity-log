@@ -13,6 +13,9 @@ pub mod runtime;
 pub mod system;
 pub mod window;
 
+#[cfg(test)]
+pub(crate) mod figma;
+
 pub use activity::{
     activity_entry::{ActivityEntry, IntoActivityEntries},
     activity_log::ActivityLog,

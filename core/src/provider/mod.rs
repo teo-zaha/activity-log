@@ -16,6 +16,9 @@ pub mod source_failure;
 pub mod system;
 
 #[cfg(test)]
+mod figma;
+
+#[cfg(test)]
 mod tests;
 
 use std::{
