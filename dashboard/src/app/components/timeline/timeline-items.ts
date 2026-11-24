@@ -44,6 +44,21 @@ export function timelineItems(days: readonly TimelineDay[]): TimelineItems {
   return { items, days: dayItems, indexes }
 }
 
+/** Keep ordinary days fully available to screen-reader navigation and find-in-page. */
+const WHOLE_DAY_ROWS = 150
+
+/** A short day in the window contributes all its rows to the same virtual stream. */
+export function drawnIndexes(layout: TimelineItems, indexes: readonly number[]): number[] {
+  const drawn = new Set(indexes)
+  const days = new Set(indexes.map(index => layout.items[index]?.dayIndex))
+  for (const index of days) {
+    const day = index === undefined ? undefined : layout.days[index]
+    if (!day || day.day.rows.length > WHOLE_DAY_ROWS) continue
+    for (let item = day.header; item <= day.gap; item++) drawn.add(item)
+  }
+  return [...drawn].sort((a, b) => a - b)
+}
+
 interface DrawnRow {
   readonly row: TimelineRow
   readonly index: number

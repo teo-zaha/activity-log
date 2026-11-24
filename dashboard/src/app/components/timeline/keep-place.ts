@@ -58,8 +58,8 @@ function anchorAt(
 
 /**
  * Uses the same positions as the rendered rows. ResizeObserver supplies the sizes after layout
- * and Angular writes the row offsets and scroll correction together. In particular, keeping the
- * place after a render never asks the browser to synchronously lay out the new rows.
+ * and Angular writes the row offsets and scroll correction together. The correction uses the
+ * virtual row positions and samples only the scroller offset before a write.
  */
 export function keepPlace({ scroller, layout, coordinates }: KeepPlaceOptions): ScrollPlaces {
   let anchor: Anchor | null = null
@@ -119,11 +119,16 @@ export function keepPlace({ scroller, layout, coordinates }: KeepPlaceOptions): 
           anchor = null
           return
         }
-        const scrollTop = scrollTo(
-          held.scrollTop,
-          held.scrollTop + contentY - held.contentY,
-          current.maxScroll
-        )
+        const delta = contentY - held.contentY
+        let scrollTop = held.scrollTop
+        if (delta !== 0 || scrollTop > current.maxScroll) {
+          // A compositor scroll can land before its event. Read the offset only when
+          // correcting so that the correction carries that scroll along with it.
+          const actual = root().scrollTop
+          const clamped = actual < held.scrollTop && actual >= current.maxScroll - 1
+          const from = clamped ? held.scrollTop : actual
+          scrollTop = scrollTo(actual, from + delta, current.maxScroll)
+        }
         anchor = scrollTop === 0 ? null : { key, contentY, scrollTop }
       })
     },

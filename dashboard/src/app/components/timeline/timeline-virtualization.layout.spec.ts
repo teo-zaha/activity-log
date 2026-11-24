@@ -2,7 +2,7 @@
 import { Location } from '@angular/common'
 import { TestBed } from '@angular/core/testing'
 import { describe, expect, it } from 'vitest'
-import { page, userEvent } from 'vitest/browser'
+import { cdp, page, userEvent } from 'vitest/browser'
 import type { ActivityLog, GitEntry } from '../../generated/activity'
 import { ActivityViewStateService } from '../../services/activity-view-state.service'
 import { MockBackendTransport } from '../../testing/activity-fixtures'
@@ -37,9 +37,9 @@ const ordinary = DAYS.filter(day => day !== HEAVY).map(day =>
   Array.from({ length: 6 }, (_, index) => commit(day, index))
 )
 
-function log(extra = 0): ActivityLog {
+function log(extra = 0, count = COUNT): ActivityLog {
   const added = Array.from({ length: extra }, (_, index) => commit(HEAVY, index, true))
-  const entries = [...ordinary[0]!, ...added, ...heavyRows, ...ordinary[1]!]
+  const entries = [...ordinary[0]!, ...added, ...heavyRows.slice(0, count), ...ordinary[1]!]
   return {
     meta: {
       generated: `2026-05-18T20:${String(extra).padStart(2, '0')}:00Z`,
@@ -72,12 +72,13 @@ async function frames(count = 3): Promise<void> {
   }
 }
 
-async function open(): Promise<OpenApp> {
-  await page.viewport(1280, 800)
+async function open(count = COUNT, width = 1280): Promise<OpenApp> {
+  await page.viewport(width, 800)
   const backend = new MockBackendTransport()
-  backend.activityResponse = log()
-  backend.activityResponses = [log()]
+  backend.activityResponse = log(0, count)
+  backend.activityResponses = [log(0, count)]
   const app = await openApp(`/timeline?${RANGE}`, { backend })
+  await document.fonts.ready
   await expect.poll(() => drawn()).toBeGreaterThan(0)
   await expect.poll(() => scroller().querySelector('.day-rise')).toBeNull()
   return app
@@ -111,8 +112,8 @@ async function expectPlace(key: string, top: number): Promise<void> {
   expectWindow()
 }
 
-async function collect(backend: MockBackendTransport, extra: number): Promise<void> {
-  backend.activityResponse = log(extra)
+async function collect(backend: MockBackendTransport, extra: number, count = COUNT): Promise<void> {
+  backend.activityResponse = log(extra, count)
   backend.publish()
   await frames()
 }
@@ -142,6 +143,56 @@ describe('virtualized rows in a 1,000-entry day', () => {
     await scroll(scroller().scrollHeight)
     expectWindow()
     expect(document.activeElement).toBe(first)
+  })
+
+  it('retains offscreen focus across a focusout with no destination', async () => {
+    await open()
+    const first = entry(keyOf(heavyRows[0]!))!
+    first.focus({ preventScroll: true })
+    await scroll(34_000)
+    first.dispatchEvent(new FocusEvent('focusout', { bubbles: true }))
+    await frames()
+    expect(first.isConnected).toBe(true)
+
+    scroller().querySelector('input')!.focus({ preventScroll: true })
+    await expect.poll(() => first.isConnected).toBe(false)
+  })
+
+  it('wheels upward through unmeasured phone rows without repeated scroll corrections', async () => {
+    await open(COUNT, 402)
+    await scroll(34_000)
+    const root = scroller()
+    const start = root.scrollTop
+    const { left, top, width, height } = root.getBoundingClientRect()
+    const scrollTop = Object.getOwnPropertyDescriptor(Element.prototype, 'scrollTop')!
+    const writes: number[] = []
+    Object.defineProperty(root, 'scrollTop', {
+      configurable: true,
+      get: (): number => scrollTop.get!.call(root),
+      set: (value: number): void => {
+        writes.push(value)
+        scrollTop.set!.call(root, value)
+      },
+    })
+
+    try {
+      for (let i = 0; i < 40; i++) {
+        await cdp().send('Input.dispatchMouseEvent', {
+          type: 'mouseWheel',
+          x: left + width / 2,
+          y: top + height / 2,
+          deltaX: 0,
+          deltaY: -142,
+        })
+        await frames(1)
+      }
+      await frames()
+      expect(start - root.scrollTop).toBeGreaterThan(5_000)
+      expect(writes.length).toBeLessThanOrEqual(2)
+      expectWindow()
+    } finally {
+      Reflect.deleteProperty(root, 'scrollTop')
+    }
   })
 
   it('bridges Tab and Shift-Tab gaps and still steps through days with the Page keys', async () => {
@@ -225,5 +276,23 @@ describe('virtualized rows in a 1,000-entry day', () => {
     history.forward()
     await expect.poll(() => timeline.isConnected).toBe(true)
     await expectPlace(forward.key, forward.top)
+  })
+})
+
+describe('the Timeline whole-day cutoff', () => {
+  it('draws all 150 rows, windows the day at 151 and expands it again under a filter', async () => {
+    const { backend } = await open(150)
+    expect(drawn()).toBe(150)
+    await scroll(4_000)
+    const read = reading()
+
+    await collect(backend, 1, 150)
+    await expect.poll(() => section().querySelector('.day-count')?.textContent).toBe('151 events')
+    await expectPlace(read.key, read.top)
+    expect(drawn()).toBeLessThan(150)
+
+    TestBed.inject(ActivityViewStateService).setSearchQuery('TICKET-7')
+    await expect.poll(drawn).toBe(51)
+    expect(section().querySelector('.day-count')?.textContent).toBe('51 events')
   })
 })

@@ -41,7 +41,7 @@ import { followFeedKeys } from './feed-keys'
 import { trackAttachment } from './attachment'
 import { timelineEmptyState, timelineEmptyView } from './timeline-empty-state'
 import { TimelineRows } from './timeline-rows'
-import { drawnDays, timelineItems, type TimelineItems } from './timeline-items'
+import { drawnDays, drawnIndexes, timelineItems, type TimelineItems } from './timeline-items'
 import { indicatorDistance, pullToRefresh, type PullState } from './pull-to-refresh'
 import { TopLayer } from '../../layouts/shell/top-layer.service'
 import { BreakpointState } from '../../services/breakpoint-state.service'
@@ -50,8 +50,9 @@ import { restoresScroll } from '../../services/views-scroller.service'
 /** The first days rise in as the list is first drawn; later ones, scrolled to, do not. */
 const RISING_DAYS = 6
 
-/** Row sizes before ResizeObserver reports them. A narrow title may wrap. */
-const ENTRY_ESTIMATE = { wide: 66, phone: 86 } as const
+/** One-line row height including its separator, and the extra line on a phone. */
+const ENTRY_HEIGHT = 66
+const TITLE_LINE_HEIGHT = 20
 const HEADER_ESTIMATE = 36
 /** The article's bottom padding, including the room between adjacent days. */
 const DAY_GAP = 18
@@ -116,6 +117,8 @@ export class TimelineComponent {
 
   private readonly host = inject<ElementRef<HTMLElement>>(ElementRef).nativeElement
   private readonly isPhone = inject(BreakpointState).phone
+  private readonly titleWraps = signal<(entry: EntryUiAdapter) => boolean>(() => false)
+  private titleWidth = 0
   private readonly scroller = viewChild.required<ElementRef<HTMLElement>>('scroller')
   private readonly content = viewChild.required<ElementRef<HTMLElement>>('content')
   private readonly controls = viewChild.required<ElementRef<HTMLElement>>('controls')
@@ -146,7 +149,7 @@ export class TimelineComponent {
   protected readonly virtualRows = injectVirtualizer<HTMLElement, HTMLElement>(() => {
     const layout = this.layout()
     const { headerTop, listTop } = this.viewport()
-    const entry = this.isPhone() ? ENTRY_ESTIMATE.phone : ENTRY_ESTIMATE.wide
+    const wraps = this.isPhone() ? this.titleWraps() : null
     const keep = [this.focused(), this.pendingFocus()]
       .map(key => (key === null ? undefined : layout.indexes.get(key)))
       .filter(index => index !== undefined)
@@ -156,7 +159,13 @@ export class TimelineComponent {
       getItemKey: (index): string => layout.items[index]!.key,
       estimateSize: (index): number => {
         const item = layout.items[index]!
-        if (item.kind === 'row') return entry
+        if (item.kind === 'row') {
+          const first = layout.days[item.dayIndex]!.header + 1 === index
+          const title = wraps?.(item.row.entry) ? TITLE_LINE_HEIGHT : 0
+          // A tentative or free meeting's 18px tag is taller than the 17px compact badge.
+          const busyTag = item.row.busy ? 1 : 0
+          return ENTRY_HEIGHT + title + busyTag - (first ? 1 : 0)
+        }
         return item.kind === 'header' ? HEADER_ESTIMATE : DAY_GAP
       },
       indexAttribute: 'data-item-index',
@@ -172,7 +181,7 @@ export class TimelineComponent {
       },
       overscan: OVERSCAN,
       rangeExtractor: (range): number[] =>
-        [...new Set([...defaultRangeExtractor(range), ...keep])].sort((a, b) => a - b),
+        drawnIndexes(layout, [...defaultRangeExtractor(range), ...keep]),
       scrollMargin: listTop,
       scrollPaddingStart: headerTop,
     }
@@ -244,6 +253,7 @@ export class TimelineComponent {
       if (!scroller.isConnected) return
       const style = getComputedStyle(this.host)
       const list = this.list()?.nativeElement
+      this.measureTitle()
       this.viewport.set({
         height: scroller.clientHeight,
         headerTop: pixelsOf(style, '--day-header-top', 0),
@@ -286,10 +296,13 @@ export class TimelineComponent {
       },
       tab: (target, step) => this.tab(target, step),
     })
-    listener(this.scroller, 'focusin', (event: FocusEvent) => this.followFocus(event.target))
-    listener(this.scroller, 'focusout', (event: FocusEvent) =>
-      this.followFocus(event.relatedTarget)
+    // A window blur can send focusout with no destination. Keep the item until a focusin
+    // actually moves focus to another element, including one outside the scroller.
+    listener(this.host.ownerDocument, 'focusin', (event: FocusEvent) =>
+      this.followFocus(event.target)
     )
+    const fonts = this.host.ownerDocument.fonts
+    if (fonts) listener(fonts, 'loadingdone', () => this.measureTitle(true))
     afterNextRender({ read: measure })
     resizeObserver([this.scroller, this.content, this.controls], measure)
     afterRenderEffect({
@@ -304,9 +317,43 @@ export class TimelineComponent {
     })
   }
 
+  /** The rendered title supplies its column width and font. ResizeObserver owns the final size. */
+  private measureTitle(fontChanged = false): void {
+    if (!this.isPhone()) {
+      if (this.titleWidth) {
+        this.titleWidth = 0
+        this.virtualRows.measure()
+      }
+      return
+    }
+    const title = this.list()?.nativeElement.querySelector<HTMLElement>('.entry-title')
+    if (!title) return
+    const width = title.getBoundingClientRect().width
+    if (!width || (width === this.titleWidth && !fontChanged)) return
+    const context = this.host.ownerDocument.createElement('canvas').getContext('2d')
+    if (!context) return
+    const style = getComputedStyle(title)
+    context.font = `${style.fontWeight} ${style.fontSize} ${style.fontFamily}`
+    this.titleWidth = width
+    const cache = new WeakMap<EntryUiAdapter, boolean>()
+    const words = new Intl.Segmenter(undefined, { granularity: 'word' })
+    this.titleWraps.set((entry): boolean => {
+      const known = cache.get(entry)
+      if (known !== undefined) return known
+      const line = entry.title.replace(/[\t\n\f\r ]+/g, ' ').replace(/^ | $/g, '')
+      const wraps =
+        context.measureText(line).width > width &&
+        (line.includes(' ') || [...words.segment(line)].length > 1)
+      cache.set(entry, wraps)
+      return wraps
+    })
+    // Heights measured with the previous column width no longer describe these rows.
+    this.virtualRows.measure()
+  }
+
   private followFocus(target: EventTarget | null): void {
     const key =
-      target instanceof HTMLElement
+      target instanceof HTMLElement && this.scroller().nativeElement.contains(target)
         ? (target.closest<HTMLElement>('[data-entry]')?.dataset['entry'] ??
           target.closest<HTMLElement>('article[data-day]')?.dataset['day'])
         : undefined
@@ -399,14 +446,7 @@ export class TimelineComponent {
       const item = layout.items[Number(nativeElement.dataset['itemIndex'])]
       if (item?.kind !== 'row' || before.layout.indexes.has(item.key)) continue
       if (!before.layout.indexes.has(layout.days[item.dayIndex]!.day.date)) continue
-      nativeElement.classList.add('entry-added')
-      nativeElement.addEventListener(
-        'animationend',
-        () => {
-          nativeElement.classList.remove('entry-added')
-        },
-        { once: true }
-      )
+      this.playOnce(nativeElement, 'entry-added')
     }
   }
 
