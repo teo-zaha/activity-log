@@ -6,5 +6,5 @@ pub mod collected_activity_summary;
 pub mod connection_count;
 pub mod connection_name;
 pub mod connection_stamp;
-pub mod merge_result;
+pub(crate) mod hosted_commit;
 pub mod source_tag;

@@ -5,14 +5,14 @@ use chrono::Duration;
 use crate::{
     model::{
         ActivityEntry, ActivityLog, ActivityLogMeta, CollectOptions, CollectedActivity,
-        CollectedActivitySummary, ConnectionCount, ConnectionId, GitEntry, GitLabEntry,
-        IntoActivityEntries, MergeResult, Source,
+        CollectedActivitySummary, ConnectionCount, ConnectionId, GitEntry, IntoActivityEntries,
+        Source, activity::hosted_commit::HostedCommit,
     },
     provider::provider_adapter::ConnectionEntries,
     utils::now_iso,
 };
 
-/// Combines what the connections collected so far: GitLab pushes fold into their git commits,
+/// Combines what the connections collected so far: host events fold into their Git commits,
 /// and everything is sorted newest first.
 ///
 /// `results` holds the connections that finished, in connection order; one that failed comes
@@ -29,7 +29,7 @@ pub fn collect_activity_from_results(
 ) -> CollectedActivity {
     let mut connections = Vec::new();
     let mut git_entries = Vec::new();
-    let mut gitlab_entries = Vec::new();
+    let mut host_entries = Vec::new();
     let mut entries = Vec::new();
 
     let carried = carried.into_iter().flat_map(|(_, entries)| entries);
@@ -41,32 +41,29 @@ pub fn collect_activity_from_results(
     for entry in finished.into_iter().chain(carried) {
         match entry {
             ActivityEntry::Git(entry) => git_entries.push(entry),
-            ActivityEntry::GitLab(entry) => gitlab_entries.push(entry),
+            other if HostedCommit::is_host_event(&other) => host_entries.push(other),
             other => entries.push(other),
         }
     }
 
-    // A GitLab "pushed to" event is folded into the matching git commit so the timeline does not
-    // show the same change twice.
-    let merged = merge_git_with_gitlab(git_entries, gitlab_entries);
+    let (git_entries, host_entries) = fold_hosted_commits(git_entries, host_entries);
     let counted = |source: Source, name: &str| {
         connections
             .iter()
             .any(|connection| connection.source == source && connection.name == name)
     };
-    let merged_count = merged
-        .merged_git
+    let merged_count = git_entries
         .iter()
         .filter(|entry| {
-            entry.gitlab_event.is_some()
+            entry.has_host_event()
                 && entry
                     .connection
                     .as_str()
                     .is_some_and(|name| counted(Source::Git, name))
         })
         .count();
-    entries.extend(merged.merged_git.into_iter().into_activity_entries());
-    entries.extend(merged.remaining_gitlab.into_iter().into_activity_entries());
+    entries.extend(git_entries.into_iter().into_activity_entries());
+    entries.extend(host_entries);
     entries.sort_by(|a, b| b.timestamp().cmp(a.timestamp()));
 
     let mut counts = HashMap::<(Source, &str), usize>::new();
@@ -105,77 +102,56 @@ pub fn collect_activity_from_results(
     }
 }
 
-/// Folds each GitLab push into the git commit it pushed, so the change shows once. A push whose
-/// commit is not among `git_entries` (not collected yet, another author's, no local clone)
-/// stays an entry of its own. Pushes and commits pair one to one: a second push of the same
-/// commit (another branch, another connection) stays an entry, and a commit two clones have
-/// takes the push once. Which pairs up is decided by what the entries are, never by their
-/// order, so a log rebuilt from its parts folds the same way: the earliest push (then by
-/// connection and id) goes to the first commit by connection and repository.
-pub(crate) fn merge_git_with_gitlab(
-    git_entries: Vec<GitEntry>,
-    gitlab_entries: Vec<GitLabEntry>,
-) -> MergeResult {
-    let mut pushes = HashMap::<&str, Vec<usize>>::new();
-    for (index, entry) in gitlab_entries.iter().enumerate() {
-        if let Some(sha) = push_sha(entry) {
-            pushes.entry(sha).or_default().push(index);
+/// For each SHA, pair each host's ordered events with the same ordered local Git rows.
+fn fold_hosted_commits(
+    mut git_entries: Vec<GitEntry>,
+    host_entries: Vec<ActivityEntry>,
+) -> (Vec<GitEntry>, Vec<ActivityEntry>) {
+    let mut hosts_by_sha = HashMap::<&str, HashMap<Source, Vec<(usize, HostedCommit<'_>)>>>::new();
+    for (index, entry) in host_entries.iter().enumerate() {
+        if let Some(candidate) = HostedCommit::of(entry) {
+            hosts_by_sha
+                .entry(candidate.sha())
+                .or_default()
+                .entry(candidate.source())
+                .or_default()
+                .push((index, candidate));
         }
     }
-    let mut commits = HashMap::<&str, Vec<usize>>::new();
+
+    let mut rows_by_sha = HashMap::<&str, Vec<usize>>::new();
     for (index, entry) in git_entries.iter().enumerate() {
-        if pushes.contains_key(entry.hash.as_str()) {
-            commits.entry(entry.hash.as_str()).or_default().push(index);
+        if hosts_by_sha.contains_key(entry.hash.as_str()) {
+            rows_by_sha.entry(&entry.hash).or_default().push(index);
+        }
+    }
+    let mut assignments = Vec::new();
+    for (sha, hosts) in hosts_by_sha {
+        let Some(mut rows) = rows_by_sha.remove(sha) else {
+            continue;
+        };
+        rows.sort_by_key(|&index| clone_key(&git_entries[index]));
+        for (_, mut candidates) in hosts {
+            candidates.sort_by(|(_, left), (_, right)| left.order_key().cmp(&right.order_key()));
+            assignments.extend(rows.iter().copied().zip(candidates));
         }
     }
 
-    let mut folded_into = vec![None; git_entries.len()];
-    for (sha, mut commit_indices) in commits {
-        let mut push_indices = pushes.remove(sha).unwrap_or_default();
-        push_indices.sort_by_key(|&index| {
-            let push = &gitlab_entries[index];
-            (
-                push.timestamp.instant(),
-                push.connection.as_str(),
-                push.id.as_str(),
-            )
-        });
-        commit_indices.sort_by_key(|&index| {
-            let commit = &git_entries[index];
-            (commit.connection.as_str(), commit.repo.as_str())
-        });
-        for (commit, push) in commit_indices.into_iter().zip(push_indices) {
-            folded_into[commit] = Some(push);
-        }
+    let mut attached = vec![false; host_entries.len()];
+    for (target, (index, candidate)) in assignments {
+        candidate.attach_to(&mut git_entries[target]);
+        attached[index] = true;
     }
-
-    // Each push moves into its commit or stays; both lists keep their order.
-    let mut pushes = gitlab_entries.into_iter().map(Some).collect::<Vec<_>>();
-    let merged_git = git_entries
+    let remaining = host_entries
         .into_iter()
-        .zip(&folded_into)
-        .map(|(mut entry, push)| {
-            if let Some(push) = push.and_then(|push| pushes[push].take()) {
-                entry.gitlab_event = Some(Box::new(push));
-            }
-            entry
-        })
-        .collect::<Vec<_>>();
-    let remaining_gitlab = pushes.into_iter().flatten().collect::<Vec<_>>();
-
-    MergeResult {
-        merged_git,
-        remaining_gitlab,
-    }
+        .enumerate()
+        .filter_map(|(index, entry)| (!attached[index]).then_some(entry))
+        .collect();
+    (git_entries, remaining)
 }
 
-/// Only GitLab push events have a commit SHA we can safely correlate with local git history.
-fn push_sha(entry: &GitLabEntry) -> Option<&str> {
-    entry
-        .entry_type
-        .is_push()
-        .then_some(entry.pushed_commit.as_deref())
-        .flatten()
+fn clone_key(entry: &GitEntry) -> (Option<&str>, &str) {
+    (entry.connection.as_str(), &entry.repo)
 }
 
 /// Numbers entries of one connection whose id an earlier one has (`id#2`, `id#3`, in order),

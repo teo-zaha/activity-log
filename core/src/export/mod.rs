@@ -103,7 +103,7 @@ fn file_name<Z: TimeZone>(meta: &ActivityLogMeta, format: OutputFormat, tz: &Z) 
     )
 }
 
-/// What each connection contributed among `entries`, and how many commits absorbed a push.
+/// What each connection contributed among `entries`, and how many Git rows absorbed host activity.
 fn summary_of(entries: &[ActivityEntry]) -> CollectedActivitySummary {
     let mut counts = BTreeMap::<ConnectionId, usize>::new();
     // Entries read from a request always name their connection.
@@ -120,7 +120,7 @@ fn summary_of(entries: &[ActivityEntry]) -> CollectedActivitySummary {
             .collect(),
         merged_count: entries
             .iter()
-            .filter(|entry| matches!(entry, ActivityEntry::Git(git) if git.gitlab_event.is_some()))
+            .filter(|entry| matches!(entry, ActivityEntry::Git(git) if git.has_host_event()))
             .count(),
     }
 }

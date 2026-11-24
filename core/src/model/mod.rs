@@ -23,7 +23,6 @@ pub use activity::{
     connection_count::ConnectionCount,
     connection_name::ConnectionName,
     connection_stamp::ConnectionStamp,
-    merge_result::MergeResult,
     source_tag::{
         CalendarTag, FigmaTag, GitHubTag, GitLabTag, GitTag, JiraTag, OutlookTag, SystemTag,
     },

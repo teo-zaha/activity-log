@@ -32,6 +32,10 @@ pub struct GitEntry {
 }
 
 impl GitEntry {
+    pub(crate) fn has_host_event(&self) -> bool {
+        self.gitlab_event.is_some()
+    }
+
     pub fn new(
         repo: String,
         hash: String,
