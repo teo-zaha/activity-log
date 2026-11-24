@@ -1,6 +1,7 @@
 import type {
   ActivityEntry,
   CalendarEntry,
+  FigmaEntry,
   GitEntry,
   GitHubEntry,
   GitLabEntry,
@@ -10,6 +11,7 @@ import type {
   SystemEntry,
 } from '../generated/activity'
 import { calendarAdapter } from './adapters/calendar'
+import { figmaAdapter } from './adapters/figma'
 import { gitAdapter } from './adapters/git'
 import { githubAdapter } from './adapters/github'
 import { gitlabAdapter } from './adapters/gitlab'
@@ -36,6 +38,7 @@ const providerAdapters: ProviderAdapterMap = {
   outlook: outlookAdapter,
   system: systemAdapter,
   calendar: calendarAdapter,
+  figma: figmaAdapter,
 }
 
 export function getProviderAdapter<S extends Source>(source: S): ProviderAdapterMap[S] {
@@ -49,6 +52,7 @@ export function createEntryAdapter(entry: JiraEntry): EntryUiAdapter<JiraEntry>
 export function createEntryAdapter(entry: OutlookEntry): EntryUiAdapter<OutlookEntry>
 export function createEntryAdapter(entry: SystemEntry): EntryUiAdapter<SystemEntry>
 export function createEntryAdapter(entry: CalendarEntry): EntryUiAdapter<CalendarEntry>
+export function createEntryAdapter(entry: FigmaEntry): EntryUiAdapter<FigmaEntry>
 export function createEntryAdapter(entry: ActivityEntry): EntryUiAdapter
 export function createEntryAdapter(entry: ActivityEntry): EntryUiAdapter {
   switch (entry.source) {
@@ -66,6 +70,8 @@ export function createEntryAdapter(entry: ActivityEntry): EntryUiAdapter {
       return systemAdapter.create(entry)
     case 'calendar':
       return calendarAdapter.create(entry)
+    case 'figma':
+      return figmaAdapter.create(entry)
   }
 }
 

@@ -450,3 +450,39 @@ fn a_waiting_import_holds_back_commands_that_write_the_settings() {
     assert!(added.status.success(), "{}", stderr(&added));
     assert!(!fs::read_to_string(&config).unwrap().contains("gitlab"));
 }
+
+#[test]
+fn a_figma_file_list_and_stdin_token_save_in_one_edit() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("config.toml");
+    let key_file = dir.path().join("secret.key");
+    fs::write(&path, "[[figma]]\nname = \"design\"\nlabel = \"Design\"\n").unwrap();
+
+    let output = sources_with_input(
+        dir.path(),
+        &key_file,
+        &["set", "figma/design", "files", "F1", "F2", "--secret", "-"],
+        Some(b"test-figma-token\n"),
+    );
+    assert!(output.status.success(), "{}", stderr(&output));
+
+    let written = fs::read_to_string(&path).unwrap();
+    use activity_log_core::{
+        provider::{connection::StoredValue, provider_config::ConfigSource},
+        settings::ConfigFile,
+    };
+    let config = ConfigFile::load(&path).unwrap();
+    let connections = config.connections().connections;
+    let [connection] = connections.as_slice() else {
+        panic!("expected one connection");
+    };
+    assert_eq!(
+        connection.values().get("FIGMA_FILES").as_deref(),
+        Some(r#"["F1","F2"]"#)
+    );
+    assert!(matches!(
+        connection.values().get_stored("FIGMA_TOKEN"),
+        Some(StoredValue::Sealed(_))
+    ));
+    assert!(!written.contains("test-figma-token"));
+}

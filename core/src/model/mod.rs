@@ -3,6 +3,7 @@ pub mod calendar;
 pub mod change_stack;
 pub mod common;
 pub mod diagnostics;
+pub mod figma;
 pub mod git;
 pub mod github;
 pub mod gitlab;
@@ -12,9 +13,6 @@ pub mod outlook;
 pub mod runtime;
 pub mod system;
 pub mod window;
-
-#[cfg(test)]
-pub(crate) mod figma;
 
 pub use activity::{
     activity_entry::{ActivityEntry, IntoActivityEntries},
@@ -26,7 +24,9 @@ pub use activity::{
     connection_name::ConnectionName,
     connection_stamp::ConnectionStamp,
     merge_result::MergeResult,
-    source_tag::{CalendarTag, GitHubTag, GitLabTag, GitTag, JiraTag, OutlookTag, SystemTag},
+    source_tag::{
+        CalendarTag, FigmaTag, GitHubTag, GitLabTag, GitTag, JiraTag, OutlookTag, SystemTag,
+    },
 };
 pub use calendar::{
     busy_status::BusyStatus, calendar_entry::CalendarEntry, description_block::DescriptionBlock,
@@ -70,6 +70,7 @@ pub use common::{
     supported_os::SupportedOs, timestamp::Timestamp,
 };
 pub use diagnostics::{log_entry::LogEntry, log_level::LogLevel, logs_response::LogsResponse};
+pub use figma::{FigmaActivity, FigmaEditor, FigmaEntry};
 pub use git::git_entry::GitEntry;
 pub use gitlab::{gitlab_entry::GitLabEntry, gitlab_entry_type::GitLabType};
 pub use jira::{jira_entry::JiraEntry, jira_entry_type::JiraEntryType};

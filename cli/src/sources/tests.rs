@@ -231,3 +231,21 @@ fn lists_connections_in_columns() {
     );
     assert_eq!(list_lines(&[]), [NO_SOURCES]);
 }
+
+#[test]
+fn adding_figma_prompts_for_a_hidden_token_and_a_file_list() {
+    let mut file = ConfigFile::parse("config.toml", b"").unwrap();
+    let mut script = Script::new(&[
+        "test-figma-token",
+        "https://www.figma.com/design/F1/One, F2",
+    ]);
+    let values = ask_values(&Source::Figma, &mut script).unwrap();
+    let id = add(&mut file, &Source::Figma, Some("Design"), None, &values).unwrap();
+
+    assert_eq!(id, ConnectionId::new(Source::Figma, "design"));
+    assert_eq!(script.secret_questions, ["token (password, required): "]);
+    assert_eq!(
+        value(&file, "figma/design", "FIGMA_FILES").as_deref(),
+        Some(r#"["https://www.figma.com/design/F1/One","F2"]"#)
+    );
+}

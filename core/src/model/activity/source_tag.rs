@@ -57,3 +57,7 @@ source_tag!(
     /// `"calendar"`.
     CalendarTag = "calendar"
 );
+source_tag!(
+    /// `"figma"`.
+    FigmaTag = "figma"
+);

@@ -792,3 +792,30 @@ fn snapshot_only_sends_placeholders_declared_by_the_provider() {
     assert_eq!(fields["GITHUB_URL"]["placeholder"], "https://github.com");
     assert!(fields["GITHUB_TOKEN"].get("placeholder").is_none());
 }
+
+#[test]
+fn figma_settings_offer_a_file_list_and_a_token_with_no_address_to_bind() {
+    let configured = file("[[figma]]\nlabel = \"Design\"\nfiles = [\"F1\", \"F2\"]\n");
+    let state = connection_state(&configured, "figma/design");
+    assert_eq!(
+        field(&state, "FIGMA_FILES"),
+        ProviderConfigFieldValueDto::List {
+            item_type: ProviderConfigValueTypeDto::String,
+            items: vec!["F1".into(), "F2".into()],
+        }
+    );
+    assert_eq!(
+        field(&state, "FIGMA_TOKEN"),
+        ProviderConfigFieldValueDto::Secret {
+            value_type: ProviderConfigValueTypeDto::Password,
+            stored: None,
+        }
+    );
+
+    let request = save(
+        "figma/design",
+        vec![("FIGMA_TOKEN", text("test-figma-token"))],
+    );
+    let base = SaveBase::Known(configured.edit_base(&request.connection, &[]).unwrap());
+    assert!(check_save(&request, base, Some(&configured)).is_empty());
+}

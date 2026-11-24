@@ -3,7 +3,7 @@ use serde_json::Value;
 use ts_rs::TS;
 
 use crate::model::{
-    ConnectionStamp, MeetingBody, Timestamp, calendar::calendar_entry::CalendarEntry,
+    ConnectionStamp, FigmaEntry, MeetingBody, Timestamp, calendar::calendar_entry::CalendarEntry,
     common::source::Source, git::git_entry::GitEntry, github::GitHubEntry,
     gitlab::gitlab_entry::GitLabEntry, jira::jira_entry::JiraEntry,
     outlook::outlook_entry::OutlookEntry, system::system_entry::SystemEntry,
@@ -97,6 +97,7 @@ activity_entry!(
     Outlook(OutlookEntry) => Outlook,
     System(SystemEntry) => System,
     Calendar(CalendarEntry) => Calendar,
+    Figma(FigmaEntry) => Figma,
 );
 
 pub trait IntoActivityEntries: IntoIterator

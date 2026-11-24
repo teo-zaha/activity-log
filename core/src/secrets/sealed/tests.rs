@@ -8,6 +8,7 @@ use crate::{
     provider::{
         calendar::CALENDAR_ICS_URL,
         connection::ConnectionValues,
+        figma::FIGMA_TOKEN,
         github::GITHUB_TOKEN,
         gitlab::{GITLAB_TOKEN, GITLAB_URL, GITLAB_USER},
         jira::JIRA_TOKEN,
@@ -555,4 +556,25 @@ fn rfc_5297_vectors_hold() {
     let mut tampered = sealed.clone();
     tampered[20] ^= 1;
     assert!(a2.decrypt(&headers, &tampered).is_err());
+}
+
+#[test]
+fn a_figma_token_opens_after_the_file_list_changes() {
+    let binding = Binding::of(&Source::Figma, &values(&[])).unwrap();
+    let sealed = seal(
+        &key(1),
+        StoreKind::File,
+        FIGMA_TOKEN,
+        &binding,
+        "test-figma-token",
+    )
+    .unwrap();
+
+    let with_files = Binding::of(
+        &Source::Figma,
+        &values(&[("FIGMA_FILES", r#"["F1","F2"]"#)]),
+    )
+    .unwrap();
+    let opened = open(&sealed, &key(1), FIGMA_TOKEN, &with_files).unwrap();
+    assert_eq!(opened.as_str(), "test-figma-token");
 }

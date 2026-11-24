@@ -31,6 +31,7 @@ pub(crate) enum VersionsError {
 }
 
 impl FigmaApi {
+    pub(crate) const SERVICE: &str = "Figma";
     const ORIGIN: &str = "https://api.figma.com";
 
     pub(crate) fn new(config: &FigmaConfig) -> Result<Self, SetupError> {

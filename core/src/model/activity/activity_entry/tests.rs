@@ -25,6 +25,11 @@ const OUTLOOK_BARE: &str = r#"{"source":"outlook","connection":"outlook","id":"A
 const SYSTEM: &str = r#"{"source":"system","connection":"system","id":"boot-1","type":"boot","timestamp":"2026-11-17T07:58:00+01:00","label":"Boot"}"#;
 const CALENDAR: &str = r#"{"source":"calendar","connection":"team","id":"uid-1/2026-11-17T14:00:00+00:00","timestamp":"2026-11-17T14:00:00+00:00","title":"Review","location":"Online","organizer":"lead@example.org","durationMinutes":60,"busyStatus":"tentative","meetingWeight":"tentative","joinUrl":"https://meet.example.org/j/2"}"#;
 
+const FIGMA_VERSION: &str = r#"{"source":"figma","connection":"design","id":"F1:version:7","timestamp":"2026-11-17T09:30:00.000Z","fileKey":"F1","fileName":"Checkout","editor":"figma","fileUrl":"https://www.figma.com/file/F1","type":"versionSaved","versionId":"7","label":"Checkout v2","description":"Updated labels"}"#;
+const FIGMA_EDITED: &str = r#"{"source":"figma","connection":"design","id":"F1:version:8","timestamp":"2026-11-17T09:31:00Z","fileKey":"F1","fileName":"Checkout","fileUrl":"https://www.figma.com/file/F1","type":"edited","versionId":"8"}"#;
+const FIGMA_COMMENTED: &str = r#"{"source":"figma","connection":"design","id":"F1:comment:9","timestamp":"2026-11-17T09:32:00Z","fileKey":"F1","fileName":"Checkout","editor":"figma","fileUrl":"https://www.figma.com/file/F1?node-id=3%3A4","type":"commented","commentId":"9","message":"Looks good","nodeId":"3:4","resolved":false}"#;
+const FIGMA_REPLIED: &str = r#"{"source":"figma","connection":"design","id":"F1:comment:10","timestamp":"2026-11-17T09:33:00Z","fileKey":"F1","fileName":"Checkout","editor":"figma","fileUrl":"https://www.figma.com/file/F1?node-id=3%3A4","type":"replied","commentId":"10","parentId":"9","nodeId":"3:4"}"#;
+
 fn round_trip(fixture: &str, source: Source) {
     let entry = serde_json::from_str::<ActivityEntry>(fixture).unwrap();
     assert_eq!(entry.source(), source, "{fixture}");
@@ -50,6 +55,9 @@ fn every_kind_keeps_its_wire_shape() {
     round_trip(OUTLOOK_BARE, Source::Outlook);
     round_trip(SYSTEM, Source::System);
     round_trip(CALENDAR, Source::Calendar);
+    for fixture in [FIGMA_VERSION, FIGMA_EDITED, FIGMA_COMMENTED, FIGMA_REPLIED] {
+        round_trip(fixture, Source::Figma);
+    }
 }
 
 /// B38: an entry is read as the kind its `source` names, or not at all.
@@ -106,4 +114,20 @@ fn an_entry_with_an_invalid_stack_is_refused() {
     assert!(serde_json::from_str::<ActivityEntry>(&lonely).is_err());
     let with_user_info = GITLAB_STACKED.replacen("https://gitlab", "https://jdoe:secret@gitlab", 1);
     assert!(serde_json::from_str::<ActivityEntry>(&with_user_info).is_err());
+}
+
+#[test]
+fn figma_requires_its_own_entry_fields_connection_and_activity() {
+    for malformed in [
+        GIT.replacen(r#""source":"git""#, r#""source":"figma""#, 1),
+        FIGMA_EDITED.replacen(r#""connection":"design""#, r#""connection":"""#, 1),
+        FIGMA_EDITED.replacen(r#""type":"edited""#, r#""type":"viewed""#, 1),
+        FIGMA_VERSION.replacen(r#""label":"Checkout v2","#, "", 1),
+    ] {
+        assert!(
+            serde_json::from_str::<ActivityEntry>(&malformed)
+                .unwrap_err()
+                .is_data()
+        );
+    }
 }

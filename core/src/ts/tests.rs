@@ -17,7 +17,7 @@ fn holds_the_range_limit_the_backend_checks() {
 #[test]
 fn lists_every_source_by_its_wire_name() {
     assert!(activity_typescript().contains(
-        "export const SOURCES = [\"git\", \"gitlab\", \"github\", \"jira\", \"outlook\", \"system\", \"calendar\"] as const satisfies readonly Source[]\n"
+        "export const SOURCES = [\"git\", \"gitlab\", \"github\", \"jira\", \"outlook\", \"system\", \"calendar\", \"figma\"] as const satisfies readonly Source[]\n"
     ));
 }
 

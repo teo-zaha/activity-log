@@ -1,5 +1,6 @@
 pub mod calendar;
 pub mod connection;
+pub(crate) mod figma;
 pub mod git;
 pub mod github;
 pub mod gitlab;
@@ -16,9 +17,6 @@ pub mod source_failure;
 pub mod system;
 
 #[cfg(test)]
-mod figma;
-
-#[cfg(test)]
 mod tests;
 
 use std::{
@@ -31,9 +29,9 @@ use strum::IntoEnumIterator;
 use crate::model::{Source, SupportedOs};
 
 use self::{
-    calendar::CalendarProvider, git::GitProvider, github::GitHubProvider, gitlab::GitLabProvider,
-    jira::JiraProvider, outlook::OutlookProvider, provider_adapter::ProviderAdapter,
-    system::SystemProvider,
+    calendar::CalendarProvider, figma::FigmaProvider, git::GitProvider, github::GitHubProvider,
+    gitlab::GitLabProvider, jira::JiraProvider, outlook::OutlookProvider,
+    provider_adapter::ProviderAdapter, system::SystemProvider,
 };
 
 pub use provider_runtime::{
@@ -142,6 +140,7 @@ static REGISTRY: LazyLock<Vec<Arc<dyn ProviderAdapter>>> = LazyLock::new(|| {
                 Source::Outlook => Arc::new(OutlookProvider),
                 Source::System => Arc::new(SystemProvider),
                 Source::Calendar => Arc::new(CalendarProvider),
+                Source::Figma => Arc::new(FigmaProvider),
             }
         })
         .collect()

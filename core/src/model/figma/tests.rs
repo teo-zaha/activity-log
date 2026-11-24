@@ -1,8 +1,7 @@
-use serde::{Deserialize, Serialize};
 use serde_json::json;
 use ts_rs::TS;
 
-use super::{FigmaActivity, FigmaComment, FigmaVersion};
+use super::{FigmaComment, FigmaEntry, FigmaVersion};
 
 #[test]
 fn versions_require_the_nullable_label_and_description() {
@@ -40,28 +39,14 @@ fn root_comment_ignores_a_non_string_node_id() {
 }
 
 #[test]
-fn autosave_checkpoint_flattens_as_an_edited_activity() {
-    #[derive(Serialize, Deserialize, TS)]
-    struct Entry {
-        file: String,
-        #[serde(flatten)]
-        #[ts(flatten)]
-        activity: FigmaActivity,
-    }
-
-    let json = r#"{"file":"Checkout","type":"edited","versionId":"00142"}"#;
-    let entry: Entry = serde_json::from_str(json).unwrap();
+fn figma_activity_is_flattened_in_the_entry_declaration() {
+    let declaration = FigmaEntry::decl(&ts_rs::Config::default());
     assert!(
-        matches!(&entry.activity, FigmaActivity::Edited { version_id } if version_id == "00142")
-    );
-    assert_eq!(serde_json::to_string(&entry).unwrap(), json);
-    let declaration = Entry::decl(&ts_rs::Config::default());
-    assert!(
-        declaration.contains("{ file: string, } & ("),
+        declaration.contains(r#"{ "type": "edited", versionId: string, }"#),
         "{declaration}"
     );
     assert!(
-        declaration.contains(r#"{ "type": "edited", versionId: string, }"#),
+        declaration.contains(r#"fileUrl: string, } & ("#),
         "{declaration}"
     );
 }

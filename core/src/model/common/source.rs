@@ -30,6 +30,7 @@ pub enum Source {
     Outlook,
     System,
     Calendar,
+    Figma,
 }
 
 impl Source {
@@ -43,6 +44,7 @@ impl Source {
             Self::Outlook => "Outlook",
             Self::System => "System",
             Self::Calendar => "Calendar",
+            Self::Figma => "Figma",
         }
     }
 }

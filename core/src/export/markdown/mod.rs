@@ -3,8 +3,8 @@
 use chrono::{DateTime, TimeZone};
 
 use crate::model::{
-    ActivityEntry, ActivityLog, CalendarEntry, GitEntry, GitLabEntry, JiraEntry, MeetingBody,
-    OutlookEntry, SystemEntry,
+    ActivityEntry, ActivityLog, CalendarEntry, FigmaActivity, FigmaEntry, GitEntry, GitLabEntry,
+    JiraEntry, MeetingBody, OutlookEntry, SystemEntry,
     github::{GitHubAction, GitHubEntry, GitHubReviewState, Item},
 };
 
@@ -104,6 +104,31 @@ fn entry_line(entry: &ActivityEntry, time: impl std::fmt::Display) -> String {
             meeting,
             time,
         ),
+        ActivityEntry::Figma(FigmaEntry {
+            file_name,
+            activity,
+            ..
+        }) => {
+            let action = match activity {
+                FigmaActivity::VersionSaved { label, .. } => {
+                    format!("saved version \"{}\"", text(label))
+                }
+                FigmaActivity::Edited { .. } => "edited".to_owned(),
+                FigmaActivity::Commented { message, .. } => {
+                    format!(
+                        "commented: {}",
+                        text(message.as_deref().unwrap_or("(No comment text)"))
+                    )
+                }
+                FigmaActivity::Replied { message, .. } => {
+                    format!(
+                        "replied: {}",
+                        text(message.as_deref().unwrap_or("(No comment text)"))
+                    )
+                }
+            };
+            format!("- **[figma]** {}: {action} ({time})\n", text(file_name))
+        }
     }
 }
 

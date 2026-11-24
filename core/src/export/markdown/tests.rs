@@ -130,3 +130,57 @@ fn github_review_export_uses_repository_and_escapes_the_title() {
     ));
     assert!(!markdown.lines().any(|line| line == "## Example"));
 }
+#[test]
+fn figma_markdown_escapes_the_file_name_and_text_of_each_activity() {
+    use crate::model::{ConnectionName, FigmaActivity, FigmaEntry, FigmaTag};
+    let entry = |activity| {
+        ActivityEntry::Figma(FigmaEntry {
+            source: FigmaTag,
+            connection: ConnectionName::unstamped(),
+            id: "entry".into(),
+            timestamp: "2026-03-10T09:00:00Z".into(),
+            file_key: "F1".into(),
+            file_name: "[Checkout]".into(),
+            editor: None,
+            file_url: "https://www.figma.com/file/F1".into(),
+            activity,
+        })
+    };
+    let log = log_of(vec![
+        entry(FigmaActivity::VersionSaved {
+            version_id: "7".into(),
+            label: "*Final*".into(),
+            description: None,
+        }),
+        entry(FigmaActivity::Edited {
+            version_id: "8".into(),
+        }),
+        entry(FigmaActivity::Commented {
+            comment_id: "9".into(),
+            message: Some("One\n## Two".into()),
+            node_id: None,
+            resolved: false,
+        }),
+        entry(FigmaActivity::Replied {
+            comment_id: "10".into(),
+            parent_id: "9".into(),
+            message: None,
+            node_id: None,
+        }),
+    ]);
+
+    let markdown = to_markdown(&log, &FixedOffset::east_opt(0).unwrap());
+    let entries: Vec<_> = markdown
+        .lines()
+        .filter(|line| line.starts_with("- **[figma]**"))
+        .collect();
+    assert_eq!(
+        entries,
+        [
+            r#"- **[figma]** \[Checkout\]: saved version "\*Final\*" (09:00)"#,
+            r"- **[figma]** \[Checkout\]: edited (09:00)",
+            r"- **[figma]** \[Checkout\]: commented: One ## Two (09:00)",
+            r"- **[figma]** \[Checkout\]: replied: (No comment text) (09:00)",
+        ]
+    );
+}

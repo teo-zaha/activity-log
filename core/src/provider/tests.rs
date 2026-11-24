@@ -59,6 +59,7 @@ fn registry_includes_all_builtin_providers() {
             Source::Outlook,
             Source::System,
             Source::Calendar,
+            Source::Figma,
         ]
     );
 }
@@ -754,7 +755,10 @@ fn only_remote_api_providers_opt_into_the_disk_cache() {
         .map(|adapter| adapter.id())
         .collect();
 
-    assert_eq!(cached, [Source::Gitlab, Source::Github, Source::Jira]);
+    assert_eq!(
+        cached,
+        [Source::Gitlab, Source::Github, Source::Jira, Source::Figma]
+    );
 }
 
 #[test]
@@ -1535,7 +1539,8 @@ fn no_declared_secret_reaches_a_fingerprint_the_snapshot_or_debug() {
             Source::Gitlab,
             Source::Github,
             Source::Jira,
-            Source::Calendar
+            Source::Calendar,
+            Source::Figma
         ]
     );
 }

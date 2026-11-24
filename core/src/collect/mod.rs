@@ -1,5 +1,6 @@
 pub mod calendar;
 pub(crate) mod change_stack;
+pub(crate) mod figma;
 pub mod git;
 pub(crate) mod github;
 pub mod gitlab;
