@@ -1,10 +1,15 @@
-use std::{cell::Cell, path::PathBuf, sync::Arc, time::Duration};
+use std::{
+    cell::Cell,
+    path::PathBuf,
+    sync::Arc,
+    time::{Duration, Instant},
+};
 
 use tempfile::{TempDir, tempdir};
 
 use super::{
     DataKey, FreshKey, FrontEnd, Interaction, KEY_WAIT, MemoryStore, SecretStore, Secrets,
-    StoreCall, StoreCalls, StoreErrorKind, StoreKind, take_creation_lock,
+    StoreCall, StoreCalls, StoreErrorKind, StoreKind, take_creation_lock, take_creation_lock_with,
 };
 
 /// `Secrets` over an OS store in memory, with its key-creation lock in a folder of its own.
@@ -252,8 +257,21 @@ fn a_held_creation_lock_refuses_after_its_wait() {
     let dir = tempdir().unwrap();
     let path = dir.path().join("activity-log").join("secret-key.lock");
     let held = take_creation_lock(&path, Duration::ZERO).unwrap();
-    let err = take_creation_lock(&path, Duration::from_millis(100)).unwrap_err();
+    let wait = Duration::from_millis(100);
+    let start = Instant::now();
+    let clock = Cell::new(start);
+    let err = take_creation_lock_with(
+        &path,
+        wait,
+        || clock.get(),
+        |duration| clock.set(clock.get() + duration),
+    )
+    .unwrap_err();
     assert_eq!(err.kind(), StoreErrorKind::Refused);
+    assert_eq!(clock.get() - start, wait);
+
+    // A child forked by another test can still hold a copy of the descriptor until exec.
+    held.unlock().unwrap();
     drop(held);
     take_creation_lock(&path, Duration::ZERO).unwrap();
 }

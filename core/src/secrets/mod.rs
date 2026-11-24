@@ -630,6 +630,15 @@ fn os_key_lock(config_path: Option<&Path>) -> Option<PathBuf> {
 /// Takes the lock at `path`, its folder created private, waiting up to `wait` (as long as a
 /// settings writer does); a lock another process keeps holding is `Refused`: try again.
 fn take_creation_lock(path: &Path, wait: Duration) -> Result<File, StoreError> {
+    take_creation_lock_with(path, wait, Instant::now, std::thread::sleep)
+}
+
+fn take_creation_lock_with(
+    path: &Path,
+    wait: Duration,
+    now: impl Fn() -> Instant,
+    mut sleep: impl FnMut(Duration),
+) -> Result<File, StoreError> {
     let locking = |err: std::io::Error| {
         StoreError::failed(anyhow!(err).context(format!("Locking {}", path.display())))
     };
@@ -644,12 +653,12 @@ fn take_creation_lock(path: &Path, wait: Duration) -> Result<File, StoreError> {
     let file = crate::platform::private_file::open_folder(folder)
         .and_then(|folder| folder.open_lock(name))
         .map_err(locking)?;
-    let deadline = Instant::now() + wait;
+    let deadline = now() + wait;
     loop {
         match file.try_lock() {
             Ok(()) => return Ok(file),
-            Err(TryLockError::WouldBlock) if Instant::now() < deadline => {
-                std::thread::sleep(Duration::from_millis(50));
+            Err(TryLockError::WouldBlock) if now() < deadline => {
+                sleep(Duration::from_millis(50));
             }
             Err(TryLockError::WouldBlock) => {
                 return Err(StoreError::refused(anyhow!(
