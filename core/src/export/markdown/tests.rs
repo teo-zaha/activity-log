@@ -109,3 +109,24 @@ fn a_meeting_without_a_title_shows_the_placeholder() {
         "{markdown}"
     );
 }
+
+#[test]
+fn github_review_export_uses_repository_and_escapes_the_title() {
+    let entry = serde_json::from_value(serde_json::json!({
+        "source": "github",
+        "connection": "work",
+        "id": "PRR_example",
+        "timestamp": "2026-03-10T09:00:00Z",
+        "repository": "acme/widgets",
+        "type": "reviewed",
+        "pullRequest": {"number": 12, "title": "Fix *widgets*\n## Example"},
+        "state": "changesRequested",
+    }))
+    .unwrap();
+    let markdown = to_markdown(&log_of(vec![entry]), &FixedOffset::east_opt(0).unwrap());
+
+    assert!(markdown.contains(
+        "- **[github]** `acme/widgets` Requested changes on pull request #12 Fix \\*widgets\\* ## Example (09:00)\n"
+    ));
+    assert!(!markdown.lines().any(|line| line == "## Example"));
+}

@@ -307,11 +307,8 @@ async fn build_provider_info(
             ProviderProblem::NotConfigured,
             format!("{} is not configured", connection.label),
         )
-    } else if let Some(key) = context.first_invalid_key(requirements) {
-        unavailable(
-            ProviderProblem::NotConfigured,
-            format!("{} must be a {}", key.name, key.shape),
-        )
+    } else if let Some(problem) = context.first_config_problem(requirements) {
+        unavailable(ProviderProblem::NotConfigured, problem)
     } else if let Some(binding) = adapter.config_binding() {
         if let Err(err) = (binding.resolve)(context) {
             unavailable(

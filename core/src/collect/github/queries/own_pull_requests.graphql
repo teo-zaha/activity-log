@@ -1,0 +1,34 @@
+query OwnPullRequests($login: String!, $after: String) {
+  viewer {
+    page: pullRequests(first: 100, after: $after, orderBy: { field: UPDATED_AT, direction: DESC }) {
+      pageInfo {
+        hasNextPage
+        endCursor
+      }
+      nodes {
+        id
+        number
+        title
+        url
+        updatedAt
+        repository {
+          nameWithOwner
+        }
+        reviews(author: $login, first: 20) {
+          pageInfo {
+            hasNextPage
+            endCursor
+          }
+          nodes {
+            id
+            state
+            submittedAt
+            author {
+              login
+            }
+          }
+        }
+      }
+    }
+  }
+}

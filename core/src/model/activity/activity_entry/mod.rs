@@ -4,9 +4,9 @@ use ts_rs::TS;
 
 use crate::model::{
     ConnectionStamp, MeetingBody, Timestamp, calendar::calendar_entry::CalendarEntry,
-    common::source::Source, git::git_entry::GitEntry, gitlab::gitlab_entry::GitLabEntry,
-    jira::jira_entry::JiraEntry, outlook::outlook_entry::OutlookEntry,
-    system::system_entry::SystemEntry,
+    common::source::Source, git::git_entry::GitEntry, github::GitHubEntry,
+    gitlab::gitlab_entry::GitLabEntry, jira::jira_entry::JiraEntry,
+    outlook::outlook_entry::OutlookEntry, system::system_entry::SystemEntry,
 };
 
 pub trait IntoActivityEntry {
@@ -92,6 +92,7 @@ activity_entry!(
     /// `source`: an object is read as the kind it names, with that kind's fields, or refused.
     Git(GitEntry) => Git,
     GitLab(GitLabEntry) => Gitlab,
+    GitHub(GitHubEntry) => Github,
     Jira(JiraEntry) => Jira,
     Outlook(OutlookEntry) => Outlook,
     System(SystemEntry) => System,

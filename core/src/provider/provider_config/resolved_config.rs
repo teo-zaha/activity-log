@@ -85,14 +85,14 @@ impl ProviderConfig {
         Ok(crate::utils::fnv1a(text.into_bytes()))
     }
 
-    pub fn first_invalid_key<'a>(
-        &self,
-        requirements: &'a [ProviderConfigKey],
-    ) -> Option<&'a ProviderConfigKey> {
-        requirements.iter().find(|key| {
-            self.values
-                .get(key.name)
-                .is_some_and(|value| !provider_config_key_accepts(**key, value))
+    pub fn first_config_problem(&self, requirements: &[ProviderConfigKey]) -> Option<String> {
+        requirements.iter().find_map(|&key| {
+            let value = self.values.get(key.name)?;
+            let problem = key_problem(key, value)?;
+            Some(match key.check {
+                Some(_) => problem.to_owned(),
+                None => format!("{} must be a {}", key.name, key.shape),
+            })
         })
     }
 }
@@ -137,13 +137,15 @@ pub fn url_for_debug(value: &str) -> String {
 
 /// Whether `value` is valid for `key`: for a list, every item must match the value type.
 pub fn provider_config_key_accepts(key: ProviderConfigKey, value: &str) -> bool {
+    key_problem(key, value).is_none()
+}
+
+fn key_problem(key: ProviderConfigKey, value: &str) -> Option<&'static str> {
     match key.shape {
-        ProviderConfigShape::Single(value_type) => {
-            provider_config_value_matches_type(value, value_type)
-        }
-        ProviderConfigShape::List(item_type) => parse_config_list(value)
+        ProviderConfigShape::Single(_) => value_problem(value, key),
+        ProviderConfigShape::List(_) => parse_config_list(value)
             .iter()
-            .all(|item| provider_config_value_matches_type(item, item_type)),
+            .find_map(|item| value_problem(item, key)),
     }
 }
 
@@ -151,14 +153,19 @@ pub fn provider_config_value_matches_type(
     value: &str,
     value_type: ProviderConfigValueType,
 ) -> bool {
-    value_problem(value, value_type).is_none()
+    type_problem(value, value_type).is_none()
 }
 
-/// Why `value` is no value of `value_type`, as the settings say it; `None` when it is one. The
+/// Why `value` is invalid for the given key, as the settings say it. The
 /// one rule for every value read or written (B64: the settings and the file agree). A URL with
 /// a user name or password is a URL here: a file that holds one still loads, and its check says
 /// what to change; only a new value is refused for it ([`url_with_credentials`]).
-pub fn value_problem(value: &str, value_type: ProviderConfigValueType) -> Option<&'static str> {
+pub fn value_problem(value: &str, key: ProviderConfigKey) -> Option<&'static str> {
+    type_problem(value, key.value_type())
+        .or_else(|| key.check.and_then(|check| check.problem(value)))
+}
+
+fn type_problem(value: &str, value_type: ProviderConfigValueType) -> Option<&'static str> {
     let unless = |fits: bool, message| (!fits).then_some(message);
     match value_type {
         ProviderConfigValueType::String | ProviderConfigValueType::Password => None,

@@ -1,0 +1,5 @@
+query ActivityViewer {
+  viewer {
+    login
+  }
+}

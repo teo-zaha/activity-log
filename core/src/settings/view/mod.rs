@@ -65,17 +65,17 @@ pub fn normalize(
         (ProviderConfigShape::Single(_), Submitted::List(_)) => {
             Err(vec![issue(at_value(), ONE_VALUE)])
         }
-        (ProviderConfigShape::Single(value_type), Submitted::Text(raw)) => {
+        (ProviderConfigShape::Single(_), Submitted::Text(raw)) => {
             let raw = raw.trim();
             if raw.is_empty() {
                 return Ok(None);
             }
-            match new_value_problem(raw, value_type) {
+            match new_value_problem(raw, key) {
                 Some(message) => Err(vec![issue(at_value(), message)]),
                 None => Ok(Some(raw.to_string())),
             }
         }
-        (ProviderConfigShape::List(item_type), value) => {
+        (ProviderConfigShape::List(_), value) => {
             let items = match value {
                 Submitted::List(items) => clean_config_list(items),
                 Submitted::Text(raw) => parse_config_list(raw),
@@ -84,7 +84,7 @@ pub fn normalize(
                 .iter()
                 .enumerate()
                 .filter_map(|(index, item)| {
-                    let message = new_value_problem(item, item_type)?;
+                    let message = new_value_problem(item, key)?;
                     let at = ProviderConfigFieldRefDto::Item {
                         key: key.name.to_string(),
                         index: u32::try_from(index).unwrap_or(u32::MAX),
@@ -364,6 +364,7 @@ pub fn build_snapshot(
                     .map(|key| ProviderConfigFieldStateDto {
                         key: key.name.to_string(),
                         label: key.label.to_string(),
+                        placeholder: key.placeholder.map(str::to_owned),
                         required: key.required,
                         is_set: connection.values().get_stored(key.name).is_some(),
                         value: field_value(connection, *key, secrets),
@@ -380,9 +381,9 @@ pub fn build_snapshot(
 }
 
 /// A new value's problem: a value the file may hold, and for a URL no user name or password.
-fn new_value_problem(raw: &str, value_type: ProviderConfigValueType) -> Option<&'static str> {
-    value_problem(raw, value_type).or_else(|| {
-        (value_type == ProviderConfigValueType::Url && url_with_credentials(raw))
+fn new_value_problem(raw: &str, key: ProviderConfigKey) -> Option<&'static str> {
+    value_problem(raw, key).or_else(|| {
+        (key.value_type() == ProviderConfigValueType::Url && url_with_credentials(raw))
             .then_some(NO_CREDENTIALS)
     })
 }

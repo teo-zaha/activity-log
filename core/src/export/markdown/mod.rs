@@ -5,6 +5,7 @@ use chrono::{DateTime, TimeZone};
 use crate::model::{
     ActivityEntry, ActivityLog, CalendarEntry, GitEntry, GitLabEntry, JiraEntry, MeetingBody,
     OutlookEntry, SystemEntry,
+    github::{GitHubAction, GitHubEntry, GitHubReviewState, Item},
 };
 
 #[cfg(test)]
@@ -67,6 +68,7 @@ fn entry_line(entry: &ActivityEntry, time: impl std::fmt::Display) -> String {
                 .unwrap_or_default();
             format!("- **[gitlab]** {entry_type}{title} ({time})\n")
         }
+        ActivityEntry::GitHub(entry) => github_line(entry, time),
         ActivityEntry::Jira(JiraEntry {
             key, title, status, ..
         }) => format!(
@@ -103,6 +105,39 @@ fn entry_line(entry: &ActivityEntry, time: impl std::fmt::Display) -> String {
             time,
         ),
     }
+}
+
+fn github_line(entry: &GitHubEntry, time: impl std::fmt::Display) -> String {
+    let (action, kind, number, title) = match &entry.action {
+        GitHubAction::Opened {
+            target: Item::PullRequest(pull),
+        } => ("Opened", "pull request", pull.number, &pull.title),
+        GitHubAction::Opened {
+            target: Item::Issue(issue),
+        } => ("Opened", "issue", issue.number, &issue.title),
+        GitHubAction::Reviewed {
+            pull_request,
+            state,
+        } => {
+            let action = match state {
+                GitHubReviewState::Approved => "Approved",
+                GitHubReviewState::ChangesRequested => "Requested changes on",
+                GitHubReviewState::Commented => "Reviewed",
+                GitHubReviewState::Dismissed => "Reviewed (dismissed)",
+            };
+            (
+                action,
+                "pull request",
+                pull_request.number,
+                &pull_request.title,
+            )
+        }
+    };
+    format!(
+        "- **[github]** {} {action} {kind} #{number} {} ({time})\n",
+        code(&entry.repository),
+        text(title)
+    )
 }
 
 /// A meeting's list item, whichever source it came from.

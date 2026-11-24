@@ -13,6 +13,12 @@ const GITLAB_STACKED: &str = r#"{"source":"gitlab","connection":"oss","id":"79",
 /// The other ways down: several changes below, and a cut.
 const GITLAB_AMBIGUOUS: &str = r#"{"source":"gitlab","connection":"oss","id":"80","type":"approved","timestamp":"2026-11-17T08:50:00.000Z","title":"Parse B","targetType":"MergeRequest","projectId":42,"mrIid":12,"changeStack":{"current":{"number":12,"title":"Parse B"},"below":[],"bottom":{"kind":"ambiguous"},"above":{"changes":[],"end":{"kind":"complete"}}}}"#;
 const GITLAB_CUT_BELOW: &str = r#"{"source":"gitlab","connection":"oss","id":"81","type":"approved","timestamp":"2026-11-17T08:55:00.000Z","title":"Parse B","targetType":"MergeRequest","projectId":42,"mrIid":12,"changeStack":{"current":{"number":12,"title":"Parse B"},"below":[],"bottom":{"kind":"cut","reason":"failed"},"above":{"changes":[],"end":{"kind":"complete"}}}}"#;
+const GITHUB_OPENED: &str = r#"{"source":"github","connection":"oss","id":"I_x","timestamp":"2026-11-17T10:00:00Z","repository":"acme/widgets","type":"opened","target":{"kind":"issue","number":7,"title":"Fix widget"}}"#;
+const GITHUB_LINKED_ISSUE: &str = r#"{"source":"github","connection":"oss","id":"I_y","timestamp":"2026-11-17T10:00:00Z","repository":"acme/widgets","type":"opened","target":{"kind":"issue","number":7,"title":"Fix widget","webUrl":"https://github.com/acme/widgets/issues/7"}}"#;
+const GITHUB_OPENED_PR: &str = r#"{"source":"github","connection":"oss","id":"PR_x","timestamp":"2026-11-17T10:00:00Z","repository":"acme/widgets","type":"opened","target":{"kind":"pullRequest","number":12,"title":"Add widget"}}"#;
+const GITHUB_LINKED_PR: &str = r#"{"source":"github","connection":"oss","id":"PR_z","timestamp":"2026-11-17T10:00:00Z","repository":"acme/widgets","type":"opened","target":{"kind":"pullRequest","number":12,"title":"Add widget","webUrl":"https://github.com/acme/widgets/pull/12"}}"#;
+const GITHUB_STACKED_PR: &str = r#"{"source":"github","connection":"oss","id":"PR_y","timestamp":"2026-11-17T10:00:00Z","repository":"acme/widgets","type":"opened","target":{"kind":"pullRequest","number":12,"title":"Add widget","changeStack":{"current":{"number":12,"title":"Add widget","webUrl":"https://github.com/acme/widgets/pull/12"},"below":[{"number":11,"title":"Parse widget"}],"bottom":{"kind":"reached","branch":"main"},"above":{"changes":[],"end":{"kind":"complete"}}}}}"#;
+const GITHUB_REVIEWED: &str = r#"{"source":"github","connection":"oss","id":"PRR_x","timestamp":"2026-11-17T10:05:00.000Z","repository":"acme/widgets","type":"reviewed","pullRequest":{"number":12,"title":"Add widget"},"state":"changesRequested"}"#;
 const JIRA: &str = r#"{"source":"jira","connection":"work","id":"OPS-1:status:9","type":"statusChanged","timestamp":"2026-11-17T10:00:00+00:00","key":"OPS-1","title":"Rotate keys","status":"Done","issueType":"Task","fromStatus":"In Progress","toStatus":"Done"}"#;
 const OUTLOOK: &str = r#"{"source":"outlook","connection":"outlook","id":"AAMk1","timestamp":"2026-11-17T13:00:00+00:00","title":"Planning","location":"Room 4","organizer":"lead@example.org","isOrganizer":false,"durationMinutes":45,"busyStatus":"busy","meetingWeight":"busy","description":"Agenda","descriptionBlocks":[{"kind":"paragraph","segments":[{"kind":"text","text":"Agenda"}]}],"joinUrl":"https://meet.example.org/j/1"}"#;
 const OUTLOOK_BARE: &str = r#"{"source":"outlook","connection":"outlook","id":"AAMk2","timestamp":"2026-11-17T15:00:00+00:00","title":"Focus","durationMinutes":30,"meetingWeight":"none"}"#;
@@ -33,6 +39,12 @@ fn every_kind_keeps_its_wire_shape() {
     round_trip(GITLAB_STACKED, Source::Gitlab);
     round_trip(GITLAB_AMBIGUOUS, Source::Gitlab);
     round_trip(GITLAB_CUT_BELOW, Source::Gitlab);
+    round_trip(GITHUB_OPENED, Source::Github);
+    round_trip(GITHUB_LINKED_ISSUE, Source::Github);
+    round_trip(GITHUB_OPENED_PR, Source::Github);
+    round_trip(GITHUB_LINKED_PR, Source::Github);
+    round_trip(GITHUB_STACKED_PR, Source::Github);
+    round_trip(GITHUB_REVIEWED, Source::Github);
     round_trip(JIRA, Source::Jira);
     round_trip(OUTLOOK, Source::Outlook);
     round_trip(OUTLOOK_BARE, Source::Outlook);
@@ -67,6 +79,14 @@ fn an_entry_without_its_connection_is_refused() {
     assert!(serde_json::from_str::<ActivityEntry>(&unstamped).is_err());
     let empty = SYSTEM.replacen(r#""connection":"system""#, r#""connection":"""#, 1);
     assert!(serde_json::from_str::<ActivityEntry>(&empty).is_err());
+}
+
+#[test]
+fn a_github_review_requires_a_pull_request_and_a_submitted_state() {
+    let wrong_item = GITHUB_REVIEWED.replacen(r#""pullRequest":"#, r#""target":"#, 1);
+    assert!(serde_json::from_str::<ActivityEntry>(&wrong_item).is_err());
+    let pending = GITHUB_REVIEWED.replacen("changesRequested", "pending", 1);
+    assert!(serde_json::from_str::<ActivityEntry>(&pending).is_err());
 }
 
 #[test]

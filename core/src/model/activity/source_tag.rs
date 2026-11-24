@@ -38,6 +38,10 @@ source_tag!(
     GitLabTag = "gitlab"
 );
 source_tag!(
+    /// `"github"`.
+    GitHubTag = "github"
+);
+source_tag!(
     /// `"jira"`.
     JiraTag = "jira"
 );

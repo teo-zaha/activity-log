@@ -1,6 +1,7 @@
 pub mod calendar;
 pub mod connection;
 pub mod git;
+pub mod github;
 pub mod gitlab;
 pub mod jira;
 pub mod outlook;
@@ -27,8 +28,9 @@ use strum::IntoEnumIterator;
 use crate::model::{Source, SupportedOs};
 
 use self::{
-    calendar::CalendarProvider, git::GitProvider, gitlab::GitLabProvider, jira::JiraProvider,
-    outlook::OutlookProvider, provider_adapter::ProviderAdapter, system::SystemProvider,
+    calendar::CalendarProvider, git::GitProvider, github::GitHubProvider, gitlab::GitLabProvider,
+    jira::JiraProvider, outlook::OutlookProvider, provider_adapter::ProviderAdapter,
+    system::SystemProvider,
 };
 
 pub use provider_runtime::{
@@ -132,6 +134,7 @@ static REGISTRY: LazyLock<Vec<Arc<dyn ProviderAdapter>>> = LazyLock::new(|| {
             match source {
                 Source::Git => Arc::new(GitProvider),
                 Source::Gitlab => Arc::new(GitLabProvider),
+                Source::Github => Arc::new(GitHubProvider),
                 Source::Jira => Arc::new(JiraProvider),
                 Source::Outlook => Arc::new(OutlookProvider),
                 Source::System => Arc::new(SystemProvider),

@@ -25,6 +25,7 @@ use ts_rs::TS;
 pub enum Source {
     Git,
     Gitlab,
+    Github,
     Jira,
     Outlook,
     System,
@@ -37,6 +38,7 @@ impl Source {
         match self {
             Self::Git => "Git",
             Self::Gitlab => "GitLab",
+            Self::Github => "GitHub",
             Self::Jira => "Jira",
             Self::Outlook => "Outlook",
             Self::System => "System",

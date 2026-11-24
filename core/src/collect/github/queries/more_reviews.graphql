@@ -1,0 +1,21 @@
+query MoreReviews($id: ID!, $login: String!, $after: String!) {
+  node(id: $id) {
+    ... on PullRequest {
+      id
+      reviews(author: $login, first: 100, after: $after) {
+        pageInfo {
+          hasNextPage
+          endCursor
+        }
+        nodes {
+          id
+          state
+          submittedAt
+          author {
+            login
+          }
+        }
+      }
+    }
+  }
+}

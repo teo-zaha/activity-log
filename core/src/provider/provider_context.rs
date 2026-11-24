@@ -111,10 +111,7 @@ impl ProviderContext {
         self.config.missing_required_keys(requirements)
     }
 
-    pub fn first_invalid_key<'a>(
-        &self,
-        requirements: &'a [ProviderConfigKey],
-    ) -> Option<&'a ProviderConfigKey> {
-        self.config.first_invalid_key(requirements)
+    pub fn first_config_problem(&self, requirements: &[ProviderConfigKey]) -> Option<String> {
+        self.config.first_config_problem(requirements)
     }
 }

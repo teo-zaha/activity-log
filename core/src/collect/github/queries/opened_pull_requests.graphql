@@ -1,0 +1,25 @@
+query OpenedPullRequests($from: DateTime!, $to: DateTime!, $after: String) {
+  viewer {
+    contributionsCollection(from: $from, to: $to) {
+      restrictedContributionsCount
+      page: pullRequestContributions(first: 100, after: $after, orderBy: { direction: ASC }) {
+        pageInfo {
+          hasNextPage
+          endCursor
+        }
+        nodes {
+          occurredAt
+          item: pullRequest {
+            id
+            number
+            title
+            url
+            repository {
+              nameWithOwner
+            }
+          }
+        }
+      }
+    }
+  }
+}

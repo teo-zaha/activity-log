@@ -4,6 +4,7 @@ pub mod change_stack;
 pub mod common;
 pub mod diagnostics;
 pub mod git;
+pub mod github;
 pub mod gitlab;
 pub mod jira;
 pub mod menu;
@@ -22,7 +23,7 @@ pub use activity::{
     connection_name::ConnectionName,
     connection_stamp::ConnectionStamp,
     merge_result::MergeResult,
-    source_tag::{CalendarTag, GitLabTag, GitTag, JiraTag, OutlookTag, SystemTag},
+    source_tag::{CalendarTag, GitHubTag, GitLabTag, GitTag, JiraTag, OutlookTag, SystemTag},
 };
 pub use calendar::{
     busy_status::BusyStatus, calendar_entry::CalendarEntry, description_block::DescriptionBlock,

@@ -73,7 +73,7 @@ describe('DeepLinkService', () => {
     expect(router.parseUrl(router.url).queryParams).toEqual({ event: 'outlook/work/AAMk+1' })
 
     await links.open(
-      'activity-log://day/2026-11-16?events=git/a/1&events=git/a/2&events=github/x/3&event=git/a/2'
+      'activity-log://day/2026-11-16?events=git/a/1&events=git/a/2&events=teams/x/3&event=git/a/2'
     )
     expect(router.parseUrl(router.url).queryParams).toEqual({
       events: ['git/a/1', 'git/a/2'],

@@ -46,6 +46,8 @@ macro_rules! provider_config {
             $(
                 $field_vis:vis $field:ident => $key:ident $label:literal : $vtype:ident
                     $( = $default:literal )? $( [ $( $mark:ident ),+ ] )?
+                    $( placeholder $placeholder:literal )?
+                    $( check $check:ident )?
             ),* $(,)?
         }
     ) => {
@@ -54,6 +56,8 @@ macro_rules! provider_config {
                 $crate::provider::provider_config::ProviderConfigKey {
                     name: stringify!($key),
                     label: $label,
+                    placeholder: $crate::provider_config!(@placeholder $( $placeholder )?),
+                    check: $crate::provider_config!(@check $( $check )?),
                     required: $crate::provider_config!(@required $vtype $( , $default )? ),
                     shape: $crate::provider::provider_config::ProviderConfigShape::Single(
                         $crate::provider_config!(@value_type $vtype),
@@ -119,6 +123,10 @@ macro_rules! provider_config {
     // Each mark is one of these; another does not compile.
     (@mark account) => {};
     (@mark binds) => {};
+    (@placeholder) => { None };
+    (@placeholder $value:literal) => { Some($value) };
+    (@check) => { None };
+    (@check $value:ident) => { Some($crate::provider::provider_config::ConfigValueCheck::$value) };
     (@account) => { false };
     (@account account $( $rest:ident )*) => { true };
     (@account $other:ident $( $rest:ident )*) => { $crate::provider_config!(@account $( $rest )*) };

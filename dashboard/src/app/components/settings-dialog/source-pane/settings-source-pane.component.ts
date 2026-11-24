@@ -658,9 +658,10 @@ export class SettingsSourcePaneComponent {
     this.draftValues.update(values => ({ ...values, [field.key]: null }))
   }
 
-  /** A saved secret is never shown, so its field says that one exists. */
+  /** A saved secret gets a replacement hint. Other fields can suggest an input. */
   protected placeholderFor(field: SingleField): string {
-    return this.isSecretFieldSet(field) ? 'Saved; type to replace' : ''
+    if (this.isSecretFieldSet(field)) return 'Saved; type to replace'
+    return field.placeholder ?? ''
   }
 
   protected fieldError(key: string): string | null {

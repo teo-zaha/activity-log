@@ -100,7 +100,6 @@ impl SetupError {
 
 /// A JSON POST can also fail locally, before any request is sent.
 #[derive(Debug)]
-#[cfg_attr(not(test), expect(dead_code, reason = "read by the GitHub adapter"))]
 pub(crate) enum PostJsonError {
     Encode(serde_json::Error),
     Remote(ApiError),
@@ -217,7 +216,6 @@ impl RemoteClient {
     }
 
     /// A GraphQL answer with errors fails the request, even when it contains partial data.
-    #[cfg_attr(not(test), expect(dead_code, reason = "called by the GitHub adapter"))]
     pub(crate) async fn post_graphql<B: Serialize + ?Sized, T: DeserializeOwned>(
         &self,
         url: Url,

@@ -1,0 +1,38 @@
+query ReviewedPullRequests($from: DateTime!, $to: DateTime!, $after: String, $login: String!) {
+  viewer {
+    contributionsCollection(from: $from, to: $to) {
+      restrictedContributionsCount
+      page: pullRequestReviewContributions(first: 100, after: $after, orderBy: { direction: ASC }) {
+        pageInfo {
+          hasNextPage
+          endCursor
+        }
+        nodes {
+          pullRequest {
+            id
+            number
+            title
+            url
+            repository {
+              nameWithOwner
+            }
+            reviews(author: $login, first: 20) {
+              pageInfo {
+                hasNextPage
+                endCursor
+              }
+              nodes {
+                id
+                state
+                submittedAt
+                author {
+                  login
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

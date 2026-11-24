@@ -54,6 +54,7 @@ fn registry_includes_all_builtin_providers() {
         vec![
             Source::Git,
             Source::Gitlab,
+            Source::Github,
             Source::Jira,
             Source::Outlook,
             Source::System,
@@ -753,7 +754,7 @@ fn only_remote_api_providers_opt_into_the_disk_cache() {
         .map(|adapter| adapter.id())
         .collect();
 
-    assert_eq!(cached, [Source::Gitlab, Source::Jira]);
+    assert_eq!(cached, [Source::Gitlab, Source::Github, Source::Jira]);
 }
 
 #[test]
@@ -1496,7 +1497,12 @@ fn no_declared_secret_reaches_a_fingerprint_the_snapshot_or_debug() {
     }
     assert_eq!(
         secret_kinds,
-        [Source::Gitlab, Source::Jira, Source::Calendar]
+        [
+            Source::Gitlab,
+            Source::Github,
+            Source::Jira,
+            Source::Calendar
+        ]
     );
 }
 
@@ -1517,7 +1523,10 @@ fn binding_keys_are_the_server_addresses_and_jiras_tls_setting() {
         }
         binding.extend(binds);
     }
-    assert_eq!(binding, ["GITLAB_URL", "JIRA_URL", "JIRA_INSECURE"]);
+    assert_eq!(
+        binding,
+        ["GITLAB_URL", "GITHUB_URL", "JIRA_URL", "JIRA_INSECURE"]
+    );
 }
 
 /// GitLab whose check passes only with the token it was meant to get, for the opening tests.

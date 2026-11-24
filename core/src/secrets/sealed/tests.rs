@@ -8,6 +8,7 @@ use crate::{
     provider::{
         calendar::CALENDAR_ICS_URL,
         connection::ConnectionValues,
+        github::GITHUB_TOKEN,
         gitlab::{GITLAB_TOKEN, GITLAB_URL, GITLAB_USER},
         jira::JIRA_TOKEN,
         provider_config::ProviderConfigValueType,
@@ -365,6 +366,34 @@ fn a_binding_needs_an_origin() {
 
 /// Hosts are compared as `url` serializes them: IDNA as ASCII, IPv6 in brackets, the port
 /// always written.
+#[test]
+fn a_github_token_is_sealed_for_the_web_origin() {
+    let binding =
+        |url: &str| Binding::of(&Source::Github, &values(&[("GITHUB_URL", url)])).unwrap();
+    let original = binding("https://github.com/acme/widgets");
+    let sealed = seal(
+        &key(1),
+        StoreKind::Os,
+        GITHUB_TOKEN,
+        &original,
+        "github-example-token",
+    )
+    .unwrap();
+
+    let same_origin = binding("https://github.com:443/settings");
+    assert!(open(&sealed, &key(1), GITHUB_TOKEN, &same_origin).is_ok());
+    for url in [
+        "https://api.github.com",
+        "https://acme.ghe.com",
+        "https://github.com:8443",
+    ] {
+        assert!(matches!(
+            open(&sealed, &key(1), GITHUB_TOKEN, &binding(url)),
+            Err(Unopenable::OtherAddress)
+        ));
+    }
+}
+
 #[test]
 fn origins_are_normalized() {
     let tag = |url: &str| gitlab(url).tag();

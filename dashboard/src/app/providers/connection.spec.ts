@@ -22,7 +22,7 @@ describe('connection keys', () => {
   it('parses a key back only for a known kind and a name', () => {
     expect(parseConnectionKey('gitlab/oss')).toBe('gitlab/oss')
     expect(parseConnectionKey('git/wsl/nixos')).toBe('git/wsl/nixos')
-    expect(parseConnectionKey('github/me')).toBeNull()
+    expect(parseConnectionKey('teams/me')).toBeNull()
     expect(parseConnectionKey('jira/')).toBeNull()
     expect(parseConnectionKey('jira')).toBeNull()
   })
@@ -30,7 +30,7 @@ describe('connection keys', () => {
   it('parses an entry key: a known kind, a connection name and an id that may hold slashes', () => {
     expect(parseEntryKey('git/wsl-nixos/1f3a')).toBe('git/wsl-nixos/1f3a')
     expect(parseEntryKey('calendar/team/uid/1@x.org')).toBe('calendar/team/uid/1@x.org')
-    expect(parseEntryKey('github/me/1')).toBeNull()
+    expect(parseEntryKey('teams/me/1')).toBeNull()
     expect(parseEntryKey('git/work')).toBeNull()
     expect(parseEntryKey('git/work/')).toBeNull()
     expect(parseEntryKey('git//1')).toBeNull()

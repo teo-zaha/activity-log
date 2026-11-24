@@ -9,6 +9,9 @@ use crate::model::common::provider_config_field_value_dto::ProviderConfigFieldVa
 pub struct ProviderConfigFieldStateDto {
     pub key: String,
     pub label: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub placeholder: Option<String>,
     pub required: bool,
     pub is_set: bool,
     #[serde(flatten)]

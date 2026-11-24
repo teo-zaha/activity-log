@@ -1,0 +1,25 @@
+query OpenedIssues($from: DateTime!, $to: DateTime!, $after: String) {
+  viewer {
+    contributionsCollection(from: $from, to: $to) {
+      restrictedContributionsCount
+      page: issueContributions(first: 100, after: $after, orderBy: { direction: ASC }) {
+        pageInfo {
+          hasNextPage
+          endCursor
+        }
+        nodes {
+          occurredAt
+          item: issue {
+            id
+            number
+            title
+            url
+            repository {
+              nameWithOwner
+            }
+          }
+        }
+      }
+    }
+  }
+}

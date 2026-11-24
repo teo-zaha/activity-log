@@ -742,3 +742,53 @@ fn a_token_without_an_address_is_an_issue_at_the_token() {
     );
     assert!(check_save(&with_url, base(), Some(&read)).is_empty());
 }
+
+#[test]
+fn github_url_validation_reports_the_field_and_uses_the_web_address() {
+    let read = file("[[github]]\nname = \"work\"\nlabel = \"Work\"\n");
+    for value in [
+        "http://github.com",
+        "https://acme.ghe.com:8443",
+        "https://enterprise.example.org/api/v3/",
+    ] {
+        let request = save("github/work", vec![("GITHUB_URL", text(value))]);
+        let base = SaveBase::Known(read.edit_base(&request.connection, &[]).unwrap());
+        let issues = check_save(&request, base, Some(&read));
+        assert_eq!(issues.len(), 1);
+        assert_eq!(
+            issues[0].field,
+            ProviderConfigFieldRefDto::Value {
+                key: "GITHUB_URL".into()
+            }
+        );
+        assert_eq!(issues[0].problem, ProviderConfigIssueKindDto::Invalid);
+        assert!(
+            !crate::provider::provider_config::provider_config_key_accepts(
+                crate::provider::github::GITHUB_URL,
+                value,
+            )
+        );
+        assert!(save_changes(&request).is_err());
+    }
+
+    let request = save(
+        "github/work",
+        vec![("GITHUB_URL", text("https://github.com"))],
+    );
+    let base = SaveBase::Known(read.edit_base(&request.connection, &[]).unwrap());
+    assert!(check_save(&request, base, Some(&read)).is_empty());
+}
+
+#[test]
+fn snapshot_only_sends_placeholders_declared_by_the_provider() {
+    let read = file("[[github]]\nname = \"work\"\nlabel = \"Work\"\n");
+    let state = connection_state(&read, "github/work");
+    let fields = state
+        .fields
+        .iter()
+        .map(|field| (field.key.as_str(), serde_json::to_value(field).unwrap()))
+        .collect::<std::collections::BTreeMap<_, _>>();
+
+    assert_eq!(fields["GITHUB_URL"]["placeholder"], "https://github.com");
+    assert!(fields["GITHUB_TOKEN"].get("placeholder").is_none());
+}

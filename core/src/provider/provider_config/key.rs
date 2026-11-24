@@ -39,12 +39,29 @@ impl std::fmt::Display for ProviderConfigShape {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ConfigValueCheck {
+    GitHubWebUrl,
+}
+
+impl ConfigValueCheck {
+    pub(super) fn problem(self, value: &str) -> Option<&'static str> {
+        match self {
+            Self::GitHubWebUrl => crate::provider::github::api::web_url_problem(value),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ProviderConfigKey {
     /// The wire name, as the settings save spells it: `GITLAB_URL` (`config.toml` drops the
     /// kind prefix: `url`, `settings::field_name`).
     pub name: &'static str,
     /// The field's name for people, as the settings show it: `GitLab URL`.
     pub label: &'static str,
+    /// Suggested input shown in an empty settings field.
+    pub placeholder: Option<&'static str>,
+    /// Additional validation for a value of this key's declared type.
+    pub check: Option<ConfigValueCheck>,
     pub required: bool,
     pub shape: ProviderConfigShape,
     /// Says which account a connection uses (a server address, a token): a settings save based
@@ -77,6 +94,8 @@ impl ProviderConfigKey {
         Self {
             name,
             label: name,
+            placeholder: None,
+            check: None,
             required: true,
             shape: ProviderConfigShape::Single(value_type),
             account: false,
@@ -89,6 +108,8 @@ impl ProviderConfigKey {
         Self {
             name,
             label: name,
+            placeholder: None,
+            check: None,
             required: false,
             shape: ProviderConfigShape::Single(value_type),
             account: false,

@@ -1193,6 +1193,25 @@ describe('SettingsSourcePaneComponent', () => {
     expect(screen.getByRole('button', { name: 'Clear saved API token' })).toBeTruthy()
   })
 
+  it('shows the placeholder declared by a settings field', async () => {
+    await setup({
+      load: () =>
+        Promise.resolve(
+          snapshot(
+            jiraFields.map(field =>
+              field.key === 'baseUrl'
+                ? { ...field, isSet: false, value: undefined, placeholder: 'https://example.org' }
+                : field
+            )
+          )
+        ),
+    })
+
+    const input = await screen.findByLabelText('Base URL')
+    expect(input).toHaveProperty('placeholder', 'https://example.org')
+    expect(input).toHaveProperty('value', '')
+  })
+
   it('masks every secret, so clearing one and typing again stays a plain string', async () => {
     const { saveProviderConfig } = await setup({
       load: () =>

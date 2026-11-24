@@ -49,7 +49,8 @@ describe('app URLs', () => {
     expect(parseSettingsParam('gitlab/oss')).toBe('gitlab/oss')
     expect(parseSettingsParam('calendar/team-a')).toBe('calendar/team-a')
     expect(parseSettingsParam('add')).toBe('add')
-    expect(parseSettingsParam('github/me')).toBeNull()
+    expect(parseSettingsParam('github/me')).toBe('github/me')
+    expect(parseSettingsParam('teams/me')).toBeNull()
     expect(parseSettingsParam('gitlab/')).toBeNull()
     expect(parseSettingsParam(null)).toBeNull()
   })
@@ -89,7 +90,8 @@ describe('app URLs', () => {
       day: '2026-11-17',
       event: 'calendar/team/uid/1@example.org',
     })
-    expect(parse('/timeline?event=github/me/1')?.event).toBeNull()
+    expect(parse('/timeline?event=github/me/1')?.event).toBe('github/me/1')
+    expect(parse('/timeline?event=teams/me/1')?.event).toBeNull()
     expect(parse('/timeline?event=git/work/')?.event).toBeNull()
     expect(parse('/timeline?event=git//1')?.event).toBeNull()
   })

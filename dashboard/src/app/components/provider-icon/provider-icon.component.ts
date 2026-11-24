@@ -6,6 +6,7 @@ import { getProviderAdapter } from '../../providers/provider-adapter'
 const BRAND_ICONS: Partial<Record<Source, string>> = {
   git: 'assets/provider-icons/git.svg',
   gitlab: 'assets/provider-icons/gitlab.svg',
+  github: 'assets/provider-icons/github.svg',
   jira: 'assets/provider-icons/jira.svg',
   outlook: 'assets/provider-icons/outlook.svg',
 }

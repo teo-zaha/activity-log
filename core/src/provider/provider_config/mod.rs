@@ -4,7 +4,7 @@ mod resolve;
 mod resolved_config;
 
 pub use config_source::ConfigSource;
-pub use key::{ProviderConfigKey, ProviderConfigShape, ProviderConfigValueType};
+pub use key::{ConfigValueCheck, ProviderConfigKey, ProviderConfigShape, ProviderConfigValueType};
 pub use resolve::{ConfigBinding, ProviderConfigResolve, shown_unless_secret};
 pub(crate) use resolved_config::parse_bool;
 pub use resolved_config::{
