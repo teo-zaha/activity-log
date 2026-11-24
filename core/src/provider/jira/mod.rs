@@ -11,7 +11,7 @@ use crate::{
 use api::JiraApi;
 
 crate::provider! {
-    JiraProvider(Source::Jira, &[SupportedOs::Windows, SupportedOs::Macos, SupportedOs::Linux], config: JiraConfig, cache: crate::cache::CachePolicy::api()) {
+    JiraProvider(Source::Jira, &[SupportedOs::Windows, SupportedOs::Macos, SupportedOs::Linux], config: JiraConfig, cache: crate::cache::CachePolicy::api().without_run_chunks()) {
         async fn startup_check(&self, _context, config) {
             let api = match JiraApi::new(config) {
                 Ok(api) => api,

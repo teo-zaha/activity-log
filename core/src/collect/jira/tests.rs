@@ -148,6 +148,7 @@ async fn cached(
     let policy = CachePolicy {
         recent_ttl: Duration::from_secs(5 * 60),
         settled_ttl: Duration::from_secs(7 * 24 * 60 * 60),
+        ..CachePolicy::api()
     };
     collect_with_day_cache_at(
         path,

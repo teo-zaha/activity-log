@@ -16,6 +16,7 @@ use crate::model::{
 const POLICY: CachePolicy = CachePolicy {
     recent_ttl: Duration::from_secs(5 * 60),
     settled_ttl: Duration::from_secs(7 * 24 * 60 * 60),
+    max_run_days: Some(super::DEFAULT_MAX_RUN_DAYS),
 };
 
 fn day(d: u32) -> NaiveDate {
@@ -99,6 +100,43 @@ async fn serves_a_repeated_range_from_disk_without_fetching() {
     assert_eq!(labels(&first), ["day 10", "day 11", "day 12"]);
     assert_eq!(labels(&second), labels(&first));
     assert_eq!(calls.borrow().len(), 1, "second collect must not fetch");
+}
+
+#[tokio::test]
+async fn jira_fetches_one_run_while_gitlab_chunks_the_same_range() {
+    let start = at(1, 0);
+    let options = CollectOptions {
+        start,
+        end: start + chrono::Days::new(200),
+    };
+    let now = start + chrono::Days::new(300);
+
+    for (source, expected) in [
+        (Source::Jira, &[(0, 200)][..]),
+        (Source::Gitlab, &[(108, 200), (16, 108), (0, 16)][..]),
+    ] {
+        let (_dir, path) = cache_path();
+        let policy = crate::provider::adapter(&source).cache_policy().unwrap();
+        let connection = ConnectionId::new(source, "default");
+        let calls = RefCell::new(Vec::new());
+        collect_with_day_cache_at(
+            &path,
+            &connection,
+            &options,
+            policy,
+            || now,
+            |span| {
+                calls.borrow_mut().push((
+                    (span.start - start).num_days(),
+                    (span.end - start).num_days(),
+                ));
+                async { Ok(Vec::new()) }
+            },
+        )
+        .await
+        .unwrap();
+        assert_eq!(*calls.borrow(), expected, "{connection}");
+    }
 }
 
 #[tokio::test]
@@ -303,6 +341,7 @@ async fn stored(path: &Path, options: CollectOptions) -> Vec<String> {
         CachePolicy {
             recent_ttl: Duration::MAX,
             settled_ttl: Duration::MAX,
+            ..POLICY
         },
         || at(28, 0),
         |_| async { panic!("a stored day was fetched") },
@@ -320,6 +359,7 @@ async fn a_fresh_middle_day_is_neither_fetched_nor_rewritten() {
     let short = CachePolicy {
         recent_ttl: Duration::from_secs(5 * 60),
         settled_ttl: Duration::from_secs(5 * 60),
+        ..POLICY
     };
     let first = at(20, 9);
     let refreshed = first + Duration::from_secs(10 * 60);
@@ -352,7 +392,7 @@ async fn a_fresh_middle_day_is_neither_fetched_nor_rewritten() {
     .await
     .unwrap();
 
-    assert_eq!(*calls.borrow(), [(day(10), day(11)), (day(13), day(14))]);
+    assert_eq!(*calls.borrow(), [(day(13), day(14)), (day(10), day(11))]);
     assert_eq!(
         labels(&entries),
         ["new 10", "new 11", "updated 12", "new 13", "new 14"]
@@ -442,7 +482,7 @@ fn writers_at_the_same_time_lose_no_day() {
 #[tokio::test]
 async fn a_failed_later_run_still_writes_the_earlier_one() {
     let (_dir, path) = cache_path();
-    // Day 12 cached and fresh: days 10..14 are fetched as 10..11, then 13..14.
+    // Day 12 is fresh, so the fetches are 13..14, then 10..11.
     collect_tagged(&path, range(12, 12), at(20, 9), "cached")
         .await
         .unwrap();
@@ -455,8 +495,8 @@ async fn a_failed_later_run_still_writes_the_earlier_one() {
         || at(20, 9),
         |span| async move {
             let (first, last) = span.utc_days();
-            if first == day(13) {
-                anyhow::bail!("offline");
+            if first == day(10) {
+                return Err(std::io::Error::from(std::io::ErrorKind::NotConnected).into());
             }
             Ok(super::days(first, last)
                 .map(|d| labelled("first run", day_number(d)))
@@ -465,48 +505,89 @@ async fn a_failed_later_run_still_writes_the_earlier_one() {
     )
     .await;
 
-    assert_eq!(result.unwrap_err().to_string(), "offline");
+    let error = result.unwrap_err().downcast::<std::io::Error>().unwrap();
+    assert_eq!(error.kind(), std::io::ErrorKind::NotConnected);
     assert_eq!(
-        stored(&path, range(10, 12)).await,
-        ["first run 10", "first run 11", "cached 12"]
+        stored(&path, range(12, 14)).await,
+        ["cached 12", "first run 13", "first run 14"]
     );
 }
 
-/// A writer whose later run is cut off (the connection's deadline drops the collection) has
-/// already written the runs it completed.
+/// The next collection can resume after the newest chunk was written and its successor stopped.
 #[tokio::test]
-async fn completed_runs_are_kept_when_a_later_run_is_cut_off() {
+async fn cancelled_collection_keeps_its_finished_newest_chunk() {
     let (_dir, path) = cache_path();
-    collect_tagged(&path, range(12, 12), at(20, 9), "cached")
+    let options = range(10, 15);
+    let connection = ConnectionId::new(Source::Jira, "default");
+    let now = at(20, 9);
+    let policy = CachePolicy {
+        max_run_days: std::num::NonZeroUsize::new(2),
+        ..POLICY
+    };
+    let second_chunk_started = tokio::sync::Notify::new();
+
+    // Dropping the collection while the second fetch is pending is how a timeout stops it.
+    tokio::select! {
+        result = collect_with_day_cache_at(
+            &path,
+            &connection,
+            &options,
+            policy,
+            || now,
+            |span| {
+                let second_chunk_started = &second_chunk_started;
+                async move {
+                    let (first, last) = span.utc_days();
+                    if first == day(12) {
+                        assert_eq!(last, day(13));
+                        second_chunk_started.notify_one();
+                        return std::future::pending().await;
+                    }
+                    assert_eq!((first, last), (day(14), day(15)));
+                    Ok(vec![labelled("first", 14), labelled("first", 15)])
+                }
+            },
+        ) => panic!("collection finished before cancellation: {result:?}"),
+        () = second_chunk_started.notified() => {},
+    }
+
+    let entries = collect_tagged_with(&path, options, policy, now, "resumed")
+        .await
+        .unwrap();
+    assert_eq!(
+        labels(&entries),
+        [
+            "resumed 10",
+            "resumed 11",
+            "resumed 12",
+            "resumed 13",
+            "first 14",
+            "first 15",
+        ]
+    );
+}
+
+#[tokio::test]
+async fn a_provider_can_keep_settled_days_fresh_for_longer() {
+    assert_eq!(
+        CachePolicy::api_with_settled_ttl(Duration::MAX).settled_ttl,
+        super::PRUNE_AFTER
+    );
+    let (_dir, path) = cache_path();
+    let options = range(10, 10);
+    let now = at(20, 9);
+    let policy = CachePolicy::api_with_settled_ttl(Duration::from_secs(30 * 24 * 60 * 60));
+    collect_tagged_with(&path, options, policy, now, "first")
         .await
         .unwrap();
 
-    let cut_off = tokio::time::timeout(
-        Duration::from_millis(200),
-        collect_with_day_cache_at(
-            &path,
-            &ConnectionId::new(Source::Jira, "default"),
-            &range(10, 14),
-            POLICY,
-            || at(20, 9),
-            |span| async move {
-                let (first, last) = span.utc_days();
-                if first == day(13) {
-                    std::future::pending::<()>().await;
-                }
-                Ok(super::days(first, last)
-                    .map(|d| labelled("first run", day_number(d)))
-                    .collect())
-            },
-        ),
-    )
-    .await;
-
-    assert!(cut_off.is_err(), "the second run never ends");
-    assert_eq!(
-        stored(&path, range(10, 12)).await,
-        ["first run 10", "first run 11", "cached 12"]
-    );
+    for (days_passed, expected) in [(8, "first 10"), (31, "refetched 10")] {
+        let then = now + chrono::TimeDelta::days(days_passed);
+        let entries = collect_tagged_with(&path, options, policy, then, "refetched")
+            .await
+            .unwrap();
+        assert_eq!(labels(&entries), [expected]);
+    }
 }
 
 /// Each run's days carry the instant that run's fetch started, not the collection's start:
@@ -529,6 +610,7 @@ async fn each_run_is_dated_by_the_start_of_its_own_fetch() {
     let zero_ttl = CachePolicy {
         recent_ttl: Duration::ZERO,
         settled_ttl: Duration::ZERO,
+        ..POLICY
     };
 
     let path_ref = &path;
@@ -540,7 +622,7 @@ async fn each_run_is_dated_by_the_start_of_its_own_fetch() {
         || a_clock.lock().unwrap().pop().unwrap(),
         |span| async move {
             let (first, last) = span.utc_days();
-            if first == day(13) {
+            if first == day(10) {
                 // B starts at t2 and writes days 11 to 13 before A's second run returns.
                 collect_tagged_with(path_ref, range(11, 13), zero_ttl, t2, "b")
                     .await
@@ -557,7 +639,7 @@ async fn each_run_is_dated_by_the_start_of_its_own_fetch() {
     assert_eq!(labels(&a), ["a 10", "a 11", "cached 12", "a 13", "a 14"]);
     assert_eq!(
         stored(&path, range(10, 14)).await,
-        ["a 10", "b 11", "b 12", "a 13", "a 14"]
+        ["a 10", "a 11", "b 12", "b 13", "a 14"]
     );
 }
 

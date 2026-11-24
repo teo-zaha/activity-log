@@ -1,7 +1,7 @@
 //! Per-day disk cache for providers that call remote APIs.
 //!
 //! A provider opts in by declaring a [`CachePolicy`]; the provider runtime then serves days it
-//! already has and asks the provider only for the runs of days that are missing or stale.
+//! already has and asks only for missing or stale days, in bounded chunks from newest to oldest.
 //! One file per connection and principal (the scope); a connection whose check named no
 //! principal is not cached. Writers fetch without a lock, then merge only the days they
 //! fetched into the file as it is under its lock, and publish it as a new owner-only file.
@@ -16,6 +16,7 @@ use std::{
     fs::{File, TryLockError},
     future::Future,
     io,
+    num::NonZeroUsize,
     path::{Path, PathBuf},
     sync::{Mutex, PoisonError},
     time::{Duration, Instant},
@@ -43,6 +44,7 @@ const FILE_VERSION: u32 = 7;
 const SETTLE_GRACE: Duration = Duration::from_secs(60 * 60);
 /// Days not refreshed for this long are dropped from the file.
 const PRUNE_AFTER: Duration = Duration::from_secs(60 * 24 * 60 * 60);
+const DEFAULT_MAX_RUN_DAYS: NonZeroUsize = NonZeroUsize::new(92).unwrap();
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct CachePolicy {
@@ -50,14 +52,30 @@ pub struct CachePolicy {
     pub recent_ttl: Duration,
     /// How long a settled day stays fresh.
     pub settled_ttl: Duration,
+    /// Maximum number of contiguous UTC days in one fetch, if the provider splits runs.
+    pub max_run_days: Option<NonZeroUsize>,
 }
 
 impl CachePolicy {
     /// Default for remote APIs. `CACHE_TTL_MINUTES` overrides the recent TTL.
     pub fn api() -> Self {
+        Self::api_with_settled_ttl(Duration::from_secs(7 * 24 * 60 * 60))
+    }
+
+    /// The API defaults with a source's own settled TTL, capped at the pruning age.
+    pub fn api_with_settled_ttl(settled_ttl: Duration) -> Self {
         Self {
             recent_ttl: recent_ttl(env::var("CACHE_TTL_MINUTES").ok().as_deref()),
-            settled_ttl: Duration::from_secs(7 * 24 * 60 * 60),
+            settled_ttl: settled_ttl.min(PRUNE_AFTER),
+            max_run_days: Some(DEFAULT_MAX_RUN_DAYS),
+        }
+    }
+
+    /// Fetch each contiguous run at once when the provider cannot bound its remote query.
+    pub fn without_run_chunks(self) -> Self {
+        Self {
+            max_run_days: None,
+            ..self
         }
     }
 }
@@ -101,7 +119,8 @@ impl Uncached {
 /// stale ones.
 ///
 /// `scope` separates caches of different principals and settings behind the same connection
-/// name. `fetch` receives the whole UTC days of one contiguous run of stale days at a time.
+/// name. `fetch` receives contiguous whole UTC days at a time, up to the policy's maximum,
+/// newest chunk first.
 pub(crate) async fn collect_with_day_cache<F, Fut>(
     dir: &Path,
     connection: &ConnectionId,
@@ -127,7 +146,7 @@ pub(crate) fn file_name(connection: &ConnectionId, scope: u64) -> String {
 }
 
 /// [`collect_with_day_cache`] for the file at `path`. `clock` gives the time freshness is
-/// judged at (read once) and the start of each run's fetch.
+/// judged at (read once) and the start of each chunk's fetch.
 pub(crate) async fn collect_with_day_cache_at<C, F, Fut>(
     path: &Path,
     connection: &ConnectionId,
@@ -155,23 +174,32 @@ where
 
     let (first_day, last_day) = options.utc_days();
     let requested: Vec<NaiveDate> = days(first_day, last_day).collect();
-    let runs = stale_runs(&requested, |day| !file.is_fresh(day, policy, now));
-    if runs.is_empty() {
+    let chunks: Vec<_> = requested
+        .rsplit(|day| file.is_fresh(*day, policy, now))
+        .flat_map(|run| {
+            let size = policy
+                .max_run_days
+                .map_or(run.len().max(1), NonZeroUsize::get);
+            run.rchunks(size)
+        })
+        .map(|chunk| (chunk[0], chunk[chunk.len() - 1]))
+        .collect();
+    let Some(&(_, newest)) = chunks.first() else {
         diagnostics::info(
             &scope,
             format!("All {} days served from cache", requested.len()),
         );
         return Ok(file.entries_for(options));
-    }
+    };
 
-    for &(first, last) in &runs {
+    for &(first, last) in &chunks {
         let (Some(start), Some(end)) = (start_of_day(first), end_of_day(last)) else {
             anyhow::bail!("{first} to {last} is out of range");
         };
         let started = clock();
         let entries = fetch(CollectOptions { start, end }).await?;
         let fetched = fetched_days(first, last, entries, started);
-        // Each run is written as soon as it is in, so a later run that fails or is cut off by
+        // Each chunk is written as soon as it is in, so a later fetch that fails or is cut off by
         // the connection's deadline does not cost the ones before it.
         let stored = blocking({
             let (path, fetched, scope) = (path.to_path_buf(), fetched.clone(), scope.clone());
@@ -187,19 +215,16 @@ where
         file.days.extend(fetched);
     }
 
-    let stale: usize = runs
+    let stale: usize = chunks
         .iter()
         .map(|&(first, last)| days(first, last).count())
         .sum();
-    let spans = runs
-        .iter()
-        .map(|&(first, last)| format!("{first} to {last}"))
-        .collect::<Vec<_>>()
-        .join(", ");
+    let oldest = chunks.last().expect("a chunk exists").0;
     diagnostics::info(
         &scope,
         format!(
-            "Fetched {spans} ({stale} days); {} days from cache",
+            "Fetched {stale} days across {} chunks from {oldest} to {newest}. {} days from cache",
+            chunks.len(),
             requested.len() - stale
         ),
     );
@@ -210,22 +235,6 @@ where
 /// panicked.
 async fn blocking<T: Send + 'static>(work: impl FnOnce() -> T + Send + 'static) -> Option<T> {
     tokio::task::spawn_blocking(work).await.ok()
-}
-
-/// The contiguous runs of `requested` (ascending, consecutive days) that are `stale`, first and
-/// last day inclusive. A fresh day between two stale ones is not fetched again.
-fn stale_runs(
-    requested: &[NaiveDate],
-    stale: impl Fn(NaiveDate) -> bool,
-) -> Vec<(NaiveDate, NaiveDate)> {
-    let mut runs: Vec<(NaiveDate, NaiveDate)> = Vec::new();
-    for &day in requested.iter().filter(|day| stale(**day)) {
-        match runs.last_mut() {
-            Some((_, last)) if last.succ_opt() == Some(day) => *last = day,
-            _ => runs.push((day, day)),
-        }
-    }
-    runs
 }
 
 /// The days `first..=last` as fetched at `started`, each holding the fetched entries of its

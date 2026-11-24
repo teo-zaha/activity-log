@@ -859,6 +859,7 @@ impl ProviderAdapter for CachedTestProvider {
         Some(CachePolicy {
             recent_ttl: std::time::Duration::from_secs(60 * 60),
             settled_ttl: std::time::Duration::from_secs(60 * 60),
+            ..CachePolicy::api()
         })
     }
 
