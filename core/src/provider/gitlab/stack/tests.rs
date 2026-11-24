@@ -544,13 +544,14 @@ fn status(status: u16, refusal: Option<OAuthRefusal>, retry_after: Option<u64>) 
         status: StatusCode::from_u16(status).unwrap(),
         message: String::new(),
         retry_after,
+        quota: None,
         refusal,
     }
 }
 
-/// The OAuth code decides first, then the status.
+/// For other answers, the OAuth code takes precedence over the status.
 #[test]
-fn failures_are_told_apart_by_code_then_status() {
+fn failures_are_told_apart_by_status_and_code() {
     use FailureKind::*;
     use OAuthRefusal::*;
     for (error, kind) in [
@@ -563,6 +564,7 @@ fn failures_are_told_apart_by_code_then_status() {
         (status(401, None, None), TokenInvalid),
         (status(403, None, None), Unreadable),
         (status(404, None, None), Unreadable),
+        (status(429, Some(InvalidToken), None), Throttled),
         (status(429, None, None), Throttled),
         (status(429, None, Some(60)), Throttled),
         (status(503, None, Some(5)), Throttled),
@@ -636,9 +638,10 @@ async fn refusals_are_read_from_the_answer() {
 /// A busy answer is not retried, though it asks for a short wait: one request, `Throttled`.
 #[tokio::test]
 async fn a_busy_host_is_asked_once() {
-    let replies: [fn() -> Reply; 2] = [
+    let replies: [fn() -> Reply; 3] = [
         || Reply::json(429, "{}").with_header("retry-after", "1"),
         || Reply::json(503, "{}").with_header("retry-after", "1"),
+        || Reply::json(403, r#"{"error":"insufficient_scope"}"#).with_header("retry-after", "1"),
     ];
     for reply in replies {
         let server = TestServer::start(move |_| reply());

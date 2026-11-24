@@ -9,9 +9,10 @@ pub enum IdentityEvidence {
     /// The identity request succeeded (2xx) but named no one: the token works, whose it is is
     /// unknown.
     Unnamed,
-    /// The identity request was refused with 401 or 403.
+    /// The identity request was refused with 401 or a 403 without signs of throttling.
     Denied,
-    /// No usable answer: timeout, unreachable, 5xx, or a kind without an identity request.
+    /// No usable answer because the server was busy or unreachable, the request timed out,
+    /// the server failed in another way, or the source has no identity request.
     #[default]
     None,
 }

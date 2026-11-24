@@ -91,9 +91,8 @@ pub async fn check_feed(raw: &str) -> Result<()> {
     }
 }
 
-/// The answer to a feed's link once its status is known, before its body is read. A failure
-/// keeps how it failed (`RemoteFailure`: unreachable, timed out, refused or another status),
-/// named by the host, never by the link.
+/// The response to a feed request before its body is read. A `RemoteFailure` names only the
+/// host and keeps the typed cause.
 async fn request_feed(url: Url) -> Result<(String, reqwest::Response)> {
     let host = url.host_str().unwrap_or("the calendar host").to_string();
     let failed = |error| RemoteFailure {
@@ -110,12 +109,13 @@ async fn request_feed(url: Url) -> Result<(String, reqwest::Response)> {
         .map_err(|err| failed(ApiError::from_transport(&err)))?;
     let status = response.status();
     if !status.is_success() {
-        return Err(failed(ApiError::Status {
+        return Err(failed(ApiError::from_status(
             status,
-            message: String::new(),
-            retry_after: None,
-            refusal: None,
-        })
+            response.headers(),
+            chrono::Utc::now(),
+            "",
+            &[],
+        ))
         .into());
     }
     Ok((host, response))

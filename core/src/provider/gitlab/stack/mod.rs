@@ -375,10 +375,12 @@ fn failure_of(error: PageError<LookupFailure>) -> LookupFailure {
     }
 }
 
-/// The OAuth error code decides first: it names the token whatever the status. Then the
-/// status: GitLab answers a project hidden from the token with 404, and one whose merge
-/// requests it may not read with 403.
+/// After the busy check, an OAuth code takes precedence over the status. GitLab answers a
+/// project hidden from the token with 404, and merge requests it may not read with 403.
 fn kind_of(error: &ApiError) -> FailureKind {
+    if error.is_busy() {
+        return FailureKind::Throttled;
+    }
     match error {
         ApiError::Status {
             refusal: Some(refusal),
@@ -390,14 +392,11 @@ fn kind_of(error: &ApiError) -> FailureKind {
         },
         ApiError::Status {
             status,
-            retry_after,
             refusal: None,
             ..
         } => match *status {
             StatusCode::UNAUTHORIZED => FailureKind::TokenInvalid,
             StatusCode::FORBIDDEN | StatusCode::NOT_FOUND => FailureKind::Unreadable,
-            StatusCode::TOO_MANY_REQUESTS => FailureKind::Throttled,
-            StatusCode::SERVICE_UNAVAILABLE if retry_after.is_some() => FailureKind::Throttled,
             _ => FailureKind::Failed,
         },
         ApiError::Timeout | ApiError::Unreachable | ApiError::Decode => FailureKind::Failed,

@@ -57,13 +57,13 @@ fn gitlab() -> ConnectionId {
 
 /// Sources the tests control. A connection's check names the account `identities` gives it,
 /// its collection gives one entry labelled `<name> as <account>` (or fails, for one in
-/// `failing`, or is refused by its server, for one in `refusing`), and either waits while a
+/// `failing`, or fails with the status in `remote_statuses`), and either waits while a
 /// gate is set for it.
 #[derive(Default)]
 struct World {
     identities: Mutex<BTreeMap<ConnectionId, IdentityEvidence>>,
     failing: Mutex<BTreeSet<ConnectionId>>,
-    refusing: Mutex<BTreeSet<ConnectionId>>,
+    remote_statuses: Mutex<BTreeMap<ConnectionId, reqwest::StatusCode>>,
     check_gates: Mutex<BTreeMap<ConnectionId, Arc<Semaphore>>>,
     collect_gates: Mutex<BTreeMap<ConnectionId, Arc<Semaphore>>>,
     /// Each collection of a connection, with its range.
@@ -196,13 +196,14 @@ impl ProviderAdapter for Fake {
             if self.world.failing.lock().unwrap().contains(&id) {
                 anyhow::bail!("unreachable host");
             }
-            if self.world.refusing.lock().unwrap().contains(&id) {
+            if let Some(&status) = self.world.remote_statuses.lock().unwrap().get(&id) {
                 anyhow::bail!(crate::provider::remote_error::RemoteFailure {
                     service: "Jira".into(),
                     error: crate::provider::remote_error::ApiError::Status {
-                        status: reqwest::StatusCode::UNAUTHORIZED,
+                        status,
                         message: String::new(),
                         retry_after: None,
+                        quota: None,
                         refusal: None,
                     },
                 });
@@ -1638,29 +1639,37 @@ async fn both_pushes_of_one_commit_survive_a_recheck_of_either_kind() {
 
 // Accounts and failures
 
-/// A collection the server refuses shows as a refusal, not as any failure, and can be checked
-/// again; another failure shows as a failed collection.
+/// A refusal or busy server gives a degraded connection its own problem and can be checked
+/// again. Other failures show as a failed collection.
 #[tokio::test]
 async fn a_failed_collection_shows_how_it_failed() {
-    let world = World::shared();
-    world.refusing.lock().unwrap().insert(jira());
-    world.failing.lock().unwrap().insert(gitlab());
-    let (_dir, _path, host, _spawned) = ready_at(TWO_SOURCES, &world).await;
+    for (status, problem) in [
+        (reqwest::StatusCode::UNAUTHORIZED, ProviderProblem::Refused),
+        (
+            reqwest::StatusCode::TOO_MANY_REQUESTS,
+            ProviderProblem::Throttled,
+        ),
+    ] {
+        let world = World::shared();
+        world.remote_statuses.lock().unwrap().insert(jira(), status);
+        world.failing.lock().unwrap().insert(gitlab());
+        let (_dir, _path, host, _spawned) = ready_at(TWO_SOURCES, &world).await;
 
-    let info = |id: &ConnectionId| {
-        host.providers_response()
-            .providers
-            .into_iter()
-            .find(|info| info.connection == *id)
-            .unwrap()
-    };
-    let refused = info(&jira());
-    assert_eq!(refused.status, ProviderStatus::Degraded);
-    assert_eq!(refused.problem, Some(ProviderProblem::Refused));
-    assert!(refused.usable && refused.recheckable);
-    let failed = info(&gitlab());
-    assert_eq!(failed.problem, Some(ProviderProblem::CollectionFailed));
-    assert!(failed.recheckable);
+        let info = |id: &ConnectionId| {
+            host.providers_response()
+                .providers
+                .into_iter()
+                .find(|info| info.connection == *id)
+                .unwrap()
+        };
+        let remote = info(&jira());
+        assert_eq!(remote.status, ProviderStatus::Degraded);
+        assert_eq!(remote.problem, Some(problem));
+        assert!(remote.usable && remote.recheckable);
+        let failed = info(&gitlab());
+        assert_eq!(failed.problem, Some(ProviderProblem::CollectionFailed));
+        assert!(failed.recheckable);
+    }
 }
 
 /// A's failure is not B's: once the check finds another account, the old failure goes with

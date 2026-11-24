@@ -72,15 +72,24 @@ async fn the_check_opens_the_feed_without_reading_it() {
     );
 }
 
-/// A feed link the host refuses or no longer serves keeps its status as a typed cause.
+/// A failed feed request keeps the host's answer as a typed cause.
 #[tokio::test]
-async fn a_feed_the_host_refuses_names_its_problem() {
+async fn a_failed_feed_request_names_its_problem() {
+    use crate::model::ProviderProblem;
     use crate::provider::remote_api::test_server::{Reply, TestServer};
-    for (status, problem) in [
-        (401, Some(crate::model::ProviderProblem::Refused)),
-        (404, None),
+    for (status, retry_after, problem) in [
+        (401, None, Some(ProviderProblem::Refused)),
+        (404, None, None),
+        (429, None, Some(ProviderProblem::Throttled)),
+        (503, Some("30"), Some(ProviderProblem::Throttled)),
     ] {
-        let server = TestServer::start(move |_| Reply::json(status, "{}"));
+        let server = TestServer::start(move |_| {
+            let reply = Reply::json(status, "{}");
+            match retry_after {
+                Some(wait) => reply.with_header("Retry-After", wait),
+                None => reply,
+            }
+        });
         // The test server speaks plain HTTP, which `feed_location` refuses: ask it directly.
         let error = super::request_feed(server.url.parse().unwrap())
             .await
@@ -89,7 +98,7 @@ async fn a_feed_the_host_refuses_names_its_problem() {
         let failure = error
             .downcast_ref::<crate::provider::remote_error::RemoteFailure>()
             .unwrap();
-        assert_eq!(failure.error.problem(), problem, "{status}");
+        assert_eq!(failure.error.problem(), problem, "{failure:?}");
         assert_eq!(failure.service, "127.0.0.1");
     }
 }

@@ -142,7 +142,7 @@ Switch between **Timeline** (newest day first), **Day**, **Work week** (Monday�
 
 Add Git, GitLab, Jira, and Calendar as many times as you need—for example, two GitLab servers, multiple Jira instances, local Git alongside WSL distributions, or separate calendars. Outlook and System support one connection each.
 
-- **Typed startup checks:** Each connection runs a non-invasive startup check in the background. When a check or collection fails, Settings names the specific problem (such as access refused, server unreachable, timed out, not installed, not running, permission needed, or nothing to read) and offers **Check again** whenever re-checking can resolve it.
+- **Typed startup checks:** Each connection runs a non-invasive startup check in the background. When a check or collection fails, Settings names the specific problem (such as access refused, server busy, server unreachable, timed out, not installed, not running, permission needed, or nothing to read) and offers **Check again** whenever re-checking can resolve it.
 - **In-app editing with conflict handling:** In the desktop app, every connection has its own Settings pane with live backend validation, write-only secret fields, rename, and remove. If another tool (such as the CLI) edits `config.toml` while you have unsaved changes, Settings detects the conflict, shows what changed on disk, and lets you keep your changes or discard them. In the web dashboard, Settings shows connection status as read-only.
 - **Diagnostics:** **Settings → Logs** displays the in-memory log of startup checks, collection runs, cache hits, and config saves, with warning/error filters, copy, and clear.
 
@@ -498,7 +498,7 @@ Dates are whole local days. `--range week` and `--range lastweek` start on Monda
 
 Each source gets one line: collected with its entry count, skipped when it has nothing to give on this machine (another OS, an app not installed or not running, no repositories), or failed. With `--output -` the export alone goes to standard output and every other line to standard error (in development run it as `pnpm -s cli:collect`, so pnpm's banner stays out of the export).
 
-Exit status: 0 when every source was collected or skipped (another OS, not installed, not running, nothing to read); 1 when a source failed (refused, unreachable, timed out, not configured, not permitted, its check or its collection failed), after the export of the others is written, or on any error, an invalid flag or value included.
+Exit status: 0 when every source was collected or skipped (another OS, not installed, not running, nothing to read); 1 when a source failed (refused, server busy, unreachable, timed out, not configured, not permitted, its check or its collection failed), after the export of the others is written, or on any error, an invalid flag or value included.
 
 ```bash
 activity-log --range week

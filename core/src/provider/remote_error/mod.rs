@@ -1,9 +1,10 @@
 //! The one boundary remote failures pass on their way to the Logs pane, the settings and the
 //! CLI: short messages, never a URL, a secret or raw control text.
 
+use chrono::{DateTime, NaiveDateTime, Utc};
 use reqwest::{
     StatusCode, Url,
-    header::{HeaderMap, WWW_AUTHENTICATE},
+    header::{HeaderMap, RETRY_AFTER, WWW_AUTHENTICATE},
 };
 use serde_json::Value;
 
@@ -16,12 +17,14 @@ const REDACTED: &str = "[redacted]";
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ApiError {
     /// The server answered, but not with success. `message` is the server's own explanation,
-    /// already cleaned by `remote_message` (empty when it gave none), for people only;
-    /// `retry_after` is its `Retry-After` in seconds; `refusal` the OAuth error code it named.
+    /// already cleaned by `remote_message` (empty when it gave none), for people only.
+    /// `retry_after` holds its `Retry-After` in seconds. `quota` holds its remaining requests
+    /// and `refusal` the OAuth error code it named.
     Status {
         status: StatusCode,
         message: String,
         retry_after: Option<u64>,
+        quota: Option<Quota>,
         refusal: Option<OAuthRefusal>,
     },
     Timeout,
@@ -30,6 +33,23 @@ pub enum ApiError {
 }
 
 impl ApiError {
+    /// Keeps status and header evidence and reads any available error body.
+    pub(crate) fn from_status(
+        status: StatusCode,
+        headers: &HeaderMap,
+        now: DateTime<Utc>,
+        body: &str,
+        secrets: &[&str],
+    ) -> Self {
+        Self::Status {
+            status,
+            message: remote_message(body, secrets),
+            retry_after: retry_after(headers, now),
+            quota: Quota::from_headers(headers),
+            refusal: OAuthRefusal::of_answer(headers, body),
+        }
+    }
+
     /// A request or its body that did not get through. reqwest's own text names the URL with
     /// its query, so only the kind of failure is kept; a body that breaks off is never `Decode`
     /// (reqwest reports it as a decode error).
@@ -41,9 +61,23 @@ impl ApiError {
         }
     }
 
-    /// The problem this is for its connection, when it is more than a failure: a refusal of
-    /// the credentials, a timeout, a server out of reach.
+    pub(crate) fn is_busy(&self) -> bool {
+        match self {
+            Self::Status {
+                status,
+                retry_after,
+                quota,
+                ..
+            } => busy(*status, *retry_after, *quota),
+            Self::Timeout | Self::Unreachable | Self::Decode => false,
+        }
+    }
+
+    /// The problem this is for its connection, when it is more than a generic failure.
     pub fn problem(&self) -> Option<ProviderProblem> {
+        if self.is_busy() {
+            return Some(ProviderProblem::Throttled);
+        }
         match self {
             Self::Status { status, .. }
                 if matches!(*status, StatusCode::UNAUTHORIZED | StatusCode::FORBIDDEN) =>
@@ -73,6 +107,56 @@ impl ApiError {
             Self::Decode => format!("{service} sent an answer Activity Log could not read"),
         }
     }
+}
+
+/// The server's remaining requests in `X-RateLimit-Remaining`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Quota {
+    remaining: u64,
+}
+
+impl Quota {
+    pub(crate) fn from_headers(headers: &HeaderMap) -> Option<Self> {
+        let remaining = headers
+            .get("x-ratelimit-remaining")?
+            .to_str()
+            .ok()?
+            .trim()
+            .parse()
+            .ok()?;
+        Some(Self { remaining })
+    }
+}
+
+/// A busy answer says nothing about the token, even when it carries an OAuth refusal code.
+pub(crate) fn busy(status: StatusCode, retry_after: Option<u64>, quota: Option<Quota>) -> bool {
+    match status {
+        StatusCode::TOO_MANY_REQUESTS => true,
+        StatusCode::SERVICE_UNAVAILABLE => retry_after.is_some(),
+        StatusCode::FORBIDDEN => {
+            retry_after.is_some() || quota.is_some_and(|quota| quota.remaining == 0)
+        }
+        _ => false,
+    }
+}
+
+/// `Retry-After` as seconds from `now`: a number of seconds or an HTTP date (RFC 9110
+/// §10.2.3, all three date forms); a date in the past is 0.
+pub(crate) fn retry_after(headers: &HeaderMap, now: DateTime<Utc>) -> Option<u64> {
+    let value = headers.get(RETRY_AFTER)?.to_str().ok()?.trim();
+    if let Ok(seconds) = value.parse() {
+        return Some(seconds);
+    }
+    let date = [
+        "%a, %d %b %Y %H:%M:%S GMT",
+        "%A, %d-%b-%y %H:%M:%S GMT",
+        "%a %b %e %H:%M:%S %Y",
+    ]
+    .iter()
+    .find_map(|format| NaiveDateTime::parse_from_str(value, format).ok())?
+    .and_utc();
+    let wait = date - now;
+    Some(u64::try_from(wait.num_seconds()).unwrap_or(0) + u64::from(wait.subsec_nanos() > 0))
 }
 
 /// The error code of an OAuth 2.0 bearer token refusal (RFC 6750 §3.1), a protocol code like a
@@ -167,8 +251,8 @@ fn bearer_error(value: &str) -> Option<OAuthRefusal> {
 }
 
 /// A collector's request to `service` that failed, kept whole in its `anyhow` chain so the
-/// runtime can tell a refusal, a timeout and an unreachable server apart; it reads as
-/// [`ApiError::message`].
+/// runtime can tell a refusal, a busy server, a timeout and an unreachable server apart.
+/// It reads as [`ApiError::message`].
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RemoteFailure {
     /// Who answered: a kind (`Jira`) or a host (a calendar feed's).

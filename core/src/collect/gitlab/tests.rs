@@ -3,7 +3,7 @@ use serde_json::json;
 
 use super::{collect_gitlab, map_gitlab_event};
 use crate::{
-    model::{CollectOptions, ConnectionId, GitLabType, Source},
+    model::{CollectOptions, ConnectionId, GitLabType, ProviderProblem, Source},
     provider::{
         connection::{Connection, ConnectionLocation, ConnectionValues},
         gitlab::GitLabConfig,
@@ -65,6 +65,19 @@ async fn the_configured_user_is_one_path_segment() {
     assert_eq!(requests[0].query("after").as_deref(), Some("2026-02-28"));
     assert_eq!(requests[0].query("before").as_deref(), Some("2026-04-01"));
     assert_eq!(requests[0].header("private-token"), Some(TOKEN));
+}
+
+#[tokio::test]
+async fn a_throttled_gitlab_collection_keeps_its_problem() {
+    let server = TestServer::start(|_| Reply::json(429, "{}"));
+    let error = collect_gitlab(&march(), &context(&server.url, "jdoe"))
+        .await
+        .unwrap_err();
+
+    assert_eq!(
+        crate::runtime::report::CollectFailure::of(&error).problem(),
+        ProviderProblem::Throttled
+    );
 }
 
 #[tokio::test]

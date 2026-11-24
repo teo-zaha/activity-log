@@ -1008,6 +1008,7 @@ fn server_error(message: &str) -> ApiError {
         status: reqwest::StatusCode::INTERNAL_SERVER_ERROR,
         message: message.to_string(),
         retry_after: None,
+        quota: None,
         refusal: None,
     }
 }
@@ -1177,6 +1178,7 @@ async fn the_report_logs_one_line_per_reason_with_its_cause() {
         status: reqwest::StatusCode::FORBIDDEN,
         message: "merge requests are turned off".to_string(),
         retry_after: None,
+        quota: None,
         refusal: None,
     };
     let fake = Fake::new([(WIDGETS, four()), (77, four()), (78, four())])

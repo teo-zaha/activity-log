@@ -8,7 +8,7 @@ export type SupportedOs = "windows" | "macos" | "linux";
 
 export type ProviderStatus = "checking" | "available" | "unavailable" | "degraded";
 
-export type ProviderProblem = "timedOut" | "unsupported" | "notConfigured" | "refused" | "unreachable" | "notInstalled" | "notRunning" | "permissionDenied" | "noData" | "failed" | "collectionFailed" | "secretUnavailable";
+export type ProviderProblem = "timedOut" | "unsupported" | "notConfigured" | "refused" | "throttled" | "unreachable" | "notInstalled" | "notRunning" | "permissionDenied" | "noData" | "failed" | "collectionFailed" | "secretUnavailable";
 
 export type ProviderInfo = { connection: ConnectionId, label: string, 
 /**

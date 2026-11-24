@@ -3,10 +3,10 @@
 
 use std::time::Duration;
 
-use chrono::{DateTime, NaiveDateTime, Utc};
+use chrono::{DateTime, Utc};
 use reqwest::{
     Client, ClientBuilder, Response, StatusCode, Url,
-    header::{HeaderMap, HeaderName, HeaderValue, RETRY_AFTER},
+    header::{HeaderMap, HeaderName, HeaderValue},
     redirect::{Action, Attempt, Policy},
 };
 use serde::de::DeserializeOwned;
@@ -16,7 +16,7 @@ use crate::{
     provider::{
         provider_check_result::ProviderCheckResult,
         provider_runtime::check_time_left,
-        remote_error::{ApiError, OAuthRefusal},
+        remote_error::{ApiError, Quota, busy, retry_after},
     },
 };
 
@@ -24,16 +24,15 @@ use crate::{
 pub(crate) mod test_server;
 
 const MAX_REDIRECTS: usize = 10;
-/// A 429 or 503 is retried once when the server asks to wait at most this long.
+/// A busy answer is retried once when the server asks to wait at most this long.
 const MAX_RETRY_WAIT_SECONDS: u64 = 10;
-/// How much of an error body is read for its explanation, and for how long: the status
-/// decides what happened, the body only explains it.
+/// How much of an error body is read, and for how long.
 const ERROR_BODY_LIMIT: usize = 16 * 1024;
 const ERROR_BODY_WAIT: Duration = Duration::from_secs(3);
 /// Time a startup check keeps for answering once its error body is given up.
 const CHECK_MARGIN: Duration = Duration::from_millis(100);
 
-/// Whether a busy answer (429, 503) is sent again.
+/// Whether a busy answer is sent again.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum Retry {
     /// Once, when the server asks to wait at most `MAX_RETRY_WAIT_SECONDS`: a collection's own
@@ -207,10 +206,10 @@ impl RemoteClient {
             if status.is_success() {
                 return Ok(response);
             }
-            let retry_after = retry_after(response.headers(), Utc::now());
+            let received_at = Utc::now();
             if retry == Retry::OnceShort
                 && !retried
-                && let Some(wait) = retry_wait(status, retry_after)
+                && let Some(wait) = retry_wait(status, response.headers(), received_at)
             {
                 retried = true;
                 tokio::time::sleep(Duration::from_secs(wait)).await;
@@ -218,12 +217,13 @@ impl RemoteClient {
             }
             let headers = response.headers().clone();
             let body = error_body(response).await;
-            return Err(ApiError::Status {
+            return Err(ApiError::from_status(
                 status,
-                message: crate::provider::remote_error::remote_message(&body, &[&self.secret]),
-                retry_after,
-                refusal: OAuthRefusal::of_answer(&headers, &body),
-            });
+                &headers,
+                received_at,
+                &body,
+                &[&self.secret],
+            ));
         }
     }
 }
@@ -235,8 +235,8 @@ pub(crate) fn is_path_segment(value: &str) -> bool {
 
 /// The start of an error body, within `ERROR_BODY_LIMIT` and `ERROR_BODY_WAIT`; empty when it
 /// does not arrive in time or is longer, since a body cut at the limit explains nothing.
-/// Inside a startup check the read also ends `CHECK_MARGIN` before the check's deadline, so a
-/// status already received (a refusal) is the check's answer, never its timeout.
+/// Inside a startup check the read also ends `CHECK_MARGIN` before the check's deadline, so
+/// the check can report a status it already received.
 async fn error_body(response: Response) -> String {
     let wait = match check_time_left() {
         Some(left) => ERROR_BODY_WAIT.min(left.saturating_sub(CHECK_MARGIN)),
@@ -284,38 +284,16 @@ fn follows(base: &Url, next: &Url) -> bool {
     next.origin() == base.origin()
 }
 
-/// `Retry-After` as seconds from `now`: a number of seconds or an HTTP date (RFC 9110
-/// §10.2.3, all three date forms); a date in the past is 0.
-fn retry_after(headers: &HeaderMap, now: DateTime<Utc>) -> Option<u64> {
-    let value = headers.get(RETRY_AFTER)?.to_str().ok()?.trim();
-    if let Ok(seconds) = value.parse() {
-        return Some(seconds);
-    }
-    let date = [
-        "%a, %d %b %Y %H:%M:%S GMT",
-        "%A, %d-%b-%y %H:%M:%S GMT",
-        "%a %b %e %H:%M:%S %Y",
-    ]
-    .iter()
-    .find_map(|format| NaiveDateTime::parse_from_str(value, format).ok())?
-    .and_utc();
-    let wait = date - now;
-    Some(u64::try_from(wait.num_seconds()).unwrap_or(0) + u64::from(wait.subsec_nanos() > 0))
-}
-
 /// How long to wait before the one retry of a busy answer, if it gets one.
-fn retry_wait(status: StatusCode, retry_after: Option<u64>) -> Option<u64> {
-    matches!(
-        status,
-        StatusCode::TOO_MANY_REQUESTS | StatusCode::SERVICE_UNAVAILABLE
-    )
-    .then_some(retry_after?)
-    .filter(|wait| *wait <= MAX_RETRY_WAIT_SECONDS)
+fn retry_wait(status: StatusCode, headers: &HeaderMap, now: DateTime<Utc>) -> Option<u64> {
+    let wait = retry_after(headers, now)?;
+    (busy(status, Some(wait), Quota::from_headers(headers)) && wait <= MAX_RETRY_WAIT_SECONDS)
+        .then_some(wait)
 }
 
 /// A startup check's answer from its identity request (Jira `/myself`, GitLab `/user`):
-/// `Ok(None)` is a complete success that named no one. The status decides a refusal, whatever
-/// became of its body. A complete success that is not the API's JSON (an SSO sign-in page)
+/// `Ok(None)` is a complete success that named no one. Status and headers tell a refusal
+/// from a busy answer. A complete success that is not the API's JSON (an SSO sign-in page)
 /// leaves the connection unavailable and names no one.
 pub(crate) fn identity_check(
     service: &str,
@@ -326,31 +304,33 @@ pub(crate) fn identity_check(
             ProviderCheckResult::available().with_identity(IdentityEvidence::Verified(identity))
         }
         Ok(None) => ProviderCheckResult::available().with_identity(IdentityEvidence::Unnamed),
-        Err(ApiError::Decode) => ProviderCheckResult::unavailable(format!(
-            "{service} answered with a page that is not its API (a sign-in page?); check the URL and token"
-        )),
-        Err(ApiError::Status {
-            status, message, ..
-        }) if matches!(status, StatusCode::UNAUTHORIZED | StatusCode::FORBIDDEN) => {
-            let short = if status == StatusCode::UNAUTHORIZED {
-                format!("{service} credentials invalid")
-            } else {
-                format!("{service} token lacks access")
-            };
-            ProviderCheckResult::unavailable_as(
-                ProviderProblem::Refused,
-                if explains(status, &message) {
-                    format!("{short}: {message}")
-                } else {
-                    short
-                },
-            )
-            .with_identity(IdentityEvidence::Denied)
+        Err(err) => {
+            let problem = err.problem().unwrap_or(ProviderProblem::Failed);
+            match err {
+                ApiError::Decode => ProviderCheckResult::unavailable(format!(
+                    "{service} answered with a page that is not its API (a sign-in page?); check the URL and token"
+                )),
+                ApiError::Status {
+                    status, message, ..
+                } if problem == ProviderProblem::Refused => {
+                    let short = if status == StatusCode::UNAUTHORIZED {
+                        format!("{service} credentials invalid")
+                    } else {
+                        format!("{service} token lacks access")
+                    };
+                    ProviderCheckResult::unavailable_as(
+                        problem,
+                        if explains(status, &message) {
+                            format!("{short}: {message}")
+                        } else {
+                            short
+                        },
+                    )
+                    .with_identity(IdentityEvidence::Denied)
+                }
+                err => ProviderCheckResult::unavailable_as(problem, err.message(service)),
+            }
         }
-        Err(err) => ProviderCheckResult::unavailable_as(
-            err.problem().unwrap_or(ProviderProblem::Failed),
-            err.message(service),
-        ),
     }
 }
 

@@ -217,11 +217,11 @@ async fn a_url_of_another_origin_is_never_sent() {
     assert!(elsewhere.requests().is_empty());
 }
 
-fn busy_once(retry_after: String) -> TestServer {
+fn busy_once(status: u16, retry_after: String) -> TestServer {
     let calls = std::sync::atomic::AtomicUsize::new(0);
     TestServer::start(move |_| {
         if calls.fetch_add(1, std::sync::atomic::Ordering::SeqCst) == 0 {
-            Reply::json(503, "{}").with_header("Retry-After", &retry_after)
+            Reply::json(status, "{}").with_header("Retry-After", &retry_after)
         } else {
             Reply::json(200, r#"{"ok":true}"#)
         }
@@ -239,7 +239,7 @@ async fn a_short_retry_after_is_waited_for_and_retried_once() {
     };
     for retry_after in [|| "1".to_string(), in_two_seconds] {
         let retry_after = retry_after();
-        let server = busy_once(retry_after.clone());
+        let server = busy_once(503, retry_after.clone());
         let api = client(&server.url);
         let started = std::time::Instant::now();
 
@@ -256,43 +256,35 @@ async fn a_short_retry_after_is_waited_for_and_retried_once() {
 }
 
 #[test]
-fn retry_after_reads_seconds_and_http_dates() {
-    use chrono::{TimeZone, Utc};
+fn only_busy_answers_with_a_short_wait_are_retried() {
     use reqwest::header::{HeaderMap, HeaderValue, RETRY_AFTER};
 
-    let now = Utc.with_ymd_and_hms(2026, 11, 19, 8, 0, 0).unwrap();
-    let read = |value: &str| {
+    for (status, retry_after, remaining, expected) in [
+        (503, Some("10"), None, Some(10)),
+        (429, Some("0"), None, Some(0)),
+        (429, Some("11"), None, None),
+        (503, None, None, None),
+        (502, Some("1"), None, None),
+        (403, Some("1"), None, Some(1)),
+        (403, None, Some("0"), None),
+    ] {
         let mut headers = HeaderMap::new();
-        headers.insert(RETRY_AFTER, HeaderValue::from_str(value).unwrap());
-        super::retry_after(&headers, now)
-    };
-    assert_eq!(read("7"), Some(7));
-    assert_eq!(read(" 0 "), Some(0));
-    assert_eq!(read("Thu, 19 Nov 2026 08:00:05 GMT"), Some(5));
-    assert_eq!(read("Thursday, 19-Nov-26 08:00:30 GMT"), Some(30));
-    assert_eq!(read("Thu Nov 19 08:00:10 2026"), Some(10));
-    assert_eq!(
-        read("Thu, 19 Nov 2026 07:59:00 GMT"),
-        Some(0),
-        "in the past"
-    );
-    assert_eq!(read("Thu, 19 Nov 2026 08:00:04.5 GMT"), None);
-    assert_eq!(read("-3"), None);
-    assert_eq!(read("soon"), None);
-    assert_eq!(super::retry_after(&HeaderMap::new(), now), None);
-}
-
-#[test]
-fn only_busy_answers_with_a_short_wait_are_retried() {
-    use super::retry_wait;
-    assert_eq!(
-        retry_wait(StatusCode::SERVICE_UNAVAILABLE, Some(10)),
-        Some(10)
-    );
-    assert_eq!(retry_wait(StatusCode::TOO_MANY_REQUESTS, Some(0)), Some(0));
-    assert_eq!(retry_wait(StatusCode::TOO_MANY_REQUESTS, Some(11)), None);
-    assert_eq!(retry_wait(StatusCode::SERVICE_UNAVAILABLE, None), None);
-    assert_eq!(retry_wait(StatusCode::BAD_GATEWAY, Some(1)), None);
+        if let Some(value) = retry_after {
+            headers.insert(RETRY_AFTER, HeaderValue::from_static(value));
+        }
+        if let Some(value) = remaining {
+            headers.insert("X-RateLimit-Remaining", HeaderValue::from_static(value));
+        }
+        assert_eq!(
+            super::retry_wait(
+                StatusCode::from_u16(status).unwrap(),
+                &headers,
+                chrono::Utc::now()
+            ),
+            expected,
+            "{status}, {headers:?}"
+        );
+    }
 }
 
 #[tokio::test]
@@ -311,6 +303,7 @@ async fn a_long_retry_after_is_returned_not_waited_for() {
             status: StatusCode::TOO_MANY_REQUESTS,
             message: String::new(),
             retry_after: Some(30),
+            quota: None,
             refusal: None,
         }
     );
@@ -564,6 +557,7 @@ fn checks_map_identity_answers() {
             status,
             message: message.to_string(),
             retry_after: None,
+            quota: None,
             refusal: None,
         })
     };
@@ -635,6 +629,7 @@ fn a_check_names_its_problem_by_how_the_server_failed() {
         status,
         message: String::new(),
         retry_after: None,
+        quota: None,
         refusal: None,
     };
     let problem = |answer: ApiError| identity_check("Jira", Err(answer)).outcome.problem();
@@ -658,12 +653,53 @@ fn a_check_names_its_problem_by_how_the_server_failed() {
     assert_eq!(problem(ApiError::Decode), Some(ProviderProblem::Failed));
 }
 
+#[tokio::test]
+async fn a_busy_forbidden_answer_says_nothing_about_the_token_owner() {
+    for (remaining, expected_problem, expected_identity) in [
+        (
+            Some("0"),
+            ProviderProblem::Throttled,
+            IdentityEvidence::None,
+        ),
+        (None, ProviderProblem::Refused, IdentityEvidence::Denied),
+    ] {
+        let server = TestServer::start(move |_| {
+            let reply = Reply::json(403, "{}");
+            match remaining {
+                Some(remaining) => reply
+                    .with_header("X-RateLimit-Remaining", remaining)
+                    .with_header("WWW-Authenticate", r#"Bearer error="invalid_token""#),
+                None => reply,
+            }
+        });
+        let api = client(&server.url);
+        let answer = api.get_json::<Value>(api.endpoint(&["user"])).await;
+        let error = answer.unwrap_err();
+        if remaining.is_some() {
+            assert!(matches!(
+                &error,
+                ApiError::Status {
+                    refusal: Some(OAuthRefusal::InvalidToken),
+                    ..
+                }
+            ));
+        }
+        let checked = identity_check("GitHub", Err(error));
+
+        assert_eq!(checked.outcome.status(), ProviderStatus::Unavailable);
+        assert_eq!(checked.outcome.problem(), Some(expected_problem));
+        assert_eq!(checked.identity, expected_identity);
+        assert!(checked.outcome.recheckable());
+        assert_eq!(server.requests().len(), 1);
+    }
+}
+
 /// A caller that acts on a busy answer itself gets it at once: one request. A wait comes only
 /// before a second request, so the count proves there was none; a clock bound would fail under
 /// load.
 #[tokio::test]
 async fn a_busy_answer_is_not_retried_for_a_caller_that_never_retries() {
-    for status in [503, 429] {
+    for status in [503, 429, 403] {
         let server =
             TestServer::start(move |_| Reply::json(status, "{}").with_header("Retry-After", "1"));
         let api = client(&server.url);
@@ -685,7 +721,7 @@ async fn a_busy_answer_is_not_retried_for_a_caller_that_never_retries() {
         );
         assert_eq!(server.requests().len(), 1, "{status}");
 
-        let server = busy_once("1".to_string());
+        let server = busy_once(status, "0".to_string());
         let api = client(&server.url);
         let answer = api
             .get_json_with_headers::<Value>(api.endpoint(&["x"]), Retry::OnceShort)

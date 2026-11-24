@@ -32,8 +32,8 @@ pub enum Outcome {
     },
 }
 
-/// How a connection's collection failed: a refusal, a timeout or an unreachable server told
-/// apart from any other failure by its problem, never by its message, which is for people.
+/// How a connection's collection failed. The problem tells a busy server, a refusal, a
+/// timeout and an unreachable server apart from other failures. The message is for people.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CollectFailure {
     problem: ProviderProblem,
@@ -59,7 +59,7 @@ impl CollectFailure {
         }
     }
 
-    /// The problem a typed cause named (`timedOut`, `refused`, `notRunning`, …), else
+    /// The problem a typed cause named (`timedOut`, `refused`, `throttled`, `notRunning`, …), else
     /// `collectionFailed`.
     pub fn problem(&self) -> ProviderProblem {
         self.problem

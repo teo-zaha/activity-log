@@ -1,7 +1,9 @@
 use std::sync::Arc;
 
 use crate::{
-    model::{ConnectionId, IdentityEvidence, ProviderProblem, RemoteIdentity, Source},
+    model::{
+        ConnectionId, IdentityEvidence, ProviderProblem, ProviderStatus, RemoteIdentity, Source,
+    },
     provider::{
         connection::{Connection, ConnectionLocation, ConnectionValues},
         jira::{JiraConfig, JiraProvider},
@@ -107,6 +109,16 @@ async fn refused_tokens_are_denied() {
         forbidden.info().reason.as_deref(),
         Some("Jira token lacks access")
     );
+}
+
+#[tokio::test]
+async fn a_throttled_jira_check_is_unavailable_and_recheckable() {
+    let (runtime, _server) = check(|| Reply::json(429, "{}")).await;
+
+    assert_eq!(runtime.info().status, ProviderStatus::Unavailable);
+    assert_eq!(runtime.info().problem, Some(ProviderProblem::Throttled));
+    assert_eq!(runtime.identity(), &IdentityEvidence::None);
+    assert!(runtime.info().recheckable);
 }
 
 #[tokio::test]

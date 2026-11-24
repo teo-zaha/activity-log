@@ -40,6 +40,7 @@ fn a_problem_fails_the_run_only_where_the_source_cannot_work() {
     let fails = [
         ProviderProblem::TimedOut,
         ProviderProblem::Refused,
+        ProviderProblem::Throttled,
         ProviderProblem::Unreachable,
         ProviderProblem::PermissionDenied,
         ProviderProblem::NotConfigured,

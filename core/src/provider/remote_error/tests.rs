@@ -102,6 +102,7 @@ fn messages_name_the_service_and_never_a_url() {
         status,
         message: message.to_string(),
         retry_after: None,
+        quota: None,
         refusal: None,
     };
     assert_eq!(
@@ -128,6 +129,72 @@ fn messages_name_the_service_and_never_a_url() {
         ApiError::Decode.message("Jira"),
         "Jira sent an answer Activity Log could not read"
     );
+}
+
+#[test]
+fn retry_after_reads_seconds_and_http_dates() {
+    use chrono::{TimeZone, Utc};
+    use reqwest::header::{HeaderMap, HeaderValue, RETRY_AFTER};
+
+    let now = Utc.with_ymd_and_hms(2026, 11, 19, 8, 0, 0).unwrap();
+    let read = |value: &str| {
+        let mut headers = HeaderMap::new();
+        headers.insert(RETRY_AFTER, HeaderValue::from_str(value).unwrap());
+        super::retry_after(&headers, now)
+    };
+    assert_eq!(read("7"), Some(7));
+    assert_eq!(read(" 0 "), Some(0));
+    assert_eq!(read("Thu, 19 Nov 2026 08:00:05 GMT"), Some(5));
+    assert_eq!(read("Thursday, 19-Nov-26 08:00:30 GMT"), Some(30));
+    assert_eq!(read("Thu Nov 19 08:00:10 2026"), Some(10));
+    assert_eq!(
+        read("Thu, 19 Nov 2026 07:59:00 GMT"),
+        Some(0),
+        "in the past"
+    );
+    assert_eq!(read("Thu, 19 Nov 2026 08:00:04.5 GMT"), None);
+    assert_eq!(read("-3"), None);
+    assert_eq!(read("soon"), None);
+    assert_eq!(super::retry_after(&HeaderMap::new(), now), None);
+}
+
+#[test]
+fn only_status_and_headers_indicate_that_a_server_is_busy() {
+    use crate::model::ProviderProblem;
+
+    for (status, retry_after, remaining, expected_busy) in [
+        (429, None, None, true),
+        (503, Some("1"), None, true),
+        (503, None, None, false),
+        (503, None, Some("0"), false),
+        (403, Some("0"), None, true),
+        (403, None, Some("0"), true),
+        (403, None, Some("1"), false),
+        (403, None, Some("invalid"), false),
+        (403, None, None, false),
+        (401, Some("1"), Some("0"), false),
+        (502, Some("1"), Some("0"), false),
+    ] {
+        let mut headers = HeaderMap::new();
+        if let Some(value) = retry_after {
+            headers.insert("Retry-After", HeaderValue::from_static(value));
+        }
+        if let Some(value) = remaining {
+            headers.insert("X-RateLimit-Remaining", HeaderValue::from_static(value));
+        }
+        let error = ApiError::from_status(
+            StatusCode::from_u16(status).unwrap(),
+            &headers,
+            chrono::Utc::now(),
+            r#"{"message":"Rate limit exceeded"}"#,
+            &[],
+        );
+        assert_eq!(error.is_busy(), expected_busy, "{status}, {headers:?}");
+        assert_eq!(
+            error.problem() == Some(ProviderProblem::Throttled),
+            expected_busy
+        );
+    }
 }
 
 fn challenges(values: &[&str]) -> HeaderMap {
