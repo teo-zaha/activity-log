@@ -194,14 +194,37 @@
   }
 }
 
-// Only an actual collection addition uses motion. The virtual window changes as the reader scrolls.
-.entry-added {
-  animation: timeline-entry-appear 180ms var(--ease-out) backwards;
+.timeline-motion-layer {
+  position: absolute;
+  inset-block: 0;
+  inset-inline-start: 0;
+  z-index: 4;
+  overflow: clip;
+  pointer-events: none;
+  padding-inline-end: calc(var(--day-index-width) + var(--day-index-gap));
 }
 
-@keyframes timeline-entry-appear {
-  from {
-    opacity: 0;
+.timeline-ghosts {
+  position: relative;
+}
+
+.timeline-ghost {
+  position: absolute;
+  inset-inline: 0;
+
+  > .day-header {
+    position: static;
+  }
+
+  > li {
+    height: 100%;
+    margin-inline: 1px;
+    list-style: none;
+    background: var(--surface);
+  }
+
+  > li:not([data-first]) {
+    border-top: 1px solid var(--hairline);
   }
 }
 

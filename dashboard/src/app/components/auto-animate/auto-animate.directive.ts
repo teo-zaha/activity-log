@@ -15,8 +15,7 @@ import {
 } from '@angular/core'
 import { autoAnimate } from '@formkit/auto-animate'
 
-/** The app's motion: short, and on the same curve as `--ease-out`. */
-const OPTIONS = { duration: 180, easing: 'cubic-bezier(0.16, 1, 0.3, 1)' } as const
+import { LIST_MOTION } from '../list-motion/list-motion-options'
 
 /**
  * AutoAnimate's setup. Its module checks for `ResizeObserver` once, when it is first evaluated, so
@@ -58,7 +57,7 @@ export class AutoAnimateDirective implements OnChanges {
 
   private readonly injector = inject(Injector)
   private readonly host = inject<ElementRef<HTMLElement>>(ElementRef).nativeElement
-  private readonly controller = inject(AUTO_ANIMATE)(this.host, OPTIONS)
+  private readonly controller = inject(AUTO_ANIMATE)(this.host, LIST_MOTION)
   /** The first render is one: its children are there from the start, not added. */
   private pauses = 1
   private tracking = false

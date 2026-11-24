@@ -1,8 +1,10 @@
 import {
   type AnimationCallbackEvent,
   Component,
+  DestroyRef,
   ElementRef,
   Injector,
+  Renderer2,
   type Signal,
   afterNextRender,
   afterRenderEffect,
@@ -19,6 +21,7 @@ import { debounced } from '@signality/core/reactivity/debounced'
 import { watcher } from '@signality/core/reactivity/watcher'
 import { defaultRangeExtractor, injectVirtualizer } from '@tanstack/angular-virtual'
 import { listener } from '@signality/core/browser/listener'
+import { mediaQuery } from '@signality/core/browser/media-query'
 import { EmptyStateComponent } from '../empty-state/empty-state.component'
 import { ButtonComponent } from '../button/button.component'
 import { ActivityDataService } from '../../services/activity-data.service'
@@ -29,19 +32,19 @@ import {
   type DayRange,
 } from '../../services/activity-view-state.service'
 import { SearchBarComponent } from '../search-bar/search-bar.component'
-import type { ActivityEntry } from '../../generated/activity'
 import type { EntryUiAdapter } from '../../providers/types'
 import { dayIndexOf } from '../../utils/day-index'
 import { injectMinuteClock } from '../../utils/clock'
 import { dayKeyOf, type DayKey } from '../../utils/local-day'
 import { DayIndexComponent } from './day-index/day-index.component'
 import { type DayPositions, trackActiveDay } from './active-day'
-import { keepPlace } from './keep-place'
+import { keepPlace, type Placement } from './keep-place'
+import { ListMotion, type PositionedItem } from '../list-motion/list-motion'
 import { followFeedKeys } from './feed-keys'
 import { trackAttachment } from './attachment'
 import { timelineEmptyState, timelineEmptyView } from './timeline-empty-state'
 import { TimelineRows } from './timeline-rows'
-import { drawnDays, drawnIndexes, timelineItems, type TimelineItems } from './timeline-items'
+import { drawnDays, drawnIndexes, timelineItems } from './timeline-items'
 import { indicatorDistance, pullToRefresh, type PullState } from './pull-to-refresh'
 import { TopLayer } from '../../layouts/shell/top-layer.service'
 import { BreakpointState } from '../../services/breakpoint-state.service'
@@ -125,16 +128,22 @@ export class TimelineComponent {
   private readonly list = viewChild<ElementRef<HTMLElement>>('list')
   private readonly measured = viewChildren<ElementRef<HTMLElement>>('measured')
   private readonly injector = inject(Injector)
+  private readonly ghosts = viewChild.required<ElementRef<HTMLElement>>('ghosts')
+  private readonly motion = new ListMotion()
+  private readonly renderer = inject(Renderer2)
+  private readonly reduceMotion = mediaQuery('(prefers-reduced-motion: reduce)')
+  private readonly settledQuery = debounced(this.viewState.searchQuery, inject(SEARCH_URL_DELAY_MS))
 
   /**
    * The scroller's height, the sticky day header's offset and where the list starts in the
    * scroller's content, re-read whenever the scroller or what is above the list resizes.
    */
   private readonly viewport = signal(
-    { height: 0, headerTop: 0, listTop: 0, afterList: 0 },
+    { height: 0, width: 0, headerTop: 0, listTop: 0, afterList: 0 },
     {
       equal: (a, b) =>
         a.height === b.height &&
+        a.width === b.width &&
         a.headerTop === b.headerTop &&
         a.listTop === b.listTop &&
         a.afterList === b.afterList,
@@ -187,6 +196,8 @@ export class TimelineComponent {
     }
   })
 
+  protected readonly motionWidth = computed(() => this.viewport().width)
+
   protected readonly drawn = computed(() => {
     const window = this.virtualRows.getVirtualItems()
     return drawnDays(
@@ -225,7 +236,10 @@ export class TimelineComponent {
     },
     scrollTo: index => {
       const day = this.layout().days[index]
-      if (day) this.virtualRows.scrollToIndex(day.header, { align: 'start' })
+      if (day) {
+        this.motion.reset()
+        this.virtualRows.scrollToIndex(day.header, { align: 'start' })
+      }
     },
   }
 
@@ -256,6 +270,7 @@ export class TimelineComponent {
       this.measureTitle()
       this.viewport.set({
         height: scroller.clientHeight,
+        width: scroller.clientWidth,
         headerTop: pixelsOf(style, '--day-header-top', 0),
         listTop: list
           ? list.getBoundingClientRect().top -
@@ -268,25 +283,24 @@ export class TimelineComponent {
     this.announceSettled()
     // The row read stays where it is as what is above it changes; a new navigation shows the
     // list from its top, Back and Forward that row where it was left.
-    restoresScroll(
-      this.scroller,
-      () => 0,
-      keepPlace({
-        scroller: this.scroller,
-        layout: this.layout,
-        coordinates: () => {
-          const maxScroll = this.extent()
-          const measurements = this.virtualRows.measurementsCache()
-          return {
-            startOf: (index): number | undefined => measurements[index]?.start,
-            indexAt: (offset): number | undefined =>
-              this.virtualRows.getVirtualItemForOffset(offset)?.index,
-            maxScroll,
-            line: this.viewport().headerTop,
-          }
-        },
-      })
-    )
+    const place = keepPlace({
+      scroller: this.scroller,
+      layout: this.layout,
+      coordinates: () => {
+        const maxScroll = this.extent()
+        const measurements = this.virtualRows.measurementsCache()
+        return {
+          startOf: (index): number | undefined => measurements[index]?.start,
+          indexAt: (offset): number | undefined =>
+            this.virtualRows.getVirtualItemForOffset(offset)?.index,
+          maxScroll,
+          line: this.viewport().headerTop,
+        }
+      },
+      placed: placement => this.animateFrame(placement),
+    })
+    restoresScroll(this.scroller, () => 0, place)
+    inject(DestroyRef).onDestroy(() => this.motion.reset())
     followFeedKeys({
       scroller: this.scroller,
       count: () => this.days().length,
@@ -312,9 +326,65 @@ export class TimelineComponent {
         this.virtualRows.measureElement(null)
         for (const item of measured) this.virtualRows.measureElement(item.nativeElement)
         if (measured.length > 0) this.risen = true
-        this.animateAddedRows(measured)
       },
     })
+  }
+
+  /** Records the committed virtual positions after keepPlace finishes scrolling. */
+  private animateFrame(placement: Placement): void {
+    const query = this.viewState.searchQuery()
+    const layout = this.layout()
+    const { headerTop, height } = this.viewport()
+    const positions = this.virtualRows.measurementsCache()
+    const items = new Map<string, PositionedItem>()
+    for (const { nativeElement } of this.measured()) {
+      const index = Number(nativeElement.dataset['itemIndex'])
+      const item = layout.items[index]
+      const bounds = positions[index]
+      if (!item || !bounds) continue
+      const end = positions[layout.days[item.dayIndex]!.gap]?.end
+      items.set(item.key, {
+        element: nativeElement,
+        size: bounds.size,
+        topAt: (scrollTop): number => {
+          const top = bounds.start - scrollTop
+          if (item.kind === 'row' || end === undefined) return top
+          return Math.min(Math.max(top, headerTop), end - scrollTop - bounds.size)
+        },
+      })
+    }
+    this.motion.update({
+      keys: layout.indexes,
+      items,
+      viewport: { top: headerTop, bottom: height },
+      pauseOn: query,
+      ...placement,
+      revision: this.data.allEntries(),
+      paused:
+        !this.attached() ||
+        !this.host.isConnected ||
+        this.reduceMotion() ||
+        this.settledQuery() !== query ||
+        typeof this.host.animate !== 'function',
+      ghost: (item, top) => this.makeGhost(item, top),
+    })
+  }
+
+  /** The motion layer is outside the feed and is inert and hidden from assistive technology. */
+  private makeGhost(item: PositionedItem, top: number): HTMLElement | null {
+    const clone = item.element.cloneNode(true)
+    if (!(clone instanceof HTMLElement)) return null
+    clone.removeAttribute('data-item-index')
+    clone.removeAttribute('aria-posinset')
+    clone.removeAttribute('aria-setsize')
+    clone.querySelector('[data-entry]')?.removeAttribute('data-entry')
+    const element: HTMLElement = this.renderer.createElement('div')
+    element.className = 'timeline-ghost'
+    element.style.top = `${top}px`
+    element.style.height = `${item.size}px`
+    element.append(clone)
+    this.ghosts().nativeElement.append(element)
+    return element
   }
 
   /** The rendered title supplies its column width and font. ResizeObserver owns the final size. */
@@ -396,6 +466,7 @@ export class TimelineComponent {
       const row = positions[index]
       const header = positions[layout.days[item.dayIndex]!.header]
       if (row && header) {
+        this.motion.reset()
         this.virtualRows.scrollToOffset(row.start - header.size - this.viewport().headerTop)
       }
     }
@@ -425,29 +496,6 @@ export class TimelineComponent {
   protected rise(event: AnimationCallbackEvent, index: number): void {
     if (this.risen || index >= RISING_DAYS) return
     this.playOnce(event.target, 'day-rise', true)
-  }
-
-  private lastRendered?: {
-    readonly layout: TimelineItems
-    readonly entries: readonly ActivityEntry[]
-    readonly query: string
-  }
-
-  /** A new entry in an existing day fades in on a collection. Virtual mounts are silent. */
-  private animateAddedRows(measured: readonly ElementRef<HTMLElement>[]): void {
-    const before = this.lastRendered
-    const layout = this.layout()
-    const entries = this.data.allEntries()
-    const query = this.viewState.searchQuery()
-    this.lastRendered = { layout, entries, query }
-    if (!before || before.entries === entries || before.query !== query || !this.attached()) return
-
-    for (const { nativeElement } of measured) {
-      const item = layout.items[Number(nativeElement.dataset['itemIndex'])]
-      if (item?.kind !== 'row' || before.layout.indexes.has(item.key)) continue
-      if (!before.layout.indexes.has(layout.days[item.dayIndex]!.day.date)) continue
-      this.playOnce(nativeElement, 'entry-added')
-    }
   }
 
   private playOnce(element: Element, name: string, subtree = false): void {

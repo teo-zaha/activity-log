@@ -16,10 +16,17 @@ interface Anchor {
   readonly scrollTop: number
 }
 
+export interface Placement {
+  readonly beforeScroll: number
+  readonly scrollTop: number
+  readonly anchor: string | undefined
+}
+
 interface KeepPlaceOptions {
   readonly scroller: Signal<ElementRef<HTMLElement>>
   readonly layout: Signal<TimelineItems>
   readonly coordinates: () => Coordinates
+  readonly placed: (position: Placement) => void
 }
 
 /** A removed row hands over its offset to the next row that survives, then to its day. */
@@ -61,11 +68,18 @@ function anchorAt(
  * and Angular writes the row offsets and scroll correction together. The correction uses the
  * virtual row positions and samples only the scroller offset before a write.
  */
-export function keepPlace({ scroller, layout, coordinates }: KeepPlaceOptions): ScrollPlaces {
+export function keepPlace({
+  scroller,
+  layout,
+  coordinates,
+  placed,
+}: KeepPlaceOptions): ScrollPlaces {
   let anchor: Anchor | null = null
   let readAmong: TimelineItems | undefined
   /** The last offset this wrote, until a scroll event reports a different one. */
   let written: number | null = null
+  let position = 0
+  let beforeScroll = 0
   const root = (): HTMLElement => scroller().nativeElement
 
   function read(scrollTop: number): Anchor | null {
@@ -86,6 +100,7 @@ export function keepPlace({ scroller, layout, coordinates }: KeepPlaceOptions): 
     const element = root()
     if (!element.isConnected) return
     const top = element.scrollTop
+    beforeScroll = position = top
     if (written !== null && Math.abs(top - written) < 1) return
     if (anchor && readAmong !== untracked(layout)) {
       // Keep the user's scroll if a new list is waiting to render. Moving to the new end can
@@ -105,6 +120,7 @@ export function keepPlace({ scroller, layout, coordinates }: KeepPlaceOptions): 
       const next = layout()
       const current = coordinates()
       untracked(() => {
+        beforeScroll = position
         if (!root().isConnected) {
           anchor = null
           return
@@ -126,11 +142,13 @@ export function keepPlace({ scroller, layout, coordinates }: KeepPlaceOptions): 
           // correcting so that the correction carries that scroll along with it.
           const actual = root().scrollTop
           const clamped = actual < held.scrollTop && actual >= current.maxScroll - 1
-          const from = clamped ? held.scrollTop : actual
-          scrollTop = scrollTo(actual, from + delta, current.maxScroll)
+          beforeScroll = clamped ? held.scrollTop : actual
+          scrollTop = scrollTo(actual, beforeScroll + delta, current.maxScroll)
         }
+        position = scrollTop
         anchor = scrollTop === 0 ? null : { key, contentY, scrollTop }
       })
+      placed({ beforeScroll, scrollTop: position, anchor: anchor?.key })
     },
   })
 
@@ -152,6 +170,7 @@ export function keepPlace({ scroller, layout, coordinates }: KeepPlaceOptions): 
           saved.scrollTop + contentY - saved.contentY,
           current.maxScroll
         )
+        beforeScroll = position = scrollTop
         anchor = scrollTop === 0 ? null : { key: saved.key, contentY, scrollTop }
         readAmong = next
         return true

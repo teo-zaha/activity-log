@@ -178,6 +178,10 @@
   </div>
 </div>
 
+<div class="timeline-motion-layer" [style.width.px]="motionWidth()" aria-hidden="true" inert>
+  <div class="timeline-wrap"><div #ghosts class="timeline-ghosts"></div></div>
+</div>
+
 <!-- Pull to refresh: comes out from under the filter while a finger pulls, and goes back up once
      it lifts. The collection shows, and screen readers hear it, as every collection does. -->
 @let pullState = pull();

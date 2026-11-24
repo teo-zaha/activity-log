@@ -506,17 +506,14 @@ describe('TimelineComponent', () => {
       }
     }
 
-    it('keeps its list and fades in an entry added by a collection', async () => {
+    it('keeps its list when a collection adds an entry', async () => {
       const { gainRow } = await renderDay()
       const list = document.querySelector('.day-group ol')
-      const animations = vi.spyOn(Element.prototype, 'getAnimations')
 
       await gainRow()
 
       expect(document.querySelector('.day-group ol')).toBe(list)
       expect(list?.querySelectorAll('.entry')).toHaveLength(2)
-      const added = screen.getByRole('button', { name: /open jira event/i }).parentElement
-      expect(animations.mock.contexts).toContain(added)
     })
 
     it('keeps the focus on an entry as its day gains a row', async () => {
