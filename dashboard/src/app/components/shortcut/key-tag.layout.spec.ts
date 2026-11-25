@@ -2,11 +2,14 @@
 // The key tags in a real browser (`ng test --configuration layout`, Chromium): shown while Shift
 // is held, they lie over their controls, so nothing moves or changes size, and none is cut by
 // what holds it or lies over another control. Only a layout engine can tell.
+import { TestBed } from '@angular/core/testing'
 import { afterEach, describe, expect, it } from 'vitest'
 import { page } from 'vitest/browser'
 import { createEntryAdapter } from '../../providers/provider-adapter'
+import { ActivityDataService } from '../../services/activity-data.service'
 import { activityLog } from '../../testing/activity-fixtures'
 import { openApp } from '../../testing/app'
+import { waitForLayout } from '../../testing/layout'
 
 const RANGE = 'from=2026-05-17&to=2026-05-18'
 
@@ -15,11 +18,6 @@ const key = (entry: { trackKey: string } | undefined): string =>
   encodeURIComponent(entry?.trackKey ?? '')
 /** The first of a group of two overlapping events: the stepper, the group's back and close. */
 const GROUP = `/day/2026-05-18?${RANGE}&events=${key(git)}&events=${key(jira)}&event=${key(git)}`
-
-/** Two frames: what a change lays out and what observes it has run. */
-async function frames(): Promise<void> {
-  for (let i = 0; i < 2; i++) await new Promise(resolve => requestAnimationFrame(resolve))
-}
 
 function shift(type: 'keydown' | 'keyup'): void {
   document.body.dispatchEvent(
@@ -123,20 +121,7 @@ function onTopUnder(rect: DOMRect, other: HTMLElement): boolean {
   return hit !== null && other.contains(hit)
 }
 
-/** Where the controls are once the page has stopped moving (fonts, the collection coming in). */
-async function settledControls(): Promise<Map<string, string>> {
-  await document.fonts.ready
-  let last = controls()
-  for (;;) {
-    await frames()
-    await new Promise(resolve => setTimeout(resolve, 100))
-    const now = controls()
-    if (JSON.stringify([...now]) === JSON.stringify([...last])) return now
-    last = now
-  }
-}
-
-/** Holds Shift until every tag that shows a key here does. */
+/** Holds Shift until a revealed key appears beyond the resting Shift hint. */
 async function reveal(): Promise<void> {
   shift('keydown')
   // Past Shift at rest, which shows already.
@@ -145,8 +130,6 @@ async function reveal(): Promise<void> {
       timeout: 3_000,
     })
     .toBeGreaterThan(0)
-  await new Promise(resolve => setTimeout(resolve, 200))
-  await frames()
 }
 
 describe('the key tags in a browser', () => {
@@ -188,13 +171,24 @@ describe('the key tags in a browser', () => {
     for (const shown of pages) {
       it(`shows them over their controls, moving and cutting nothing: ${shown.name}, ${size.name}`, async () => {
         await page.viewport(size.width, size.height)
-        await openApp(shown.url)
+        const { settle } = await openApp(shown.url)
+        const activity = TestBed.inject(ActivityDataService)
         await expect
-          .poll(() => document.querySelector(shown.ready), { timeout: 10_000 })
-          .not.toBeNull()
-        const before = await settledControls()
+          .poll(
+            () =>
+              activity.meta() !== null &&
+              !activity.isLoading() &&
+              document.querySelector(shown.ready) !== null,
+            { timeout: 10_000 }
+          )
+          .toBe(true)
+        await settle()
+        await waitForLayout()
+        const before = controls()
 
         await reveal()
+        await settle()
+        await waitForLayout()
 
         const tagged = shownTags().map(
           ({ control }) =>
