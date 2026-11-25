@@ -318,6 +318,41 @@ async fn an_unreadable_saved_folder_triggers_one_rediscovery() {
 }
 
 #[tokio::test]
+async fn a_duplicate_team_link_warns_and_lists_the_team_once() {
+    let server = TestServer::start(|request| {
+        assert_eq!(request.path(), "/v2/teams/100001/folders");
+        reply(json!({"name":"Design","folders":[]}))
+    });
+    let mut config = config(&[]);
+    config.teams = Some(vec![
+        "100001".into(),
+        "https://www.figma.com/files/team/100001/Design".into(),
+    ]);
+    let api = FigmaApi::at(&server.url, &config).unwrap();
+    let scope = FigmaScope::of(&config).unwrap();
+    let state = FigmaCollection::default();
+    let id = ConnectionId::new(Source::Figma, "duplicate-team-link");
+    let run = state.run(Some(&id), None);
+    let entries = diagnostics::in_connection(
+        id.clone(),
+        collect_files(&options(), &api, scope, MINE, &run, &tabs_for(&[])),
+    )
+    .await
+    .unwrap();
+    assert!(entries.is_empty());
+    assert_eq!(server.requests().len(), 1);
+    let warnings: Vec<_> = diagnostics::entries()
+        .into_iter()
+        .filter(|line| line.scope == id.to_string() && line.level == LogLevel::Warn)
+        .map(|line| line.message)
+        .collect();
+    assert_eq!(
+        warnings,
+        ["The Figma team list contained duplicate items (1 ignored)"]
+    );
+}
+
+#[tokio::test]
 async fn invalid_team_file_keys_are_skipped_with_one_warning() {
     let server = TestServer::start(|request| match request.path() {
         "/v2/teams/100001/folders" => reply(json!({

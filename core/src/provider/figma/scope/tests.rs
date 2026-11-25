@@ -20,6 +20,7 @@ fn team_scope_reads_numeric_ids_and_both_link_shapes_in_list_order() {
         .map(|(item, id)| (*item, id.as_str()))
         .collect();
     assert_eq!(teams, [(1, "100001"), (2, "200002"), (4, "400004")]);
+    assert_eq!(scope.duplicate_teams, 1);
 }
 
 #[test]
@@ -87,7 +88,7 @@ fn keeps_the_first_position_for_each_distinct_key() {
         "OTHERfile0002",
     ]))
     .unwrap();
-    assert_eq!(scope.duplicates, 1);
+    assert_eq!(scope.duplicate_files, 1);
     assert_eq!(
         scope
             .files

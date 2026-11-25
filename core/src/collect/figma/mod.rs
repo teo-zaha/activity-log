@@ -124,7 +124,8 @@ async fn collect_files(
     let FigmaScope {
         files,
         teams,
-        duplicates,
+        duplicate_files,
+        duplicate_teams,
     } = scope;
     let now = Utc::now();
     let (start, end) = options.utc_days();
@@ -231,11 +232,13 @@ async fn collect_files(
     // contributions before returning the entries for that cache to write.
     run.book.finish_chunk(observations, Utc::now()).await?;
     let source = Source::Figma.as_ref();
-    if duplicates > 0 {
-        diagnostics::warn(
-            source,
-            format!("The Figma file list contained duplicate items ({duplicates} ignored)"),
-        );
+    for (list, duplicates) in [("file", duplicate_files), ("team", duplicate_teams)] {
+        if duplicates > 0 {
+            diagnostics::warn(
+                source,
+                format!("The Figma {list} list contained duplicate items ({duplicates} ignored)"),
+            );
+        }
     }
     if unknown_editors > 0 {
         diagnostics::warn(

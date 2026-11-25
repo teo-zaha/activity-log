@@ -129,36 +129,40 @@ pub(crate) struct FigmaScope {
     /// The original one-based list positions give people a way to identify failed files.
     pub(crate) files: Vec<(usize, FigmaFileKey)>,
     pub(crate) teams: Vec<(usize, FigmaTeamId)>,
-    pub(crate) duplicates: usize,
+    pub(crate) duplicate_files: usize,
+    pub(crate) duplicate_teams: usize,
 }
 
 impl FigmaScope {
     pub(crate) fn of(config: &FigmaConfig) -> Result<Self, ScopeError> {
-        let items = config.files.as_deref().unwrap_or_default();
-        let mut seen = BTreeSet::new();
-        let mut files = Vec::new();
-        for (index, input) in items.iter().enumerate() {
-            let position = index + 1;
-            let key = FigmaFileKey::from_input(input, position)?;
-            if seen.insert(key.clone()) {
-                files.push((position, key));
-            }
-        }
-        let mut seen_teams = BTreeSet::new();
-        let mut teams = Vec::new();
-        for (index, input) in config.teams.iter().flatten().enumerate() {
-            let position = index + 1;
-            let id = FigmaTeamId::from_input(input, position)?;
-            if seen_teams.insert(id.clone()) {
-                teams.push((position, id));
-            }
-        }
+        let file_items = config.files.as_deref().unwrap_or_default();
+        let team_items = config.teams.as_deref().unwrap_or_default();
+        let files = distinct_items(file_items, FigmaFileKey::from_input)?;
+        let teams = distinct_items(team_items, FigmaTeamId::from_input)?;
         Ok(Self {
-            duplicates: items.len() - files.len(),
+            duplicate_files: file_items.len() - files.len(),
+            duplicate_teams: team_items.len() - teams.len(),
             files,
             teams,
         })
     }
+}
+
+/// Keep the original position of the first occurrence of each parsed item.
+fn distinct_items<T: Ord + Clone>(
+    items: &[String],
+    parse: impl Fn(&str, usize) -> Result<T, ScopeError>,
+) -> Result<Vec<(usize, T)>, ScopeError> {
+    let mut seen = BTreeSet::new();
+    let mut distinct = Vec::new();
+    for (index, input) in items.iter().enumerate() {
+        let position = index + 1;
+        let item = parse(input, position)?;
+        if seen.insert(item.clone()) {
+            distinct.push((position, item));
+        }
+    }
+    Ok(distinct)
 }
 
 #[cfg(test)]
