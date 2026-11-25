@@ -684,11 +684,13 @@ nix shell --inputs-from . nixpkgs#python3 nixpkgs#imagemagick -c python3 desktop
 
 ### Releases
 
-From a checkout with tags, use `nix develop -c pnpm release:preview` to see the proposed version and unreleased changes. `nix develop -c pnpm release:changelog` regenerates `CHANGELOG.md` locally. Both commands use git-cliff.
+From a checkout with tags, use `nix develop -c pnpm release:preview` to see the proposed version and unreleased changes. `nix develop -c pnpm release:changelog` regenerates `CHANGELOG.md` locally. Both use git-cliff and run offline by default. Set both `GITHUB_REPO` (`owner/repo`) and `GITHUB_TOKEN` to include GitHub data. Once `CHANGELOG.md` contains GitHub data, `release:changelog` requires both variables to preserve it.
 
 Run **Actions → Release → Run workflow** on `main` after Linux CI passes at its head. The release uses the Cargo workspace version if it is newer than the latest tag. Otherwise, git-cliff bumps the previous tag from Conventional Commits. This makes the first packaged release `v1.0.0`, matching the Windows test installer. An override takes plain `X.Y.Z`. It must be newer than every release tag and at least as high as the Cargo version. It can equal the Cargo version while that version has no tag.
 
 Release prepares the version and changelog commit, then builds Windows x64 NSIS, macOS arm64 DMG, and Linux x64 AppImage, DEB and RPM from that commit. After all builds pass, it pushes the commit and tag together, attaches the installers and git-cliff notes to a draft, and publishes it.
+
+CI uses the repository's `GITHUB_TOKEN` to add GitHub usernames, pull request links, first-time contributors, and links comparing consecutive tags. The draft notes use the same template as `CHANGELOG.md` for the new version.
 
 - Turn on `draft` to edit the notes before publishing from Releases.
 - Turn on `dry_run` to build and validate the bundles and notes as workflow artifacts without pushing or creating a release.

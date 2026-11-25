@@ -2,6 +2,7 @@
 
 import argparse
 import json
+import os
 import re
 import subprocess
 import sys
@@ -16,7 +17,13 @@ except ModuleNotFoundError:
 
 
 MANIFEST = Path("Cargo.toml")
+CHANGELOG = Path("CHANGELOG.md")
 VERSION = r"(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)"
+GITHUB_CHANGELOG = re.compile(
+    r"^### New contributors$|^\[Full changelog\]\(https://github\.com/"
+    r"|^-.* \*\([0-9a-f]{7}\)\*(?: by @\S+| in \[#\d+\]\(https://github\.com/)",
+    re.MULTILINE,
+)
 
 
 def version_parts(value):
@@ -58,11 +65,33 @@ def check_versions():
 
 
 def output(*command):
-    return subprocess.check_output(command, text=True).strip()
+    return subprocess.check_output(command, encoding="utf-8").strip()
 
 
-def cliff(*args):
-    return output("git-cliff", "--use-branch-tags", *args)
+def cliff(*args, context=None, github_token=None, github_context=False):
+    online = bool(github_token) or github_context
+    command = ["git-cliff", "--use-branch-tags"]
+    env = os.environ.copy()
+    if github_token:
+        env["GITHUB_TOKEN"] = github_token
+    else:
+        env.pop("GITHUB_TOKEN", None)
+    if online:
+        env["GIT_CLIFF_OFFLINE"] = "false"
+    else:
+        command.append("--offline")
+    try:
+        return subprocess.run(
+            [*command, *args],
+            check=True,
+            encoding="utf-8",
+            stdout=subprocess.PIPE,
+            input=context,
+            env=env,
+        ).stdout.strip()
+    except subprocess.CalledProcessError as error:
+        mode = "with GitHub metadata" if online else "offline"
+        raise SystemExit(f"git-cliff failed {mode} (exit {error.returncode})") from None
 
 
 def next_version(current, override):
@@ -121,7 +150,7 @@ def write_version(version):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     commands = parser.add_subparsers(dest="command", required=True)
-    commands.add_parser("check")
+    commands.add_parser("check").add_argument("--require-git-cliff", action="store_true")
     commands.add_parser("changelog")
     commands.add_parser("preview").add_argument("--version")
     prepare = commands.add_parser("prepare")
@@ -129,26 +158,69 @@ def main():
     prepare.add_argument("--notes", type=Path, required=True)
     args = parser.parse_args()
 
+    # Keep the token out of version selection, template rendering, and Cargo.
+    token = os.environ.pop("GITHUB_TOKEN", None)
+    if not os.environ.get("GITHUB_REPO"):
+        token = None
+    if args.command == "prepare" and os.environ.get("GITHUB_ACTIONS") == "true" and not token:
+        raise SystemExit("Release preparation requires GITHUB_TOKEN and GITHUB_REPO in GitHub Actions")
+
     if args.command == "changelog":
-        cliff("--output", "CHANGELOG.md")
+        if token:
+            context = cliff("--context", github_token=token)
+            cliff(
+                "--from-context", "-", "--output", str(CHANGELOG),
+                context=context, github_context=True,
+            )
+        else:
+            if CHANGELOG.exists() and GITHUB_CHANGELOG.search(CHANGELOG.read_text(encoding="utf-8")):
+                raise SystemExit(
+                    "CHANGELOG.md contains GitHub data. Set GITHUB_REPO (owner/repo) and "
+                    "GITHUB_TOKEN, then rerun pnpm release:changelog to preserve it."
+                )
+            cliff("--output", str(CHANGELOG))
         return
 
     current = check_versions()
     if args.command == "check":
-        return
+        env = os.environ.copy()
+        if args.require_git_cliff:
+            env["ACTIVITY_LOG_REQUIRE_GIT_CLIFF"] = "1"
+        return subprocess.run(
+            [sys.executable, "-B", str(Path(__file__).with_name("release_test.py"))],
+            env=env,
+        ).returncode
 
     version = next_version(current, args.version)
     if args.command == "preview":
         print(f"Next release: v{version}" if version else "No pending release")
-        print(cliff("--unreleased", "--strip", "header"))
+        if token:
+            context = cliff("--unreleased", "--context", github_token=token)
+            preview = cliff(
+                "--from-context", "-", "--strip", "header",
+                context=context, github_context=True,
+            )
+        else:
+            preview = cliff("--unreleased", "--strip", "header")
+        print(preview)
         return
     if not version:
         return
 
     tag = f"v{version}"
-    notes = cliff("--unreleased", "--tag", tag, "--strip", "all")
-    if not notes.startswith(f"## [{version}]"):
+    # Share one metadata fetch and one release context between both outputs.
+    context = cliff("--tag", tag, "--context", github_token=token)
+    releases = json.loads(context)
+    if not releases or releases[0]["version"] != tag:
         raise SystemExit(f"git-cliff found no unreleased changes for {tag}")
+    notes = cliff(
+        "--from-context", "-", "--strip", "all",
+        context=json.dumps(releases[:1]), github_context=bool(token),
+    )
+    cliff(
+        "--from-context", "-", "--output", str(CHANGELOG),
+        context=context, github_context=bool(token),
+    )
     args.notes.write_text(
         "Windows and macOS builds are unsigned. Windows SmartScreen and macOS "
         "Gatekeeper may warn when you open them. The macOS build is for Apple "
@@ -156,11 +228,10 @@ def main():
         f"{notes}\n",
         encoding="utf-8",
     )
-    cliff("--tag", tag, "--output", "CHANGELOG.md")
     if version != current:
         write_version(version)
     print(tag)
 
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())

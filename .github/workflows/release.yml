@@ -31,6 +31,7 @@ jobs:
     permissions:
       contents: read
       actions: read
+      pull-requests: read
     runs-on: ubuntu-latest
     timeout-minutes: 15
     outputs:
@@ -73,10 +74,13 @@ jobs:
         id: release
         env:
           VERSION: ${{ inputs.version }}
+          GITHUB_REPO: ${{ github.repository }}
+          RELEASE_GITHUB_TOKEN: ${{ github.token }}
         run: |
+          export -n RELEASE_GITHUB_TOKEN
           dir="$RUNNER_TEMP/release-input"
           mkdir -p "$dir"
-          tag=$(python3 scripts/release.py prepare --version "$VERSION" --notes "$dir/notes.md")
+          tag=$(GITHUB_TOKEN="$RELEASE_GITHUB_TOKEN" python3 scripts/release.py prepare --version "$VERSION" --notes "$dir/notes.md")
           if [[ -z $tag ]]; then
             echo "No pending release."
             exit 0

@@ -26,7 +26,11 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Check workspace versions
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: git-cliff@2
+
+      - name: Check workspace versions and release scripts
         run: python3 scripts/release.py check
 
       # What the desktop crate links against (Tauri's WebKitGTK shell), as in
