@@ -11,10 +11,12 @@ import { TestBed } from '@angular/core/testing'
 import {
   Router,
   RouterOutlet,
+  Scroll,
   provideRouter,
   withInMemoryScrolling,
   type Routes,
 } from '@angular/router'
+import { filter, firstValueFrom } from 'rxjs'
 import { describe, expect, it, onTestFinished } from 'vitest'
 import { restoresScroll, ViewsScroller } from './views-scroller.service'
 
@@ -54,7 +56,10 @@ const ROUTES: Routes = [
  * Boots `Outlet` as an app is booted: the router's scroll restoration starts only then, from its
  * bootstrap listener.
  */
-async function openRouter(): Promise<{ router: Router; settle: () => Promise<void> }> {
+async function openRouter(): Promise<{
+  router: Router
+  show: (navigate: () => void | Promise<boolean>) => Promise<void>
+}> {
   TestBed.configureTestingModule({
     providers: [
       provideLocationMocks(),
@@ -66,16 +71,17 @@ async function openRouter(): Promise<{ router: Router; settle: () => Promise<voi
   document.body.append(host)
   onTestFinished(() => host.remove())
   const appRef = TestBed.inject(ApplicationRef)
-  appRef.bootstrap(Outlet, host)
   const router = TestBed.inject(Router)
-  const settle = async (): Promise<void> => {
-    await appRef.whenStable()
-    // The router asks for the position a task after the navigation ends.
-    await new Promise(resolve => setTimeout(resolve, 20))
+  const show = async (navigate: () => void | Promise<boolean>): Promise<void> => {
+    // The router emits Scroll outside the application's pending tasks, after navigation ends.
+    const scroll = firstValueFrom(router.events.pipe(filter(event => event instanceof Scroll)))
+    await Promise.all([scroll, navigate()])
     await appRef.whenStable()
   }
-  await settle()
-  return { router, settle }
+  await show(() => {
+    appRef.bootstrap(Outlet, host)
+  })
+  return { router, show }
 }
 
 function scrolled(): HTMLElement {
@@ -86,57 +92,44 @@ function scrolled(): HTMLElement {
 
 describe('ViewsScroller', () => {
   it('shows a new view where it starts', async () => {
-    const { router, settle } = await openRouter()
+    const { router, show } = await openRouter()
 
-    await router.navigateByUrl('/week/1')
-    await settle()
+    await show(() => router.navigateByUrl('/day/1'))
 
     expect(scrolled().scrollTop).toBe(START)
   })
 
   it('shows a view where its history entry left it on Back and Forward', async () => {
-    const { router, settle } = await openRouter()
+    const { router, show } = await openRouter()
     const location = TestBed.inject(Location)
-    await router.navigateByUrl('/week/1')
-    await settle()
     scrolled().scrollTop = 150
-    await router.navigateByUrl('/day/1')
-    await settle()
+    await show(() => router.navigateByUrl('/day/1'))
     expect(scrolled().scrollTop).toBe(START)
     scrolled().scrollTop = 900
 
-    location.back()
-    await settle()
+    await show(() => location.back())
     expect(scrolled().scrollTop).toBe(150)
 
-    location.forward()
-    await settle()
+    await show(() => location.forward())
     expect(scrolled().scrollTop).toBe(900)
   })
 
   it('measures a position from where the view starts, so the top is one too', async () => {
-    const { router, settle } = await openRouter()
+    const { router, show } = await openRouter()
     const location = TestBed.inject(Location)
-    await router.navigateByUrl('/week/1')
-    await settle()
     scrolled().scrollTop = 0
-    await router.navigateByUrl('/day/1')
-    await settle()
+    await show(() => router.navigateByUrl('/day/1'))
 
-    location.back()
-    await settle()
+    await show(() => location.back())
 
     expect(scrolled().scrollTop).toBe(0)
   })
 
   it('keeps the view where it is for a navigation that says so', async () => {
-    const { router, settle } = await openRouter()
-    await router.navigateByUrl('/week/1')
-    await settle()
+    const { router, show } = await openRouter()
     scrolled().scrollTop = 150
 
-    await router.navigateByUrl('/week/2', { scroll: 'manual' })
-    await settle()
+    await show(() => router.navigateByUrl('/week/2', { scroll: 'manual' }))
 
     expect(scrolled().scrollTop).toBe(150)
   })
