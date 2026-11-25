@@ -305,9 +305,8 @@ Each source below lists its entry types, Timeline subtitle line, detail panel fi
 <tr>
 <td width="56%" valign="top">
 
-- **Entries:** One per event in the GitLab event feed of the configured `user`. Title is the target title (for example the merge request title), or the action name when absent.
-- **Actions:** `pushedTo`, `pushedNew`, `created`, `opened`, `closed`, `reopened`, `updated`, `merged`, `accepted`, `commentedOn`, `approved`, `joined`, `destroyed`, `expired`, and `unknown`.
-- **Timeline line:** action · target type (for example `merged · MergeRequest`)
+- **Entries:** One per event in the GitLab event feed of the configured `user`. The title is the event's target title when available.
+- **Timeline line:** A readable action such as **Commented on merge request !12**, **Pushed to main**, or **Pushed new branch feature-x**. For events without a target title, the action is shown as the title.
 - **Detail panel:** Action, Title, Target type, MR (`!iid`), Issue (`#iid`), Branch, Commits, File, Comment, Resolved
 - **Merge:** Push events (`pushedTo`, `pushedNew`) whose commit SHA matches a local Git commit fold into that commit's **git/lab** entry.
 - **Stack:** When a merge request event's merge request is still open and part of a stack, its detail panel shows a **Stack** section: the branch it builds on, the open merge requests below it, and those built on it, each linked to its page on the configured GitLab server. The stack is looked up fresh on every collection (never cached), which can delay that connection's entries by up to about 20 seconds on a slow server, and needs a token that can read the project's merge requests (`read_api` or `api`); without that scope, entries show without stacks and **Settings → Logs** says why.
@@ -321,7 +320,7 @@ Each source below lists its entry types, Timeline subtitle line, detail panel fi
 ### GitHub
 
 - **Entries** cover the pull requests and issues you opened and each review you submitted, with its state, from repositories the token can read. Commits come from default-branch history in repositories GitHub lists for your contributions. They use the commit date. A repository may be omitted when GitHub assigns its contribution to an author date outside the requested range. When you grant access to another repository, its commits appear as cached days are fetched again. Settled GitHub days can stay fresh for up to 30 days.
-- The **Timeline line** shows repository · action · item number or short commit SHA.
+- The **Timeline line** shows the repository and an action such as **Opened pull request #12** or **Reviewed pull request #12 (approved)**. A commit shows its branch and short SHA.
 - The **detail panel** shows the action, repository, and PR or issue number or full commit SHA. It links to the item when GitHub supplies a URL on the configured web origin. Open pull requests can also show their current stack. Activity Log reads native GitHub stacks first and follows the open pull requests between branches when native membership is unavailable.
 - For **configuration**, add **GitHub** in the desktop app or run `activity-log sources add github`. Set up one connection per account with the `url` and `token` fields. Use `https://github.com` or your GitHub Enterprise web URL. Activity Log derives the API URL and seals the token for the web origin. [GitHub API origins](docs/adr/0007-github-api-origin.md)
 

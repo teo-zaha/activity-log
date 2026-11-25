@@ -1,21 +1,28 @@
 import type { GitLabEntry } from '../../generated/activity'
-import { type ChangeReferencePrefix, changeReference, changeStackVmOf } from '../change-stack'
+import { changeReference, changeStackVmOf } from '../change-stack'
+import { CODE_HOST_REFERENCE_PREFIX, gitlabAction, gitlabTargetLabel } from '../code-host'
 import { EntryUiAdapter, ProviderUiAdapterDefinition, type ProviderDetailField } from '../types'
-import { createBadge, joinParts, toDefinedStrings } from '../utils'
-
-/** How GitLab writes a merge request's number: `!12`. */
-const MERGE_REQUEST: ChangeReferencePrefix = '!'
+import { createBadge, toDefinedStrings } from '../utils'
 
 class GitLabEntryUiAdapter extends EntryUiAdapter<GitLabEntry> {
   constructor(provider: GitLabProviderAdapter, entry: GitLabEntry) {
+    const action = gitlabAction(entry)
+    const target = entry.targetType ? gitlabTargetLabel(entry.targetType) : undefined
     const fields: ProviderDetailField[] = [
-      { label: 'Action', value: entry.type },
+      { label: 'Action', value: action.detail },
       { label: 'Title', value: entry.title ?? '' },
-      { label: 'Target type', value: entry.targetType ?? '' },
     ]
+    if (target) fields.push({ label: 'Target type', value: target })
     if (entry.mrIid != null)
-      fields.push({ label: 'MR', value: changeReference(MERGE_REQUEST, entry.mrIid) })
-    if (entry.issueIid != null) fields.push({ label: 'Issue', value: `#${entry.issueIid}` })
+      fields.push({
+        label: 'MR',
+        value: changeReference(CODE_HOST_REFERENCE_PREFIX.mergeRequest, entry.mrIid),
+      })
+    if (entry.issueIid != null)
+      fields.push({
+        label: 'Issue',
+        value: changeReference(CODE_HOST_REFERENCE_PREFIX.issue, entry.issueIid),
+      })
     if (entry.branch) fields.push({ label: 'Branch', value: entry.branch })
     if (entry.commitCount != null) {
       fields.push({ label: 'Commits', value: String(entry.commitCount) })
@@ -31,19 +38,23 @@ class GitLabEntryUiAdapter extends EntryUiAdapter<GitLabEntry> {
     const webUrl = entry.changeStack?.current.webUrl
 
     super(provider, entry, {
-      title: entry.title || entry.type,
-      meta: joinParts([entry.type, entry.targetType]),
+      title: entry.title || action.summary,
+      meta: entry.title ? action.summary : '',
       entryIcon,
       searchTerms: toDefinedStrings([
         entry.title,
         entry.type,
         entry.targetType,
+        action.summary,
+        target,
         entry.branch,
         entry.noteBody,
         entry.noteFile,
       ]),
       calendarDurationMinutes: null,
-      changeStack: entry.changeStack ? changeStackVmOf(entry.changeStack, MERGE_REQUEST) : null,
+      changeStack: entry.changeStack
+        ? changeStackVmOf(entry.changeStack, CODE_HOST_REFERENCE_PREFIX.mergeRequest)
+        : null,
       detailLink: webUrl ? { label: 'Open merge request', url: webUrl } : null,
       detailFields: fields.filter(field => field.value),
       badge,
