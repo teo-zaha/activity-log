@@ -25,15 +25,79 @@ use crate::{
     runtime::{Checked, CollectionKey, Outcome, Plan, RunReport, Slot, Stored},
 };
 
+pub(crate) fn isolate_git(command: &mut Command) -> &mut Command {
+    // Git hooks and rebase --exec can export config overrides and paths to the outer repository.
+    for (key, _) in std::env::vars_os() {
+        if key
+            .to_string_lossy()
+            .to_ascii_uppercase()
+            .starts_with("GIT_")
+        {
+            command.env_remove(key);
+        }
+    }
+
+    command
+        .env(
+            "GIT_CONFIG_GLOBAL",
+            if cfg!(windows) { "NUL" } else { "/dev/null" },
+        )
+        .env("GIT_CONFIG_NOSYSTEM", "1")
+        .env("GIT_AUTHOR_NAME", "Test")
+        .env("GIT_AUTHOR_EMAIL", "test@example.com")
+        .env("GIT_COMMITTER_NAME", "Test")
+        .env("GIT_COMMITTER_EMAIL", "test@example.com")
+}
+
+pub(crate) fn git_command(repo: &Path) -> Command {
+    let mut command = Command::new("git");
+    isolate_git(&mut command).current_dir(repo);
+    command
+}
+
 pub(crate) fn git(repo: &Path, args: &[&str]) {
-    let status = Command::new("git")
+    let status = git_command(repo)
         .args(args)
-        .current_dir(repo)
         .env("GIT_AUTHOR_DATE", "2026-03-05T09:00:00+00:00")
         .env("GIT_COMMITTER_DATE", "2026-03-05T09:00:00+00:00")
         .status()
         .unwrap();
     assert!(status.success(), "git {args:?}");
+}
+
+#[test]
+fn git_fixtures_ignore_inherited_settings() {
+    // Give the test subprocess hostile settings without changing the parallel test runner.
+    let temp = tempfile::tempdir().unwrap();
+    let config = temp.path().join("gitconfig");
+    std::fs::write(
+        &config,
+        "[tag]\n\tgpgsign = true\n[commit]\n\tgpgsign = true\n",
+    )
+    .unwrap();
+    let output = Command::new(std::env::current_exe().unwrap())
+        .args([
+            "--exact",
+            "collect::git::tests::deduplicates_commits_reachable_from_multiple_refs",
+        ])
+        .env("GIT_CONFIG_GLOBAL", config)
+        .env("GIT_DIR", temp.path().join("outer.git"))
+        .env("GIT_WORK_TREE", temp.path())
+        .env("GIT_INDEX_FILE", temp.path().join("outer-index"))
+        .env("GIT_OBJECT_DIRECTORY", temp.path().join("outer-objects"))
+        .env(
+            "GIT_ALTERNATE_OBJECT_DIRECTORIES",
+            temp.path().join("outer-alternates"),
+        )
+        .env("GIT_COMMON_DIR", temp.path().join("outer-common"))
+        .output()
+        .unwrap();
+    assert!(
+        output.status.success(),
+        "fixture subprocess failed:\n{}\n{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
 }
 
 pub(crate) fn repo(email: Option<&str>, commits: &[(&str, &str)]) -> tempfile::TempDir {

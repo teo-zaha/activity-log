@@ -1,9 +1,9 @@
-use std::{fs, path::Path, process::Command};
+use std::{fs, path::Path};
 
 use chrono::{DateTime, Days, NaiveDate, TimeZone, Utc};
 use tempfile::{TempDir, tempdir};
 
-use crate::{model::CollectOptions, provider::git::GitConfig};
+use crate::{model::CollectOptions, provider::git::GitConfig, tests::git_command};
 
 use super::{RepoCommits, RepoHistory, collect_git, own_commits};
 use crate::{model::GitEntry, provider::connection::ConnectionLocation};
@@ -97,8 +97,8 @@ fn run_git(repo: &Path, args: &[&str]) {
 }
 
 fn run_git_with_env(repo: &Path, args: &[&str], envs: &[(&str, String)]) {
-    let mut command = Command::new("git");
-    command.args(args).current_dir(repo);
+    let mut command = git_command(repo);
+    command.args(args);
     for (key, value) in envs {
         command.env(key, value);
     }

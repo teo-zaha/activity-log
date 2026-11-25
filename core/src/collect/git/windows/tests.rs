@@ -63,25 +63,18 @@ fn the_script_lists_repos_and_their_history() {
     use chrono::{TimeZone, Utc};
 
     use super::{WslTarget, build_script};
+    use crate::tests::{git_command, isolate_git};
 
     let home = tempfile::tempdir().unwrap();
     let repo = home.path().join("work").join("it's here");
     let unconfigured = home.path().join("work").join("unconfigured");
     std::fs::create_dir_all(&repo).unwrap();
     std::fs::create_dir_all(&unconfigured).unwrap();
-    // Isolated from the developer's own git config, like a fresh distribution.
-    let isolated = |command: &mut Command| {
-        command
-            .env("HOME", home.path())
-            .env("XDG_CONFIG_HOME", home.path().join(".config"))
-            .env("GIT_CONFIG_NOSYSTEM", "1");
-    };
     let git = |dir: &std::path::Path, args: &[&str]| {
-        let mut command = Command::new("git");
-        isolated(&mut command);
-        let status = command
+        let status = git_command(dir)
             .args(args)
-            .current_dir(dir)
+            .env("GIT_AUTHOR_EMAIL", "me@example.com")
+            .env("GIT_COMMITTER_EMAIL", "me@example.com")
             .env("GIT_AUTHOR_DATE", "2026-03-05T09:00:00+01:00")
             .env("GIT_COMMITTER_DATE", "2026-03-05T09:00:00+01:00")
             .status()
@@ -95,17 +88,7 @@ fn the_script_lists_repos_and_their_history() {
     git(&unconfigured, &["init", "-q", "-b", "main"]);
     git(
         &unconfigured,
-        &[
-            "-c",
-            "user.email=me@example.com",
-            "-c",
-            "user.name=Me",
-            "commit",
-            "-q",
-            "--allow-empty",
-            "-m",
-            "Without config",
-        ],
+        &["commit", "-q", "--allow-empty", "-m", "Without config"],
     );
     // A worktree shares the repository's history and must not be read twice.
     git(
@@ -121,10 +104,12 @@ fn the_script_lists_repos_and_their_history() {
             repo.display().to_string(),
         ],
     };
+    let global_config = home.path().join("gitconfig");
     let run = |since| {
         let mut command = Command::new("sh");
-        isolated(&mut command);
-        let output = command
+        let output = isolate_git(&mut command)
+            .env("HOME", home.path())
+            .env("GIT_CONFIG_GLOBAL", &global_config)
             .arg("-c")
             .arg(build_script(&target, since))
             .output()
@@ -163,10 +148,7 @@ fn the_script_lists_repos_and_their_history() {
         "history is printed for repositories without user.email too"
     );
 
-    git(
-        &repo,
-        &["config", "--global", "user.email", "global@example.com"],
-    );
+    std::fs::write(&global_config, "[user]\n\temail = global@example.com\n").unwrap();
     let WslOutput::Scanned(collected) = run(since) else {
         panic!("collecting failed");
     };
@@ -223,22 +205,16 @@ fn the_script_reads_a_tip_recorded_before_since_with_its_parents() {
     use chrono::{TimeZone, Utc};
 
     use super::{WslTarget, build_script};
+    use crate::tests::{git_command, isolate_git};
 
     let home = tempfile::tempdir().unwrap();
     let repo = home.path().join("repo");
     std::fs::create_dir_all(&repo).unwrap();
-    let isolated = |command: &mut Command| {
-        command
-            .env("HOME", home.path())
-            .env("XDG_CONFIG_HOME", home.path().join(".config"))
-            .env("GIT_CONFIG_NOSYSTEM", "1");
-    };
     let git = |args: &[&str], authored: &str, committed: &str| {
-        let mut command = Command::new("git");
-        isolated(&mut command);
-        let status = command
+        let status = git_command(&repo)
             .args(args)
-            .current_dir(&repo)
+            .env("GIT_AUTHOR_EMAIL", "me@example.com")
+            .env("GIT_COMMITTER_EMAIL", "me@example.com")
             .env("GIT_AUTHOR_DATE", authored)
             .env("GIT_COMMITTER_DATE", committed)
             .status()
@@ -261,8 +237,7 @@ fn the_script_reads_a_tip_recorded_before_since_with_its_parents() {
         dirs: vec![repo.display().to_string()],
     };
     let mut command = Command::new("sh");
-    isolated(&mut command);
-    let output = command
+    let output = isolate_git(&mut command)
         .arg("-c")
         // `since` as the collector passes it: the range's start less the margin.
         .arg(build_script(
@@ -296,6 +271,7 @@ fn the_script_runs_git_in_the_c_locale() {
     use std::{os::unix::fs::PermissionsExt, process::Command};
 
     use super::{WslTarget, build_script};
+    use crate::tests::isolate_git;
 
     let bin = tempfile::tempdir().unwrap();
     let seen = bin.path().join("locale");
@@ -314,7 +290,7 @@ fn the_script_runs_git_in_the_c_locale() {
         dirs: vec![bin.path().display().to_string()],
     };
 
-    Command::new("/bin/sh")
+    isolate_git(&mut Command::new("/bin/sh"))
         .arg("-c")
         .arg(build_script(&target, Some(chrono::Utc::now())))
         .env("PATH", format!("{}:/usr/bin:/bin", bin.path().display()))

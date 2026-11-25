@@ -2,7 +2,6 @@ use futures::future::BoxFuture;
 use std::{
     fs,
     path::PathBuf,
-    process::Command,
     sync::{
         Arc,
         atomic::{AtomicUsize, Ordering},
@@ -507,9 +506,8 @@ fn git_repo_resolution_accepts_repo_paths_and_search_roots() {
 }
 
 fn run_git(repo: &std::path::Path, args: &[&str]) {
-    let output = Command::new("git")
+    let output = crate::tests::git_command(repo)
         .args(args)
-        .current_dir(repo)
         .output()
         .expect("run git");
     assert!(
