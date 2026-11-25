@@ -9,7 +9,7 @@ use activity_log_core::model::{
 };
 use activity_log_core::provider::connection::{Connection, ConnectionLocation, ConnectionValues};
 use activity_log_core::runtime::{
-    Collector, Host, Outcome, Plan, RunReport, Slot, Stored, Superseded,
+    Collector, FixSurface, Host, Outcome, Plan, RunReport, Slot, Stored, Superseded,
 };
 use rocket::{http::Status, local::asynchronous::Client};
 use tokio::sync::Notify;
@@ -47,6 +47,7 @@ fn fixture_providers() -> Vec<ProviderInfo> {
             reason: None,
             problem: None,
             recheckable: false,
+            fix_action: None,
             checked_at: "2026-03-25T10:00:00Z".to_string(),
         },
         ProviderInfo {
@@ -59,6 +60,7 @@ fn fixture_providers() -> Vec<ProviderInfo> {
             reason: Some("OS not supported".to_string()),
             problem: None,
             recheckable: false,
+            fix_action: None,
             checked_at: "2026-03-25T10:00:00Z".to_string(),
         },
     ]
@@ -83,7 +85,16 @@ fn collector_held(release: &Arc<Notify>) -> Collector {
 const MARCH_FIRST_WEEK: &str = r#"{"start":"2026-03-01T00:00:00Z","end":"2026-03-06T00:00:00Z"}"#;
 
 async fn client(collector: Collector) -> Client {
-    let host = Host::with_collector(collector, fixture_providers(), spawner());
+    client_for(
+        collector,
+        FixSurface::Web,
+        activity_log_core::provider::current_os(),
+    )
+    .await
+}
+
+async fn client_for(collector: Collector, surface: FixSurface, os: SupportedOs) -> Client {
+    let host = Host::with_collector(collector, fixture_providers(), spawner(), surface, os);
     Client::tracked(build_rocket_with(host, false))
         .await
         .unwrap()
@@ -135,7 +146,13 @@ async fn returns_503_without_cache() {
 /// answer a collect with; the desktop's `collect` agrees.
 #[rocket::async_test]
 async fn a_collect_with_nothing_to_show_has_no_data() {
-    let host = Host::with_collector(collector_ok(), fixture_providers(), spawner());
+    let host = Host::with_collector(
+        collector_ok(),
+        fixture_providers(),
+        spawner(),
+        FixSurface::Web,
+        activity_log_core::provider::current_os(),
+    );
     host.shutdown();
     let client = Client::tracked(build_rocket_with(host, false))
         .await
@@ -499,6 +516,7 @@ async fn recheck_answers_with_the_connection_checking_and_404_for_an_unknown_one
     assert_eq!(response.status(), Status::Ok);
     let body: serde_json::Value = response.into_json().await.unwrap();
     assert_eq!(body["providers"][0]["status"], "checking");
+    assert!(body["providers"][0].get("fixAction").is_none());
     // The answer as before, plus the stamp of the providers it installed.
     let state: serde_json::Value = client
         .get("/api/runtime-state")
@@ -548,6 +566,7 @@ async fn a_request_sees_a_config_file_changed_since_the_last_one() {
         spawner(),
         activity_log_core::runtime::BadConfig::Fail,
         activity_log_core::secrets::Secrets::none(),
+        FixSurface::Web,
     )
     .unwrap();
     let client = Client::tracked(build_rocket_with(host, false))
@@ -746,6 +765,91 @@ fn host_of(client: &Client) -> &Host {
 }
 
 #[rocket::async_test]
+async fn providers_and_events_only_publish_native_actions_for_a_desktop_host() {
+    use activity_log_core::{
+        provider::source_failure::{FixCause, SourceFailure},
+        runtime::CollectFailure,
+    };
+
+    let collector: Collector = Arc::new(|_, plans, _| {
+        Box::pin(async move {
+            let mut report = settle(plans).await;
+            let (id, slot) = &mut report.slots[0];
+            assert_eq!(id.source, Source::Git);
+            let Slot::Settled(Outcome::Collected(stored)) = slot else {
+                panic!("expected a collected Git slot")
+            };
+            let error =
+                SourceFailure::caused(FixCause::FolderDenied, "Example folder permission failure");
+            *slot = Slot::Settled(Outcome::Failed {
+                key: stored.key,
+                failure: CollectFailure::of(&error.into()),
+            });
+            report
+        })
+    });
+    for surface in [FixSurface::Web, FixSurface::Desktop] {
+        let client = client_for(collector.clone(), surface, SupportedOs::Macos).await;
+        let expected = (surface == FixSurface::Desktop).then(|| {
+            serde_json::json!({
+                "kind": "local", "target": {"kind": "systemSettings", "pane": "filesAndFolders"}
+            })
+        });
+        let mut events = Events::open(&client).await;
+        assert_eq!(events.next().await.unwrap().event, "state");
+
+        post_collect(&client, MARCH_FIRST_WEEK).await;
+        let sent = tokio::time::timeout(
+            Duration::from_secs(5),
+            events.until(|sent| sent.event == "providers"),
+        )
+        .await
+        .expect("the collection failure publishes providers");
+        let incremental = &sent.last().unwrap().data["providers"]["providers"][0];
+        assert_eq!(incremental["problem"], "permissionDenied");
+        assert_eq!(incremental.get("fixAction"), expected.as_ref());
+
+        let mut fresh = Events::open(&client).await;
+        let full = fresh.next().await.unwrap();
+        assert_eq!(full.event, "state");
+        let base: serde_json::Value = client
+            .get("/api/providers")
+            .dispatch()
+            .await
+            .into_json()
+            .await
+            .unwrap();
+        let state: serde_json::Value = client
+            .get("/api/runtime-state")
+            .dispatch()
+            .await
+            .into_json()
+            .await
+            .unwrap();
+        for provider in [
+            &base["providers"][0],
+            &state["providers"]["providers"]["providers"][0],
+            &full.data["providers"]["providers"]["providers"][0],
+        ] {
+            assert_eq!(provider["problem"], "permissionDenied");
+            assert_eq!(provider.get("fixAction"), expected.as_ref());
+        }
+    }
+}
+
+#[rocket::async_test]
+async fn build_rocket_installs_a_web_surface_host() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("config.toml");
+    std::fs::write(&path, "").unwrap();
+    let rocket = crate::build_rocket(Some(&path)).await.unwrap();
+    assert_eq!(
+        rocket.state::<Host>().unwrap().fix_surface(),
+        FixSurface::Web
+    );
+}
+
+#[rocket::async_test]
 async fn the_event_stream_starts_with_both_parts_of_one_host_also_before_any_collection() {
     let client = client(collector_ok()).await;
     let mut events = Events::open(&client).await;
@@ -811,6 +915,7 @@ async fn client_at(path: &std::path::Path) -> Client {
         spawner(),
         activity_log_core::runtime::BadConfig::Fail,
         activity_log_core::secrets::Secrets::none(),
+        FixSurface::Web,
     )
     .unwrap();
     Client::tracked(build_rocket_with(host, false))

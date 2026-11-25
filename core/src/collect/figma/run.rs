@@ -92,6 +92,7 @@ impl ConnectionRun {
                 status: StatusCode::NOT_FOUND,
                 ..
             } => Ok(true),
+            // A confirmed token scope error leaves the file recorded and skips the identity probe.
             ApiError::Status {
                 status: StatusCode::FORBIDDEN,
                 ..

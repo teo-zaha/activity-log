@@ -1379,13 +1379,13 @@ fn debug_output_shows_no_secret_in_urls_or_values_being_saved() {
 /// nothing to check again.
 #[test]
 fn recheckable_follows_the_problem() {
-    use crate::provider::provider_check_result::CheckOutcome;
-    let degraded = |problem| CheckOutcome::Degraded {
-        problem,
+    use crate::provider::{provider_check_result::CheckOutcome, source_failure::ClassifiedProblem};
+    let degraded = |problem: ProviderProblem| CheckOutcome::Degraded {
+        problem: ClassifiedProblem::plain(problem),
         reason: "slow".to_string(),
     };
-    let unavailable = |problem| CheckOutcome::Unavailable {
-        problem,
+    let unavailable = |problem: ProviderProblem| CheckOutcome::Unavailable {
+        problem: ClassifiedProblem::plain(problem),
         reason: "down".to_string(),
     };
     assert!(!CheckOutcome::Available.recheckable());
@@ -1393,6 +1393,7 @@ fn recheckable_follows_the_problem() {
         ProviderProblem::TimedOut,
         ProviderProblem::NotConfigured,
         ProviderProblem::Refused,
+        ProviderProblem::ScopeMissing,
         ProviderProblem::Unreachable,
         ProviderProblem::Failed,
         ProviderProblem::CollectionFailed,
@@ -1420,12 +1421,20 @@ fn recheckable_is_sent_even_when_false() {
             reason: None,
             problem: None,
             recheckable,
+            fix_action: None,
             checked_at: "2026-03-25T10:00:00Z".to_string(),
         };
 
         let wire = serde_json::to_value(&info).unwrap();
 
         assert_eq!(wire["recheckable"], serde_json::json!(recheckable));
+        assert!(wire.get("fixAction").is_none());
+        assert!(
+            serde_json::from_value::<ProviderInfo>(wire.clone())
+                .unwrap()
+                .fix_action
+                .is_none()
+        );
         let mut without = wire.clone();
         without.as_object_mut().unwrap().remove("recheckable");
         assert!(serde_json::from_value::<ProviderInfo>(without).is_err());

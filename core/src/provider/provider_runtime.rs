@@ -27,6 +27,7 @@ use super::{
     provider_adapter::{CollectionState, ProviderAdapter},
     provider_check_result::ProviderCheckResult,
     provider_context::ProviderContext,
+    source_failure::{ClassifiedProblem, FixCause},
 };
 
 // A hung OS integration (Outlook dialog, unreachable host, huge directory walk)
@@ -38,6 +39,7 @@ pub struct ProviderRuntime {
     adapter: Arc<dyn ProviderAdapter>,
     context: ProviderContext,
     info: ProviderInfo,
+    fix_cause: Option<FixCause>,
 }
 
 impl ProviderRuntime {
@@ -52,7 +54,7 @@ impl ProviderRuntime {
     ) -> Self {
         let requirements = adapter.config_requirements();
         let supported = adapter.supported_os().contains(&current_os());
-        let (info, context) = diagnostics::in_connection(connection.id.clone(), async {
+        let (info, context, fix_cause) = diagnostics::in_connection(connection.id.clone(), async {
             let opened = if supported {
                 open_connection(connection.source(), connection.values(), secrets).await
             } else {
@@ -73,10 +75,10 @@ impl ProviderRuntime {
                 ),
             };
             context.set_state_dir(adapter.cache_policy().map(|_| crate::cache::cache_dir()));
-            let (info, identity) =
+            let (info, identity, fix_cause) =
                 build_provider_info(adapter.as_ref(), connection, &mut context, unopened).await;
             context.set_identity(identity);
-            (info, context)
+            (info, context, fix_cause)
         })
         .await;
 
@@ -84,6 +86,7 @@ impl ProviderRuntime {
             adapter,
             context,
             info,
+            fix_cause,
         }
     }
 
@@ -100,6 +103,7 @@ impl ProviderRuntime {
             adapter: Arc::new(Recorded(info.connection.source.clone())),
             context: ProviderContext::for_connection(&connection, &[]),
             info,
+            fix_cause: None,
         }
     }
 
@@ -117,6 +121,10 @@ impl ProviderRuntime {
 
     pub fn info(&self) -> &ProviderInfo {
         &self.info
+    }
+
+    pub(crate) fn fix_cause(&self) -> Option<FixCause> {
+        self.fix_cause
     }
 
     /// Whose token the startup check saw.
@@ -298,7 +306,7 @@ async fn build_provider_info(
     connection: &Connection,
     context: &mut ProviderContext,
     unopened: Option<&Unopened>,
-) -> (ProviderInfo, IdentityEvidence) {
+) -> (ProviderInfo, IdentityEvidence, Option<FixCause>) {
     let current_os = current_os();
     let requirements = adapter.config_requirements();
     let started = std::time::Instant::now();
@@ -348,7 +356,11 @@ async fn build_provider_info(
 
     let mut info = provider_info(adapter, connection);
     result.outcome.apply_to(&mut info);
-    (info, result.identity)
+    let fix_cause = result
+        .outcome
+        .classification()
+        .and_then(ClassifiedProblem::cause);
+    (info, result.identity, fix_cause)
 }
 
 fn unavailable(problem: ProviderProblem, reason: impl Into<String>) -> ProviderCheckResult {
@@ -366,6 +378,7 @@ fn provider_info(adapter: &dyn ProviderAdapter, connection: &Connection) -> Prov
         supported_os: adapter.supported_os().to_vec(),
         reason: None,
         problem: None,
+        fix_action: None,
         recheckable: false,
         checked_at: now_iso(),
     }

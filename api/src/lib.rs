@@ -9,8 +9,8 @@ use activity_log_core::{
         ProvidersResponse, RecheckAnswer, RuntimeState, ShownActivity,
     },
     runtime::{
-        BadConfig, Forwarder, Host, PING_INTERVAL, RunSpawner, RuntimeMessage, answer_collect,
-        answer_recheck,
+        BadConfig, FixSurface, Forwarder, Host, PING_INTERVAL, RunSpawner, RuntimeMessage,
+        answer_collect, answer_recheck,
     },
     secrets::{FrontEnd, Secrets},
     settings::{ConfigFile, legacy_import},
@@ -262,7 +262,7 @@ pub async fn build_rocket(config: Option<&Path>) -> anyhow::Result<Rocket<Build>
     }
     // The one place the server builds its stores of the key.
     let secrets = Secrets::api(path.as_deref());
-    let host = Host::start(path, spawner(), BadConfig::Fail, secrets)?;
+    let host = Host::start(path, spawner(), BadConfig::Fail, secrets, FixSurface::Web)?;
     Ok(build_rocket_with(host, true))
 }
 

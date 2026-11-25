@@ -429,12 +429,13 @@ fn git_roots(config: &GitConfig, home_root: Option<PathBuf>) -> Result<Vec<PathB
 
 /// The first folder the connection searches that the OS refuses to list: where nothing found
 /// means no permission, not no repositories.
-pub(crate) fn denied_root(config: &GitConfig) -> Option<PathBuf> {
+pub(crate) fn denied_root(config: &GitConfig) -> Option<(PathBuf, std::io::Error)> {
     git_roots(config, default_git_root())
         .ok()?
         .into_iter()
-        .find(|root| {
-            fs::read_dir(root).is_err_and(|err| err.kind() == std::io::ErrorKind::PermissionDenied)
+        .find_map(|root| {
+            let error = fs::read_dir(&root).err()?;
+            (error.kind() == std::io::ErrorKind::PermissionDenied).then_some((root, error))
         })
 }
 

@@ -1,18 +1,25 @@
 import type {
   ActivityState,
   ActivityUpdate,
+  CalendarFeedGuide,
+  CalendarFeedService,
   ConnectionCount,
   ConnectionId,
   KeyFileReason,
+  LocalApp,
   NoStoreReason,
   OsStoreState,
   ProviderInfo,
+  ProviderFixAction,
   ProvidersUpdate,
   RuntimePing,
   RuntimeState,
   SecretStoreInfo,
+  SystemSettingsPane,
+  WebFixAction,
 } from '../../generated/activity'
 import { isSource } from '../../providers/connection'
+import { isWebLink } from '../../utils/text-links'
 import type { RuntimeEventName, RuntimeMessage } from './runtime-stream'
 
 /**
@@ -83,8 +90,79 @@ function isProviderInfo(value: unknown): value is ProviderInfo {
     typeof value['label'] === 'string' &&
     typeof value['status'] === 'string' &&
     typeof value['usable'] === 'boolean' &&
-    typeof value['recheckable'] === 'boolean'
+    typeof value['recheckable'] === 'boolean' &&
+    (value['fixAction'] === undefined || isProviderFixAction(value['fixAction']))
   )
+}
+
+const SYSTEM_SETTINGS_PANES: Readonly<Record<SystemSettingsPane, true>> = {
+  automation: true,
+  filesAndFolders: true,
+}
+
+const LOCAL_APPS: Readonly<Record<LocalApp, true>> = { outlook: true }
+
+function isProviderFixAction(value: unknown): value is ProviderFixAction {
+  if (!isRecord(value)) return false
+  switch (value['kind']) {
+    case 'web':
+      return isWebFixAction(value['action'])
+    case 'local': {
+      const target = value['target']
+      if (!isRecord(target)) return false
+      switch (target['kind']) {
+        case 'systemSettings':
+          return isOneOf(target['pane'], SYSTEM_SETTINGS_PANES)
+        case 'openApp':
+          return isOneOf(target['app'], LOCAL_APPS)
+        default:
+          return false
+      }
+    }
+    default:
+      return false
+  }
+}
+
+export function isWebFixAction(value: unknown): value is WebFixAction {
+  if (!isRecord(value)) return false
+  switch (value['kind']) {
+    case 'createToken':
+      return (
+        typeof value['instructions'] === 'string' &&
+        isWebUrl(value['url']) &&
+        (value['classicUrl'] === undefined || isWebUrl(value['classicUrl']))
+      )
+    case 'feedHelp':
+      return (
+        isListOf(value['guides'], isCalendarFeedGuide) &&
+        (value['recovery'] === undefined || typeof value['recovery'] === 'string')
+      )
+    default:
+      return false
+  }
+}
+
+const FEED_SERVICES: Readonly<Record<CalendarFeedService, true>> = {
+  outlookWork: true,
+  outlookCom: true,
+  googleCalendar: true,
+  iCloud: true,
+  fastmail: true,
+}
+
+function isCalendarFeedGuide(value: unknown): value is CalendarFeedGuide {
+  return (
+    isRecord(value) &&
+    isOneOf(value['service'], FEED_SERVICES) &&
+    typeof value['label'] === 'string' &&
+    typeof value['instructions'] === 'string' &&
+    (value['url'] === undefined || isWebUrl(value['url']))
+  )
+}
+
+function isWebUrl(value: unknown): value is string {
+  return typeof value === 'string' && isWebLink(value)
 }
 
 function isConnectionCount(value: unknown): value is ConnectionCount {

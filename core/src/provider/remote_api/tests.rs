@@ -782,6 +782,103 @@ async fn a_busy_forbidden_answer_says_nothing_about_the_token_owner() {
     }
 }
 
+#[tokio::test]
+async fn scope_classification_needs_typed_evidence_and_an_auth_status() {
+    use crate::{
+        provider::{remote_error::RemoteFailure, source_failure::ClassifiedProblem},
+        runtime::CollectFailure,
+    };
+
+    for (status, oauth, busy, problem, identity) in [
+        (
+            401,
+            Some("insufficient_scope"),
+            false,
+            Some(ProviderProblem::ScopeMissing),
+            IdentityEvidence::None,
+        ),
+        (
+            403,
+            Some("insufficient_scope"),
+            false,
+            Some(ProviderProblem::ScopeMissing),
+            IdentityEvidence::None,
+        ),
+        (
+            403,
+            Some("insufficient_scope"),
+            true,
+            Some(ProviderProblem::Throttled),
+            IdentityEvidence::None,
+        ),
+        (
+            403,
+            Some("invalid_token"),
+            false,
+            Some(ProviderProblem::Refused),
+            IdentityEvidence::Denied,
+        ),
+        (
+            403,
+            None,
+            false,
+            Some(ProviderProblem::Refused),
+            IdentityEvidence::Denied,
+        ),
+        (
+            500,
+            Some("insufficient_scope"),
+            false,
+            None,
+            IdentityEvidence::None,
+        ),
+    ] {
+        let server = TestServer::start(move |_| {
+            let mut reply = Reply::json(status, r#"{"message":"insufficient_scope"}"#);
+            if let Some(oauth) = oauth {
+                reply =
+                    reply.with_header("WWW-Authenticate", &format!(r#"Bearer error="{oauth}""#));
+            }
+            if busy {
+                reply = reply.with_header("X-RateLimit-Remaining", "0");
+            }
+            reply
+        });
+        let api = client(&server.url);
+        let error = api
+            .get_json::<Value>(api.endpoint(&["user"]))
+            .await
+            .unwrap_err();
+        let check = identity_check("GitLab", Err(error.clone()));
+        let failure = CollectFailure::of(
+            &RemoteFailure {
+                service: "GitLab".into(),
+                error,
+            }
+            .into(),
+        );
+
+        assert_eq!(
+            check.outcome.classification(),
+            Some(ClassifiedProblem::plain(
+                problem.unwrap_or(ProviderProblem::Failed)
+            ))
+        );
+        assert_eq!(check.identity, identity);
+        assert_eq!(
+            failure.classification(),
+            ClassifiedProblem::plain(problem.unwrap_or(ProviderProblem::CollectionFailed))
+        );
+        if problem == Some(ProviderProblem::ScopeMissing) {
+            assert_eq!(
+                check.outcome.reason(),
+                Some("GitLab token is missing a required permission")
+            );
+        }
+        assert_eq!(server.requests().len(), 1);
+    }
+}
+
 /// A caller that acts on a busy answer itself gets it at once: one request. A wait comes only
 /// before a second request, so the count proves there was none; a clock bound would fail under
 /// load.

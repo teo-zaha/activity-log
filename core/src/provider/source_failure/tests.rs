@@ -1,6 +1,6 @@
 use anyhow::Context;
 
-use super::{SourceFailure, SourceProblem, problem_of};
+use super::{ClassifiedProblem, SourceFailure, SourceProblem, problem_of};
 use crate::{
     model::ProviderProblem,
     provider::remote_error::{ApiError, RemoteFailure},
@@ -13,13 +13,19 @@ fn the_first_typed_cause_names_the_problem() {
         "Outlook is not running",
     ))
     .context("Reading meetings");
-    assert_eq!(problem_of(&closed), Some(ProviderProblem::NotRunning));
+    assert_eq!(
+        problem_of(&closed),
+        Some(ClassifiedProblem::plain(ProviderProblem::NotRunning))
+    );
 
     let refused = anyhow::Error::new(RemoteFailure {
         service: "Jira".into(),
         error: ApiError::Timeout,
     });
-    assert_eq!(problem_of(&refused), Some(ProviderProblem::TimedOut));
+    assert_eq!(
+        problem_of(&refused),
+        Some(ClassifiedProblem::plain(ProviderProblem::TimedOut))
+    );
 
     let plain = Err::<(), _>(anyhow::anyhow!("disk full"))
         .context("Reading the feed")
@@ -42,6 +48,28 @@ fn a_store_that_gave_no_key_is_secret_unavailable() {
             anyhow::anyhow!("did not answer within 120 s"),
         ))
         .context("Opening the token");
-        assert_eq!(problem_of(&err), Some(ProviderProblem::SecretUnavailable));
+        assert_eq!(
+            problem_of(&err),
+            Some(ClassifiedProblem::plain(ProviderProblem::SecretUnavailable))
+        );
+    }
+}
+
+#[cfg(target_os = "macos")]
+#[test]
+fn generic_applescript_not_running_does_not_name_an_app() {
+    use super::FixCause;
+    use crate::platform::macos::AppleScriptError;
+
+    for (number, expected) in [
+        (-1743, ClassifiedProblem::caused(FixCause::AutomationDenied)),
+        (-600, ClassifiedProblem::plain(ProviderProblem::NotRunning)),
+        (-609, ClassifiedProblem::plain(ProviderProblem::NotRunning)),
+    ] {
+        let err = AppleScriptError {
+            code: Some(number),
+            message: "Example failure".into(),
+        };
+        assert_eq!(problem_of(&err.into()), Some(expected));
     }
 }

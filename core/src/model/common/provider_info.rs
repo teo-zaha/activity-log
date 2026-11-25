@@ -2,8 +2,8 @@ use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
 use crate::model::common::{
-    connection_id::ConnectionId, provider_problem::ProviderProblem,
-    provider_status::ProviderStatus, supported_os::SupportedOs,
+    connection_id::ConnectionId, provider_fix_action::ProviderFixAction,
+    provider_problem::ProviderProblem, provider_status::ProviderStatus, supported_os::SupportedOs,
 };
 
 /// One connection and the result of its startup check.
@@ -30,4 +30,7 @@ pub struct ProviderInfo {
     /// Whether the UI offers to check it again: it has a problem other than `unsupported`.
     pub recheckable: bool,
     pub checked_at: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub fix_action: Option<ProviderFixAction>,
 }

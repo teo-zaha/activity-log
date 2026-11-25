@@ -25,6 +25,7 @@ pub(crate) mod result_store;
 #[cfg(test)]
 mod tests;
 
+pub use crate::provider::fix_action::FixSurface;
 pub use forward::{Due, Forwarder, PING_INTERVAL, RuntimeMessage};
 pub use host::{
     Answered, BadConfig, Edit, Feed, Host, HostWork, Part, Published, RecheckRefused, RunSpawner,

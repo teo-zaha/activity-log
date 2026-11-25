@@ -21,3 +21,4 @@ Rocket HTTP API for `activity-log`.
 
 - This crate is API-only. It does not serve Angular static assets.
 - The actual collection work and runtime state are delegated to `core`.
+- Provider health uses `scopeMissing` when the remote server confirms that the token lacks a scope. A busy answer still uses `throttled`. An optional `fixAction` uses the web action shape on this API. Native targets are available only in the macOS desktop app.

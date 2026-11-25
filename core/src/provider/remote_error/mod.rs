@@ -87,18 +87,29 @@ impl ApiError {
             return Some(ProviderProblem::Throttled);
         }
         match self {
+            Self::Status {
+                status,
+                refusal: Some(OAuthRefusal::InsufficientScope),
+                ..
+            } if matches!(*status, StatusCode::UNAUTHORIZED | StatusCode::FORBIDDEN) => {
+                Some(ProviderProblem::ScopeMissing)
+            }
             Self::Status { status, .. }
                 if matches!(*status, StatusCode::UNAUTHORIZED | StatusCode::FORBIDDEN) =>
             {
                 Some(ProviderProblem::Refused)
             }
             Self::Query(refusal)
-                if refusal.kinds().any(|kind| {
-                    matches!(
-                        kind,
-                        QueryErrorKind::InsufficientScopes | QueryErrorKind::Forbidden
-                    )
-                }) =>
+                if refusal
+                    .kinds()
+                    .any(|kind| kind == QueryErrorKind::InsufficientScopes) =>
+            {
+                Some(ProviderProblem::ScopeMissing)
+            }
+            Self::Query(refusal)
+                if refusal
+                    .kinds()
+                    .any(|kind| kind == QueryErrorKind::Forbidden) =>
             {
                 Some(ProviderProblem::Refused)
             }
@@ -110,6 +121,9 @@ impl ApiError {
 
     /// The message for a person; `service` names the remote ("Jira").
     pub fn message(&self, service: &str) -> String {
+        if self.problem() == Some(ProviderProblem::ScopeMissing) {
+            return format!("{service} token is missing a required permission");
+        }
         match self {
             Self::Status { status, .. } if status.is_redirection() => {
                 format!("{service} redirected to another address; set the URL it redirects to")

@@ -4,13 +4,40 @@ use chrono::{DateTime, Duration, SecondsFormat, Utc};
 use crate::{
     diagnostics,
     model::{CollectOptions, OutlookEntry},
-    platform::macos::run_apple_script,
+    platform::macos::{AppleScriptError, run_apple_script},
+    provider::source_failure::SourceProblem,
 };
 
 use super::{normalize::normalize_outlook_events, parse_outlook_columns};
 
 #[cfg(test)]
 mod tests;
+
+/// The Outlook calendar script could not reach a running instance.
+#[derive(Debug)]
+pub(crate) struct OutlookNotRunning(AppleScriptError);
+
+impl OutlookNotRunning {
+    pub(crate) fn classify(error: AppleScriptError) -> anyhow::Error {
+        if error.problem() == Some(SourceProblem::NotRunning) {
+            Self(error).into()
+        } else {
+            error.into()
+        }
+    }
+}
+
+impl std::fmt::Display for OutlookNotRunning {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("Open Outlook to include its calendar")
+    }
+}
+
+impl std::error::Error for OutlookNotRunning {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        Some(&self.0)
+    }
+}
 
 /// The calendar's events, read through Outlook's AppleScript dictionary in one script: each
 /// property for all events at once (one request to Outlook per property, not per event and
@@ -26,10 +53,10 @@ pub(super) async fn collect_outlook(options: &CollectOptions) -> Result<Vec<Outl
                     "Outlook's scripting dictionary has no busy status or body ({err}); reading meetings without them"
                 ),
             );
-            run_apple_script(&collect_script(Fields::Basic), &[&start, &end]).await?
+            run_apple_script(&collect_script(Fields::Basic), &[&start, &end]).await
         }
-        result => result?,
-    };
+        result => result,
+    }.map_err(OutlookNotRunning::classify)?;
     let (events, unread) = parse_outlook_columns(&output)?;
     if !unread.is_empty() {
         diagnostics::warn(
@@ -112,7 +139,7 @@ on run argv
   set endDate to my parsedDate(item 2 of argv)
 
   -- Never launch Outlook just to read the calendar; collect only from a running instance.
-  if application id "com.microsoft.Outlook" is not running then error "Outlook is not running. Open Outlook to include its calendar." number -600
+  if application id "com.microsoft.Outlook" is not running then error "Outlook is not running." number -600
 
   tell application "Microsoft Outlook"
     if (count of exchange accounts) is 0 then error "Outlook not signed in"

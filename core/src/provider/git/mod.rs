@@ -180,10 +180,7 @@ pub(crate) fn check_local_repos(config: &GitConfig) -> anyhow::Result<()> {
 
     match (found, last_error) {
         (false, _) => Err(match denied_root(config) {
-            Some(root) => SourceFailure::new(
-                SourceProblem::PermissionDenied,
-                format!("Not allowed to read {}", root.display()),
-            ),
+            Some((root, error)) => unreadable_root(&root, &error),
             None => SourceFailure::new(SourceProblem::NoData, "No repositories found"),
         }
         .into()),
@@ -191,3 +188,18 @@ pub(crate) fn check_local_repos(config: &GitConfig) -> anyhow::Result<()> {
         (true, Some(reason)) => Err(anyhow::anyhow!("No readable repositories found: {reason}")),
     }
 }
+
+fn unreadable_root(root: &std::path::Path, _error: &std::io::Error) -> SourceFailure {
+    let message = format!("Not allowed to read {}", root.display());
+    #[cfg(target_os = "macos")]
+    if _error.raw_os_error() == Some(libc::EPERM) {
+        return SourceFailure::caused(
+            crate::provider::source_failure::FixCause::FolderDenied,
+            message,
+        );
+    }
+    SourceFailure::new(SourceProblem::PermissionDenied, message)
+}
+
+#[cfg(all(test, target_os = "macos"))]
+mod tests;

@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use crate::{
-    model::{ConnectionId, IdentityEvidence, RemoteIdentity, Source},
+    model::{ConnectionId, IdentityEvidence, ProviderProblem, RemoteIdentity, Source},
     provider::{
         connection::{Connection, ConnectionLocation, ConnectionValues},
         gitlab::GitLabProvider,
@@ -74,18 +74,27 @@ async fn refused_tokens_are_denied() {
         Some("GitLab credentials invalid")
     );
 
-    let (forbidden, _server) = check(|| {
+    let (forbidden, _server) = check(|| Reply::json(403, r#"{"message":"Forbidden"}"#)).await;
+    assert!(!forbidden.usable());
+    assert_eq!(forbidden.info().problem, Some(ProviderProblem::Refused));
+    assert_eq!(forbidden.identity(), &IdentityEvidence::Denied);
+}
+
+#[tokio::test]
+async fn missing_scope_does_not_deny_the_identity() {
+    let (missing_scope, _server) = check(|| {
         Reply::json(
             403,
             r#"{"error":"insufficient_scope","error_description":"x"}"#,
         )
     })
     .await;
-    assert_eq!(forbidden.identity(), &IdentityEvidence::Denied);
+    assert!(!missing_scope.usable());
     assert_eq!(
-        forbidden.info().reason.as_deref(),
-        Some("GitLab token lacks access: insufficient_scope")
+        missing_scope.info().problem,
+        Some(ProviderProblem::ScopeMissing)
     );
+    assert_eq!(missing_scope.identity(), &IdentityEvidence::None);
 }
 
 #[tokio::test]

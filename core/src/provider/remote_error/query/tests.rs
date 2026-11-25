@@ -43,9 +43,9 @@ fn graphql_errors_refuse_the_whole_answer_and_keep_each_code() {
 }
 
 #[test]
-fn graphql_scopes_and_access_codes_are_refusals_but_message_text_is_untagged() {
+fn graphql_distinguishes_missing_scope_from_refused_access() {
     for (code, expected) in [
-        ("INSUFFICIENT_SCOPES", Some(ProviderProblem::Refused)),
+        ("INSUFFICIENT_SCOPES", Some(ProviderProblem::ScopeMissing)),
         ("FORBIDDEN", Some(ProviderProblem::Refused)),
         ("NOT_FOUND", None),
         ("unrecognized", None),

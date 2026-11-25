@@ -24,6 +24,7 @@ fn info(source: Source, name: &str, problem: Option<ProviderProblem>) -> Provide
         reason: problem.map(|_| "why".to_string()),
         problem,
         recheckable: false,
+        fix_action: None,
         checked_at: "2026-01-01T00:00:00Z".to_string(),
     }
 }
@@ -40,6 +41,7 @@ fn a_problem_fails_the_run_only_where_the_source_cannot_work() {
     let fails = [
         ProviderProblem::TimedOut,
         ProviderProblem::Refused,
+        ProviderProblem::ScopeMissing,
         ProviderProblem::Throttled,
         ProviderProblem::Unreachable,
         ProviderProblem::PermissionDenied,

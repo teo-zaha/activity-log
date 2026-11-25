@@ -15,6 +15,8 @@ pub enum ProviderProblem {
     NotConfigured,
     /// The server refused the credentials with 401 or a 403 without signs of throttling.
     Refused,
+    /// The server identified a permission missing from the token.
+    ScopeMissing,
     /// The server is busy. Check again later.
     Throttled,
     /// The server could not be reached.

@@ -8,7 +8,10 @@ use futures::future::BoxFuture;
 use crate::{
     aggregator::{carried_for, collect_activity_from_results},
     model::{ActivityEntry, CollectOptions, CollectedActivity, ConnectionId, ProviderProblem},
-    provider::{ProviderRuntime, source_failure::problem_of},
+    provider::{
+        ProviderRuntime,
+        source_failure::{ClassifiedProblem, problem_of},
+    },
 };
 
 pub use super::keys::CollectionKey;
@@ -36,7 +39,7 @@ pub enum Outcome {
 /// timeout and an unreachable server apart from other failures. The message is for people.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CollectFailure {
-    problem: ProviderProblem,
+    problem: ClassifiedProblem,
     message: String,
 }
 
@@ -44,7 +47,8 @@ impl CollectFailure {
     /// `err` as its connection shows it: with the problem a typed cause in its chain names
     /// (`source_failure::problem_of`), else `collectionFailed`.
     pub fn of(err: &anyhow::Error) -> Self {
-        let problem = problem_of(err).unwrap_or(ProviderProblem::CollectionFailed);
+        let problem = problem_of(err)
+            .unwrap_or_else(|| ClassifiedProblem::plain(ProviderProblem::CollectionFailed));
         Self {
             problem,
             message: format!("{err:#}"),
@@ -54,14 +58,18 @@ impl CollectFailure {
     /// A collection that did not end in `limit`.
     pub fn timed_out(limit: Duration) -> Self {
         Self {
-            problem: ProviderProblem::TimedOut,
+            problem: ClassifiedProblem::plain(ProviderProblem::TimedOut),
             message: format!("Collection timed out after {}s", limit.as_secs()),
         }
     }
 
-    /// The problem a typed cause named (`timedOut`, `refused`, `throttled`, `notRunning`, …), else
+    /// The problem a typed cause named (`timedOut`, `refused`, `scopeMissing`, `throttled`, …), else
     /// `collectionFailed`.
     pub fn problem(&self) -> ProviderProblem {
+        self.problem.problem()
+    }
+
+    pub(crate) fn classification(&self) -> ClassifiedProblem {
         self.problem
     }
 

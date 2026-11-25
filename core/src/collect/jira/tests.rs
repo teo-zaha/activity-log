@@ -22,7 +22,7 @@ use crate::{
         provider_context::ProviderContext,
         remote_api::test_server::{Reply, TestServer},
         remote_error::{ApiError, RemoteFailure},
-        source_failure::problem_of,
+        source_failure::{ClassifiedProblem, problem_of},
     },
 };
 
@@ -291,7 +291,10 @@ async fn an_anonymous_search_is_refused_even_when_the_page_has_no_issues_field()
             error.downcast_ref::<JiraResponseError>(),
             Some(JiraResponseError::Anonymous)
         ));
-        assert_eq!(problem_of(&error), Some(ProviderProblem::Refused));
+        assert_eq!(
+            problem_of(&error),
+            Some(ClassifiedProblem::plain(ProviderProblem::Refused))
+        );
     }
 }
 

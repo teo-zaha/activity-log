@@ -23,6 +23,8 @@ mod windows;
 use self::fallback as imp;
 #[cfg(target_os = "macos")]
 use self::macos as imp;
+#[cfg(target_os = "macos")]
+pub(crate) use self::macos::OutlookNotRunning;
 #[cfg(target_os = "windows")]
 use self::windows as imp;
 

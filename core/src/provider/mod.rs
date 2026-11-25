@@ -1,6 +1,7 @@
 pub mod calendar;
 pub mod connection;
 pub(crate) mod figma;
+pub(crate) mod fix_action;
 pub mod git;
 pub mod github;
 pub mod gitlab;

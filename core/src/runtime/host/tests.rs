@@ -24,12 +24,16 @@ use crate::{
     },
     provider::{
         connection::{Connection, ConnectionLocation, ConnectionValues},
+        current_os,
         provider_adapter::ProviderAdapter,
         provider_check_result::ProviderCheckResult,
         provider_context::ProviderContext,
         provider_runtime::start_check_with,
     },
-    runtime::report::{Outcome, RunReport, Slot, Stored},
+    runtime::{
+        Collector, FixSurface,
+        report::{Outcome, RunReport, Slot, Stored},
+    },
     settings::{EditError, Precondition},
 };
 
@@ -62,6 +66,8 @@ fn gitlab() -> ConnectionId {
 #[derive(Default)]
 struct World {
     identities: Mutex<BTreeMap<ConnectionId, IdentityEvidence>>,
+    check_outcomes:
+        Mutex<BTreeMap<ConnectionId, crate::provider::provider_check_result::CheckOutcome>>,
     failing: Mutex<BTreeSet<ConnectionId>>,
     remote_statuses: Mutex<BTreeMap<ConnectionId, reqwest::StatusCode>>,
     check_gates: Mutex<BTreeMap<ConnectionId, Arc<Semaphore>>>,
@@ -175,7 +181,11 @@ impl ProviderAdapter for Fake {
                 .get(&id)
                 .cloned()
                 .unwrap_or_default();
-            ProviderCheckResult::available().with_identity(identity)
+            let outcome = self.world.check_outcomes.lock().unwrap().get(&id).cloned();
+            match outcome {
+                Some(outcome) => ProviderCheckResult { outcome, identity },
+                None => ProviderCheckResult::available().with_identity(identity),
+            }
         })
     }
 
@@ -367,6 +377,14 @@ fn spawner() -> (RunSpawner, Spawned) {
     )
 }
 
+fn web_host_with_collector(
+    collector: Collector,
+    providers: Vec<ProviderInfo>,
+    spawner: RunSpawner,
+) -> Host {
+    Host::with_collector(collector, providers, spawner, FixSurface::Web, current_os())
+}
+
 fn host_of(world: &Arc<World>, connections: &[Connection]) -> (Host, Spawned) {
     let (spawner, spawned) = spawner();
     let host = Host::build_with(
@@ -375,9 +393,156 @@ fn host_of(world: &Arc<World>, connections: &[Connection]) -> (Host, Spawned) {
         world.starter(),
         planned_collector(),
         spawner,
+        FixSurface::Web,
+        current_os(),
     );
     host.install(connections.to_vec(), None);
     (host, spawned)
+}
+
+#[tokio::test]
+async fn provider_fix_actions_follow_the_displayed_check_or_collection_outcome() {
+    use crate::{
+        model::{LocalFixTarget, ProviderFixAction, SystemSettingsPane},
+        provider::{
+            provider_check_result::CheckOutcome,
+            source_failure::{ClassifiedProblem, FixCause},
+        },
+    };
+
+    for surface in [FixSurface::Web, FixSurface::Desktop] {
+        let world = World::shared();
+        let id = ConnectionId::new(Source::Git, "work");
+        world.check_outcomes.lock().unwrap().insert(
+            id.clone(),
+            CheckOutcome::Degraded {
+                problem: ClassifiedProblem::caused(FixCause::FolderDenied),
+                reason: "Example folder permission failure".into(),
+            },
+        );
+        let (spawner, mut spawned) = spawner();
+        let host = Host::build_with(
+            None,
+            crate::secrets::Secrets::none(),
+            world.starter(),
+            planned_collector(),
+            spawner,
+            surface,
+            SupportedOs::Macos,
+        );
+        host.install(vec![connection(&id, &[])], None);
+        let checked = until(&host, |state| {
+            state.providers.value.providers[0].status == ProviderStatus::Degraded
+        })
+        .await;
+        assert_eq!(
+            checked.providers.value.providers[0].fix_action,
+            (surface == FixSurface::Desktop).then_some(ProviderFixAction::Local {
+                target: LocalFixTarget::SystemSettings {
+                    pane: SystemSettingsPane::FilesAndFolders
+                },
+            }),
+        );
+
+        world.failing.lock().unwrap().insert(id.clone());
+        host.collect(march());
+        spawned.end().await;
+        let shown = host.runtime_state();
+        let provider = &shown.providers.providers.providers[0];
+        assert_eq!(provider.problem, Some(ProviderProblem::CollectionFailed));
+        assert!(provider.fix_action.is_none());
+
+        world.failing.lock().unwrap().remove(&id);
+        world.check_outcomes.lock().unwrap().remove(&id);
+        let answer = host.recheck(&id).unwrap();
+        assert_eq!(answer.value.providers[0].status, ProviderStatus::Checking);
+        assert!(answer.value.providers[0].fix_action.is_none());
+        let ready = until(&host, |state| {
+            state.providers.value.providers[0].status == ProviderStatus::Available
+        })
+        .await;
+        assert!(ready.providers.value.providers[0].fix_action.is_none());
+    }
+}
+
+#[cfg(target_os = "macos")]
+#[tokio::test]
+async fn macos_outlook_collection_failures_publish_their_native_actions() {
+    use crate::{
+        collect::outlook::OutlookNotRunning,
+        model::{LocalApp, LocalFixTarget, ProviderFixAction, SystemSettingsPane},
+        platform::macos::AppleScriptError,
+        runtime::{CollectFailure, Plan},
+    };
+
+    for (code, problem, target) in [
+        (
+            -1743,
+            ProviderProblem::PermissionDenied,
+            LocalFixTarget::SystemSettings {
+                pane: SystemSettingsPane::Automation,
+            },
+        ),
+        (
+            -600,
+            ProviderProblem::NotRunning,
+            LocalFixTarget::OpenApp {
+                app: LocalApp::Outlook,
+            },
+        ),
+        (
+            -609,
+            ProviderProblem::NotRunning,
+            LocalFixTarget::OpenApp {
+                app: LocalApp::Outlook,
+            },
+        ),
+    ] {
+        let collector: Collector = Arc::new(move |_, plans, _| {
+            Box::pin(async move {
+                let [(id, Plan::Collect { check, .. })] =
+                    <[_; 1]>::try_from(plans).ok().expect("one Outlook check")
+                else {
+                    panic!("expected to collect Outlook");
+                };
+                let checked = check.await.unwrap();
+                let error = OutlookNotRunning::classify(AppleScriptError {
+                    code: Some(code),
+                    message: "Example AppleScript failure".into(),
+                });
+                assert!(error.chain().any(|cause| cause.is::<AppleScriptError>()));
+                RunReport {
+                    slots: vec![(
+                        id,
+                        Slot::Settled(Outcome::Failed {
+                            key: checked.key,
+                            failure: CollectFailure::of(&error),
+                        }),
+                    )],
+                }
+            })
+        });
+        let mut outlook = fixed_git().pop().unwrap();
+        outlook.connection = ConnectionId::new(Source::Outlook, "work");
+        outlook.label = "Outlook".into();
+        let (spawner, mut spawned) = spawner();
+        let host = Host::with_collector(
+            collector,
+            vec![outlook],
+            spawner,
+            FixSurface::Desktop,
+            SupportedOs::Macos,
+        );
+        host.collect(march());
+        spawned.end().await;
+        let response = host.providers_response();
+        assert_eq!(response.providers[0].status, ProviderStatus::Degraded);
+        assert_eq!(response.providers[0].problem, Some(problem));
+        assert_eq!(
+            response.providers[0].fix_action,
+            Some(ProviderFixAction::Local { target })
+        );
+    }
 }
 
 /// A host of the config file at `path` whose sources are `world`'s.
@@ -389,6 +554,8 @@ fn host_at(path: &Path, world: &Arc<World>) -> (Host, Spawned) {
         world.starter(),
         planned_collector(),
         spawner,
+        FixSurface::Web,
+        current_os(),
     );
     let (connections, content) = load(path).ok().unwrap();
     host.install(connections, Some(content));
@@ -462,6 +629,7 @@ fn fixed_git() -> Vec<ProviderInfo> {
         reason: None,
         problem: None,
         recheckable: false,
+        fix_action: None,
         checked_at: "2026-03-25T10:00:00Z".to_string(),
     }]
 }
@@ -473,7 +641,7 @@ fn fixed_git() -> Vec<ProviderInfo> {
 async fn collect_answers_running_even_when_the_run_completes_at_once() {
     let published = Arc::new(OnceLock::new());
     let (spawner, mut spawned) = eager_spawner(published.clone());
-    let host = Host::with_collector(planned_collector(), fixed_git(), spawner);
+    let host = web_host_with_collector(planned_collector(), fixed_git(), spawner);
     published.set(host.subscribe()).unwrap();
 
     let answer = host.collect(march()).value;
@@ -553,6 +721,7 @@ async fn an_edit_answers_its_new_connections_checking_even_when_their_checks_end
         spawner,
         BadConfig::Fail,
         crate::secrets::Secrets::none(),
+        FixSurface::Web,
     )
     .unwrap();
     published.set(host.subscribe()).unwrap();
@@ -801,6 +970,8 @@ async fn work_is_handed_over_with_no_lock_held_and_ends_after_it_shows() {
         world.starter(),
         planned_collector(),
         spawner,
+        FixSurface::Web,
+        current_os(),
     );
     inner.set(Arc::downgrade(&host.inner)).unwrap();
     host.install(Vec::new(), None);
@@ -833,6 +1004,7 @@ async fn an_edit_whose_caller_went_away_is_still_installed() {
         spawner,
         BadConfig::Fail,
         crate::secrets::Secrets::none(),
+        FixSurface::Web,
     )
     .unwrap();
     let (started, has_started) = tokio::sync::oneshot::channel();
@@ -864,6 +1036,7 @@ async fn a_save_that_writes_nothing_installs_what_another_writer_wrote() {
         spawner,
         BadConfig::Fail,
         crate::secrets::Secrets::none(),
+        FixSurface::Web,
     )
     .unwrap();
     std::fs::write(&path, "[[calendar]]\nlabel = \"Team\"\n").unwrap();
@@ -901,6 +1074,7 @@ async fn an_edit_without_a_settings_location_fails() {
         spawner,
         BadConfig::Fail,
         crate::secrets::Secrets::none(),
+        FixSurface::Web,
     )
     .unwrap();
 
@@ -1051,6 +1225,8 @@ async fn a_label_edit_after_a_failed_run_runs_whole() {
         world.starter(),
         collector,
         spawner,
+        FixSurface::Web,
+        current_os(),
     );
     let (connections, content) = load(&path).ok().unwrap();
     host.install(connections, Some(content));
@@ -1098,6 +1274,7 @@ async fn a_shared_commit_follows_the_first_git_table() {
         spawner,
         BadConfig::Fail,
         crate::secrets::Secrets::none(),
+        FixSurface::Web,
     )
     .unwrap();
     host.collect(march());
@@ -1286,6 +1463,7 @@ async fn an_outside_edit_is_installed_within_one_look() {
         spawner,
         BadConfig::StartEmpty,
         crate::secrets::Secrets::none(),
+        FixSurface::Web,
     )
     .unwrap();
     let watcher = tokio::spawn(host.watch_config());
@@ -1315,6 +1493,7 @@ async fn a_change_still_being_written_is_installed_once_complete() {
         spawner,
         BadConfig::Fail,
         crate::secrets::Secrets::none(),
+        FixSurface::Web,
     )
     .unwrap();
     let read = super::pauses::Pause::new();
@@ -1419,6 +1598,7 @@ async fn a_file_that_does_not_parse_is_logged_once_and_the_last_good_config_stay
         spawner,
         BadConfig::Fail,
         crate::secrets::Secrets::none(),
+        FixSurface::Web,
     )
     .unwrap();
     let shown = path.display().to_string();
@@ -1447,6 +1627,7 @@ async fn a_file_that_cannot_be_read_is_tried_again_and_installed_once_it_can() {
         spawner,
         BadConfig::Fail,
         crate::secrets::Secrets::none(),
+        FixSurface::Web,
     )
     .unwrap();
     std::fs::write(&path, "[[calendar]]\nlabel = \"Team\"\n").unwrap();
@@ -1482,7 +1663,8 @@ async fn a_file_that_does_not_parse_fails_the_server_and_starts_the_app_empty() 
             Some(path.clone()),
             failing,
             BadConfig::Fail,
-            crate::secrets::Secrets::none()
+            crate::secrets::Secrets::none(),
+            FixSurface::Web,
         )
         .err()
         .unwrap()
@@ -1496,6 +1678,7 @@ async fn a_file_that_does_not_parse_fails_the_server_and_starts_the_app_empty() 
         spawner,
         BadConfig::StartEmpty,
         crate::secrets::Secrets::none(),
+        FixSurface::Web,
     )
     .unwrap();
     assert!(host.providers_response().providers.is_empty());
@@ -1519,6 +1702,7 @@ async fn after_shutdown_nothing_holds_the_spawner_or_watches_the_file() {
         spawner,
         BadConfig::Fail,
         crate::secrets::Secrets::none(),
+        FixSurface::Web,
     )
     .unwrap();
     let watcher = tokio::spawn(host.watch_config());
@@ -1749,7 +1933,7 @@ async fn a_run_in_its_last_poll_at_shutdown_ends_stopped_and_shows_nothing() {
             RunReport::default()
         })
     });
-    let host = Host::with_collector(collector, Vec::new(), spawner);
+    let host = web_host_with_collector(collector, Vec::new(), spawner);
     host.collect(march());
     let run = shown_run(&host).unwrap();
     has_entered
@@ -1800,6 +1984,7 @@ async fn a_watcher_waiting_for_the_config_lock_at_shutdown_installs_nothing() {
         spawner,
         BadConfig::Fail,
         crate::secrets::Secrets::none(),
+        FixSurface::Web,
     )
     .unwrap();
     let config = host.inner.config.clone().lock_owned().await;
@@ -1828,6 +2013,7 @@ async fn an_edit_after_shutdown_installs_nothing() {
         spawner,
         BadConfig::Fail,
         crate::secrets::Secrets::none(),
+        FixSurface::Web,
     )
     .unwrap();
 
@@ -1853,6 +2039,7 @@ async fn an_edit_written_before_shutdown_installs_nothing_after_it() {
         spawner,
         BadConfig::Fail,
         crate::secrets::Secrets::none(),
+        FixSurface::Web,
     )
     .unwrap();
     let written = super::pauses::Pause::new();
@@ -1897,7 +2084,7 @@ async fn published_until(host: &Host, done: impl Fn(&Published) -> bool) -> Vec<
 #[tokio::test]
 async fn the_runtime_state_is_one_host_and_one_authority_whose_revisions_only_grow() {
     let (spawner, mut spawned) = spawner();
-    let host = Host::with_collector(planned_collector(), fixed_git(), spawner);
+    let host = web_host_with_collector(planned_collector(), fixed_git(), spawner);
     let before = host.runtime_state();
 
     let answered = host.collect(march());
@@ -1973,8 +2160,8 @@ async fn a_recheck_answer_is_stamped_with_the_providers_it_installed() {
 fn two_hosts_have_different_epochs() {
     let (first, _) = spawner();
     let (second, _) = spawner();
-    let a = Host::with_collector(planned_collector(), fixed_git(), first);
-    let b = Host::with_collector(planned_collector(), fixed_git(), second);
+    let a = web_host_with_collector(planned_collector(), fixed_git(), first);
+    let b = web_host_with_collector(planned_collector(), fixed_git(), second);
 
     assert_ne!(
         a.runtime_state().activity.epoch,
@@ -1985,7 +2172,7 @@ fn two_hosts_have_different_epochs() {
 #[test]
 fn the_runtime_state_serializes_as_the_push_contract_says() {
     let (spawner, _) = spawner();
-    let host = Host::with_collector(planned_collector(), fixed_git(), spawner);
+    let host = web_host_with_collector(planned_collector(), fixed_git(), spawner);
 
     let value = serde_json::to_value(host.runtime_state()).unwrap();
 
@@ -2009,7 +2196,7 @@ fn the_runtime_state_serializes_as_the_push_contract_says() {
 #[tokio::test]
 async fn a_feed_starts_with_the_current_value_and_then_waits_for_a_change() {
     let (spawner, _spawned) = spawner();
-    let host = Host::with_collector(planned_collector(), fixed_git(), spawner);
+    let host = web_host_with_collector(planned_collector(), fixed_git(), spawner);
     let current = host.subscribe().borrow().clone();
     let mut feed = host.feed();
 
@@ -2023,7 +2210,7 @@ async fn a_feed_starts_with_the_current_value_and_then_waits_for_a_change() {
 #[tokio::test]
 async fn a_feed_that_lagged_gets_the_latest_value_once() {
     let (spawner, mut spawned) = spawner();
-    let host = Host::with_collector(planned_collector(), fixed_git(), spawner);
+    let host = web_host_with_collector(planned_collector(), fixed_git(), spawner);
     let mut feed = host.feed();
     feed.next().await.unwrap();
 
@@ -2042,7 +2229,7 @@ async fn a_feed_that_lagged_gets_the_latest_value_once() {
 #[tokio::test]
 async fn two_feeds_each_get_every_latest_value() {
     let (spawner, mut spawned) = spawner();
-    let host = Host::with_collector(planned_collector(), fixed_git(), spawner);
+    let host = web_host_with_collector(planned_collector(), fixed_git(), spawner);
     let mut first = host.feed();
     let mut second = host.feed();
     first.next().await.unwrap();
@@ -2059,7 +2246,7 @@ async fn two_feeds_each_get_every_latest_value() {
 #[tokio::test]
 async fn a_feed_ends_at_shutdown_also_while_it_waits() {
     let (spawner, _spawned) = spawner();
-    let host = Host::with_collector(planned_collector(), fixed_git(), spawner);
+    let host = web_host_with_collector(planned_collector(), fixed_git(), spawner);
     let mut waiting = host.feed();
     waiting.next().await.unwrap();
     let next = tokio::spawn(async move { waiting.next().await.is_none() });
@@ -2156,7 +2343,7 @@ async fn the_providers_say_where_new_secrets_are_sealed() {
         (file, None),
     );
     let (spawner, _spawned) = spawner();
-    let host = Host::start(None, spawner, BadConfig::Fail, secrets).unwrap();
+    let host = Host::start(None, spawner, BadConfig::Fail, secrets, FixSurface::Web).unwrap();
     let refused = SecretStoreInfo::Os {
         state: OsStoreState::Refused,
     };

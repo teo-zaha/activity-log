@@ -2,7 +2,7 @@ use std::{path::PathBuf, sync::Arc};
 
 use activity_log_core::{
     model::RunEnd,
-    runtime::{BadConfig, Host, RunSpawner},
+    runtime::{BadConfig, FixSurface, Host, RunSpawner},
     secrets::Secrets,
 };
 use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender, unbounded_channel};
@@ -35,8 +35,14 @@ impl AppState {
         secrets: Secrets,
     ) -> (Self, UnboundedReceiver<RunEnd>) {
         let (ends, ended) = unbounded_channel();
-        let host = Host::start(path, spawner(ends), BadConfig::StartEmpty, secrets)
-            .expect("a host that starts empty on a bad file always starts");
+        let host = Host::start(
+            path,
+            spawner(ends),
+            BadConfig::StartEmpty,
+            secrets,
+            FixSurface::Desktop,
+        )
+        .expect("a host that starts empty on a bad file always starts");
         let state = Self {
             host,
             snapshots: Arc::default(),

@@ -77,6 +77,7 @@ function statusIcon(status: ProviderStatus): string {
 const PROBLEM_ICONS: Partial<Record<ProviderProblem, string>> = {
   timedOut: 'timer_off',
   refused: 'lock',
+  scopeMissing: 'lock',
   throttled: 'speed',
   secretUnavailable: 'key_off',
   unreachable: 'cloud_off',
@@ -92,6 +93,7 @@ const PROBLEM_TITLES: Record<ProviderProblem, string | null> = {
   unsupported: 'Not supported on this system',
   notConfigured: 'Not configured',
   refused: 'Access refused',
+  scopeMissing: 'Token permission missing',
   throttled: 'Server busy',
   unreachable: 'Server unreachable',
   notInstalled: 'Not installed',

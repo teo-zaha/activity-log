@@ -1,5 +1,7 @@
 use crate::model::{IdentityEvidence, ProviderInfo, ProviderProblem, ProviderStatus};
 
+use super::source_failure::{ClassifiedProblem, problem_of};
+
 /// How a connection's startup check ended. A problem always comes with its reason, and only an
 /// unusable or degraded connection has one.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -7,11 +9,11 @@ pub enum CheckOutcome {
     Available,
     /// Usable, but not everything may be collected.
     Degraded {
-        problem: ProviderProblem,
+        problem: ClassifiedProblem,
         reason: String,
     },
     Unavailable {
-        problem: ProviderProblem,
+        problem: ClassifiedProblem,
         reason: String,
     },
 }
@@ -26,6 +28,10 @@ impl CheckOutcome {
     }
 
     pub fn problem(&self) -> Option<ProviderProblem> {
+        self.classification().map(ClassifiedProblem::problem)
+    }
+
+    pub(crate) fn classification(&self) -> Option<ClassifiedProblem> {
         match self {
             Self::Available => None,
             Self::Degraded { problem, .. } | Self::Unavailable { problem, .. } => Some(*problem),
@@ -71,7 +77,7 @@ impl ProviderCheckResult {
 
     pub fn degraded(reason: impl Into<String>) -> Self {
         Self::of(CheckOutcome::Degraded {
-            problem: ProviderProblem::Failed,
+            problem: ClassifiedProblem::plain(ProviderProblem::Failed),
             reason: reason.into(),
         })
     }
@@ -83,13 +89,17 @@ impl ProviderCheckResult {
     /// A check that failed with `err`: unavailable, with the problem a typed cause in its chain
     /// names (`source_failure::problem_of`), else `failed`.
     pub fn unavailable_from(err: &anyhow::Error) -> Self {
-        Self::unavailable_as(
-            crate::provider::source_failure::problem_of(err).unwrap_or(ProviderProblem::Failed),
+        Self::unavailable_with(
+            problem_of(err).unwrap_or_else(|| ClassifiedProblem::plain(ProviderProblem::Failed)),
             format!("{err:#}"),
         )
     }
 
     pub fn unavailable_as(problem: ProviderProblem, reason: impl Into<String>) -> Self {
+        Self::unavailable_with(ClassifiedProblem::plain(problem), reason)
+    }
+
+    fn unavailable_with(problem: ClassifiedProblem, reason: impl Into<String>) -> Self {
         Self::of(CheckOutcome::Unavailable {
             problem,
             reason: reason.into(),

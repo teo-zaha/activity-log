@@ -8,7 +8,21 @@ export type SupportedOs = "windows" | "macos" | "linux";
 
 export type ProviderStatus = "checking" | "available" | "unavailable" | "degraded";
 
-export type ProviderProblem = "timedOut" | "unsupported" | "notConfigured" | "refused" | "throttled" | "unreachable" | "notInstalled" | "notRunning" | "permissionDenied" | "noData" | "failed" | "collectionFailed" | "secretUnavailable";
+export type ProviderProblem = "timedOut" | "unsupported" | "notConfigured" | "refused" | "scopeMissing" | "throttled" | "unreachable" | "notInstalled" | "notRunning" | "permissionDenied" | "noData" | "failed" | "collectionFailed" | "secretUnavailable";
+
+export type SystemSettingsPane = "automation" | "filesAndFolders";
+
+export type LocalApp = "outlook";
+
+export type CalendarFeedService = "outlookWork" | "outlookCom" | "googleCalendar" | "iCloud" | "fastmail";
+
+export type CalendarFeedGuide = { service: CalendarFeedService, label: string, instructions: string, url?: string, };
+
+export type WebFixAction = { "kind": "createToken", url: string, instructions: string, classicUrl?: string, } | { "kind": "feedHelp", guides: Array<CalendarFeedGuide>, recovery?: string, };
+
+export type LocalFixTarget = { "kind": "systemSettings", pane: SystemSettingsPane, } | { "kind": "openApp", app: LocalApp, };
+
+export type ProviderFixAction = { "kind": "web", action: WebFixAction, } | { "kind": "local", target: LocalFixTarget, };
 
 export type ProviderInfo = { connection: ConnectionId, label: string, 
 /**
@@ -22,7 +36,7 @@ problem?: ProviderProblem,
 /**
  * Whether the UI offers to check it again: it has a problem other than `unsupported`.
  */
-recheckable: boolean, checkedAt: string, };
+recheckable: boolean, checkedAt: string, fixAction?: ProviderFixAction, };
 
 export type OsStoreState = "ready" | "refused";
 

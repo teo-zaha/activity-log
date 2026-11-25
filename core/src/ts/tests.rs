@@ -49,6 +49,73 @@ fn the_maximize_button_payload_keeps_its_shape() {
     );
 }
 
+#[test]
+fn provider_fix_actions_keep_the_generated_wire_shape() {
+    use crate::model::{
+        CalendarFeedGuide, CalendarFeedService, LocalFixTarget, ProviderFixAction, ProviderProblem,
+        SystemSettingsPane, WebFixAction,
+    };
+    use serde_json::json;
+
+    let local = ProviderFixAction::Local {
+        target: LocalFixTarget::SystemSettings {
+            pane: SystemSettingsPane::FilesAndFolders,
+        },
+    };
+    assert_eq!(
+        serde_json::to_value(local).unwrap(),
+        json!({
+            "kind": "local", "target": {"kind": "systemSettings", "pane": "filesAndFolders"},
+        })
+    );
+    let token = |classic_url: Option<&str>| ProviderFixAction::Web {
+        action: WebFixAction::CreateToken {
+            url: "https://example.org/tokens/new".into(),
+            instructions: "Select read access.".into(),
+            classic_url: classic_url.map(str::to_owned),
+        },
+    };
+    let mut wire = json!({"kind": "web", "action": {
+        "kind": "createToken", "url": "https://example.org/tokens/new",
+        "instructions": "Select read access.",
+    }});
+    assert_eq!(serde_json::to_value(token(None)).unwrap(), wire);
+    wire["action"]["classicUrl"] = json!("https://example.org/classic-tokens/new");
+    assert_eq!(
+        serde_json::to_value(token(Some("https://example.org/classic-tokens/new"))).unwrap(),
+        wire
+    );
+    let feed = WebFixAction::FeedHelp {
+        guides: vec![CalendarFeedGuide {
+            service: CalendarFeedService::ICloud,
+            label: "iCloud".into(),
+            instructions: "Share the calendar.".into(),
+            url: None,
+        }],
+        recovery: None,
+    };
+    assert_eq!(
+        serde_json::to_value(feed).unwrap(),
+        json!({"kind": "feedHelp", "guides": [
+            {"service": "iCloud", "label": "iCloud", "instructions": "Share the calendar."}
+        ]})
+    );
+    assert_eq!(
+        serde_json::to_value(ProviderProblem::ScopeMissing).unwrap(),
+        json!("scopeMissing")
+    );
+    let ts = activity_typescript();
+    for shape in [
+        r#"export type ProviderFixAction = { "kind": "web", action: WebFixAction, } | { "kind": "local", target: LocalFixTarget, };"#,
+        "fixAction?: ProviderFixAction",
+        "classicUrl?: string",
+        "\"scopeMissing\"",
+        "\"iCloud\"",
+    ] {
+        assert!(ts.contains(shape), "{shape}");
+    }
+}
+
 /// The desktop's menu commands and event, by the names and shapes the dashboard reads.
 #[test]
 fn names_the_menu_commands_and_event_and_keeps_their_shapes() {

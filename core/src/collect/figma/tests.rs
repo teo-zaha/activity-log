@@ -6,7 +6,7 @@ use crate::{
     model::{ConnectionId, LogLevel, ProviderProblem},
     provider::{
         remote_api::test_server::{Reply, TestServer},
-        source_failure::problem_of,
+        source_failure::{ClassifiedProblem, problem_of},
     },
 };
 
@@ -160,7 +160,10 @@ async fn partial_folder_discovery_keeps_the_previous_complete_set() {
         Some(TeamDiscoveryError { position: 1, cause: TeamFailure::Request(failure) })
             if matches!(failure.error, ApiError::Status { status: reqwest::StatusCode::FORBIDDEN, .. })
     ));
-    assert_eq!(problem_of(&error), Some(ProviderProblem::Refused));
+    assert_eq!(
+        problem_of(&error),
+        Some(ClassifiedProblem::plain(ProviderProblem::Refused))
+    );
     assert_eq!(std::fs::read(&path).unwrap(), before);
     assert_eq!(server.requests().len(), 2);
 }
@@ -390,7 +393,7 @@ async fn inaccessible_and_throttled_teams_fail_collection_with_the_original_list
             Some(TeamDiscoveryError { position: 3, cause: TeamFailure::Request(failure) })
                 if matches!(failure.error, ApiError::Status { status: actual, .. } if actual.as_u16() == status)
         ));
-        assert_eq!(problem_of(&error), problem);
+        assert_eq!(problem_of(&error), problem.map(ClassifiedProblem::plain));
     }
 }
 
@@ -599,7 +602,7 @@ async fn a_file_request_failure_keeps_the_original_position_and_remote_problem()
         )
         .await
         .unwrap_err();
-        assert_eq!(problem_of(&error), expected);
+        assert_eq!(problem_of(&error), expected.map(ClassifiedProblem::plain));
         assert!(matches!(
             error.downcast_ref::<FigmaCollectError>(),
             Some(FigmaCollectError::FileRequest {
@@ -703,7 +706,10 @@ async fn a_busy_discovered_403_fails_the_chunk_without_an_identity_probe() {
     )
     .await
     .unwrap_err();
-    assert_eq!(problem_of(&error), Some(ProviderProblem::Throttled));
+    assert_eq!(
+        problem_of(&error),
+        Some(ClassifiedProblem::plain(ProviderProblem::Throttled))
+    );
     assert!(matches!(
         error.downcast_ref::<FigmaCollectError>(),
         Some(FigmaCollectError::FileRequest {
@@ -713,6 +719,40 @@ async fn a_busy_discovered_403_fails_the_chunk_without_an_identity_probe() {
     ));
     assert_eq!(server.requests().len(), 1);
     assert_eq!(server.requests()[0].path(), "/v1/files/Busy/meta");
+}
+
+#[tokio::test]
+async fn a_scope_refusal_keeps_the_discovered_file_and_skips_the_identity_probe() {
+    let server = TestServer::start(|_| Reply::json(403, r#"{"error":"insufficient_scope"}"#));
+    let config = config(&[]);
+    let api = FigmaApi::at(&server.url, &config).unwrap();
+    let state = FigmaCollection::default();
+    let run = state.run(None, None);
+    let tabs = tabs_for(&["Example"]);
+    for _ in 0..2 {
+        let error = collect_files(
+            &options(),
+            &api,
+            FigmaScope::of(&config).unwrap(),
+            MINE,
+            &run,
+            &tabs,
+        )
+        .await
+        .unwrap_err();
+        assert_eq!(
+            problem_of(&error),
+            Some(ClassifiedProblem::plain(ProviderProblem::ScopeMissing))
+        );
+    }
+    assert_eq!(
+        server
+            .requests()
+            .iter()
+            .map(|request| request.path())
+            .collect::<Vec<_>>(),
+        ["/v1/files/Example/meta"; 2]
+    );
 }
 
 #[tokio::test]

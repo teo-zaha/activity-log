@@ -68,7 +68,9 @@ async fn the_check_opens_the_feed_without_reading_it() {
     assert!(message.contains("127.0.0.1"), "{message}");
     assert_eq!(
         crate::provider::source_failure::problem_of(&unreachable),
-        Some(crate::model::ProviderProblem::Unreachable)
+        Some(crate::provider::source_failure::ClassifiedProblem::plain(
+            crate::model::ProviderProblem::Unreachable
+        ))
     );
 }
 

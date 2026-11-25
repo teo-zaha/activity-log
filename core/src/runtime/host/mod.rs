@@ -16,8 +16,11 @@ use crate::{
     diagnostics,
     model::{
         ActivityState, PartStamp, ProviderInfo, ProvidersResponse, RunEnd, RunId, RuntimeState,
+        SupportedOs,
     },
-    provider::{ProviderRuntime, connection::Connection, current_os, start_check},
+    provider::{
+        ProviderRuntime, connection::Connection, current_os, fix_action::FixSurface, start_check,
+    },
     secrets::Secrets,
     settings::warn_no_location,
 };
@@ -114,8 +117,16 @@ impl Host {
         spawner: RunSpawner,
         bad_config: BadConfig,
         secrets: Secrets,
+        fix_surface: FixSurface,
     ) -> anyhow::Result<Host> {
-        let host = Self::build(path.clone(), secrets, planned_collector(), spawner);
+        let host = Self::build(
+            path.clone(),
+            secrets,
+            planned_collector(),
+            spawner,
+            fix_surface,
+            current_os(),
+        );
         host.probe_secret_store();
         let Some(path) = path else {
             warn_no_location();
@@ -142,7 +153,14 @@ impl Host {
     /// A host of fixed connections that never reloads and opens no sealed secret, for tests.
     #[cfg(any(test, feature = "test-support"))]
     pub fn fixed(connections: &[Connection], spawner: RunSpawner) -> Host {
-        let host = Self::build(None, Secrets::none(), planned_collector(), spawner);
+        let host = Self::build(
+            None,
+            Secrets::none(),
+            planned_collector(),
+            spawner,
+            FixSurface::Web,
+            current_os(),
+        );
         host.install(connections.to_vec(), None);
         host
     }
@@ -153,10 +171,12 @@ impl Host {
         collector: Collector,
         providers: Vec<ProviderInfo>,
         spawner: RunSpawner,
+        fix_surface: FixSurface,
+        os: SupportedOs,
     ) -> Host {
         // Its checks are recorded and cannot be run again, and it has no file to install from,
         // so it never starts one.
-        let host = Self::build(None, Secrets::none(), collector, spawner);
+        let host = Self::build(None, Secrets::none(), collector, spawner, fix_surface, os);
         host.transition(|_, state| {
             let connections = providers
                 .iter()
@@ -191,17 +211,24 @@ impl Host {
         host
     }
 
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn fix_surface(&self) -> FixSurface {
+        self.lock().fix_surface
+    }
+
     pub(crate) fn build(
         path: Option<PathBuf>,
         secrets: Secrets,
         collector: Collector,
         spawner: RunSpawner,
+        fix_surface: FixSurface,
+        os: SupportedOs,
     ) -> Host {
         let starter: CheckStarter = {
             let secrets = secrets.clone();
             Arc::new(move |connection| start_check(connection, &secrets))
         };
-        Self::build_with(path, secrets, starter, collector, spawner)
+        Self::build_with(path, secrets, starter, collector, spawner, fix_surface, os)
     }
 
     /// [`Self::build`] with the check starter given.
@@ -211,14 +238,18 @@ impl Host {
         starter: CheckStarter,
         collector: Collector,
         spawner: RunSpawner,
+        fix_surface: FixSurface,
+        os: SupportedOs,
     ) -> Host {
         let empty = ProvidersResponse {
-            current_os: current_os(),
+            current_os: os.clone(),
             providers: Vec::new(),
             secret_store: secrets.store_info(),
         };
         let initial = Arc::new(Published::initial(empty));
         let state = HostState {
+            fix_surface,
+            os,
             checks: Vec::new(),
             content: None,
             rejected: None,

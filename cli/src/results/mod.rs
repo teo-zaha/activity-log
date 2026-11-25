@@ -42,6 +42,7 @@ pub(crate) fn problem_terms(problem: ProviderProblem) -> (&'static str, Effect) 
     match problem {
         ProviderProblem::TimedOut => ("timed out", Effect::Fails),
         ProviderProblem::Refused => ("credentials refused", Effect::Fails),
+        ProviderProblem::ScopeMissing => ("token scope missing", Effect::Fails),
         ProviderProblem::Throttled => ("server busy", Effect::Fails),
         ProviderProblem::Unreachable => ("server unreachable", Effect::Fails),
         ProviderProblem::PermissionDenied => ("permission denied", Effect::Fails),

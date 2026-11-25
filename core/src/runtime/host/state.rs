@@ -16,9 +16,13 @@ use super::{HostWork, RunSpawner, config::ReadFailure};
 use crate::{
     model::{
         ActivityState, CollectOptions, ConnectionId, LogLevel, ProviderInfo, ProvidersResponse,
-        RunId, SecretStoreInfo,
+        RunId, SecretStoreInfo, SupportedOs,
     },
-    provider::{connection::Connection, current_os, provider_check_result::CheckOutcome},
+    provider::{
+        connection::Connection,
+        fix_action::{self, FixSurface},
+        provider_check_result::CheckOutcome,
+    },
     runtime::{
         keys::KeyTable,
         report::{Checked, CollectFailure, Superseded},
@@ -28,6 +32,8 @@ use crate::{
 };
 
 pub(super) struct HostState {
+    pub(super) fix_surface: FixSurface,
+    pub(super) os: SupportedOs,
     /// The installed config's connections with their current checks, in connection order.
     pub(super) checks: Vec<ConnectionCheck>,
     /// The installed config file's content; the last one that did not parse.
@@ -83,13 +89,6 @@ pub(super) enum CheckState {
 impl ConnectionCheck {
     pub(super) fn id(&self) -> &ConnectionId {
         &self.connection.id
-    }
-
-    fn info(&self) -> ProviderInfo {
-        match &self.state {
-            CheckState::Running(_) => self.checking.clone(),
-            CheckState::Recorded(checked) => checked.runtime.info().clone(),
-        }
     }
 
     /// Whether a collection starting now waits for it: still checking, or usable.
@@ -177,22 +176,34 @@ impl HostState {
     /// Each connection as its check was recorded; one whose last collection failed is
     /// degraded, with the error as its reason.
     pub(super) fn providers_response(&self) -> ProvidersResponse {
-        let mut providers = self
+        let providers = self
             .checks
             .iter()
-            .map(ConnectionCheck::info)
-            .collect::<Vec<_>>();
-        for info in providers.iter_mut().filter(|info| info.usable) {
-            if let Some(failure) = self.failures.get(&info.connection) {
-                CheckOutcome::Degraded {
-                    problem: failure.problem(),
-                    reason: format!("Collection failed: {}", failure.message()),
+            .map(|check| {
+                let (mut info, mut cause) = match &check.state {
+                    CheckState::Running(_) => (check.checking.clone(), None),
+                    CheckState::Recorded(checked) => {
+                        (checked.runtime.info().clone(), checked.runtime.fix_cause())
+                    }
+                };
+                if info.usable
+                    && let Some(failure) = self.failures.get(check.id())
+                {
+                    let classification = failure.classification();
+                    CheckOutcome::Degraded {
+                        problem: classification,
+                        reason: format!("Collection failed: {}", failure.message()),
+                    }
+                    .apply_to(&mut info);
+                    cause = classification.cause();
                 }
-                .apply_to(info);
-            }
-        }
+                info.fix_action =
+                    fix_action::select(self.fix_surface, &self.os, &check.connection, &info, cause);
+                info
+            })
+            .collect();
         ProvidersResponse {
-            current_os: current_os(),
+            current_os: self.os.clone(),
             providers,
             secret_store: self.secret_store,
         }
