@@ -134,8 +134,14 @@
                       <span class="entry-meta">
                         <!-- What app-source-badge draws, without its components: one per row. -->
                         <span class="badge" [attr.data-src]="row.entry.badge.source">
-                          @if (row.logoUrl) {
-                            <img class="icon" [src]="row.logoUrl" alt="" aria-hidden="true" />
+                          @if (row.logo; as logo) {
+                            <img
+                              class="icon"
+                              [src]="logo.url"
+                              [attr.data-mono]="logo.monochrome ?? null"
+                              alt=""
+                              aria-hidden="true"
+                            />
                           } @else {
                             <span class="icon u-glyph" aria-hidden="true" translate="no">{{
                               row.entry.badge.icon

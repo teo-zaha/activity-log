@@ -18,7 +18,12 @@ import {
   SEARCH_URL_DELAY_MS,
   type DayRange,
 } from '../../services/activity-view-state.service'
-import { activityLog, meetingWeightOf } from '../../testing/activity-fixtures'
+import {
+  activityLog,
+  figmaEntries,
+  githubPullRequestEntry,
+  meetingWeightOf,
+} from '../../testing/activity-fixtures'
 import { addDaysToKey } from '../../utils/local-day'
 import { stubLayoutObservers } from '../../testing/observers'
 import { BackendFailure } from '../../services/backend/backend-failure'
@@ -164,6 +169,23 @@ describe('TimelineComponent', () => {
   afterEach(() => {
     vi.restoreAllMocks()
     vi.unstubAllGlobals()
+  })
+
+  it('marks only monochrome source logos for dark mode inversion', async () => {
+    const { activity } = mockActivity()
+    activity.groupedByDay.set([
+      {
+        date: '2026-05-18',
+        entries: [githubPullRequestEntry, figmaEntries.versionSaved].map(createEntryAdapter),
+      },
+    ])
+
+    await render(TimelineComponent, { providers: servicesOf(activity) })
+
+    const github = screen.getByRole('button', { name: /open github event/i })
+    const figma = screen.getByRole('button', { name: /open figma event/i })
+    expect(github.querySelector('.badge img')?.hasAttribute('data-mono')).toBe(true)
+    expect(figma.querySelector('.badge img')?.hasAttribute('data-mono')).toBe(false)
   })
 
   it('allows keyboard activation of entries', async () => {

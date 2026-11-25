@@ -25,7 +25,7 @@ $source-colours: (
 }
 
 // The Timeline renders its badges as plain images. Use the app theme for its monochrome mark.
-html.dark [data-src='github'] > img[src='assets/provider-icons/github.svg'] {
+html.dark img[data-mono] {
   filter: invert(1);
 }
 

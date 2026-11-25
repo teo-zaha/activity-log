@@ -2,14 +2,14 @@ import type { DayGroup } from '../../models/day-group'
 import type { EntryUiAdapter } from '../../providers/types'
 import { busyMarkerOf } from '../../providers/utils'
 import { longDayLabel, relativeDayLabel, type DayKey } from '../../utils/local-day'
-import { sourceLogoUrl } from '../provider-icon/provider-icon.component'
+import { sourceLogo, type BrandIcon } from '../provider-icon/provider-icon.component'
 
 /** One entry of the list, with what its row shows worked out once per entry. */
 export interface TimelineRow {
   readonly entry: EntryUiAdapter
   readonly ariaLabel: string
   /** The source's logo for the badge; null when it shows `entry.badge.icon` instead. */
-  readonly logoUrl: string | null
+  readonly logo: BrandIcon | null
   /** Tentative and free meetings get a tag. */
   readonly busy: { readonly label: string; readonly className: string } | null
 }
@@ -34,7 +34,7 @@ export function timelineRow(entry: EntryUiAdapter): TimelineRow {
   return {
     entry,
     ariaLabel: `Open ${entry.badges.map(badge => badge.label).join(' and ')} event: ${entry.title}${details} at ${entry.timeLabel}`,
-    logoUrl: sourceLogoUrl(entry.badge.source),
+    logo: sourceLogo(entry.badge.source),
     busy: marker && { label: BUSY_TAGS[marker], className: `busy-tag is-${marker}` },
   }
 }

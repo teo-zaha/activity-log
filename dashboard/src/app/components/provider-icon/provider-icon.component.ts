@@ -3,7 +3,7 @@ import { MatIconModule } from '@angular/material/icon'
 import type { Source } from '../../generated/activity'
 import { getProviderAdapter } from '../../providers/provider-adapter'
 
-interface BrandIcon {
+export interface BrandIcon {
   readonly url: string
   readonly monochrome?: true
 }
@@ -18,8 +18,8 @@ const BRAND_ICONS: Partial<Record<Source, BrandIcon>> = {
 }
 
 /** The logo of `source`, or null when it shows a Material icon instead. */
-export function sourceLogoUrl(source: Source): string | null {
-  return BRAND_ICONS[source]?.url ?? null
+export function sourceLogo(source: Source): BrandIcon | null {
+  return BRAND_ICONS[source] ?? null
 }
 
 /**
@@ -49,7 +49,7 @@ export class ProviderIconComponent {
     const override = this.iconUrl()
     if (override) return { url: override }
     const source = this.source()
-    return source ? (BRAND_ICONS[source] ?? null) : null
+    return source ? sourceLogo(source) : null
   })
   protected readonly icon = computed(() => {
     const source = this.source()

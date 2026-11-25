@@ -6,7 +6,7 @@ it('uses the app theme for the GitHub mark and the Timeline fallback image', asy
   const { container } = await render(
     `<app-source-badge source="github" label="GitHub" />
      <span data-src="github">
-       <img src="assets/provider-icons/github.svg" alt="" />
+       <img src="assets/provider-icons/github.svg" data-mono alt="" />
      </span>`,
     { imports: [SourceBadgeComponent] }
   )
