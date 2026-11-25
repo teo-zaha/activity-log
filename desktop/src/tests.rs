@@ -3,6 +3,7 @@ use std::sync::{Arc, Mutex};
 use activity_log_core::{
     ipc::DESKTOP_COMMANDS,
     menu::{INSTALL_MENU_COMMAND, UPDATE_MENU_COMMAND},
+    model::{BackendError, BackendErrorKind},
 };
 use tauri::{
     Manager,
@@ -12,9 +13,11 @@ use tauri::{
 };
 
 use crate::{
-    app_menu, commands, deep_link,
+    app_menu,
+    app_state::AppState,
+    commands, deep_link,
     deep_link::{DeepLinkInbox, Delivery},
-    legacy_import, main_window_focused, page_started, window_chrome,
+    fix_action, legacy_import, main_window_focused, page_started, window_chrome,
 };
 
 /// Held by every test that logs, reads or clears the process-wide diagnostics log, which tests
@@ -80,6 +83,42 @@ fn every_command_the_dashboard_names_is_registered() {
         .map(|name| (name.to_string(), true))
         .collect::<Vec<_>>();
     assert_eq!(taken, expected);
+}
+
+#[test]
+fn local_fix_ipc_refuses_an_unrecognized_target_as_an_invalid_request() {
+    use serde_json::json;
+
+    let app = mock_builder()
+        .manage(AppState::start(
+            None,
+            activity_log_core::secrets::Secrets::none(),
+        ))
+        .invoke_handler(handler())
+        .build(mock_context(noop_assets()))
+        .unwrap();
+    let window =
+        tauri::WebviewWindowBuilder::<MockRuntime, _>::new(&app, "main", Default::default())
+            .build()
+            .unwrap();
+    let error = get_ipc_response(
+        &window,
+        InvokeRequest {
+            cmd: "open_local_fix".into(),
+            callback: CallbackFn(0),
+            error: CallbackFn(1),
+            url: "tauri://localhost".parse().unwrap(),
+            body: InvokeBody::Json(json!({ "request": {
+                    "connection": { "source": "outlook", "name": "work" },
+                    "target": { "kind": "systemSettings", "pane": "fullDiskAccess" },
+                } })),
+            headers: Default::default(),
+            invoke_key: INVOKE_KEY.to_string(),
+        },
+    )
+    .unwrap_err();
+    let error: BackendError = serde_json::from_value(error).unwrap();
+    assert_eq!(error.kind, BackendErrorKind::InvalidRequest);
 }
 
 /// A name the handler does not have is not taken, so the test above can fail.

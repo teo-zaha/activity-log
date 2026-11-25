@@ -22,6 +22,7 @@ pub mod legacy_store_wait;
 pub mod local_app;
 pub mod local_fix_target;
 pub mod no_store_reason;
+pub mod open_local_fix_request;
 pub mod os_store_state;
 pub mod output_format;
 pub mod provider_config_check_response_dto;

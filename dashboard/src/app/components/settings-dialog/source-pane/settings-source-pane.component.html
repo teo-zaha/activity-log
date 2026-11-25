@@ -203,7 +203,10 @@
                 </p>
               }
               @if (fieldFixAction(field); as action) {
-                <app-web-fix-action [action]="action" />
+                <app-provider-fix-action
+                  [connection]="provider().info.connection"
+                  [action]="{ kind: 'web', action }"
+                />
               }
             </div>
           }

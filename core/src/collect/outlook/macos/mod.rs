@@ -19,10 +19,12 @@ pub(crate) struct OutlookNotRunning(AppleScriptError);
 
 impl OutlookNotRunning {
     pub(crate) fn classify(error: AppleScriptError) -> anyhow::Error {
-        if error.problem() == Some(SourceProblem::NotRunning) {
-            Self(error).into()
-        } else {
-            error.into()
+        match error.problem() {
+            Some(SourceProblem::NotRunning) => Self(error).into(),
+            Some(SourceProblem::PermissionDenied) => anyhow::Error::new(error).context(
+                "Find Activity Log in System Settings → Privacy & Security → Automation and allow it to control Microsoft Outlook",
+            ),
+            _ => error.into(),
         }
     }
 }

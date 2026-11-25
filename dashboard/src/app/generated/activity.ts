@@ -22,6 +22,8 @@ export type WebFixAction = { "kind": "createToken", url: string, instructions: s
 
 export type LocalFixTarget = { "kind": "systemSettings", pane: SystemSettingsPane, } | { "kind": "openApp", app: LocalApp, };
 
+export type OpenLocalFixRequest = { connection: ConnectionId, target: LocalFixTarget, };
+
 export type ProviderFixAction = { "kind": "web", action: WebFixAction, } | { "kind": "local", target: LocalFixTarget, };
 
 export type ProviderInfo = { connection: ConnectionId, label: string, 
@@ -539,7 +541,7 @@ export const MENU_SUBMENUS = ["app", "file", "edit", "view", "window", "help"] a
 export const MENU_COMMANDS = { install: "install_menu", update: "update_menu" } as const
 
 /** The desktop app's commands, by the names it registers them under (`core::ipc`). */
-export const DESKTOP_COMMANDS = { getRuntimeState: "get_runtime_state", collect: "collect", getProviderConfig: "get_provider_config", checkProviderConfig: "check_provider_config", saveProviderConfig: "save_provider_config", addConnection: "add_connection", removeConnection: "remove_connection", recheckConnection: "recheck_connection", saveExport: "save_export", openUrl: "open_url", getLogs: "get_logs", clearLogs: "clear_logs", takeLaunchDeepLink: "take_launch_deep_link", takeLegacyImportReport: "take_legacy_import_report", importLegacySettings: "import_legacy_settings", attachMaximizeButton: "attach_maximize_button" } as const
+export const DESKTOP_COMMANDS = { getRuntimeState: "get_runtime_state", collect: "collect", getProviderConfig: "get_provider_config", checkProviderConfig: "check_provider_config", saveProviderConfig: "save_provider_config", addConnection: "add_connection", removeConnection: "remove_connection", recheckConnection: "recheck_connection", saveExport: "save_export", openUrl: "open_url", openLocalFix: "open_local_fix", getLogs: "get_logs", clearLogs: "clear_logs", takeLaunchDeepLink: "take_launch_deep_link", takeLegacyImportReport: "take_legacy_import_report", importLegacySettings: "import_legacy_settings", attachMaximizeButton: "attach_maximize_button" } as const
 
 /** The desktop app's own events (`core::ipc`); the host's state comes as `RUNTIME_EVENTS`. */
 export const DESKTOP_EVENTS = { deepLink: "deep-link", maximizeButton: "maximize-button" } as const

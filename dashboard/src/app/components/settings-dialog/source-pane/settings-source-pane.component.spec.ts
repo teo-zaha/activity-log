@@ -11,6 +11,7 @@ import type {
   RemoveConnectionRequestDto,
   ConnectionId,
   InstallReceipt,
+  OpenLocalFixRequest,
   ProviderConfigConnectionStateDto,
   ProviderConfigFieldStateDto,
   ProviderConfigSaveRequestDto,
@@ -29,6 +30,7 @@ import type { SettingsProviderRow } from '../settings-dialog.types'
 import { SettingsSourcePaneComponent } from './settings-source-pane.component'
 import { SourceDrafts } from './source-drafts.service'
 import { ToastService } from '../../../services/toast.service'
+import { NoticeService } from '../../../services/notice.service'
 import { BackendFailure } from '../../../services/backend/backend-failure'
 import { ActivityBackendClient } from '../../../services/backend/backend-client'
 
@@ -113,6 +115,22 @@ const outlookGuide = {
   instructions: 'Publish a calendar and copy the ICS link.',
   url: 'https://outlook.live.com/calendar/',
 } as const
+const outlookRecovery = {
+  ...row(1),
+  info: {
+    ...row(1).info,
+    connection: { source: 'outlook', name: 'work' },
+    label: 'Outlook',
+    status: 'degraded',
+    problem: 'permissionDenied',
+    supportedOs: ['macos'],
+    recheckable: true,
+    reason: 'Allow Outlook in Automation.',
+    fixAction: { kind: 'local', target: { kind: 'systemSettings', pane: 'automation' } },
+  },
+  key: 'outlook/work',
+  kindLabel: 'Outlook',
+} satisfies SettingsProviderRow
 
 const snapshot = (
   fields: ProviderConfigFieldStateDto[] = jiraFields
@@ -128,6 +146,7 @@ type CheckProviderConfig = (
 
 interface Setup {
   openUrl: ReturnType<typeof vi.fn<(url: string) => Promise<void>>>
+  openLocalFix: ReturnType<typeof vi.fn<(request: OpenLocalFixRequest) => Promise<void>>>
   switchProvider: (provider: SettingsProviderRow) => Promise<void>
   /** The backend's check of a draft; no issues unless a test says otherwise. */
   checkProviderConfig: ReturnType<typeof vi.fn<CheckProviderConfig>>
@@ -184,11 +203,14 @@ async function setup(
   const removed = vi.fn()
   const opened = vi.fn()
   const openUrl = vi.fn<(url: string) => Promise<void>>().mockResolvedValue(undefined)
+  const openLocalFix = vi
+    .fn<(request: OpenLocalFixRequest) => Promise<void>>()
+    .mockResolvedValue(undefined)
   const { rerender, fixture } = await render(SettingsSourcePaneComponent, {
     inputs: { provider: options.provider ?? row(1) },
     on: { removed, opened },
     providers: [
-      { provide: ActivityBackendClient, useValue: { openUrl } },
+      { provide: ActivityBackendClient, useValue: { openUrl, openLocalFix } },
       {
         provide: ConnectionSettings,
         useValue: {
@@ -217,6 +239,7 @@ async function setup(
   })
   return {
     openUrl,
+    openLocalFix,
     removeConnection,
     addConnection,
     removed,
@@ -801,6 +824,89 @@ describe('SettingsSourcePaneComponent', () => {
     })
     await userEvent.click(screen.getByRole('link', { name: /Create token/ }))
     expect(openUrl).toHaveBeenCalledWith(savedTokenSetup.url)
+  })
+
+  it('opens the published recovery target and leaves checking to the user', async () => {
+    const { openLocalFix, recheckConnection } = await setup({ provider: outlookRecovery })
+    let opened = (): void => undefined
+    openLocalFix.mockReturnValueOnce(new Promise<void>(resolve => (opened = resolve)))
+    const button = screen.getByRole('button', { name: 'Open Automation settings' })
+    const notices = TestBed.inject(NoticeService)
+    await userEvent.click(button)
+    expect(openLocalFix).toHaveBeenCalledExactlyOnceWith({
+      connection: outlookRecovery.info.connection,
+      target: { kind: 'systemSettings', pane: 'automation' },
+    })
+    expect(button).toHaveProperty('disabled', true)
+    expect(notices.current()).toBeNull()
+    opened()
+    await vi.waitFor(() => expect(button).toHaveProperty('disabled', false))
+    expect(notices.current()).toBeNull()
+    expect(recheckConnection).not.toHaveBeenCalled()
+    await userEvent.click(screen.getByRole('button', { name: 'Check again' }))
+    expect(recheckConnection).toHaveBeenCalledExactlyOnceWith(outlookRecovery.info.connection)
+  })
+
+  it('keeps recovery calls busy only for their own connection', async () => {
+    const git = row(0)
+    const gitRecovery: SettingsProviderRow = {
+      ...git,
+      info: {
+        ...git.info,
+        status: 'degraded',
+        problem: 'permissionDenied',
+        fixAction: { kind: 'local', target: { kind: 'systemSettings', pane: 'filesAndFolders' } },
+      },
+    }
+    const { openLocalFix, switchProvider, whenStable } = await setup({ provider: outlookRecovery })
+    let outlookOpened = (): void => undefined
+    let gitOpened = (): void => undefined
+    openLocalFix
+      .mockReturnValueOnce(new Promise<void>(resolve => (outlookOpened = resolve)))
+      .mockReturnValueOnce(new Promise<void>(resolve => (gitOpened = resolve)))
+
+    const outlookButton = (): HTMLElement =>
+      screen.getByRole('button', { name: 'Open Automation settings' })
+    const gitButton = (): HTMLElement =>
+      screen.getByRole('button', { name: 'Open Files & Folders settings' })
+    await userEvent.click(outlookButton())
+    await switchProvider(gitRecovery)
+    expect(gitButton()).toHaveProperty('disabled', false)
+    await userEvent.click(gitButton())
+    expect(openLocalFix).toHaveBeenNthCalledWith(2, {
+      connection: git.info.connection,
+      target: { kind: 'systemSettings', pane: 'filesAndFolders' },
+    })
+    await switchProvider(outlookRecovery)
+    expect(outlookButton()).toHaveProperty('disabled', true)
+
+    outlookOpened()
+    await whenStable()
+    expect(outlookButton()).toHaveProperty('disabled', false)
+    await switchProvider(gitRecovery)
+    expect(gitButton()).toHaveProperty('disabled', true)
+    gitOpened()
+    await whenStable()
+    expect(gitButton()).toHaveProperty('disabled', false)
+  })
+
+  it('reports a typed refusal from opening a recovery target', async () => {
+    const { openLocalFix, recheckConnection } = await setup({ provider: outlookRecovery })
+    openLocalFix.mockRejectedValueOnce(new BackendFailure('invalidRequest', 'The action expired'))
+    await userEvent.click(screen.getByRole('button', { name: 'Open Automation settings' }))
+    const notices = TestBed.inject(NoticeService)
+    expect(notices.current()).toMatchObject({
+      origin: 'localFix',
+      failure: { kind: 'backend', cause: { kind: 'invalidRequest' } },
+    })
+    expect(recheckConnection).not.toHaveBeenCalled()
+  })
+
+  it('shows only the recovery words in a browser', async () => {
+    const { openLocalFix } = await setup({ desktop: false, provider: outlookRecovery })
+    expect(screen.getByText(outlookRecovery.info.reason)).toBeTruthy()
+    expect(screen.queryByRole('button', { name: 'Open Automation settings' })).toBeNull()
+    expect(openLocalFix).not.toHaveBeenCalled()
   })
 
   it('discloses calendar setup guides beside the secret field and keeps them during an edit', async () => {

@@ -44,7 +44,7 @@ export type Notice = FailureNotice | InfoNotice
  * and what its button does besides dismissing it.
  */
 export interface FailureNotice {
-  readonly origin: 'export' | 'view' | 'settings' | 'recheck' | 'import'
+  readonly origin: 'export' | 'view' | 'settings' | 'recheck' | 'import' | 'localFix'
   readonly failure: Failure
   readonly action?: NoticeAction
 }

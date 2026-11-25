@@ -6,6 +6,8 @@ use crate::{
 
 #[cfg(target_os = "macos")]
 mod macos;
+#[cfg(target_os = "macos")]
+pub use crate::platform::macos::OUTLOOK_BUNDLE_ID;
 #[cfg(target_os = "windows")]
 mod windows;
 

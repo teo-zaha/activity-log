@@ -131,6 +131,16 @@ pub fn record(level: LogLevel, scope: impl Into<String>, message: impl Into<Stri
     });
 }
 
+/// Prints developer diagnostics in debug builds without adding them to the settings log.
+pub fn debug(scope: &str, message: &str) {
+    if cfg!(debug_assertions) {
+        let _ = std::io::Write::write_fmt(
+            &mut std::io::stderr(),
+            format_args!("  [{scope}] DEBUG {message}\n"),
+        );
+    }
+}
+
 pub fn info(scope: impl Into<String>, message: impl Into<String>) {
     record(LogLevel::Info, scope, message);
 }

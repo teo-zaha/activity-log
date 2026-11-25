@@ -475,13 +475,14 @@ async fn macos_outlook_collection_failures_publish_their_native_actions() {
         runtime::{CollectFailure, Plan},
     };
 
-    for (code, problem, target) in [
+    for (code, problem, target, guidance) in [
         (
             -1743,
             ProviderProblem::PermissionDenied,
             LocalFixTarget::SystemSettings {
                 pane: SystemSettingsPane::Automation,
             },
+            "allow it to control Microsoft Outlook",
         ),
         (
             -600,
@@ -489,6 +490,7 @@ async fn macos_outlook_collection_failures_publish_their_native_actions() {
             LocalFixTarget::OpenApp {
                 app: LocalApp::Outlook,
             },
+            "Open Outlook to include its calendar",
         ),
         (
             -609,
@@ -496,6 +498,7 @@ async fn macos_outlook_collection_failures_publish_their_native_actions() {
             LocalFixTarget::OpenApp {
                 app: LocalApp::Outlook,
             },
+            "Open Outlook to include its calendar",
         ),
     ] {
         let collector: Collector = Arc::new(move |_, plans, _| {
@@ -538,6 +541,12 @@ async fn macos_outlook_collection_failures_publish_their_native_actions() {
         let response = host.providers_response();
         assert_eq!(response.providers[0].status, ProviderStatus::Degraded);
         assert_eq!(response.providers[0].problem, Some(problem));
+        assert!(
+            response.providers[0]
+                .reason
+                .as_deref()
+                .is_some_and(|reason| reason.contains(guidance))
+        );
         assert_eq!(
             response.providers[0].fix_action,
             Some(ProviderFixAction::Local { target })

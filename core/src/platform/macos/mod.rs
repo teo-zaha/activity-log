@@ -7,7 +7,7 @@ use tokio::{io::AsyncWriteExt, process::Command};
 #[cfg(test)]
 mod tests;
 
-const OUTLOOK_BUNDLE_ID: &str = "com.microsoft.Outlook";
+pub const OUTLOOK_BUNDLE_ID: &str = "com.microsoft.Outlook";
 
 pub fn outlook_is_installed() -> bool {
     let workspace = NSWorkspace::sharedWorkspace();

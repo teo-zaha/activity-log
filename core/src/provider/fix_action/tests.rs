@@ -179,6 +179,7 @@ fn native_recovery_requires_a_matching_problem_on_the_macos_desktop() {
             desktop(&connection, &mut info, Some(cause)),
             Some(ProviderFixAction::Local { target })
         );
+        assert_eq!(info.reason.as_deref(), Some("Example failure"));
         assert_eq!(desktop(&connection, &mut info, None), None);
         assert_eq!(
             select(
@@ -190,6 +191,7 @@ fn native_recovery_requires_a_matching_problem_on_the_macos_desktop() {
             ),
             None
         );
+        assert_eq!(info.reason.as_deref(), Some("Example failure"));
         assert_eq!(
             select(
                 FixSurface::Desktop,
@@ -200,6 +202,7 @@ fn native_recovery_requires_a_matching_problem_on_the_macos_desktop() {
             ),
             None
         );
+        assert_eq!(info.reason.as_deref(), Some("Example failure"));
 
         if source == Source::Git {
             connection.location = ConnectionLocation::Wsl("Example".into());

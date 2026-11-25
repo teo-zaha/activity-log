@@ -8,6 +8,7 @@ import type {
   ExportOutcome,
   ExportRequest,
   LegacyImportReportDto,
+  OpenLocalFixRequest,
   ProviderConfigCheckResponseDto,
   ProviderConfigSaveRequestDto,
   ProviderConfigSaveResponseDto,
@@ -77,6 +78,10 @@ export class ActivityBackendClient {
   /** Opens an http(s) link outside the app, in whichever shell the dashboard runs. */
   openUrl(url: string): Promise<void> {
     return this.transport.openUrl(url)
+  }
+
+  async openLocalFix(request: OpenLocalFixRequest): Promise<void> {
+    await this.transport.call(BackendOperations.openLocalFix, request)
   }
 
   /** Awaited so it resolves `undefined`: an empty response arrives as `null` on both transports. */

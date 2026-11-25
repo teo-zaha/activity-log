@@ -52,8 +52,8 @@ fn the_maximize_button_payload_keeps_its_shape() {
 #[test]
 fn provider_fix_actions_keep_the_generated_wire_shape() {
     use crate::model::{
-        CalendarFeedGuide, CalendarFeedService, LocalFixTarget, ProviderFixAction, ProviderProblem,
-        SystemSettingsPane, WebFixAction,
+        CalendarFeedGuide, CalendarFeedService, ConnectionId, LocalFixTarget, OpenLocalFixRequest,
+        ProviderFixAction, ProviderProblem, Source, SystemSettingsPane, WebFixAction,
     };
     use serde_json::json;
 
@@ -67,6 +67,16 @@ fn provider_fix_actions_keep_the_generated_wire_shape() {
         json!({
             "kind": "local", "target": {"kind": "systemSettings", "pane": "filesAndFolders"},
         })
+    );
+    let open = OpenLocalFixRequest {
+        connection: ConnectionId::new(Source::Outlook, "work"),
+        target: LocalFixTarget::SystemSettings {
+            pane: SystemSettingsPane::Automation,
+        },
+    };
+    assert_eq!(
+        serde_json::to_string(&open).unwrap(),
+        r#"{"connection":{"source":"outlook","name":"work"},"target":{"kind":"systemSettings","pane":"automation"}}"#
     );
     let token = |classic_url: Option<&str>| ProviderFixAction::Web {
         action: WebFixAction::CreateToken {
@@ -122,6 +132,7 @@ fn provider_fix_actions_keep_the_generated_wire_shape() {
     for shape in [
         r#"export type ProviderFixAction = { "kind": "web", action: WebFixAction, } | { "kind": "local", target: LocalFixTarget, };"#,
         "fixAction?: ProviderFixAction",
+        "export type OpenLocalFixRequest = { connection: ConnectionId, target: LocalFixTarget, };",
         "fixAction?: WebFixAction",
         "fieldFix?: ProviderConfigFieldFixDto",
         "classicUrl?: string",

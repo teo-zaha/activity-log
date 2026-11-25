@@ -12,8 +12,12 @@
         }
       </span>
     </p>
-    @if (webAction(); as action) {
-      <app-web-fix-action class="health-recovery" [action]="action" />
+    @if (fixAction(); as action) {
+      <app-provider-fix-action
+        class="health-recovery"
+        [connection]="info().connection"
+        [action]="action"
+      />
     }
   </div>
   @if (canRecheck() || rechecking()) {

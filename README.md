@@ -295,6 +295,8 @@ Each source below lists its entry types, Timeline subtitle line, detail panel fi
 - **Permissions & limits:** No token needed. Requires read access to the configured folders (on macOS, Files & Folders permission for protected folders), `git` installed inside any WSL distribution, and at least one configured `user.email` to match your commits. Recursive scans skip dependency, build, and cache folders (`node_modules`, `target`, `.cache`, etc.) and home system or media folders (`Library`, `Pictures`, etc.) unless configured directly. Commits whose committer time is more than 30 days before the range are only read if they sit at a ref tip.
 - **Configuration:** Optional `dirs` list (folders with `.git` are read directly; other folders are scanned up to 4 levels deep; unset defaults to your home folder, or `~` in WSL; an empty list `[]` scans nothing) and optional `wsl` distribution name on Windows. When adding a Git source on Windows, **Add source** lists this computer and user WSL distributions (skipping Docker, Rancher, and Podman distributions).
 
+- **macOS access:** When macOS refuses a local Git folder, a typed permission failure can offer **Open Files & Folders settings**. Allow Activity Log to read that folder, or choose a readable Git root, then choose **Check again**.
+
 </td>
 <td width="44%" valign="top"><img src="pics/source-git.png" alt="Detail panel of a Git commit"></td>
 </tr>
@@ -361,9 +363,10 @@ Each source below lists its entry types, Timeline subtitle line, detail panel fi
 - **Entries:** Events from Outlook's default calendar overlapping the date range. Meetings without a title display as `(No title)`.
 - **Timeline line:** duration · location · role (`organizer` or `attendee`) · `org:` organizer (when you are not the organizer)
 - **Detail panel:** Title, Duration, Status (busy status), Location, Organizer, Role, **Join meeting** button for online meetings, and Description
-- **Integration:** Native provider integration (COM on Windows classic Outlook; AppleScript via `osascript` on macOS). Activity Log never launches Outlook—it collects only while Outlook is running.
+- **Integration:** Native provider integration (COM on Windows classic Outlook and AppleScript via `osascript` on macOS). Calendar collection runs only while Outlook is running.
 - **Permissions & limits:** Windows and macOS only; no token required. On macOS, requires Automation permission for Microsoft Outlook and a signed-in Exchange account. On Windows, classic Outlook is required (the new Outlook has no COM API), Outlook and Activity Log must run at the same privilege level (not elevated), and collection stops at 10,000 events. If you use the new Outlook, publish your calendar and add it as a [Calendar](#calendar) source instead.
 - **Configuration:** None (`[[outlook]]`, single connection).
+- **Recovery:** If macOS denies Automation, open Automation settings from the source card and allow Activity Log to control Outlook. If Outlook is stopped, **Open Outlook** opens it on request. Once Outlook is ready, choose **Check again**. On Windows, open classic Outlook from Start, then choose **Check again**.
 
 </td>
 <td width="44%" valign="top"><img src="pics/source-outlook.png" alt="Detail panel of an Outlook meeting"></td>

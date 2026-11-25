@@ -37,11 +37,7 @@ pub fn select(
     if let Some(problem @ (ProviderProblem::Refused | ProviderProblem::ScopeMissing)) = info.problem
         && let Some(setup) = super::adapter(connection.source()).credential_setup()
     {
-        let hint = setup.recovery_hint(problem);
-        info.reason = Some(match info.reason.take() {
-            Some(reason) => format!("{reason} {hint}"),
-            None => hint,
-        });
+        add_hint(info, &setup.recovery_hint(problem));
         return setup
             .saved(connection)
             .map(|action| ProviderFixAction::Web { action });
@@ -72,6 +68,14 @@ pub fn select(
         _ => return None,
     };
     Some(ProviderFixAction::Local { target })
+}
+
+fn add_hint(info: &mut ProviderInfo, hint: &str) {
+    let reason = info.reason.get_or_insert_with(String::new);
+    if !reason.is_empty() {
+        reason.push(' ');
+    }
+    reason.push_str(hint);
 }
 
 #[cfg(test)]

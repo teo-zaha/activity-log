@@ -10,6 +10,7 @@ import {
   type ExportRequest,
   type LegacyImportReportDto,
   type LogsResponse,
+  type OpenLocalFixRequest,
   type ProviderConfigCheckResponseDto,
   type ProviderConfigSaveRequestDto,
   type ProviderConfigSaveResponseDto,
@@ -152,6 +153,10 @@ export const BackendOperations = {
   }),
   /** Opens a web link in the default browser; the browser opens links itself. */
   openUrl: command<string, void>({ label: 'Open link', tauri: DESKTOP_COMMANDS.openUrl }),
+  openLocalFix: command<OpenLocalFixRequest, void>({
+    label: 'Open recovery target',
+    tauri: DESKTOP_COMMANDS.openLocalFix,
+  }),
   clearLogs: command<void, void>({
     label: 'Clear logs',
     tauri: DESKTOP_COMMANDS.clearLogs,

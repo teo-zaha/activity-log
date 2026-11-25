@@ -195,10 +195,15 @@ fn unreadable_root(root: &std::path::Path, _error: &std::io::Error) -> SourceFai
     if _error.raw_os_error() == Some(libc::EPERM) {
         return SourceFailure::caused(
             crate::provider::source_failure::FixCause::FolderDenied,
-            message,
+            format!(
+                "{message}. Find Activity Log in System Settings → Privacy & Security → Files & Folders and allow access to the folder. If there’s no switch for that folder, choose a Git root Activity Log can read."
+            ),
         );
     }
-    SourceFailure::new(SourceProblem::PermissionDenied, message)
+    SourceFailure::new(
+        SourceProblem::PermissionDenied,
+        format!("{message}. Choose a Git root Activity Log can read."),
+    )
 }
 
 #[cfg(all(test, target_os = "macos"))]

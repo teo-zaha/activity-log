@@ -5,6 +5,7 @@ mod collection_notice;
 mod commands;
 mod deep_link;
 mod devtools;
+mod fix_action;
 mod legacy_import;
 mod provider_config;
 mod runtime_events;
@@ -38,6 +39,7 @@ macro_rules! app_commands {
             commands::recheck_connection,
             commands::save_export,
             commands::open_url,
+            fix_action::open_local_fix,
             commands::get_logs,
             commands::clear_logs,
             deep_link::take_launch_deep_link,

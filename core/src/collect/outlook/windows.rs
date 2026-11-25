@@ -115,7 +115,7 @@ fn attach_to_outlook() -> Result<DispatchObject> {
     match fallback.problem() {
         None => connect_outlook_application().map_err(|err| {
             anyhow::anyhow!(
-                "{}: {err:#}. If Outlook runs as administrator, start it normally.",
+                "{}: {err:#}. If Outlook was started as administrator, close and reopen it normally.",
                 fallback.message()
             )
         }),

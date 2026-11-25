@@ -10,6 +10,25 @@ use activity_log_core::{
 
 use super::{ConnectionResult, Effect, connection_results, problem_terms};
 
+#[cfg(target_os = "macos")]
+#[test]
+fn cli_says_to_open_outlook_when_it_is_not_running() {
+    use activity_log_core::collect::outlook::stopped_outlook_failure_for_test;
+
+    let failure = stopped_outlook_failure_for_test();
+    assert_eq!(failure.problem(), ProviderProblem::NotRunning);
+    let info = info(Source::Outlook, "work", None);
+    let line = ConnectionResult::Failed {
+        info: &info,
+        failure: &failure,
+    }
+    .line();
+    assert!(
+        line.contains("Open Outlook to include its calendar"),
+        "{line}"
+    );
+}
+
 fn info(source: Source, name: &str, problem: Option<ProviderProblem>) -> ProviderInfo {
     ProviderInfo {
         connection: ConnectionId::new(source, name),

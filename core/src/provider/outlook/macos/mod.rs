@@ -9,6 +9,10 @@ pub async fn check_outlook_ready() -> anyhow::Result<()> {
     if outlook_is_installed() {
         Ok(())
     } else {
-        Err(SourceFailure::new(SourceProblem::NotInstalled, "Outlook not installed").into())
+        Err(SourceFailure::new(
+            SourceProblem::NotInstalled,
+            "Outlook is not installed. Add a Calendar feed to include your calendar.",
+        )
+        .into())
     }
 }

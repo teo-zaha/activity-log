@@ -121,6 +121,7 @@ fn opens_only_web_links() {
         "ms-teams://join",
         "C:\\Windows\\notepad.exe",
         "/Applications/Calculator.app",
+        "x-apple.systempreferences:com.apple.preference.security?Privacy_Automation",
         "not a link",
         "",
     ] {

@@ -15,6 +15,7 @@ pub const DESKTOP_COMMANDS: &[(&str, &str)] = &[
     ("recheckConnection", "recheck_connection"),
     ("saveExport", "save_export"),
     ("openUrl", "open_url"),
+    ("openLocalFix", "open_local_fix"),
     ("getLogs", "get_logs"),
     ("clearLogs", "clear_logs"),
     ("takeLaunchDeepLink", "take_launch_deep_link"),

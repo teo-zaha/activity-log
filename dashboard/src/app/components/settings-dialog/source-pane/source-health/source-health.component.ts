@@ -1,10 +1,11 @@
-import { Component, computed, input, output } from '@angular/core'
+import { Component, computed, inject, input, output } from '@angular/core'
 import { MatIconModule } from '@angular/material/icon'
 import type { ProviderInfo, ProviderProblem, ProviderStatus } from '../../../../generated/activity'
 import { supportedOsLabel } from '../../../../providers/source-catalog'
 import { ButtonComponent } from '../../../button/button.component'
 import { FeedbackComponent } from '../../../feedback/feedback.component'
-import { WebFixActionComponent } from '../../web-fix-action.component'
+import { ProviderFixActionComponent } from '../../provider-fix-action.component'
+import { RuntimeEnvironmentService } from '../../../../services/backend/runtime-environment.service'
 
 interface ProviderHealthVm {
   readonly icon: string
@@ -17,11 +18,12 @@ interface ProviderHealthVm {
 /** A source's startup check: how it went, when, on which systems, and "Check again". */
 @Component({
   selector: 'app-source-health',
-  imports: [ButtonComponent, WebFixActionComponent, FeedbackComponent, MatIconModule],
+  imports: [ButtonComponent, ProviderFixActionComponent, FeedbackComponent, MatIconModule],
   templateUrl: './source-health.component.html',
   styleUrl: './source-health.component.scss',
 })
 export class SourceHealthComponent {
+  private readonly isDesktop = inject(RuntimeEnvironmentService).isTauri()
   readonly info = input.required<ProviderInfo>()
   /** From the press until the backend has accepted the new check. */
   readonly rechecking = input(false)
@@ -30,9 +32,9 @@ export class SourceHealthComponent {
   readonly recheck = output<void>()
 
   protected readonly supportedOsLabel = supportedOsLabel
-  protected readonly webAction = computed(() => {
+  protected readonly fixAction = computed(() => {
     const fix = this.info().fixAction
-    return fix?.kind === 'web' ? fix.action : undefined
+    return fix?.kind === 'local' && !this.isDesktop ? undefined : fix
   })
 
   protected readonly health = computed<ProviderHealthVm>(() => {

@@ -43,6 +43,17 @@ pub async fn collect_outlook(options: &CollectOptions) -> Result<Vec<OutlookEntr
     imp::collect_outlook(options).await
 }
 
+/// Exercises the same classified failure as the real Outlook script without launching it.
+#[cfg(all(target_os = "macos", feature = "test-support"))]
+#[doc(hidden)]
+pub fn stopped_outlook_failure_for_test() -> crate::runtime::CollectFailure {
+    let error = OutlookNotRunning::classify(crate::platform::macos::AppleScriptError {
+        code: Some(-600),
+        message: "Outlook is not running.".into(),
+    });
+    crate::runtime::CollectFailure::of(&error)
+}
+
 /// What to do when Outlook has not registered itself for other apps to attach to.
 #[cfg(any(target_os = "windows", test))]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -97,9 +108,9 @@ impl OutlookFallback {
                 "Outlook is open, but Activity Log runs as administrator and Windows keeps it from reaching Outlook. Start Activity Log without administrator rights."
             }
             Self::NewOutlookOnly => {
-                "Only the new Outlook is running. It offers no interface for reading the calendar; switch to classic Outlook to include it."
+                "Only the new Outlook is running. Use its New Outlook switch or Help → Go to classic Outlook if available. If classic Outlook is unavailable, add a Calendar feed."
             }
-            Self::NotRunning => "Outlook is not running. Open Outlook to include its calendar.",
+            Self::NotRunning => "Outlook is not running. Open classic Outlook from Start.",
         }
     }
 }

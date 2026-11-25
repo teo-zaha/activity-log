@@ -21,7 +21,7 @@ import { AutoAnimateDirective } from '../../auto-animate/auto-animate.directive'
 import { FeedbackComponent } from '../../feedback/feedback.component'
 import { IconButtonComponent } from '../../button/icon-button.component'
 import { ButtonComponent } from '../../button/button.component'
-import { WebFixActionComponent } from '../web-fix-action.component'
+import { ProviderFixActionComponent } from '../provider-fix-action.component'
 import type {
   ProviderConfigCheckResponseDto,
   ProviderConfigFieldIssueDto,
@@ -103,7 +103,7 @@ interface StoredTag {
   selector: 'app-settings-source-pane',
   imports: [
     SourceHealthComponent,
-    WebFixActionComponent,
+    ProviderFixActionComponent,
     RemovedSourceDraftComponent,
     AutoAnimateDirective,
     FeedbackComponent,

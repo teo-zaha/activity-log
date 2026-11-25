@@ -16,6 +16,10 @@ fn check_outlook_ready_blocking() -> anyhow::Result<()> {
     if outlook_is_installed() {
         Ok(())
     } else {
-        Err(SourceFailure::new(SourceProblem::NotInstalled, "Outlook not installed").into())
+        Err(SourceFailure::new(
+            SourceProblem::NotInstalled,
+            "Classic Outlook is not installed. Add a Calendar feed to include your calendar.",
+        )
+        .into())
     }
 }

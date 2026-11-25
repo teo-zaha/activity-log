@@ -422,7 +422,10 @@ impl EventHandle {
             .map_err(|err| {
                 let message = format!("Windows Event Log access failed: {err}");
                 if err.code() == E_ACCESSDENIED {
-                    anyhow::Error::new(SourceFailure::new(SourceProblem::PermissionDenied, message))
+                    anyhow::Error::new(SourceFailure::new(
+                        SourceProblem::PermissionDenied,
+                        format!("{message}. Ask an administrator for Event Log Readers membership or permission to read the channel. Sign in again."),
+                    ))
                 } else {
                     anyhow!(message)
                 }

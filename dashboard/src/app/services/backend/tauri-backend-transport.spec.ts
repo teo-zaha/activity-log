@@ -223,6 +223,18 @@ describe('TauriBackendTransport', () => {
     ])
   })
 
+  it('sends only the connection and the typed native recovery target', async () => {
+    const invocations = mockInvoke()
+    const request = {
+      connection: { source: 'outlook', name: 'work' },
+      target: { kind: 'openApp', app: 'outlook' },
+    } as const
+
+    await setup().call(BackendOperations.openLocalFix, request)
+
+    expect(invocations).toEqual([{ command: 'open_local_fix', args: { request } }])
+  })
+
   it('rejects with the kind a command refused with', async () => {
     mockInvoke(() => {
       throw { kind: 'busy', error: 'The settings file is busy; try again.' }
