@@ -11,10 +11,10 @@ use std::collections::HashSet;
 use anyhow::{Result, anyhow};
 use chrono::{Days, SecondsFormat, TimeDelta};
 use serde::Serialize;
-use url::{Host, Origin};
+use url::Origin;
 
 use crate::{
-    collect::web_link::{Unshown, web_link},
+    collect::web_link::Unshown,
     diagnostics,
     model::{
         CollectOptions, ConnectionName, GitHubTag, Timestamp,
@@ -450,41 +450,14 @@ impl Collection<'_> {
     }
 
     fn shown_url(&mut self, raw: Option<&str>) -> Option<String> {
-        match github_web_link(raw?, self.api.web_origin()) {
-            Ok(link) => Some(link),
+        match self.api.web_link(raw?) {
+            Ok(link) => Some(link.as_str().to_owned()),
             Err(Unshown::Elsewhere(origin)) => {
                 self.links_elsewhere.get_or_insert((0, origin)).0 += 1;
                 None
             }
             Err(Unshown::NotAWebPage) => None,
         }
-    }
-}
-
-fn github_web_link(raw: &str, allowed: &Origin) -> Result<String, Unshown> {
-    match web_link(raw, allowed) {
-        Err(Unshown::Elsewhere(origin)) if same_dns_origin(&origin, allowed) => {
-            web_link(raw, &origin)
-        }
-        result => result,
-    }
-    .map(|link| link.as_str().to_owned())
-}
-
-/// GitHub accepts a fully qualified DNS name for its web host. Treat the final dot
-/// as equivalent for link display, while keeping the configured origin for secrets.
-fn same_dns_origin(left: &Origin, right: &Origin) -> bool {
-    match (left, right) {
-        (
-            Origin::Tuple(left_scheme, Host::Domain(left_host), left_port),
-            Origin::Tuple(right_scheme, Host::Domain(right_host), right_port),
-        ) => {
-            left_scheme == right_scheme
-                && left_port == right_port
-                && left_host.strip_suffix('.').unwrap_or(left_host)
-                    == right_host.strip_suffix('.').unwrap_or(right_host)
-        }
-        _ => false,
     }
 }
 

@@ -88,6 +88,22 @@ fn opened(number: u64) -> ActivityEntry {
     })).unwrap()
 }
 
+#[test]
+fn stack_links_survive_a_configured_host_with_a_trailing_dot() {
+    let api = GitHubApi::new(&GitHubConfig {
+        url: "https://github.com.".into(),
+        token: "example-token".into(),
+    })
+    .unwrap();
+    let mut row = pull(2, "OPEN", "topic", "main");
+    let url = "https://github.com/acme/widgets/pull/2";
+    row["url"] = json!(url);
+    let change = GitHubChanges::new(&api)
+        .change(serde_json::from_value(row).unwrap())
+        .unwrap();
+    assert_eq!(change.stacked().web_url.as_deref(), Some(url));
+}
+
 async fn runtime(server: &TestServer, name: &str) -> ProviderRuntime {
     let connection = Connection::new(
         ConnectionId::new(Source::Github, name),

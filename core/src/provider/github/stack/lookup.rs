@@ -15,7 +15,7 @@ use crate::{
         change_stack::{
             Budget, ChangeLookup, FailureKind, LookupCause, LookupFailure, OpenChange, OpenPage,
         },
-        web_link::{Unshown, WebLink, web_link},
+        web_link::{Unshown, WebLink},
     },
     diagnostics,
     provider::{
@@ -247,7 +247,7 @@ impl<'a> GitHubChanges<'a> {
     }
 
     fn link(&self, url: Option<&str>) -> Option<WebLink> {
-        match web_link(url?, self.api.web_origin()) {
+        match self.api.web_link(url?) {
             Ok(link) => Some(link),
             Err(Unshown::Elsewhere(origin)) => {
                 self.observe(|observed| observed.elsewhere.get_or_insert((0, origin)).0 += 1);

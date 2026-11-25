@@ -238,9 +238,13 @@ async fn collects_openings_and_each_submitted_review_across_distinct_pages() {
 fn a_trailing_dot_is_equivalent_only_for_the_matching_web_origin() {
     use reqwest::Url;
 
-    let origin = Url::parse("https://github.com.").unwrap().origin();
+    let api = GitHubApi::new(&GitHubConfig {
+        url: "https://github.com.".into(),
+        token: "example-token".into(),
+    })
+    .unwrap();
     let raw = "https://github.com/acme/widgets/pull/12";
-    assert_eq!(github_web_link(raw, &origin).unwrap().as_str(), raw);
+    assert_eq!(api.web_link(raw).unwrap().as_str(), raw);
 
     for different in [
         "http://github.com/acme/widgets/pull/12",
@@ -248,10 +252,7 @@ fn a_trailing_dot_is_equivalent_only_for_the_matching_web_origin() {
         "https://github.com.example.org/acme/widgets/pull/12",
     ] {
         let elsewhere = Url::parse(different).unwrap().origin();
-        assert_eq!(
-            github_web_link(different, &origin),
-            Err(Unshown::Elsewhere(elsewhere))
-        );
+        assert_eq!(api.web_link(different), Err(Unshown::Elsewhere(elsewhere)));
     }
 }
 

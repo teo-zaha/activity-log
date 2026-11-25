@@ -7,9 +7,10 @@ use reqwest::{
     header::{ACCEPT, AUTHORIZATION, HeaderMap, HeaderValue},
 };
 use serde::{Serialize, de::DeserializeOwned};
-use url::Origin;
+use url::{Host, Origin};
 
 use crate::{
+    collect::web_link::{Unshown, WebLink, web_link},
     model::RemoteIdentity,
     provider::{
         http_client_builder,
@@ -72,8 +73,15 @@ impl GitHubApi {
         })
     }
 
-    pub(crate) fn web_origin(&self) -> &Origin {
-        &self.web_origin
+    /// A trailing DNS dot is equivalent for displayed links. Keep the configured origin
+    /// for API requests and credential binding.
+    pub(crate) fn web_link(&self, raw: &str) -> Result<WebLink, Unshown> {
+        match web_link(raw, &self.web_origin) {
+            Err(Unshown::Elsewhere(origin)) if same_dns_origin(&origin, &self.web_origin) => {
+                web_link(raw, &origin)
+            }
+            result => result,
+        }
     }
 
     pub(crate) async fn current_user(&self) -> Result<Option<RemoteIdentity>, ApiError> {
@@ -137,5 +145,20 @@ impl GitHubApi {
                 Err(error).context("Could not encode the GitHub query")
             }
         }
+    }
+}
+
+fn same_dns_origin(left: &Origin, right: &Origin) -> bool {
+    match (left, right) {
+        (
+            Origin::Tuple(left_scheme, Host::Domain(left_host), left_port),
+            Origin::Tuple(right_scheme, Host::Domain(right_host), right_port),
+        ) => {
+            left_scheme == right_scheme
+                && left_port == right_port
+                && left_host.strip_suffix('.').unwrap_or(left_host)
+                    == right_host.strip_suffix('.').unwrap_or(right_host)
+        }
+        _ => false,
     }
 }
