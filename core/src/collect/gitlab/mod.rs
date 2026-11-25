@@ -163,6 +163,8 @@ pub(crate) fn map_gitlab_event(event: GitLabEvent) -> GitLabEntry {
         title: event.target_title,
         target_type: event.target_type,
         project_id: event.project_id,
+        project: None,
+        web_url: None,
         mr_iid,
         issue_iid,
         branch,

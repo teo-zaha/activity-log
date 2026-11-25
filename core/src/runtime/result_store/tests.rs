@@ -80,6 +80,8 @@ fn push(id: &str, sha: &str, timestamp: &str) -> ActivityEntry {
         title: Some("repo".to_string()),
         target_type: Some("Project".to_string()),
         project_id: None,
+        project: None,
+        web_url: None,
         mr_iid: None,
         issue_iid: None,
         branch: Some("main".to_string()),

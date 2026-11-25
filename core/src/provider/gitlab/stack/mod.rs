@@ -1,6 +1,6 @@
 //! GitLab's side of change stacks: a project's open merge requests, read through `GitLabApi`
 //! and handed to the host-neutral walk as [`OpenChange`]s, and each merge request event's
-//! stack written on its entry ([`annotate`]).
+//! stack computed for annotation.
 
 use std::{
     collections::HashMap,
@@ -11,7 +11,6 @@ use std::{
 };
 
 use futures::{FutureExt, future::BoxFuture};
-use reqwest::StatusCode;
 use url::Origin;
 
 use crate::{
@@ -21,45 +20,19 @@ use crate::{
     },
     collect::web_link::{Unshown, web_link},
     diagnostics,
-    model::{ActivityEntry, ChangeStack, GitLabEntry},
+    model::{ChangeStack, GitLabEntry},
     provider::{
         gitlab::{
-            GitLabConfig,
+            ANNOTATION_CONCURRENCY,
             api::{GitLabApi, MergeRequestFilter, MergeRequestRow, PageError, Pager, RowFit},
+            lookup_failure_kind,
         },
-        provider_context::ProviderContext,
         remote_api::Retry,
-        remote_error::{ApiError, OAuthRefusal},
     },
 };
 
-/// Writes on every GitLab entry the stack of the merge request it is about, as GitLab has it
-/// now, and clears it where there is none: on a push (which folds into a commit), on an event
-/// about no open merge request, and on one whose stack could not be read. Every stack is looked
-/// up first and then written in one pass without an await, so stopping it leaves each entry as
-/// it was or as written.
-pub(crate) async fn annotate(entries: &mut [ActivityEntry], context: ProviderContext) {
-    let wanted: Vec<_> = entries
-        .iter()
-        .filter_map(|entry| match entry {
-            ActivityEntry::GitLab(entry) => Some((change_of(entry)?, entry.timestamp.utc())),
-            _ => None,
-        })
-        .collect();
-    let stacks = if wanted.is_empty() {
-        HashMap::new()
-    } else {
-        look_up(wanted, &context).await
-    };
-    for entry in entries.iter_mut() {
-        if let ActivityEntry::GitLab(entry) = entry {
-            entry.change_stack = change_of(entry).and_then(|change| stacks.get(&change).cloned());
-        }
-    }
-}
-
 /// The merge request an entry is about, in its project; none for a push.
-fn change_of(entry: &GitLabEntry) -> Option<ChangeRef<u64>> {
+pub(super) fn change_of(entry: &GitLabEntry) -> Option<ChangeRef<u64>> {
     if entry.entry_type.is_push() {
         return None;
     }
@@ -71,30 +44,16 @@ fn change_of(entry: &GitLabEntry) -> Option<ChangeRef<u64>> {
 
 /// The stacks of `wanted`'s merge requests, within one collection's budget, with what was not
 /// found logged.
-async fn look_up(
+pub(super) async fn look_up(
     wanted: Vec<(ChangeRef<u64>, chrono::DateTime<chrono::Utc>)>,
-    context: &ProviderContext,
+    api: &GitLabApi,
+    budget: &Budget,
 ) -> HashMap<ChangeRef<u64>, ChangeStack> {
-    let config = match context.config::<GitLabConfig>() {
-        Ok(config) => config,
-        Err(err) => {
-            diagnostics::warn("gitlab", format!("Change stacks skipped: {err:#}"));
-            return HashMap::new();
-        }
-    };
-    let api = match GitLabApi::new(config) {
-        Ok(api) => api,
-        Err(err) => {
-            diagnostics::warn(
-                "gitlab",
-                format!("Change stacks skipped: {}", err.reason(GitLabApi::SERVICE)),
-            );
-            return HashMap::new();
-        }
-    };
-    let lookup = GitLabChanges::new(&api);
-    let budget = Budget::for_collection();
-    let report = change_stacks(wanted, &lookup, &budget).await;
+    if wanted.is_empty() {
+        return HashMap::new();
+    }
+    let lookup = GitLabChanges::new(api);
+    let report = change_stacks(wanted, &lookup, budget).await;
     report.log("gitlab", GitLabApi::SERVICE);
     lookup.log_left_out();
     report.stacks
@@ -112,8 +71,6 @@ fn merge_requests(count: usize) -> String {
     )
 }
 
-/// Requests in flight at once for one connection.
-const CONCURRENCY: usize = 4;
 /// Merge request numbers asked for in one request (`iids[]`): GitLab reads at most 100, and
 /// the URL stays short.
 const NUMBERS_PER_REQUEST: usize = 50;
@@ -304,7 +261,7 @@ impl<'a> GitLabChanges<'a> {
 
 impl ChangeLookup<u64> for GitLabChanges<'_> {
     fn concurrency(&self) -> usize {
-        CONCURRENCY
+        ANNOTATION_CONCURRENCY
     }
 
     fn open_page<'a>(
@@ -372,37 +329,7 @@ fn failure_of(error: PageError<LookupFailure>) -> LookupFailure {
         PageError::Repeated => {
             LookupFailure::caused_by(FailureKind::Failed, LookupCause::RepeatedPage)
         }
-        PageError::Request(error) => LookupFailure::caused_by(kind_of(&error), error),
-    }
-}
-
-/// After the busy check, an OAuth code takes precedence over the status. GitLab answers a
-/// project hidden from the token with 404, and merge requests it may not read with 403.
-fn kind_of(error: &ApiError) -> FailureKind {
-    if error.is_busy() {
-        return FailureKind::Throttled;
-    }
-    match error {
-        ApiError::Status {
-            refusal: Some(refusal),
-            ..
-        } => match refusal {
-            OAuthRefusal::InvalidToken => FailureKind::TokenInvalid,
-            OAuthRefusal::InsufficientScope => FailureKind::ScopeMissing,
-            OAuthRefusal::InvalidRequest => FailureKind::Failed,
-        },
-        ApiError::Status {
-            status,
-            refusal: None,
-            ..
-        } => match *status {
-            StatusCode::UNAUTHORIZED => FailureKind::TokenInvalid,
-            StatusCode::FORBIDDEN | StatusCode::NOT_FOUND => FailureKind::Unreadable,
-            _ => FailureKind::Failed,
-        },
-        ApiError::Query(_) | ApiError::Timeout | ApiError::Unreachable | ApiError::Decode => {
-            FailureKind::Failed
-        }
+        PageError::Request(error) => LookupFailure::caused_by(lookup_failure_kind(&error), error),
     }
 }
 

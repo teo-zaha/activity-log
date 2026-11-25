@@ -2,7 +2,7 @@ use std::time::Duration;
 
 use tokio::time::Instant;
 
-use super::{Breaker, Budget};
+use super::{Breaker, Budget, STACK_REQUESTS};
 use crate::{
     collect::change_stack::lookup::{FailureKind, LookupFailure},
     provider::remote_api::RequestBudget,
@@ -23,6 +23,36 @@ async fn no_more_than_the_limit_is_spent() {
     assert_eq!(budget.try_spend(), Ok(()));
     assert_eq!(budget.try_spend(), Err(limit()));
     assert_eq!(budget.spent(), 2);
+}
+
+#[tokio::test]
+async fn a_phase_never_spends_the_parent_allowance() {
+    let stack = Budget::for_collection();
+    let projects = stack.phase(20, Duration::from_secs(5));
+    for _ in 0..20 {
+        assert_eq!(projects.try_spend(), Ok(()));
+    }
+    assert_eq!(projects.try_spend(), Err(limit()));
+    for _ in 0..STACK_REQUESTS {
+        assert_eq!(stack.try_spend(), Ok(()));
+    }
+    assert_eq!(stack.spent(), STACK_REQUESTS);
+    assert_eq!(stack.try_spend(), Err(limit()));
+}
+
+#[tokio::test(start_paused = true)]
+async fn a_phase_ends_at_its_own_deadline_or_the_parent_deadline_if_earlier() {
+    for (shared, expected) in [(20, 5), (3, 3)] {
+        let start = Instant::now();
+        let stack = Budget::new(10, start + Duration::from_secs(shared));
+        let projects = stack.phase(10, Duration::from_secs(5));
+        let answer = projects
+            .run(std::future::pending::<Result<(), LookupFailure>>())
+            .await;
+        assert_eq!(answer, Err(limit()));
+        assert_eq!(start.elapsed(), Duration::from_secs(expected));
+        assert_eq!(stack.check().is_ok(), shared > expected);
+    }
 }
 
 /// Requests reserved from many threads at once never pass the limit.

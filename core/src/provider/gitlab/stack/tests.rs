@@ -7,7 +7,7 @@ use reqwest::StatusCode;
 use serde_json::{Value, json};
 use tokio::time::Instant;
 
-use super::{GitLabChanges, kind_of};
+use super::{GitLabChanges, lookup_failure_kind as kind_of};
 use crate::{
     collect::change_stack::{
         Budget, ChangeLookup, ChangeRef, FailureKind, LookupCause, LookupFailure, OpenPage,
@@ -91,6 +91,13 @@ fn gitlab(
         let project = match segments.as_slice() {
             ["user"] => return Reply::json(200, r#"{"id":7,"username":"jdoe"}"#),
             ["users", "jdoe", "events"] => return Reply::json(200, events().to_string()),
+            ["projects", "42"] => {
+                let url = format!("{}/acme/widgets/?view=all#details", known.get().unwrap());
+                let project = json!({
+                    "id": WIDGETS, "path_with_namespace": "acme/widgets", "web_url": url,
+                });
+                return Reply::json(200, project.to_string());
+            }
             ["projects", project, "merge_requests"] => *project,
             _ => return Reply::json(404, r#"{"message":"404 Not Found"}"#),
         };
@@ -820,6 +827,8 @@ fn event(id: &str, entry_type: GitLabType, project: Option<u64>, mr: Option<u64>
         title: None,
         target_type: None,
         project_id: project,
+        project: None,
+        web_url: None,
         mr_iid: mr,
         issue_iid: None,
         branch: None,
@@ -881,13 +890,17 @@ async fn every_entry_gets_its_merge_requests_stack_and_no_other() {
         timestamp: "2026-03-05T08:00:00+00:00".into(),
         label: "Unlocked".to_string(),
     });
+    let mut issue = event("issue", GitLabType::Opened, Some(WIDGETS), None);
+    if let ActivityEntry::GitLab(issue) = &mut issue {
+        issue.issue_iid = Some(7);
+    }
     let mut entries = vec![
         event("opened", GitLabType::Opened, Some(WIDGETS), Some(2)),
         event("comment", GitLabType::CommentedOn, Some(WIDGETS), Some(4)),
         event("push", GitLabType::PushedTo, Some(WIDGETS), Some(2)),
         event("closed", GitLabType::Merged, Some(WIDGETS), Some(9)),
         event("no-project", GitLabType::Opened, None, Some(2)),
-        event("issue", GitLabType::Opened, Some(WIDGETS), None),
+        issue,
         system.clone(),
     ];
     let requests_before = server.requests().len();
@@ -912,13 +925,63 @@ async fn every_entry_gets_its_merge_requests_stack_and_no_other() {
         ])
     );
     assert_eq!(format!("{:?}", entries[6]), format!("{system:?}"));
-    // One page for the project, each time.
-    assert_eq!(server.requests().len() - requests_before, 2);
+    let ActivityEntry::GitLab(push) = &entries[2] else {
+        panic!("expected the GitLab push");
+    };
+    assert_eq!(push.project.as_deref(), Some("acme/widgets"));
+    assert_eq!(push.web_url, None);
+    let ActivityEntry::GitLab(issue) = &entries[5] else {
+        panic!("expected the GitLab issue");
+    };
+    assert_eq!(issue.project.as_deref(), Some("acme/widgets"));
+    assert_eq!(
+        issue.web_url,
+        Some(format!("{}/acme/widgets/-/issues/7", server.url))
+    );
+    // One detail request and one stack page for the project, each time.
+    let requests = server.requests();
+    let paths: Vec<_> = requests[requests_before..]
+        .iter()
+        .map(|request| request.path())
+        .collect();
+    assert_eq!(
+        paths,
+        [
+            "/api/v4/projects/42",
+            "/api/v4/projects/42/merge_requests",
+            "/api/v4/projects/42",
+            "/api/v4/projects/42/merge_requests",
+        ]
+    );
     let summary = lines("gitlab/stack-annotate");
     assert!(
         summary.iter().any(|line| line.level == LogLevel::Info),
         "{summary:?}"
     );
+}
+
+#[tokio::test]
+async fn a_failed_project_lookup_clears_details_from_a_previous_annotation() {
+    let server = TestServer::start(|request| match request.path() {
+        "/api/v4/user" => Reply::json(200, r#"{"id":7,"username":"jdoe"}"#),
+        "/api/v4/projects/42" => Reply::json(404, "{}"),
+        _ => panic!("unexpected request"),
+    });
+    let runtime = runtime(&server, "project-details-cleared").await;
+    let mut entries = [event("issue", GitLabType::Opened, Some(WIDGETS), None)];
+    let ActivityEntry::GitLab(issue) = &mut entries[0] else {
+        panic!("expected the GitLab issue");
+    };
+    issue.issue_iid = Some(7);
+    issue.project = Some("acme/widgets".into());
+    issue.web_url = Some("https://gitlab.example.org/acme/widgets/-/issues/7".into());
+    runtime.annotate(&mut entries).await;
+    let ActivityEntry::GitLab(issue) = &entries[0] else {
+        panic!("expected the GitLab issue");
+    };
+    assert_eq!(issue.project, None);
+    assert_eq!(issue.web_url, None);
+    assert_eq!(issue.issue_iid, Some(7));
 }
 
 /// A stack that is gone (its merge requests merged) is cleared by the next annotation.
@@ -952,6 +1015,8 @@ async fn a_failed_lookup_keeps_the_entries_without_stacks() {
     let server = TestServer::start(|request| {
         if request.path().ends_with("/user") {
             Reply::json(200, r#"{"id":7,"username":"jdoe"}"#)
+        } else if request.path().ends_with("/projects/42") {
+            Reply::json(200, r#"{"id":42,"path_with_namespace":"acme/widgets"}"#)
         } else {
             Reply::json(500, r#"{"message":"500 database is down"}"#)
         }
@@ -979,10 +1044,9 @@ async fn a_failed_lookup_keeps_the_entries_without_stacks() {
     );
 }
 
-/// Stacks are looked up after the day cache: a cache file never holds one, and days the cache
-/// serves get them all the same.
+/// Current details are looked up for every collection, including days served from cache.
 #[tokio::test]
-async fn stacks_are_never_cached_and_cached_days_get_them() {
+async fn annotations_are_not_cached_and_cached_days_get_them() {
     let server = gitlab(100, four);
     let runtime = runtime(&server, "stack-cache").await;
     let cache = tempfile::tempdir().unwrap();
@@ -1016,6 +1080,26 @@ async fn stacks_are_never_cached_and_cached_days_get_them() {
     );
     assert!(file_text.contains("projectId"), "{file_text}");
     assert!(!file_text.contains("changeStack"), "{file_text}");
+    assert!(!file_text.contains(r#""project":"#), "{file_text}");
+    assert!(!file_text.contains(r#""webUrl":"#), "{file_text}");
+    for entries in [&first, &cached] {
+        let ActivityEntry::GitLab(comment) = &entries[1] else {
+            panic!("expected the GitLab comment");
+        };
+        assert_eq!(comment.project.as_deref(), Some("acme/widgets"));
+        assert_eq!(
+            comment.web_url,
+            Some(format!("{}/acme/widgets/-/merge_requests/4", server.url))
+        );
+    }
+    assert_eq!(
+        server
+            .requests()
+            .iter()
+            .filter(|request| request.path() == "/api/v4/projects/42")
+            .count(),
+        2
+    );
     let expected = BTreeMap::from([
         ("501".to_string(), Some(vec![1, 2])),
         ("502".to_string(), Some(vec![1, 2, 3, 4])),

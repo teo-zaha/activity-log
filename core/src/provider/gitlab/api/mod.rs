@@ -12,7 +12,7 @@ use serde::de::DeserializeOwned;
 use url::Origin;
 
 use crate::{
-    model::RemoteIdentity,
+    model::{RemoteIdentity, gitlab::GitLabProject},
     provider::{
         gitlab::GitLabConfig,
         remote_api::{IdField, RemoteClient, Retry, SetupError, identity_from},
@@ -53,6 +53,16 @@ impl GitLabApi {
 
     pub(crate) async fn get_json<T: DeserializeOwned>(&self, url: Url) -> Result<T, ApiError> {
         self.remote.get_json(url).await
+    }
+
+    pub(crate) async fn project(&self, id: u64) -> Result<GitLabProject, ApiError> {
+        let url = self.endpoint(&["projects", &id.to_string()]);
+        let (project, _): (GitLabProject, _) =
+            self.remote.get_json_with_headers(url, Retry::Never).await?;
+        if project.id != id || project.path_with_namespace.trim().is_empty() {
+            return Err(ApiError::Decode);
+        }
+        Ok(project)
     }
 
     /// One page of a paged list, and the URL of the next as GitLab names it: `x-next-page`

@@ -306,8 +306,9 @@ Each source below lists its entry types, Timeline subtitle line, detail panel fi
 <td width="56%" valign="top">
 
 - **Entries:** One per event in the GitLab event feed of the configured `user`. The title is the event's target title when available.
-- **Timeline line:** A readable action such as **Commented on merge request !12**, **Pushed to main**, or **Pushed new branch feature-x**. For events without a target title, the action is shown as the title.
-- **Detail panel:** Action, Title, Target type, MR (`!iid`), Issue (`#iid`), Branch, Commits, File, Comment, Resolved
+- **Timeline line:** The project path when available and a readable action such as **Commented on merge request !12**, **Pushed to main**, or **Pushed new branch feature-x**. For events without a target title, the action is shown as the title.
+- **Detail panel:** Action, Title, Project, Target type, MR (`!iid`), Issue (`#iid`), Branch, Commits, File, Comment, Resolved. The panel links to a merge request or issue when Activity Log can build its URL on the configured GitLab origin.
+- **Project details:** Activity Log looks up the current project path and URL after reading the day cache, starting with the most recent activity. It allows up to 20 project lookups and up to five seconds within the shared annotation deadline. Change stacks have a separate request allowance. A failed or skipped lookup leaves the event available.
 - **Merge:** Push events (`pushedTo`, `pushedNew`) whose commit SHA matches a local Git commit fold into that commit's **git/lab** entry.
 - **Stack:** When a merge request event's merge request is still open and part of a stack, its detail panel shows a **Stack** section: the branch it builds on, the open merge requests below it, and those built on it, each linked to its page on the configured GitLab server. The stack is looked up fresh on every collection (never cached), which can delay that connection's entries by up to about 20 seconds on a slow server, and needs a token that can read the project's merge requests (`read_api` or `api`); without that scope, entries show without stacks and **Settings → Logs** says why.
 - **Configuration:** `url`, `token`, and `user` (all required). Tokens are sent only to the configured origin (cross-origin redirects are rejected). Uses the [per-day cache](#per-day-cache).

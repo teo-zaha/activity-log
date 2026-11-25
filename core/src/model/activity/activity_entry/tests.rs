@@ -7,6 +7,7 @@ use crate::model::Source;
 const GIT: &str = r#"{"source":"git","connection":"work","id":"1f3a","timestamp":"2026-11-17T09:30:00+01:00","repo":"api","hash":"1f3a","message":"Fix the parser","author":"dev@example.org","branch":"main"}"#;
 const GIT_WITH_PUSH: &str = r#"{"source":"git","connection":"work","id":"1f3a","timestamp":"2026-11-17T09:30:00+01:00","repo":"api","hash":"1f3a","message":"Fix the parser","author":"dev@example.org","branch":"main","gitlabEvent":{"source":"gitlab","connection":"oss","id":"77","type":"pushedTo","timestamp":"2026-11-17T08:31:00.000Z","title":"","targetType":"unknown","branch":"main","commitCount":1,"pushedCommit":"1f3a"}}"#;
 const GITLAB: &str = r#"{"source":"gitlab","connection":"oss","id":"78","type":"commentedOn","timestamp":"2026-11-17T08:40:00.000Z","title":"Parser fix","targetType":"DiffNote","projectId":42,"mrIid":12,"noteBody":"Looks good","noteFile":"src/parser.rs","noteResolved":false}"#;
+const GITLAB_LINKED: &str = r#"{"source":"gitlab","connection":"oss","id":"78","type":"commentedOn","timestamp":"2026-11-17T08:40:00.000Z","title":"Parser fix","targetType":"DiffNote","projectId":42,"project":"acme/widgets","webUrl":"https://gitlab.example.org/acme/widgets/-/merge_requests/12","mrIid":12,"noteBody":"Looks good","noteFile":"src/parser.rs","noteResolved":false}"#;
 /// A merge request in a stack: one below, the base reached; above, a level cut for each reason
 /// and one complete.
 const GITLAB_STACKED: &str = r#"{"source":"gitlab","connection":"oss","id":"79","type":"opened","timestamp":"2026-11-17T08:45:00.000Z","title":"Parse B","targetType":"MergeRequest","projectId":42,"mrIid":12,"changeStack":{"current":{"number":12,"title":"Parse B","webUrl":"https://gitlab.example.org/acme/widgets/-/merge_requests/12"},"below":[{"number":11,"title":"Parse A","webUrl":"https://gitlab.example.org/acme/widgets/-/merge_requests/11"}],"bottom":{"kind":"reached","branch":"main"},"above":{"changes":[{"change":{"number":13,"title":"Parse C"},"above":{"changes":[],"end":{"kind":"cut","reason":"limit"}}},{"change":{"number":14,"title":"Parse D"},"above":{"changes":[{"change":{"number":15,"title":"Parse E"},"above":{"changes":[],"end":{"kind":"cut","reason":"unreadable"}}}],"end":{"kind":"cut","reason":"throttled"}}},{"change":{"number":16,"title":"Parse F"},"above":{"changes":[],"end":{"kind":"cut","reason":"failed"}}}],"end":{"kind":"cut","reason":"cycle"}}}}"#;
@@ -42,6 +43,7 @@ fn every_kind_keeps_its_wire_shape() {
     round_trip(GIT, Source::Git);
     round_trip(GIT_WITH_PUSH, Source::Git);
     round_trip(GITLAB, Source::Gitlab);
+    round_trip(GITLAB_LINKED, Source::Gitlab);
     round_trip(GITLAB_STACKED, Source::Gitlab);
     round_trip(GITLAB_AMBIGUOUS, Source::Gitlab);
     round_trip(GITLAB_CUT_BELOW, Source::Gitlab);

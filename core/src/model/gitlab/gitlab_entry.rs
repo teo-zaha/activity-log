@@ -37,6 +37,14 @@ pub struct GitLabEntry {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[ts(type = "number", optional)]
     pub project_id: Option<u64>,
+    /// The current project path with namespace, looked up after the day cache.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub project: Option<String>,
+    /// A merge request or issue page on the configured web origin, added with the project.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub web_url: Option<String>,
     /// The merge request the event is about, or the one a comment is on.
     #[serde(skip_serializing_if = "Option::is_none")]
     #[ts(type = "number", optional)]

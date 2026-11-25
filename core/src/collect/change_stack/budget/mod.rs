@@ -3,7 +3,7 @@
 
 use std::{
     sync::{
-        OnceLock,
+        Arc, OnceLock,
         atomic::{AtomicUsize, Ordering},
     },
     time::Duration,
@@ -14,7 +14,7 @@ use tokio::time::Instant;
 use super::lookup::{FailureKind, LookupFailure};
 use crate::provider::remote_api::RequestBudget;
 
-/// Requests (pages) one connection's lookups may send in one collection, each reserved before
+/// Requests (pages) one connection's stack lookups may send in one collection, each reserved before
 /// it is sent.
 pub(crate) const STACK_REQUESTS: usize = 50;
 /// How long one connection's lookups may take in one collection.
@@ -57,7 +57,7 @@ pub(crate) struct Budget {
     limit: usize,
     spent: AtomicUsize,
     deadline: Instant,
-    breaker: OnceLock<Breaker>,
+    breaker: Arc<OnceLock<Breaker>>,
 }
 
 impl Budget {
@@ -66,13 +66,24 @@ impl Budget {
             limit: requests,
             spent: AtomicUsize::new(0),
             deadline,
-            breaker: OnceLock::new(),
+            breaker: Arc::default(),
         }
     }
 
-    /// [`STACK_REQUESTS`] requests within [`STACK_BUDGET`] from now.
+    /// [`STACK_REQUESTS`] stack requests within the shared [`STACK_BUDGET`] annotation deadline.
     pub(crate) fn for_collection() -> Self {
         Self::new(STACK_REQUESTS, Instant::now() + STACK_BUDGET)
+    }
+
+    /// Gives a phase its own request allowance and a deadline bounded by this one's. The
+    /// breaker still stops both budgets when the host refuses the token or asks to slow down.
+    pub(crate) fn phase(&self, requests: usize, time: Duration) -> Self {
+        Self {
+            limit: requests,
+            spent: AtomicUsize::new(0),
+            deadline: self.deadline.min(Instant::now() + time),
+            breaker: self.breaker.clone(),
+        }
     }
 
     /// Requests sent so far.

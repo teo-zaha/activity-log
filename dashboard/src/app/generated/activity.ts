@@ -240,6 +240,14 @@ targetType?: string,
  */
 projectId?: number, 
 /**
+ * The current project path with namespace, looked up after the day cache.
+ */
+project?: string, 
+/**
+ * A merge request or issue page on the configured web origin, added with the project.
+ */
+webUrl?: string, 
+/**
  * The merge request the event is about, or the one a comment is on.
  */
 mrIid?: number, 

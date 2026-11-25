@@ -36,8 +36,8 @@ use runtime::report::{
 // Keeps one stuck provider from leaving the whole app in the collecting state.
 const COLLECT_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(120);
 /// How long a connection's `annotate` may take: its own deadline is `STACK_BUDGET` (change
-/// stacks), so this only stops an adapter that overruns it. Entries are only lent to it, so
-/// none is lost when it is stopped.
+/// stacks and project details), so this only stops an adapter that overruns it. Entries are
+/// only lent to it, so none is lost when it is stopped.
 const ANNOTATE_TIMEOUT: std::time::Duration =
     collect::change_stack::STACK_BUDGET.saturating_add(std::time::Duration::from_secs(2));
 

@@ -92,6 +92,17 @@ describe('GitLab adapter', () => {
     expect(fields.some(field => field.label === 'MR')).toBe(false)
   })
 
+  it('shows the project and opens an issue through its core-provided URL', () => {
+    const webUrl = 'https://gitlab.example.org/acme/widgets/-/issues/53'
+    const entry = createEntryAdapter({ ...opened, project: 'acme/widgets', webUrl })
+
+    expect(entry.meta).toBe('acme/widgets · Opened issue #53')
+    expect(entry.searchText).toContain('acme/widgets')
+    expect(entry.detailFields).toContainEqual({ label: 'Project', value: 'acme/widgets' })
+    expect(entry.detailLink).toEqual({ label: 'Open issue', url: webUrl })
+    expect(createEntryAdapter(opened).detailLink).toBeNull()
+  })
+
   it.each([
     ['opened', 'Opened merge request'],
     ['merged', 'Merged merge request'],

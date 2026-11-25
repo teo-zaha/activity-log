@@ -1,15 +1,23 @@
+mod annotation;
 pub(crate) mod api;
 mod config;
 mod stack;
 
 pub use config::*;
 
+use reqwest::StatusCode;
+
 use crate::{
-    collect::gitlab::collect_gitlab,
+    collect::{change_stack::FailureKind, gitlab::collect_gitlab},
     model::{IntoActivityEntries, Source, SupportedOs},
-    provider::remote_api::identity_check,
+    provider::{
+        remote_api::identity_check,
+        remote_error::{ApiError, OAuthRefusal},
+    },
 };
 use api::GitLabApi;
+
+const ANNOTATION_CONCURRENCY: usize = 4;
 
 crate::provider! {
     GitLabProvider(Source::Gitlab, &[SupportedOs::Windows, SupportedOs::Macos, SupportedOs::Linux], config: GitLabConfig, cache: crate::cache::CachePolicy::api()) {
@@ -40,7 +48,37 @@ crate::provider! {
             entries: &'a mut [crate::model::ActivityEntry],
             context: crate::provider::provider_context::ProviderContext,
         ) -> futures::future::BoxFuture<'a, ()> {
-            Box::pin(stack::annotate(entries, context))
+            Box::pin(annotation::annotate(entries, context))
+        }
+    }
+}
+
+/// After the busy check, an OAuth code takes precedence over the status. GitLab answers a
+/// project hidden from the token with 404, and merge requests it may not read with 403.
+fn lookup_failure_kind(error: &ApiError) -> FailureKind {
+    if error.is_busy() {
+        return FailureKind::Throttled;
+    }
+    match error {
+        ApiError::Status {
+            refusal: Some(refusal),
+            ..
+        } => match refusal {
+            OAuthRefusal::InvalidToken => FailureKind::TokenInvalid,
+            OAuthRefusal::InsufficientScope => FailureKind::ScopeMissing,
+            OAuthRefusal::InvalidRequest => FailureKind::Failed,
+        },
+        ApiError::Status {
+            status,
+            refusal: None,
+            ..
+        } => match *status {
+            StatusCode::UNAUTHORIZED => FailureKind::TokenInvalid,
+            StatusCode::FORBIDDEN | StatusCode::NOT_FOUND => FailureKind::Unreadable,
+            _ => FailureKind::Failed,
+        },
+        ApiError::Query(_) | ApiError::Timeout | ApiError::Unreachable | ApiError::Decode => {
+            FailureKind::Failed
         }
     }
 }
