@@ -12,10 +12,11 @@ A GitHub connection has one required URL field. It takes the web URL a person us
 | `https://<tenant>.ghe.com`   | `https://api.<tenant>.ghe.com`         | `https://api.<tenant>.ghe.com/graphql`      |
 | Another HTTP or HTTPS origin | Configured URL with `/api/v3` appended | Configured URL with `/api/graphql` appended |
 
-The cloud forms use HTTPS and its standard port and ignore any path on the web URL. Enterprise
-Server preserves the configured scheme, port, and context path. Queries and fragments are dropped
-before building request paths. Addresses with embedded credentials are refused before the client
-is made.
+The cloud forms require HTTPS on its standard port (accepting a trailing DNS dot when matching the
+host) and ignore any path on the web URL. Enterprise Server preserves the configured scheme, port,
+and context path, and refuses addresses ending in `/api/v3` or `/api/graphql` so the configured URL
+stays the web URL. Queries and fragments are dropped before building request paths. Addresses with
+embedded credentials are refused before the client is made.
 
 The derivation runs once when the API client is built. The client sends the bearer token only to
 the resulting API origin. A redirect to a different scheme, host, or port stops there. The
