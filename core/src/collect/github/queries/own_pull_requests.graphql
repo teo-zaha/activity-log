@@ -20,12 +20,7 @@ query OwnPullRequests($login: String!, $after: String) {
             endCursor
           }
           nodes {
-            id
-            state
-            submittedAt
-            author {
-              login
-            }
+            ...ActivityReview
           }
         }
       }

@@ -131,6 +131,30 @@ fn github_review_export_uses_repository_and_escapes_the_title() {
     assert!(!markdown.lines().any(|line| line == "## Example"));
 }
 #[test]
+fn github_inline_comment_export_escapes_body_and_keeps_the_path() {
+    let entry = serde_json::from_value(serde_json::json!({
+        "source": "github",
+        "connection": "work",
+        "id": "PRRC_example",
+        "timestamp": "2026-03-10T09:00:00Z",
+        "repository": "acme/widgets",
+        "type": "commentedOn",
+        "target": {
+            "kind": "reviewLine", "pullRequest": {"number": 12, "title": "Fix widgets"},
+            "path": "src/main.rs",
+        },
+        "body": "Check *widgets*\n## Example",
+    }))
+    .unwrap();
+    let markdown = to_markdown(&log_of(vec![entry]), &FixedOffset::east_opt(0).unwrap());
+
+    assert!(markdown.contains(
+        "- **[github]** `acme/widgets` Commented on `src/main.rs` in pull request #12 Fix widgets: Check \\*widgets\\* ## Example (09:00)\n"
+    ));
+    assert!(!markdown.lines().any(|line| line == "## Example"));
+}
+
+#[test]
 fn github_commit_export_includes_the_branch_and_short_sha() {
     let entry = serde_json::from_value(serde_json::json!({
         "source": "github",

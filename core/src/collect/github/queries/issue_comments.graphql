@@ -1,0 +1,43 @@
+query ViewerIssueComments($after: String) {
+  viewer {
+    issueComments(first: 100, after: $after, orderBy: { field: UPDATED_AT, direction: DESC }) {
+      pageInfo {
+        hasNextPage
+        endCursor
+      }
+      nodes {
+        id
+        createdAt
+        updatedAt
+        body: bodyText
+        pullRequest {
+          ...CommentItem
+        }
+        issue {
+          ...CommentItem
+        }
+      }
+    }
+  }
+}
+
+fragment CommentItem on UniformResourceLocatable {
+  ... on PullRequest {
+    id
+    number
+    title
+    url
+    repository {
+      nameWithOwner
+    }
+  }
+  ... on Issue {
+    id
+    number
+    title
+    url
+    repository {
+      nameWithOwner
+    }
+  }
+}

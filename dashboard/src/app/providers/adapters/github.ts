@@ -1,4 +1,4 @@
-import type { GitHubEntry, PullRequestRef } from '../../generated/activity'
+import type { GitHubEntry, IssueRef, PullRequestRef } from '../../generated/activity'
 import { changeReference, changeStackVmOf } from '../change-stack'
 import { CODE_HOST_REFERENCE_PREFIX, githubAction } from '../code-host'
 import { EntryUiAdapter, ProviderUiAdapterDefinition } from '../types'
@@ -17,21 +17,34 @@ function pullDetails(pull: PullRequestRef) {
   }
 }
 
+function issueDetails(issue: IssueRef) {
+  return {
+    target: issue,
+    itemLabel: 'Issue',
+    referencePrefix: CODE_HOST_REFERENCE_PREFIX.issue,
+    linkLabel: 'Open issue',
+    entryIcon: 'adjust',
+    changeStack: null,
+  }
+}
+
 function detailsOf(entry: Exclude<GitHubEntry, { type: 'committed' }>) {
   switch (entry.type) {
     case 'opened':
       return entry.target.kind === 'pullRequest'
         ? pullDetails(entry.target)
-        : {
-            target: entry.target,
-            itemLabel: 'Issue',
-            referencePrefix: CODE_HOST_REFERENCE_PREFIX.issue,
-            linkLabel: 'Open issue',
-            entryIcon: 'adjust',
-            changeStack: null,
-          }
+        : issueDetails(entry.target)
     case 'reviewed':
       return pullDetails(entry.pullRequest)
+    case 'commentedOn':
+      switch (entry.target.kind) {
+        case 'pullRequest':
+          return pullDetails(entry.target)
+        case 'issue':
+          return issueDetails(entry.target)
+        case 'reviewLine':
+          return pullDetails(entry.target.pullRequest)
+      }
   }
 }
 
@@ -63,12 +76,17 @@ class GitHubEntryUiAdapter extends EntryUiAdapter<GitHubEntry> {
       detailsOf(entry)
     const number = changeReference(referencePrefix, target.number)
     const badge = createBadge(provider.source, provider.label, entryIcon)
+    const body = entry.type === 'commentedOn' ? entry.body : undefined
+    const path =
+      entry.type === 'commentedOn' && entry.target.kind === 'reviewLine'
+        ? entry.target.path
+        : undefined
 
     super(provider, entry, {
       title: target.title,
       meta: joinParts([entry.repository, action.summary]),
       entryIcon,
-      searchTerms: [target.title, entry.repository, action.summary],
+      searchTerms: toDefinedStrings([target.title, entry.repository, action.summary, body]),
       calendarDurationMinutes: null,
       changeStack,
       detailLink: target.webUrl ? { label: linkLabel, url: target.webUrl } : null,
@@ -76,6 +94,8 @@ class GitHubEntryUiAdapter extends EntryUiAdapter<GitHubEntry> {
         { label: 'Action', value: action.detail },
         { label: 'Repository', value: entry.repository },
         { label: itemLabel, value: number },
+        ...(path ? [{ label: 'File', value: path }] : []),
+        ...(body ? [{ label: 'Comment', value: body }] : []),
       ],
       badge,
       badges: [badge],

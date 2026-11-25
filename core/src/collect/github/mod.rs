@@ -1,3 +1,4 @@
+mod comments;
 mod commit_repositories;
 mod commits;
 mod error;
@@ -29,6 +30,8 @@ use crate::{
     },
 };
 
+use comments::ConversationRun;
+pub(crate) use comments::GitHubCollection;
 use error::CollectionError;
 use response::{
     Contributions, HostedItem, MoreReviews, Opened, OwnPullRequest, OwnPullRequests, Review,
@@ -38,9 +41,19 @@ use response::{
 const VIEWER: &str = include_str!("queries/viewer.graphql");
 const OPENED_PULL_REQUESTS: &str = include_str!("queries/opened_pull_requests.graphql");
 const OPENED_ISSUES: &str = include_str!("queries/opened_issues.graphql");
-const REVIEWED_PULL_REQUESTS: &str = include_str!("queries/reviewed_pull_requests.graphql");
-const OWN_PULL_REQUESTS: &str = include_str!("queries/own_pull_requests.graphql");
-const MORE_REVIEWS: &str = include_str!("queries/more_reviews.graphql");
+macro_rules! review_query {
+    ($query:literal) => {
+        concat!(
+            include_str!($query),
+            include_str!("queries/review_fields.graphql"),
+            include_str!("queries/review_comment_page.graphql")
+        )
+    };
+}
+
+const REVIEWED_PULL_REQUESTS: &str = review_query!("queries/reviewed_pull_requests.graphql");
+const OWN_PULL_REQUESTS: &str = review_query!("queries/own_pull_requests.graphql");
+const MORE_REVIEWS: &str = review_query!("queries/more_reviews.graphql");
 const CONTRIBUTION_WINDOW_DAYS: Days = Days::new(364);
 
 pub(crate) async fn collect_github(
@@ -49,10 +62,19 @@ pub(crate) async fn collect_github(
 ) -> Result<Vec<GitHubEntry>> {
     let config = context.config::<GitHubConfig>()?;
     let api = GitHubApi::new(config).map_err(|error| anyhow!(error.reason(GitHubApi::SERVICE)))?;
-    collect(&api, *options).await
+    let walk = context
+        .collection_state::<GitHubCollection>()
+        .zip(context.connection())
+        .map(|(state, connection)| state.conversations(&connection.id))
+        .unwrap_or_default();
+    collect(&api, *options, &walk).await
 }
 
-async fn collect(api: &GitHubApi, options: CollectOptions) -> Result<Vec<GitHubEntry>> {
+async fn collect(
+    api: &GitHubApi,
+    options: CollectOptions,
+    walk: &ConversationRun,
+) -> Result<Vec<GitHubEntry>> {
     let Viewer {
         viewer: ViewerUser {
             id,
@@ -70,6 +92,7 @@ async fn collect(api: &GitHubApi, options: CollectOptions) -> Result<Vec<GitHubE
         restricted: 0,
         links_elsewhere: None,
         unreadable_repositories: HashSet::new(),
+        unreadable_comment_repositories: HashSet::new(),
         undiscovered_repositories: 0,
     };
     for window in windows(options) {
@@ -79,6 +102,7 @@ async fn collect(api: &GitHubApi, options: CollectOptions) -> Result<Vec<GitHubE
         collection.commits_in(window).await?;
     }
     collection.own_pull_requests().await?;
+    collection.conversation_comments(walk).await?;
 
     if collection.restricted > 0 {
         diagnostics::warn(
@@ -95,6 +119,15 @@ async fn collect(api: &GitHubApi, options: CollectOptions) -> Result<Vec<GitHubE
             format!(
                 "Could not read commit history for {} GitHub repositories. Check repository access and Contents permission.",
                 collection.unreadable_repositories.len()
+            ),
+        );
+    }
+    if !collection.unreadable_comment_repositories.is_empty() {
+        diagnostics::warn(
+            "github",
+            format!(
+                "Could not read all review comments for {} GitHub repositories. Check repository access and Pull requests permission.",
+                collection.unreadable_comment_repositories.len()
             ),
         );
     }
@@ -202,6 +235,7 @@ struct Collection<'a> {
     restricted: u64,
     links_elsewhere: Option<(usize, Origin)>,
     unreadable_repositories: HashSet<String>,
+    unreadable_comment_repositories: HashSet<String>,
     undiscovered_repositories: usize,
 }
 
@@ -356,13 +390,13 @@ impl Collection<'_> {
         {
             self.skipped += batch.skipped;
             for review in batch.rows {
-                self.review(review, &item)?;
+                self.review(review, &item).await?;
             }
         }
         Ok(())
     }
 
-    fn review(&mut self, review: Review, item: &HostedItem) -> Result<()> {
+    async fn review(&mut self, review: Review, item: &HostedItem) -> Result<()> {
         let state = match review.state {
             ReviewState::Approved => GitHubReviewState::Approved,
             ReviewState::ChangesRequested => GitHubReviewState::ChangesRequested,
@@ -377,19 +411,21 @@ impl Collection<'_> {
         if !author.login.eq_ignore_ascii_case(&self.login) {
             return Err(CollectionError::ReviewAuthorMismatch.into());
         }
-        if self.options.contains(timestamp.utc()) {
-            let web_url = self.shown_url(item.url.as_deref());
-            self.entries.push(entry(
-                review.id,
-                timestamp,
-                item.repository.name_with_owner.clone(),
-                GitHubAction::Reviewed {
-                    pull_request: pull_request_ref(item, web_url),
-                    state,
-                },
-            ));
+        if !self.options.contains(timestamp.utc()) {
+            return Ok(());
         }
-        Ok(())
+        let web_url = self.shown_url(item.url.as_deref());
+        self.entries.push(entry(
+            review.id.clone(),
+            timestamp.clone(),
+            item.repository.name_with_owner.clone(),
+            GitHubAction::Reviewed {
+                pull_request: pull_request_ref(item, web_url),
+                state,
+            },
+        ));
+        self.inline_comments(&review.id, &timestamp, review.comments, item)
+            .await
     }
 
     fn shown_url(&mut self, raw: Option<&str>) -> Option<String> {

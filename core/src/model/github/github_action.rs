@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
-use super::{GitHubReviewState, Item, PullRequestRef};
+use super::{CommentTarget, GitHubReviewState, Item, PullRequestRef};
 
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
 #[serde(tag = "type", rename_all = "camelCase")]
@@ -15,6 +15,12 @@ pub enum GitHubAction {
         #[ts(rename = "pullRequest")]
         pull_request: PullRequestRef,
         state: GitHubReviewState,
+    },
+    CommentedOn {
+        target: CommentTarget,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[ts(optional)]
+        body: Option<String>,
     },
     Committed {
         sha: String,
@@ -34,9 +40,19 @@ impl GitHubAction {
             Self::Opened {
                 target: Item::PullRequest(pull_request),
             }
+            | Self::CommentedOn {
+                target:
+                    CommentTarget::PullRequest(pull_request)
+                    | CommentTarget::ReviewLine { pull_request, .. },
+                ..
+            }
             | Self::Reviewed { pull_request, .. } => Some(pull_request),
             Self::Opened {
                 target: Item::Issue(_),
+            }
+            | Self::CommentedOn {
+                target: CommentTarget::Issue(_),
+                ..
             }
             | Self::Committed { .. } => None,
         }

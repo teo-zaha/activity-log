@@ -293,9 +293,11 @@ export type IssueRef = { number: number, title: string, webUrl?: string, };
 
 export type Item = { "kind": "pullRequest" } & PullRequestRef | { "kind": "issue" } & IssueRef;
 
-export type GitHubAction = { "type": "opened", target: Item, } | { "type": "reviewed", pullRequest: PullRequestRef, state: GitHubReviewState, } | { "type": "committed", sha: string, message?: string, branch: string, webUrl?: string, };
+export type CommentTarget = { "kind": "pullRequest" } & PullRequestRef | { "kind": "issue" } & IssueRef | { "kind": "reviewLine", pullRequest: PullRequestRef, path: string, };
 
-export type GitHubEntry = { source: "github", connection: string, id: string, timestamp: string, repository: string, } & ({ "type": "opened", target: Item, } | { "type": "reviewed", pullRequest: PullRequestRef, state: GitHubReviewState, } | { "type": "committed", sha: string, message?: string, branch: string, webUrl?: string, });
+export type GitHubAction = { "type": "opened", target: Item, } | { "type": "reviewed", pullRequest: PullRequestRef, state: GitHubReviewState, } | { "type": "commentedOn", target: CommentTarget, body?: string, } | { "type": "committed", sha: string, message?: string, branch: string, webUrl?: string, };
+
+export type GitHubEntry = { source: "github", connection: string, id: string, timestamp: string, repository: string, } & ({ "type": "opened", target: Item, } | { "type": "reviewed", pullRequest: PullRequestRef, state: GitHubReviewState, } | { "type": "commentedOn", target: CommentTarget, body?: string, } | { "type": "committed", sha: string, message?: string, branch: string, webUrl?: string, });
 
 export type GitEntry = { source: "git", 
 /**

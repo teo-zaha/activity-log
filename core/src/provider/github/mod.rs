@@ -5,7 +5,7 @@ mod stack;
 pub use config::*;
 
 use crate::{
-    collect::github::collect_github,
+    collect::github::{GitHubCollection, collect_github},
     model::{IntoActivityEntries, Source, SupportedOs},
     provider::remote_api::identity_check,
 };
@@ -34,6 +34,10 @@ crate::provider! {
                 .map(|entries| entries.into_activity_entries())
         }
 
+        fn collection_state(&self) -> Option<crate::provider::provider_adapter::CollectionState> {
+            Some(std::sync::Arc::new(GitHubCollection::default()))
+        }
+
         fn annotate<'a>(&'a self, entries: &'a mut [crate::model::ActivityEntry], context: crate::provider::provider_context::ProviderContext) -> futures::future::BoxFuture<'a, ()> {
             Box::pin(stack::annotate(entries, context))
         }
@@ -43,7 +47,7 @@ crate::provider! {
         }
 
         fn description(&self) -> &'static str {
-            "Pull requests, reviews, issues and commits. Commit history requires Contents read access."
+            "Pull requests, reviews, issues, comments and commits. Commit history requires Contents read access."
         }
 
         fn instances(&self) -> crate::provider::connection::Instances {

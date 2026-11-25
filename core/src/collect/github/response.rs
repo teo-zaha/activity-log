@@ -108,6 +108,7 @@ pub(super) struct Review {
     pub(super) state: ReviewState,
     pub(super) submitted_at: Option<Timestamp>,
     pub(super) author: Option<User>,
+    pub(super) comments: Page,
 }
 
 #[derive(Deserialize)]

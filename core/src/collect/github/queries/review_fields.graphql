@@ -1,0 +1,11 @@
+fragment ActivityReview on PullRequestReview {
+  id
+  state
+  submittedAt
+  author {
+    login
+  }
+  comments(first: 30) {
+    ...ActivityReviewCommentPage
+  }
+}

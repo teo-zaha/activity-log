@@ -20,6 +20,9 @@ const GITHUB_OPENED_PR: &str = r#"{"source":"github","connection":"oss","id":"PR
 const GITHUB_LINKED_PR: &str = r#"{"source":"github","connection":"oss","id":"PR_z","timestamp":"2026-11-17T10:00:00Z","repository":"acme/widgets","type":"opened","target":{"kind":"pullRequest","number":12,"title":"Add widget","webUrl":"https://github.com/acme/widgets/pull/12"}}"#;
 const GITHUB_STACKED_PR: &str = r#"{"source":"github","connection":"oss","id":"PR_y","timestamp":"2026-11-17T10:00:00Z","repository":"acme/widgets","type":"opened","target":{"kind":"pullRequest","number":12,"title":"Add widget","changeStack":{"current":{"number":12,"title":"Add widget","webUrl":"https://github.com/acme/widgets/pull/12"},"below":[{"number":11,"title":"Parse widget"}],"bottom":{"kind":"reached","branch":"main"},"above":{"changes":[],"end":{"kind":"complete"}}}}}"#;
 const GITHUB_REVIEWED: &str = r#"{"source":"github","connection":"oss","id":"PRR_x","timestamp":"2026-11-17T10:05:00.000Z","repository":"acme/widgets","type":"reviewed","pullRequest":{"number":12,"title":"Add widget"},"state":"changesRequested"}"#;
+const GITHUB_COMMENTED_ISSUE: &str = r#"{"source":"github","connection":"oss","id":"IC_x","timestamp":"2026-11-17T10:05:00Z","repository":"acme/widgets","type":"commentedOn","target":{"kind":"issue","number":7,"title":"Fix widget"},"body":"Check this."}"#;
+const GITHUB_COMMENTED_PR: &str = r#"{"source":"github","connection":"oss","id":"IC_y","timestamp":"2026-11-17T10:05:00Z","repository":"acme/widgets","type":"commentedOn","target":{"kind":"pullRequest","number":12,"title":"Add widget"}}"#;
+const GITHUB_COMMENTED_LINE: &str = r#"{"source":"github","connection":"oss","id":"PRRC_x","timestamp":"2026-11-17T10:05:00Z","repository":"acme/widgets","type":"commentedOn","target":{"kind":"reviewLine","pullRequest":{"number":12,"title":"Add widget"},"path":"src/main.rs"},"body":"Check this line."}"#;
 const GITHUB_COMMITTED: &str = r#"{"source":"github","connection":"oss","id":"C_example","timestamp":"2026-11-17T10:10:00Z","repository":"acme/widgets","type":"committed","sha":"0123456789abcdef0123456789abcdef01234567","message":"Add widget","branch":"main","webUrl":"https://github.com/acme/widgets/commit/0123456789abcdef0123456789abcdef01234567"}"#;
 const JIRA: &str = r#"{"source":"jira","connection":"work","id":"OPS-1:status:9","type":"statusChanged","timestamp":"2026-11-17T10:00:00+00:00","key":"OPS-1","title":"Rotate keys","status":"Done","issueType":"Task","fromStatus":"In Progress","toStatus":"Done"}"#;
 const OUTLOOK: &str = r#"{"source":"outlook","connection":"outlook","id":"AAMk1","timestamp":"2026-11-17T13:00:00+00:00","title":"Planning","location":"Room 4","organizer":"lead@example.org","isOrganizer":false,"durationMinutes":45,"busyStatus":"busy","meetingWeight":"busy","description":"Agenda","descriptionBlocks":[{"kind":"paragraph","segments":[{"kind":"text","text":"Agenda"}]}],"joinUrl":"https://meet.example.org/j/1"}"#;
@@ -53,6 +56,9 @@ fn every_kind_keeps_its_wire_shape() {
     round_trip(GITHUB_LINKED_PR, Source::Github);
     round_trip(GITHUB_STACKED_PR, Source::Github);
     round_trip(GITHUB_REVIEWED, Source::Github);
+    round_trip(GITHUB_COMMENTED_ISSUE, Source::Github);
+    round_trip(GITHUB_COMMENTED_PR, Source::Github);
+    round_trip(GITHUB_COMMENTED_LINE, Source::Github);
     round_trip(GITHUB_COMMITTED, Source::Github);
     round_trip(
         &GITHUB_COMMITTED.replace(r#""message":"Add widget","#, ""),

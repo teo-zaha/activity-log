@@ -735,6 +735,15 @@ async fn native_annotations_stay_out_of_the_day_cache_and_reach_cached_entries()
                 }}}}))
             }
             "OwnPullRequests" => reply(json!({"data":{"viewer":{"page":page(Vec::new())}}})),
+            "ViewerIssueComments" => {
+                let target = json!({
+                    "id":"PR_4","number":4,"title":"Old title","repository":{"nameWithOwner":REPO}
+                });
+                reply(json!({"data":{"viewer":{"issueComments":page(vec![json!({
+                    "id":"IC_example","createdAt":AT,"updatedAt":AT,"body":"Example comment",
+                    "pullRequest":target,"issue":target
+                })])}}}))
+            }
             "CommitRepositories" => reply(json!({"data":{"viewer":{"contributionsCollection":{
                 "restrictedContributionsCount":0,"totalRepositoriesWithContributedCommits":0,
                 "commitContributionsByRepository":[]
@@ -764,23 +773,29 @@ async fn native_annotations_stay_out_of_the_day_cache_and_reach_cached_entries()
     };
     let mut first = runtime.collect_in(dir.path(), range, None).await.unwrap();
     runtime.annotate(&mut first).await;
-    assert_eq!(first.len(), 1);
+    assert_eq!(first.len(), 2);
     let cached_text: String = std::fs::read_dir(dir.path())
         .unwrap()
         .map(|file| std::fs::read_to_string(file.unwrap().path()).unwrap_or_default())
         .collect();
     assert!(cached_text.contains("PR_4"));
+    assert!(cached_text.contains("IC_example"));
     assert!(!cached_text.contains("changeStack"));
     let mut cached = runtime.collect_in(dir.path(), range, None).await.unwrap();
     let stored = serde_json::to_value(&cached).unwrap();
-    assert!(stored[0]["target"].get("changeStack").is_none());
+    for event in stored.as_array().unwrap() {
+        assert!(event["target"].get("changeStack").is_none());
+    }
     runtime.annotate(&mut cached).await;
     let first = serde_json::to_value(first).unwrap();
-    assert_eq!(first[0]["target"]["changeStack"]["below"][0]["number"], 2);
+    for event in first.as_array().unwrap() {
+        assert_eq!(event["target"]["changeStack"]["below"][0]["number"], 2);
+    }
     assert_eq!(serde_json::to_value(cached).unwrap(), first);
     let requests = server.requests();
     for (query, count) in [
         ("query OpenedPullRequests", 1),
+        ("query ViewerIssueComments", 1),
         ("query NativeStackNumbers", 2),
     ] {
         assert_eq!(

@@ -1,6 +1,8 @@
 use serde_json::{Value, json};
 
+use super::comments::{ISSUE_COMMENTS, MORE_REVIEW_COMMENTS};
 use super::*;
+use crate::model::github::CommentTarget;
 use crate::{
     model::{ConnectionId, IdentityEvidence, LogLevel, ProviderProblem, RemoteIdentity, Source},
     provider::{
@@ -25,6 +27,10 @@ fn api(server: &TestServer) -> GitHubApi {
     .unwrap()
 }
 
+async fn collect(api: &GitHubApi, options: CollectOptions) -> Result<Vec<GitHubEntry>> {
+    super::collect(api, options, &Default::default()).await
+}
+
 fn options() -> CollectOptions {
     CollectOptions {
         start: START.parse().unwrap(),
@@ -43,7 +49,10 @@ fn contributions(nodes: Vec<Value>, after: Option<&str>) -> Value {
 }
 
 fn review(id: &str, state: &str, timestamp: Option<&str>) -> Value {
-    json!({ "id": id, "state": state, "submittedAt": timestamp, "author": { "login": "jdoe" } })
+    json!({
+        "id": id, "state": state, "submittedAt": timestamp,
+        "author": { "login": "jdoe" }, "comments": page(vec![], None),
+    })
 }
 
 fn item(id: &str, number: u64) -> Value {
@@ -140,6 +149,7 @@ async fn collects_openings_and_each_submitted_review_across_distinct_pages() {
                     ], None,
                 ) } }))
             }
+            ISSUE_COMMENTS => conversations(vec![], None),
             commits::REPOSITORIES => answer(commit_discovery(&[], 0)),
             OWN_PULL_REQUESTS => {
                 assert!(variables["after"].is_null());
@@ -172,7 +182,7 @@ async fn collects_openings_and_each_submitted_review_across_distinct_pages() {
         warnings,
         ["Omitted 2 GitHub links to another origin, first: https://other.example.org"]
     );
-    assert_eq!(server.requests().len(), 8);
+    assert_eq!(server.requests().len(), 9);
     assert_eq!(
         entries
             .iter()
@@ -422,6 +432,7 @@ fn standard_query(query: &str) -> Option<Reply> {
         OPENED_PULL_REQUESTS | OPENED_ISSUES | REVIEWED_PULL_REQUESTS => {
             Some(answer(contributions(vec![], None)))
         }
+        ISSUE_COMMENTS => Some(conversations(vec![], None)),
         OWN_PULL_REQUESTS => Some(answer(json!({"viewer": {"page": page(vec![], None)}}))),
         _ => None,
     }
@@ -692,5 +703,525 @@ async fn history_rejects_a_changed_repository_or_default_branch() {
         });
         let error = collect(&api(&server), options()).await.unwrap_err();
         assert_eq!(error.downcast_ref::<CollectionError>(), Some(&expected));
+    }
+}
+
+fn conversations(rows: Vec<Value>, after: Option<&str>) -> Reply {
+    answer(json!({ "viewer": { "issueComments": page(rows, after) } }))
+}
+
+fn conversation(id: &str, created: &str, updated: &str, is_pull: bool, body: &str) -> Value {
+    json!({
+        "id": id, "createdAt": created, "updatedAt": updated, "body": body,
+        "issue": item("issue-example", 7),
+        "pullRequest": is_pull.then(|| item("pull-example", 12)),
+    })
+}
+
+// Live check: verify an edited conversation comment moves ahead in UPDATED_AT order.
+// These fixtures exercise our cutoff and cursor reuse with the documented ordering.
+#[tokio::test]
+async fn conversation_comments_resume_one_walk_across_chunks_and_select_by_creation() {
+    const OLDER_START: &str = "2026-10-01T00:00:00Z";
+    const OCT_10: &str = "2026-10-10T00:00:00Z";
+    const OCT_03: &str = "2026-10-03T00:00:00Z";
+    let server = TestServer::start(|request| {
+        let body = request_body(request);
+        let query = body["query"].as_str().unwrap();
+        match query {
+            ISSUE_COMMENTS if body["variables"]["after"].is_null() => conversations(
+                vec![
+                    conversation("outside-end", END, END, false, "Later"),
+                    conversation("edited", OCT_10, IN_RANGE, false, "   Earlier  "),
+                    conversation("pull-comment", START, START, true, "   "),
+                    conversation("older-page-tail", OCT_10, OCT_10, false, "Memoized"),
+                ],
+                Some("older-page"),
+            ),
+            ISSUE_COMMENTS => {
+                assert_eq!(body["variables"]["after"], "older-page");
+                conversations(
+                    vec![
+                        conversation(
+                            "older-page-head",
+                            OCT_03,
+                            OCT_03,
+                            true,
+                            "🦀".repeat(2_001).as_str(),
+                        ),
+                        conversation(
+                            "before-range",
+                            "2026-09-30T00:00:00Z",
+                            "2026-09-30T00:00:00Z",
+                            false,
+                            "Too early",
+                        ),
+                    ],
+                    Some("do-not-fetch"),
+                )
+            }
+            commits::REPOSITORIES => answer(commit_discovery(&[], 0)),
+            _ => standard_query(query).expect("unexpected query"),
+        }
+    });
+
+    let api = api(&server);
+    let state = GitHubCollection::default();
+    let connection = ConnectionId::new(Source::Github, "example");
+    let walk = state.conversations(&connection);
+    let recent = super::collect(&api, options(), &walk).await.unwrap();
+    let [comment] = recent.as_slice() else {
+        panic!("expected one recent comment");
+    };
+    assert_eq!(comment.id, "pull-comment");
+    assert!(matches!(
+        &comment.action,
+        GitHubAction::CommentedOn { target: CommentTarget::PullRequest(pull), body: None }
+            if pull.number == 12
+    ));
+    assert_eq!(comment_requests(&server).len(), 1);
+
+    let older = super::collect(
+        &api,
+        CollectOptions {
+            start: OLDER_START.parse().unwrap(),
+            end: START.parse().unwrap(),
+        },
+        &state.conversations(&connection),
+    )
+    .await
+    .unwrap();
+    let [first, edited, tail] = older.as_slice() else {
+        panic!("expected three earlier comments");
+    };
+    assert_eq!(first.id, "older-page-head");
+    assert!(matches!(
+        &first.action,
+        GitHubAction::CommentedOn { body: Some(body), .. }
+            if body == &"🦀".repeat(2_001)
+    ));
+    assert_eq!(edited.id, "edited");
+    assert_eq!(edited.timestamp.as_str(), OCT_10);
+    assert!(matches!(
+        &edited.action,
+        GitHubAction::CommentedOn { target: CommentTarget::Issue(issue), body: Some(body) }
+            if issue.number == 7 && body == "Earlier"
+    ));
+    assert_eq!(tail.id, "older-page-tail");
+    assert_eq!(
+        comment_requests(&server),
+        [Value::Null, json!("older-page")]
+    );
+}
+
+fn comment_requests(server: &TestServer) -> Vec<Value> {
+    server
+        .requests()
+        .iter()
+        .map(request_body)
+        .filter(|body| body["query"] == ISSUE_COMMENTS)
+        .map(|body| body["variables"]["after"].clone())
+        .collect()
+}
+
+#[tokio::test]
+async fn conversation_comments_skip_refused_rows_and_warn_once_across_chunks() {
+    const EARLIER: &str = "2026-10-20T00:00:00Z";
+    let server = TestServer::start(|request| {
+        let body = request_body(request);
+        match body["query"].as_str().unwrap() {
+            ISSUE_COMMENTS => {
+                let (rows, after) = if body["variables"]["after"].is_null() {
+                    (
+                        vec![
+                            conversation("readable", START, START, false, "Read this"),
+                            conversation("refused", START, START, false, "Omit this"),
+                            conversation(
+                                "previous-chunk",
+                                EARLIER,
+                                EARLIER,
+                                false,
+                                "Read this later",
+                            ),
+                        ],
+                        Some("older-page"),
+                    )
+                } else {
+                    assert_eq!(body["variables"]["after"], "older-page");
+                    (vec![Value::Null], None)
+                };
+                let index = if after.is_some() { 1 } else { 0 };
+                let errors: Vec<_> = ["repository", "url"]
+                    .into_iter()
+                    .map(|field| {
+                        json!({
+                            "type": "FORBIDDEN", "message": "Example refusal",
+                            "path": ["viewer", "issueComments", "nodes", index, "issue", field]
+                        })
+                    })
+                    .collect();
+                Reply::json(
+                    200,
+                    json!({
+                        "data": { "viewer": { "issueComments": page(rows, after) } },
+                        "errors": errors,
+                    })
+                    .to_string(),
+                )
+            }
+            commits::REPOSITORIES => answer(commit_discovery(&[], 0)),
+            query => standard_query(query).expect("unexpected query"),
+        }
+    });
+    let connection = ConnectionId::new(Source::Github, "refused-conversation-rows");
+    let scope = connection.to_string();
+    let api = api(&server);
+    {
+        let state = GitHubCollection::default();
+        let walk = state.conversations(&connection);
+        let recent = super::collect(&api, options(), &walk).await.unwrap();
+        assert_eq!(
+            recent.iter().map(|row| row.id.as_str()).collect::<Vec<_>>(),
+            ["readable"]
+        );
+        let earlier = super::collect(
+            &api,
+            CollectOptions {
+                start: EARLIER.parse().unwrap(),
+                end: START.parse().unwrap(),
+            },
+            &walk,
+        )
+        .await
+        .unwrap();
+        assert_eq!(
+            earlier
+                .iter()
+                .map(|row| row.id.as_str())
+                .collect::<Vec<_>>(),
+            ["previous-chunk"]
+        );
+    }
+    assert_eq!(
+        comment_requests(&server),
+        [Value::Null, json!("older-page")]
+    );
+    let warnings: Vec<_> = diagnostics::entries()
+        .into_iter()
+        .filter(|line| line.scope == scope && line.level == LogLevel::Warn)
+        .map(|line| line.message)
+        .collect();
+    assert_eq!(
+        warnings,
+        ["Skipped 2 GitHub conversation comments the token could not read"]
+    );
+}
+
+#[tokio::test]
+async fn conversation_comment_refusals_without_a_readable_page_stay_typed() {
+    for (kind, code, path, data) in [
+        (
+            QueryErrorKind::Forbidden,
+            "FORBIDDEN",
+            json!(["viewer"]),
+            Value::Null,
+        ),
+        (
+            QueryErrorKind::Forbidden,
+            "FORBIDDEN",
+            json!(["viewer", "issueComments"]),
+            json!({"viewer": null}),
+        ),
+        (
+            QueryErrorKind::Forbidden,
+            "FORBIDDEN",
+            json!(["viewer", "issueComments", "nodes", 0]),
+            Value::Null,
+        ),
+        (
+            QueryErrorKind::RateLimited,
+            "RATE_LIMITED",
+            json!(["viewer", "issueComments", "nodes", 0]),
+            json!({"viewer": {"issueComments": page(vec![Value::Null], None)}}),
+        ),
+    ] {
+        let server = TestServer::start(move |request| {
+            let body = request_body(request);
+            match body["query"].as_str().unwrap() {
+                ISSUE_COMMENTS => Reply::json(
+                    200,
+                    json!({
+                        "data": data,
+                        "errors": [{"type": code, "message": "Example refusal", "path": path}],
+                    })
+                    .to_string(),
+                ),
+                commits::REPOSITORIES => answer(commit_discovery(&[], 0)),
+                query => standard_query(query).expect("unexpected query"),
+            }
+        });
+        let error = collect(&api(&server), options()).await.unwrap_err();
+        let remote = error.downcast_ref::<RemoteFailure>().unwrap();
+        let ApiError::Query(refusal) = &remote.error else {
+            panic!("expected a typed GraphQL refusal");
+        };
+        assert!(refusal.kinds().eq([kind]));
+    }
+}
+
+fn inline(id: &str, created_at: &str) -> Value {
+    json!({
+        "id": id, "createdAt": created_at, "body": "  Check this  ", "path": "src/main.rs",
+    })
+}
+
+#[tokio::test]
+async fn draft_comments_belong_to_the_review_submission_day_even_on_separate_fetches() {
+    const DRAFT_DAY: &str = "2026-11-10T00:00:00Z";
+    const CREATED: &str = "2026-11-10T20:00:00Z";
+    const SUBMISSION_DAY: &str = "2026-11-11T00:00:00Z";
+    const SUBMITTED: &str = "2026-11-11T02:00:00Z";
+    const END: &str = "2026-11-12T00:00:00Z";
+    let server = TestServer::start(|request| {
+        let body = request_body(request);
+        let mut row = review("review-example", "COMMENTED", Some(SUBMITTED));
+        row["comments"] = page(vec![inline("inline-first", CREATED)], Some("inline-next"));
+        let pull = pull("pr-example", 12, SUBMITTED, page(vec![row], None));
+        match body["query"].as_str().unwrap() {
+            REVIEWED_PULL_REQUESTS if body["variables"]["from"] == SUBMISSION_DAY => {
+                answer(contributions(vec![json!({"pullRequest": pull})], None))
+            }
+            OWN_PULL_REQUESTS => answer(json!({"viewer": {"page": page(vec![pull], None)}})),
+            MORE_REVIEW_COMMENTS => {
+                assert_eq!(
+                    body["variables"],
+                    json!({"id": "review-example", "after": "inline-next"})
+                );
+                answer(json!({"node": {"id": "review-example", "comments": page(
+                    vec![inline("inline-second", CREATED)], None
+                )}}))
+            }
+            commits::REPOSITORIES => answer(commit_discovery(&[], 0)),
+            query => standard_query(query).expect("unexpected query"),
+        }
+    });
+    let api = api(&server);
+    let draft_day = collect(
+        &api,
+        CollectOptions {
+            start: DRAFT_DAY.parse().unwrap(),
+            end: SUBMISSION_DAY.parse().unwrap(),
+        },
+    )
+    .await
+    .unwrap();
+    assert!(draft_day.is_empty());
+    assert!(
+        server
+            .requests()
+            .iter()
+            .all(|req| request_body(req)["query"] != MORE_REVIEW_COMMENTS)
+    );
+
+    let submission_day = collect(
+        &api,
+        CollectOptions {
+            start: SUBMISSION_DAY.parse().unwrap(),
+            end: END.parse().unwrap(),
+        },
+    )
+    .await
+    .unwrap();
+    assert_eq!(
+        submission_day
+            .iter()
+            .map(|e| e.id.as_str())
+            .collect::<Vec<_>>(),
+        ["review-example", "inline-first", "inline-second"],
+    );
+    for event in &submission_day[1..] {
+        assert_eq!(event.timestamp.as_str(), SUBMITTED);
+        assert!(matches!(
+            &event.action,
+            GitHubAction::CommentedOn {
+                target: CommentTarget::ReviewLine { pull_request, path },
+                body: Some(body),
+            } if pull_request.number == 12 && path == "src/main.rs" && body == "Check this"
+        ));
+    }
+}
+
+#[tokio::test]
+async fn inline_continuation_uses_repository_refusal_policy() {
+    for kind in [QueryErrorKind::Forbidden, QueryErrorKind::RateLimited] {
+        let code = match kind {
+            QueryErrorKind::Forbidden => "FORBIDDEN",
+            QueryErrorKind::RateLimited => "RATE_LIMITED",
+            _ => unreachable!(),
+        };
+        let server = TestServer::start(move |request| {
+            let body = request_body(request);
+            match body["query"].as_str().unwrap() {
+                REVIEWED_PULL_REQUESTS => {
+                    let mut row = review("review-example", "COMMENTED", Some(IN_RANGE));
+                    row["comments"] =
+                        page(vec![inline("inline-first", IN_RANGE)], Some("inline-next"));
+                    answer(contributions(
+                        vec![json!({"pullRequest": pull(
+                            "pr-example", 12, IN_RANGE, page(vec![row], None)
+                        )})],
+                        None,
+                    ))
+                }
+                MORE_REVIEW_COMMENTS => Reply::json(
+                    200,
+                    json!({
+                        "data": { "node": null },
+                        "errors": [{
+                            "type": code,
+                            "message": "Example refusal",
+                            "path": ["node", "comments"]
+                        }]
+                    })
+                    .to_string(),
+                ),
+                commits::REPOSITORIES => answer(commit_discovery(&[], 0)),
+                query => standard_query(query).expect("unexpected query"),
+            }
+        });
+        let result = collect(&api(&server), options()).await;
+        if kind == QueryErrorKind::Forbidden {
+            let entries = result.unwrap();
+            assert_eq!(
+                entries
+                    .iter()
+                    .map(|entry| entry.id.as_str())
+                    .collect::<Vec<_>>(),
+                ["review-example", "inline-first"]
+            );
+        } else {
+            let failure = result.unwrap_err().downcast::<RemoteFailure>().unwrap();
+            assert!(
+                matches!(failure.error, ApiError::Query(refusal) if refusal.kinds().eq([kind]))
+            );
+        }
+    }
+}
+
+#[tokio::test]
+async fn an_older_chunk_can_fill_the_memo_before_a_newer_chunk() {
+    const EARLIER: &str = "2026-10-20T00:00:00Z";
+    let server = TestServer::start(|request| {
+        let body = request_body(request);
+        match body["query"].as_str().unwrap() {
+            ISSUE_COMMENTS if body["variables"]["after"].is_null() => conversations(
+                vec![
+                    conversation("newer", IN_RANGE, IN_RANGE, true, "New"),
+                    conversation("older", EARLIER, EARLIER, false, "Old"),
+                ],
+                Some("boundary"),
+            ),
+            ISSUE_COMMENTS => {
+                assert_eq!(body["variables"]["after"], "boundary");
+                conversations(
+                    vec![conversation(
+                        "same-instant",
+                        EARLIER,
+                        EARLIER,
+                        false,
+                        "Also old",
+                    )],
+                    None,
+                )
+            }
+            commits::REPOSITORIES => answer(commit_discovery(&[], 0)),
+            query => standard_query(query).expect("unexpected query"),
+        }
+    });
+    let api = api(&server);
+    let walk = ConversationRun::default();
+    let older = super::collect(
+        &api,
+        CollectOptions {
+            start: EARLIER.parse().unwrap(),
+            end: START.parse().unwrap(),
+        },
+        &walk,
+    )
+    .await
+    .unwrap();
+    assert_eq!(
+        older.iter().map(|row| row.id.as_str()).collect::<Vec<_>>(),
+        ["older", "same-instant"],
+    );
+    let newer = super::collect(&api, options(), &walk).await.unwrap();
+    assert_eq!(newer.len(), 1);
+    assert_eq!(newer[0].id, "newer");
+    assert_eq!(comment_requests(&server), [Value::Null, json!("boundary")]);
+}
+
+#[tokio::test]
+async fn a_comment_order_failure_discards_the_memo_and_restarts_at_the_first_page() {
+    use std::sync::atomic::{AtomicUsize, Ordering};
+
+    const EARLIER: &str = "2026-10-20T00:00:00Z";
+    for (created, updated) in [(IN_RANGE, START), (IN_RANGE, IN_RANGE)] {
+        let walks = AtomicUsize::new(0);
+        let server = TestServer::start(move |request| {
+            let body = request_body(request);
+            match body["query"].as_str().unwrap() {
+                ISSUE_COMMENTS if body["variables"]["after"].is_null() => {
+                    if walks.fetch_add(1, Ordering::Relaxed) == 0 {
+                        conversations(
+                            vec![conversation("partial", START, START, false, "Discard")],
+                            Some("broken"),
+                        )
+                    } else {
+                        conversations(
+                            vec![conversation("fresh", EARLIER, EARLIER, false, "Keep")],
+                            None,
+                        )
+                    }
+                }
+                ISSUE_COMMENTS => {
+                    assert_eq!(body["variables"]["after"], "broken");
+                    conversations(
+                        vec![conversation(
+                            "bad-order",
+                            created,
+                            updated,
+                            false,
+                            "Invalid",
+                        )],
+                        None,
+                    )
+                }
+                commits::REPOSITORIES => answer(commit_discovery(&[], 0)),
+                query => standard_query(query).expect("unexpected query"),
+            }
+        });
+        let api = api(&server);
+        let walk = ConversationRun::default();
+        let error = super::collect(&api, options(), &walk).await.unwrap_err();
+        assert_eq!(
+            error.downcast_ref::<CollectionError>(),
+            Some(&CollectionError::CommentOrder)
+        );
+        let older = super::collect(
+            &api,
+            CollectOptions {
+                start: EARLIER.parse().unwrap(),
+                end: START.parse().unwrap(),
+            },
+            &walk,
+        )
+        .await
+        .unwrap();
+        assert_eq!(older.len(), 1);
+        assert_eq!(older[0].id, "fresh");
+        assert_eq!(
+            comment_requests(&server),
+            [Value::Null, json!("broken"), Value::Null]
+        );
     }
 }

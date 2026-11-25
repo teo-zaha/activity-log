@@ -129,6 +129,14 @@ export function githubAction(entry: GitHubEntry): ActionWords {
         entry.pullRequest.number,
         REVIEW_STATE_WORDS[entry.state]
       )
+    case 'commentedOn':
+      return entry.target.kind === 'reviewLine'
+        ? itemAction(
+            `Commented on ${entry.target.path} in`,
+            'pullRequest',
+            entry.target.pullRequest.number
+          )
+        : itemAction('Commented on', entry.target.kind, entry.target.number)
     case 'committed':
       return words(`Committed to ${entry.branch}`)
   }

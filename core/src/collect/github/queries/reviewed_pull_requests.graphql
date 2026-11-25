@@ -22,12 +22,7 @@ query ReviewedPullRequests($from: DateTime!, $to: DateTime!, $after: String, $lo
                 endCursor
               }
               nodes {
-                id
-                state
-                submittedAt
-                author {
-                  login
-                }
+                ...ActivityReview
               }
             }
           }

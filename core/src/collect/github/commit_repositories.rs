@@ -3,7 +3,7 @@ use serde_json::Value;
 
 use crate::provider::remote_error::{ApiError, QueryAnswer, QueryErrorKind, QueryPathSegment};
 
-/// The root fields of the two repository history queries and the number of IDs sent.
+/// Root fields of queries with known repository ownership, and the number of IDs sent.
 #[derive(Debug, Clone, Copy)]
 pub(super) enum RepositoryQuery {
     Nodes(usize),

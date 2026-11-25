@@ -68,6 +68,15 @@ impl Pager {
         fetch: impl AsyncFnOnce(Option<&str>) -> Result<Page, E>,
         id: impl Fn(&T) -> &str,
     ) -> Result<Option<Batch<T>>, E> {
+        self.next_or_stop(async |after| fetch(after).await.map(Some), id)
+            .await
+    }
+
+    pub(crate) async fn next_or_stop<T: DeserializeOwned, E: From<PageError>>(
+        &mut self,
+        fetch: impl AsyncFnOnce(Option<&str>) -> Result<Option<Page>, E>,
+        id: impl Fn(&T) -> &str,
+    ) -> Result<Option<Batch<T>>, E> {
         let after = match std::mem::replace(&mut self.position, Position::End) {
             Position::First => None,
             Position::After(cursor) => Some(cursor),
@@ -76,7 +85,9 @@ impl Pager {
         self.guard
             .begin(after.clone())
             .map_err(|_| PageError::RepeatedPage)?;
-        let Page { page_info, nodes } = fetch(after.as_deref()).await?;
+        let Some(Page { page_info, nodes }) = fetch(after.as_deref()).await? else {
+            return Ok(None);
+        };
         let mut skipped = 0;
         let read = nodes
             .into_iter()

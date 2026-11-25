@@ -5,7 +5,7 @@ use chrono::{DateTime, TimeZone};
 use crate::model::{
     ActivityEntry, ActivityLog, CalendarEntry, FigmaActivity, FigmaEntry, GitEntry, GitLabEntry,
     JiraEntry, MeetingBody, OutlookEntry, SystemEntry,
-    github::{GitHubAction, GitHubEntry, GitHubReviewState, Item},
+    github::{CommentTarget, GitHubAction, GitHubEntry, GitHubReviewState, Item},
 };
 
 #[cfg(test)]
@@ -156,6 +156,26 @@ fn github_line(entry: &GitHubEntry, time: impl std::fmt::Display) -> String {
                 pull_request.number,
                 &pull_request.title,
             )
+        }
+        GitHubAction::CommentedOn { target, body } => {
+            let (subject, title) = match target {
+                CommentTarget::PullRequest(pull) => {
+                    (format!("pull request #{}", pull.number), &pull.title)
+                }
+                CommentTarget::Issue(issue) => (format!("issue #{}", issue.number), &issue.title),
+                CommentTarget::ReviewLine { pull_request, path } => (
+                    format!("{} in pull request #{}", code(path), pull_request.number),
+                    &pull_request.title,
+                ),
+            };
+            let body = body
+                .as_deref()
+                .map_or_else(String::new, |body| format!(": {}", text(body)));
+            return format!(
+                "- **[github]** {} Commented on {subject} {}{body} ({time})\n",
+                code(&entry.repository),
+                text(title),
+            );
         }
         GitHubAction::Committed {
             sha,

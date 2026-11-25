@@ -2,6 +2,8 @@
 pub(super) enum CollectionError {
     ReviewPullRequestMismatch,
     ReviewAuthorMismatch,
+    CommentOrder,
+    CommentReviewMismatch,
     IncompleteCommitDiscovery,
     CommitRepositoryMismatch,
     CommitRepositoryUnavailable,
@@ -15,6 +17,8 @@ impl std::fmt::Display for CollectionError {
                 "GitHub returned reviews for a different pull request"
             }
             Self::ReviewAuthorMismatch => "GitHub returned a review by a different user",
+            Self::CommentOrder => "GitHub returned conversation comments out of update order",
+            Self::CommentReviewMismatch => "GitHub returned comments for a different review",
             Self::IncompleteCommitDiscovery => {
                 "GitHub did not list every repository with commits for one day"
             }

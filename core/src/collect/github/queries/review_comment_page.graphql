@@ -1,0 +1,11 @@
+fragment ActivityReviewCommentPage on PullRequestReviewCommentConnection {
+  pageInfo {
+    hasNextPage
+    endCursor
+  }
+  nodes {
+    id
+    path
+    body: bodyText
+  }
+}

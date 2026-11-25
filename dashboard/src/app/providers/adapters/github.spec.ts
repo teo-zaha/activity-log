@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import type { GitHubReviewState } from '../../generated/activity'
+import type { CommentTarget, GitHubReviewState } from '../../generated/activity'
 import { githubPullRequestEntry } from '../../testing/activity-fixtures'
 import { createEntryAdapter } from '../provider-adapter'
 
@@ -37,6 +37,44 @@ describe('GitHub adapter', () => {
       label: 'Action',
       value: `Reviewed pull request${suffix}`,
     })
+  })
+
+  const conversationWords: [CommentTarget, string][] = [
+    [githubPullRequestEntry.target, 'Commented on pull request #12'],
+    [{ kind: 'issue', number: 5, title: 'Fix widgets' }, 'Commented on issue #5'],
+  ]
+
+  it.each(conversationWords)(
+    'names the item a conversation comment belongs to',
+    (target, action) => {
+      const entry = createEntryAdapter({
+        ...githubPullRequestEntry,
+        type: 'commentedOn',
+        target,
+      })
+
+      expect(entry.meta).toBe(`acme/widgets · ${action}`)
+      expect(entry.detailFields.some(({ label }) => label === 'Comment')).toBe(false)
+    }
+  )
+
+  it('shows the file, body, and pull request link of an inline comment', () => {
+    const webUrl = 'https://example.org/acme/widgets/pull/12'
+    const entry = createEntryAdapter({
+      ...githubPullRequestEntry,
+      type: 'commentedOn',
+      target: {
+        kind: 'reviewLine',
+        pullRequest: { ...githubPullRequestEntry.target, webUrl },
+        path: 'src/main.rs',
+      },
+      body: 'Could we add a test?',
+    })
+
+    expect(entry.meta).toBe('acme/widgets · Commented on src/main.rs in pull request #12')
+    expect(entry.detailFields).toContainEqual({ label: 'File', value: 'src/main.rs' })
+    expect(entry.detailFields).toContainEqual({ label: 'Comment', value: 'Could we add a test?' })
+    expect(entry.detailLink).toEqual({ label: 'Open pull request', url: webUrl })
   })
 
   it('keeps the branch name in a commit action', () => {

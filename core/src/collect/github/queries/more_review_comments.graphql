@@ -1,0 +1,10 @@
+query MoreReviewComments($id: ID!, $after: String!) {
+  node(id: $id) {
+    ... on PullRequestReview {
+      id
+      comments(first: 30, after: $after) {
+        ...ActivityReviewCommentPage
+      }
+    }
+  }
+}

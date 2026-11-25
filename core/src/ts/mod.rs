@@ -27,7 +27,10 @@ use crate::{
         RuntimeState, SecretStoreInfo, SecretStoreKindDto, SecretStoredDto, ShownActivity, Source,
         StackCut, StackedChange, SupportedOs, SystemEntry, SystemEntryType, SystemSettingsPane,
         TextSegment, WebFixAction,
-        github::{GitHubAction, GitHubEntry, GitHubReviewState, IssueRef, Item, PullRequestRef},
+        github::{
+            CommentTarget, GitHubAction, GitHubEntry, GitHubReviewState, IssueRef, Item,
+            PullRequestRef,
+        },
     },
     runtime::{PING_INTERVAL, forward::RuntimeMessage},
 };
@@ -99,6 +102,7 @@ pub fn activity_typescript() -> String {
         export_decl::<PullRequestRef>(&cfg),
         export_decl::<IssueRef>(&cfg),
         export_decl::<Item>(&cfg),
+        export_decl::<CommentTarget>(&cfg),
         export_decl::<GitHubAction>(&cfg),
         export_decl::<GitHubEntry>(&cfg),
         export_decl::<GitEntry>(&cfg),
