@@ -1,6 +1,8 @@
 use serde_json::{Value, json};
 
 use super::comments::{ISSUE_COMMENTS, MORE_REVIEW_COMMENTS};
+mod state_changes;
+
 use super::*;
 use crate::model::github::CommentTarget;
 use crate::{
@@ -150,6 +152,7 @@ async fn collects_openings_and_each_submitted_review_across_distinct_pages() {
                 ) } }))
             }
             ISSUE_COMMENTS => conversations(vec![], None),
+            super::state_changes::SEARCHES => state_changes::no_state_changes(),
             commits::REPOSITORIES => answer(commit_discovery(&[], 0)),
             OWN_PULL_REQUESTS => {
                 assert!(variables["after"].is_null());
@@ -182,7 +185,7 @@ async fn collects_openings_and_each_submitted_review_across_distinct_pages() {
         warnings,
         ["Omitted 2 GitHub links to another origin, first: https://other.example.org"]
     );
-    assert_eq!(server.requests().len(), 9);
+    assert_eq!(server.requests().len(), 10);
     assert_eq!(
         entries
             .iter()
@@ -433,6 +436,7 @@ fn standard_query(query: &str) -> Option<Reply> {
             Some(answer(contributions(vec![], None)))
         }
         ISSUE_COMMENTS => Some(conversations(vec![], None)),
+        super::state_changes::SEARCHES => Some(state_changes::no_state_changes()),
         OWN_PULL_REQUESTS => Some(answer(json!({"viewer": {"page": page(vec![], None)}}))),
         _ => None,
     }
@@ -768,7 +772,7 @@ async fn conversation_comments_resume_one_walk_across_chunks_and_select_by_creat
     let api = api(&server);
     let state = GitHubCollection::default();
     let connection = ConnectionId::new(Source::Github, "example");
-    let walk = state.conversations(&connection);
+    let walk = state.run(&connection);
     let recent = super::collect(&api, options(), &walk).await.unwrap();
     let [comment] = recent.as_slice() else {
         panic!("expected one recent comment");
@@ -787,7 +791,7 @@ async fn conversation_comments_resume_one_walk_across_chunks_and_select_by_creat
             start: OLDER_START.parse().unwrap(),
             end: START.parse().unwrap(),
         },
-        &state.conversations(&connection),
+        &state.run(&connection),
     )
     .await
     .unwrap();
@@ -878,7 +882,7 @@ async fn conversation_comments_skip_refused_rows_and_warn_once_across_chunks() {
     let api = api(&server);
     {
         let state = GitHubCollection::default();
-        let walk = state.conversations(&connection);
+        let walk = state.run(&connection);
         let recent = super::collect(&api, options(), &walk).await.unwrap();
         assert_eq!(
             recent.iter().map(|row| row.id.as_str()).collect::<Vec<_>>(),
@@ -914,6 +918,99 @@ async fn conversation_comments_skip_refused_rows_and_warn_once_across_chunks() {
     assert_eq!(
         warnings,
         ["Skipped 2 GitHub conversation comments the token could not read"]
+    );
+}
+
+#[tokio::test]
+async fn a_retried_comment_page_counts_its_refused_row_once() {
+    use std::sync::atomic::{AtomicUsize, Ordering};
+
+    const OLDER: &str = "2026-10-26T00:00:00Z";
+    let continuations = AtomicUsize::new(0);
+    let server =
+        TestServer::start(move |request| {
+            let body = request_body(request);
+            match body["query"].as_str().unwrap() {
+            ISSUE_COMMENTS if body["variables"]["after"].is_null() => Reply::json(
+                200,
+                json!({
+                    "data": { "viewer": { "issueComments": page(
+                        vec![conversation("recent", START, START, false, "Visible"), Value::Null],
+                        Some("next"),
+                    ) } },
+                    "errors": [{
+                        "type": "FORBIDDEN",
+                        "path": ["viewer", "issueComments", "nodes", 1],
+                        "message": "Example refusal",
+                    }],
+                }).to_string(),
+            ),
+            ISSUE_COMMENTS => {
+                assert_eq!(body["variables"]["after"], "next");
+                if continuations.fetch_add(1, Ordering::Relaxed) == 0 {
+                    Reply::json(200, json!({
+                        "data": null,
+                        "errors": [{"type": "RATE_LIMITED", "message": "Example limit"}],
+                    }).to_string())
+                } else {
+                    conversations(
+                        vec![conversation("older", OLDER, OLDER, false, "Memoized")],
+                        None,
+                    )
+                }
+            }
+            commits::REPOSITORIES => answer(commit_discovery(&[], 0)),
+            query => standard_query(query).expect("unexpected query"),
+        }
+        });
+    let api = api(&server);
+    let connection = ConnectionId::new(Source::Github, "retried-comment-refusal");
+    {
+        let state = GitHubCollection::default();
+        let run = state.run(&connection);
+        let error = super::collect(&api, options(), &run).await.unwrap_err();
+        let remote = error.downcast_ref::<RemoteFailure>().unwrap();
+        assert_eq!(remote.error.problem(), Some(ProviderProblem::Throttled));
+
+        let recent = super::collect(&api, options(), &run).await.unwrap();
+        assert_eq!(
+            recent
+                .iter()
+                .map(|entry| entry.id.as_str())
+                .collect::<Vec<_>>(),
+            ["recent"]
+        );
+        let earlier = super::collect(
+            &api,
+            CollectOptions {
+                start: OLDER.parse().unwrap(),
+                end: START.parse().unwrap(),
+            },
+            &run,
+        )
+        .await
+        .unwrap();
+        assert_eq!(
+            earlier
+                .iter()
+                .map(|entry| entry.id.as_str())
+                .collect::<Vec<_>>(),
+            ["older"]
+        );
+    }
+    assert_eq!(
+        comment_requests(&server),
+        [Value::Null, json!("next"), Value::Null, json!("next")]
+    );
+    let scope = connection.to_string();
+    let warnings: Vec<_> = diagnostics::entries()
+        .into_iter()
+        .filter(|line| line.scope == scope && line.level == LogLevel::Warn)
+        .map(|line| line.message)
+        .collect();
+    assert_eq!(
+        warnings,
+        ["Skipped 1 GitHub conversation comments the token could not read"]
     );
 }
 
@@ -1139,7 +1236,7 @@ async fn an_older_chunk_can_fill_the_memo_before_a_newer_chunk() {
         }
     });
     let api = api(&server);
-    let walk = ConversationRun::default();
+    let walk = ConnectionRun::default();
     let older = super::collect(
         &api,
         CollectOptions {
@@ -1201,7 +1298,7 @@ async fn a_comment_order_failure_discards_the_memo_and_restarts_at_the_first_pag
             }
         });
         let api = api(&server);
-        let walk = ConversationRun::default();
+        let walk = ConnectionRun::default();
         let error = super::collect(&api, options(), &walk).await.unwrap_err();
         assert_eq!(
             error.downcast_ref::<CollectionError>(),

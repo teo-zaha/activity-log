@@ -1,0 +1,61 @@
+fragment SearchPageInfo on SearchResultItemConnection {
+  issueCount
+  pageInfo {
+    hasNextPage
+    endCursor
+  }
+}
+
+fragment MergeCandidates on SearchResultItemConnection {
+  ...SearchPageInfo
+  nodes {
+    __typename
+    ... on PullRequest {
+      ...StateChangeItem
+      mergedAt
+      mergedBy {
+        ...ViewerActor
+      }
+    }
+  }
+}
+
+fragment CloseCandidates on SearchResultItemConnection {
+  ...SearchPageInfo
+  nodes {
+    __typename
+    ... on PullRequest {
+      ...StateChangeItem
+      pullTimeline: timelineItems(itemTypes: [CLOSED_EVENT], since: $since, first: $closeSize) {
+        ...PullCloseEvents
+      }
+    }
+    ... on Issue {
+      ...StateChangeItem
+      issueTimeline: timelineItems(itemTypes: [CLOSED_EVENT], since: $since, first: $closeSize) {
+        ...IssueCloseEvents
+      }
+    }
+  }
+}
+
+fragment StateChangeItem on RepositoryNode {
+  ... on PullRequest {
+    id
+    number
+    title
+    url
+    repository {
+      nameWithOwner
+    }
+  }
+  ... on Issue {
+    id
+    number
+    title
+    url
+    repository {
+      nameWithOwner
+    }
+  }
+}

@@ -269,16 +269,16 @@ Total: 70 events
 
 ## Sources in detail
 
-| Source       | What it collects                                                | Platforms             | Multiple connections | Cached on disk |
-| ------------ | --------------------------------------------------------------- | --------------------- | -------------------- | -------------- |
-| **Git**      | Commits from local repositories (and WSL on Windows)            | Windows, macOS, Linux | Yes                  | No             |
-| **GitLab**   | Merge requests, pushes, comments, and reviews                   | Windows, macOS, Linux | Yes                  | Yes            |
-| **GitHub**   | Opened pull requests and issues, reviews, comments, and commits | Windows, macOS, Linux | Yes                  | Yes            |
-| **Jira**     | Issues assigned to or reported by you (Jira Data Center)        | Windows, macOS, Linux | Yes                  | Yes            |
-| **Outlook**  | Calendar meetings from the running Outlook desktop app          | Windows, macOS        | No                   | No             |
-| **Calendar** | Events from `https://`/`webcal://` ICS feeds or `.ics` files    | Windows, macOS, Linux | Yes                  | No             |
-| **System**   | Boot, shutdown, and (macOS) sleep/wake sessions                 | Windows, macOS        | No                   | No             |
-| **Figma**    | Versions, edit checkpoints, comments, and replies               | Windows, macOS, Linux | Yes                  | Yes            |
+| Source       | What it collects                                             | Platforms             | Multiple connections | Cached on disk |
+| ------------ | ------------------------------------------------------------ | --------------------- | -------------------- | -------------- |
+| **Git**      | Commits from local repositories (and WSL on Windows)         | Windows, macOS, Linux | Yes                  | No             |
+| **GitLab**   | Merge requests, pushes, comments, and reviews                | Windows, macOS, Linux | Yes                  | Yes            |
+| **GitHub**   | Pull requests, reviews, issues, comments, and commits        | Windows, macOS, Linux | Yes                  | Yes            |
+| **Jira**     | Issues assigned to or reported by you (Jira Data Center)     | Windows, macOS, Linux | Yes                  | Yes            |
+| **Outlook**  | Calendar meetings from the running Outlook desktop app       | Windows, macOS        | No                   | No             |
+| **Calendar** | Events from `https://`/`webcal://` ICS feeds or `.ics` files | Windows, macOS, Linux | Yes                  | No             |
+| **System**   | Boot, shutdown, and (macOS) sleep/wake sessions              | Windows, macOS        | No                   | No             |
+| **Figma**    | Versions, edit checkpoints, comments, and replies            | Windows, macOS, Linux | Yes                  | Yes            |
 
 Each source below lists its entry types, Timeline subtitle line, detail panel fields (empty fields are omitted), and configuration keys.
 
@@ -321,7 +321,7 @@ Each source below lists its entry types, Timeline subtitle line, detail panel fi
 
 ### GitHub
 
-- **Entries** cover the pull requests and issues you opened and each review you submitted, with its state, from repositories the token can read. They include your PR and issue conversation comments and inline comments from the reviews found. Commits come from default-branch history in repositories GitHub lists for your contributions. They use the commit date. A repository may be omitted when GitHub assigns its contribution to an author date outside the requested range. When you grant access to another repository, its commits appear as cached days are fetched again. Settled GitHub days can stay fresh for up to 30 days.
+- **Entries** cover the pull requests and issues you opened and each review you submitted, with its state, from repositories the token can read. They include your PR and issue conversation comments, inline comments from the reviews found, and merges and closes GitHub attributes to you on items found by its involvement and review searches. Commits come from default-branch history in repositories GitHub lists for your contributions. They use the commit date. A repository may be omitted when GitHub assigns its contribution to an author date outside the requested range. When you grant access to another repository, its commits appear as cached days are fetched again. Settled GitHub days can stay fresh for up to 30 days.
 - The **Timeline line** shows the repository and an action such as **Opened pull request #12** or **Reviewed pull request #12 (approved)**. A conversation comment names its PR or issue, and an inline comment shows its file, as in **Commented on src/main.rs in pull request #12**. A commit shows its branch and short SHA.
 - The **detail panel** shows the action, repository, and PR or issue number or full commit SHA. Comments show the plain body when present. Inline comments also show the file. It links to the item when GitHub supplies a URL on the configured web origin. Open pull requests can also show their current stack. Activity Log reads native GitHub stacks first and follows the open pull requests between branches when native membership is unavailable.
 - For **configuration**, add **GitHub** in the desktop app or run `activity-log sources add github`. Set up one connection per account with the `url` and `token` fields. Use `https://github.com` or your GitHub Enterprise web URL. Activity Log derives the API URL and seals the token for the web origin. [GitHub API origins](docs/adr/0007-github-api-origin.md)

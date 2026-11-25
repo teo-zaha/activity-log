@@ -131,6 +131,30 @@ fn github_review_export_uses_repository_and_escapes_the_title() {
     assert!(!markdown.lines().any(|line| line == "## Example"));
 }
 #[test]
+fn github_state_change_export_names_the_action_and_item() {
+    let entries = [
+        serde_json::json!({"type":"merged", "pullRequest":{"number":12,"title":"Add *widgets*"}}),
+        serde_json::json!({"type":"closed", "target":{"kind":"pullRequest","number":13,"title":"Older approach"}}),
+        serde_json::json!({"type":"closed", "target":{"kind":"issue","number":5,"title":"Fix widget"}}),
+    ].into_iter().enumerate().map(|(index, mut entry)| {
+        entry["source"] = serde_json::json!("github");
+        entry["connection"] = serde_json::json!("work");
+        entry["id"] = serde_json::json!(format!("example-{index}"));
+        entry["timestamp"] = serde_json::json!("2026-03-10T09:00:00Z");
+        entry["repository"] = serde_json::json!("acme/widgets");
+        serde_json::from_value(entry).unwrap()
+    }).collect();
+    let markdown = to_markdown(&log_of(entries), &FixedOffset::east_opt(0).unwrap());
+    for line in [
+        r"- **[github]** `acme/widgets` Merged pull request #12 Add \*widgets\* (09:00)",
+        "- **[github]** `acme/widgets` Closed pull request #13 Older approach (09:00)",
+        "- **[github]** `acme/widgets` Closed issue #5 Fix widget (09:00)",
+    ] {
+        assert!(markdown.lines().any(|row| row == line), "{markdown}");
+    }
+}
+
+#[test]
 fn github_inline_comment_export_escapes_body_and_keeps_the_path() {
     let entry = serde_json::from_value(serde_json::json!({
         "source": "github",

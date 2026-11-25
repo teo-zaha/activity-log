@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import type { CommentTarget, GitHubReviewState } from '../../generated/activity'
+import type { CommentTarget, GitHubEntry, GitHubReviewState } from '../../generated/activity'
 import { githubPullRequestEntry } from '../../testing/activity-fixtures'
 import { createEntryAdapter } from '../provider-adapter'
 
@@ -16,6 +16,37 @@ describe('GitHub adapter', () => {
     expect(issue.detailFields).toContainEqual({ label: 'Action', value: 'Opened issue' })
     expect(issue.detailFields).toContainEqual({ label: 'Issue', value: '#7' })
   })
+
+  const stateChanges: [GitHubEntry, string, string][] = [
+    [
+      { ...githubPullRequestEntry, type: 'merged', pullRequest: githubPullRequestEntry.target },
+      'Merged pull request #12',
+      'Merged pull request',
+    ],
+    [
+      { ...githubPullRequestEntry, type: 'closed' },
+      'Closed pull request #12',
+      'Closed pull request',
+    ],
+    [
+      {
+        ...githubPullRequestEntry,
+        type: 'closed',
+        target: { kind: 'issue', number: 5, title: 'Fix widgets' },
+      },
+      'Closed issue #5',
+      'Closed issue',
+    ],
+  ]
+
+  it.each(stateChanges)(
+    'words a merge or close with its typed subject',
+    (event, summary, action) => {
+      const entry = createEntryAdapter(event)
+      expect(entry.meta).toBe(`acme/widgets · ${summary}`)
+      expect(entry.detailFields).toContainEqual({ label: 'Action', value: action })
+    }
+  )
 
   const reviewWords: [GitHubReviewState, string][] = [
     ['approved', ' (approved)'],

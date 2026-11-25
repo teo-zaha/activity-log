@@ -809,6 +809,61 @@ fn github_commits_fold_without_gitlab_and_stay_when_git_has_no_match() {
 }
 
 #[test]
+fn a_pull_request_merge_stays_separate_from_the_matching_commit_fold() {
+    const AT: &str = "2026-03-10T10:00:00Z";
+    let github = id(Source::Github, "oss");
+    let git = id(Source::Git, "work");
+    let merge: ActivityEntry = serde_json::from_value(serde_json::json!({
+        "source": "github", "connection": "oss", "id": "PR_12:merged", "timestamp": AT,
+        "repository": "acme/widgets", "type": "merged",
+        "pullRequest": {"number": 12, "title": "Build widgets"},
+    }))
+    .unwrap();
+
+    for include_commit in [false, true] {
+        let mut hosted = vec![merge.clone()];
+        if include_commit {
+            hosted.push(hosted_github_commit(
+                MIRROR_SHA,
+                "oss",
+                "C_merge_commit",
+                AT,
+            ));
+        }
+        let rows = collect_activity_from_results(
+            march(),
+            vec![
+                (git.clone(), vec![commit_in("work", MIRROR_SHA, AT)]),
+                (github.clone(), hosted),
+            ],
+            Vec::new(),
+            Vec::new(),
+        );
+        assert_eq!(rows.summary.merged_count, usize::from(include_commit));
+        assert!(
+            rows.log
+                .entries
+                .iter()
+                .any(|entry| entry.id() == "PR_12:merged")
+        );
+        let git = rows
+            .log
+            .entries
+            .iter()
+            .find_map(|entry| match entry {
+                ActivityEntry::Git(git) => Some(git),
+                _ => None,
+            })
+            .unwrap();
+        assert_eq!(
+            git.github_event.as_ref().map(|entry| entry.id.as_str()),
+            include_commit.then_some("C_merge_commit"),
+        );
+        assert_eq!(rows.log.entries.len(), 2);
+    }
+}
+
+#[test]
 fn mirrors_fold_one_event_per_host_into_one_row_and_count_once() {
     const FIRST: &str = "2026-03-10T09:00:00Z";
     const SECOND: &str = "2026-03-10T10:00:00Z";

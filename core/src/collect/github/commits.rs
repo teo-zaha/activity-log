@@ -1,7 +1,7 @@
 use std::collections::HashSet;
 
 use anyhow::Result;
-use chrono::{DateTime, TimeDelta, Utc};
+use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
 use crate::{
@@ -20,6 +20,7 @@ use super::{
     commit_repositories::{RepositoryNode, RepositoryQuery},
     entry,
     response::{Repository, nonblank},
+    split_window,
 };
 
 pub(super) const REPOSITORIES: &str = include_str!("queries/commit_repositories.graphql");
@@ -301,22 +302,4 @@ async fn next_history(api: &GitHubApi, variables: MoreHistoryVariables<'_>) -> R
     response
         .default_branch_ref
         .ok_or_else(|| CollectionError::CommitBranchChanged.into())
-}
-
-fn split_window(window: CollectOptions) -> Option<(CollectOptions, CollectOptions)> {
-    let span = window.end - window.start;
-    if span <= TimeDelta::days(1) {
-        return None;
-    }
-    let middle = window.start + TimeDelta::days((span.num_days() / 2).max(1));
-    Some((
-        CollectOptions {
-            end: middle,
-            ..window
-        },
-        CollectOptions {
-            start: middle,
-            ..window
-        },
-    ))
 }

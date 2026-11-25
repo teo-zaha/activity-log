@@ -1,0 +1,22 @@
+query StateChanges(
+  $mergeInvolved: String!
+  $mergeReviewed: String!
+  $closePulls: String!
+  $closeIssues: String!
+  $since: DateTime!
+  $searchSize: Int!
+  $closeSize: Int!
+) {
+  mergeInvolved: search(type: ISSUE, query: $mergeInvolved, first: $searchSize) {
+    ...MergeCandidates
+  }
+  mergeReviewed: search(type: ISSUE, query: $mergeReviewed, first: $searchSize) {
+    ...MergeCandidates
+  }
+  closePulls: search(type: ISSUE, query: $closePulls, first: $searchSize) {
+    ...CloseCandidates
+  }
+  closeIssues: search(type: ISSUE, query: $closeIssues, first: $searchSize) {
+    ...CloseCandidates
+  }
+}

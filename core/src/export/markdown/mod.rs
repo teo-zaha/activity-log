@@ -140,6 +140,18 @@ fn github_line(entry: &GitHubEntry, time: impl std::fmt::Display) -> String {
         GitHubAction::Opened {
             target: Item::Issue(issue),
         } => ("Opened", "issue", issue.number, &issue.title),
+        GitHubAction::Closed {
+            target: Item::PullRequest(pull),
+        } => ("Closed", "pull request", pull.number, &pull.title),
+        GitHubAction::Closed {
+            target: Item::Issue(issue),
+        } => ("Closed", "issue", issue.number, &issue.title),
+        GitHubAction::Merged { pull_request } => (
+            "Merged",
+            "pull request",
+            pull_request.number,
+            &pull_request.title,
+        ),
         GitHubAction::Reviewed {
             pull_request,
             state,

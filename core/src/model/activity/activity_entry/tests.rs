@@ -19,6 +19,9 @@ const GITHUB_LINKED_ISSUE: &str = r#"{"source":"github","connection":"oss","id":
 const GITHUB_OPENED_PR: &str = r#"{"source":"github","connection":"oss","id":"PR_x","timestamp":"2026-11-17T10:00:00Z","repository":"acme/widgets","type":"opened","target":{"kind":"pullRequest","number":12,"title":"Add widget"}}"#;
 const GITHUB_LINKED_PR: &str = r#"{"source":"github","connection":"oss","id":"PR_z","timestamp":"2026-11-17T10:00:00Z","repository":"acme/widgets","type":"opened","target":{"kind":"pullRequest","number":12,"title":"Add widget","webUrl":"https://github.com/acme/widgets/pull/12"}}"#;
 const GITHUB_STACKED_PR: &str = r#"{"source":"github","connection":"oss","id":"PR_y","timestamp":"2026-11-17T10:00:00Z","repository":"acme/widgets","type":"opened","target":{"kind":"pullRequest","number":12,"title":"Add widget","changeStack":{"current":{"number":12,"title":"Add widget","webUrl":"https://github.com/acme/widgets/pull/12"},"below":[{"number":11,"title":"Parse widget"}],"bottom":{"kind":"reached","branch":"main"},"above":{"changes":[],"end":{"kind":"complete"}}}}}"#;
+const GITHUB_MERGED: &str = r#"{"source":"github","connection":"oss","id":"PR_x:merged","timestamp":"2026-11-17T10:05:00Z","repository":"acme/widgets","type":"merged","pullRequest":{"number":12,"title":"Add widget"}}"#;
+const GITHUB_CLOSED_PR: &str = r#"{"source":"github","connection":"oss","id":"CE_x","timestamp":"2026-11-17T10:10:00Z","repository":"acme/widgets","type":"closed","target":{"kind":"pullRequest","number":12,"title":"Add widget"}}"#;
+const GITHUB_CLOSED_ISSUE: &str = r#"{"source":"github","connection":"oss","id":"CE_y","timestamp":"2026-11-17T10:10:00Z","repository":"acme/widgets","type":"closed","target":{"kind":"issue","number":7,"title":"Fix widget"}}"#;
 const GITHUB_REVIEWED: &str = r#"{"source":"github","connection":"oss","id":"PRR_x","timestamp":"2026-11-17T10:05:00.000Z","repository":"acme/widgets","type":"reviewed","pullRequest":{"number":12,"title":"Add widget"},"state":"changesRequested"}"#;
 const GITHUB_COMMENTED_ISSUE: &str = r#"{"source":"github","connection":"oss","id":"IC_x","timestamp":"2026-11-17T10:05:00Z","repository":"acme/widgets","type":"commentedOn","target":{"kind":"issue","number":7,"title":"Fix widget"},"body":"Check this."}"#;
 const GITHUB_COMMENTED_PR: &str = r#"{"source":"github","connection":"oss","id":"IC_y","timestamp":"2026-11-17T10:05:00Z","repository":"acme/widgets","type":"commentedOn","target":{"kind":"pullRequest","number":12,"title":"Add widget"}}"#;
@@ -55,6 +58,9 @@ fn every_kind_keeps_its_wire_shape() {
     round_trip(GITHUB_OPENED_PR, Source::Github);
     round_trip(GITHUB_LINKED_PR, Source::Github);
     round_trip(GITHUB_STACKED_PR, Source::Github);
+    round_trip(GITHUB_MERGED, Source::Github);
+    round_trip(GITHUB_CLOSED_PR, Source::Github);
+    round_trip(GITHUB_CLOSED_ISSUE, Source::Github);
     round_trip(GITHUB_REVIEWED, Source::Github);
     round_trip(GITHUB_COMMENTED_ISSUE, Source::Github);
     round_trip(GITHUB_COMMENTED_PR, Source::Github);

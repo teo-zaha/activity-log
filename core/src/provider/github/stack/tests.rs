@@ -706,6 +706,82 @@ async fn a_failed_native_lookup_keeps_the_entries_without_stacks() {
 }
 
 #[tokio::test]
+async fn merged_entries_use_no_stack_requests_while_reopened_closes_can_get_a_stack() {
+    let server = TestServer::start(|request| {
+        if request.method == "GET" {
+            return reply(json!({"id": 7, "login": "jdoe"}));
+        }
+        let body = body(request);
+        if body["query"]
+            .as_str()
+            .unwrap()
+            .starts_with("query OpenStackPulls(")
+        {
+            return list(Vec::new(), None);
+        }
+        assert!(
+            body["query"]
+                .as_str()
+                .unwrap()
+                .starts_with("query NativeStackNumbers(")
+        );
+        let mut row = pull(4, "OPEN", "next", "parent");
+        membership(
+            &mut row,
+            2,
+            vec![
+                json!({"position":1,"pullRequest":pull(2,"OPEN","parent","main")}),
+                json!({"position":2,"pullRequest":pull(4,"OPEN","next","parent")}),
+            ],
+            false,
+        );
+        reply(json!({"data":repository(json!({"n0":row}))}))
+    });
+    let runtime = runtime(&server, "filtered-merged-entries").await;
+    let mut closed = serde_json::to_value(opened(4)).unwrap();
+    closed["type"] = json!("closed");
+    let merged = |number| {
+        serde_json::from_value(json!({
+            "source":"github", "connection":"work", "id":format!("PR_{number}:merged"),
+            "timestamp":AT, "repository":REPO, "type":"merged",
+            "pullRequest":{"number":number,"title":"Merge example"}
+        }))
+        .unwrap()
+    };
+    let mut entries = [
+        serde_json::from_value(closed).unwrap(),
+        merged(4),
+        merged(8),
+    ];
+    runtime.annotate(&mut entries).await;
+
+    let native_queries: Vec<_> = server
+        .requests()
+        .iter()
+        .filter(|request| request.method == "POST")
+        .map(body)
+        .filter(|body| {
+            body["query"]
+                .as_str()
+                .unwrap()
+                .starts_with("query NativeStackNumbers(")
+        })
+        .collect();
+    assert_eq!(native_queries.len(), 1);
+    assert_eq!(
+        native_queries[0]["variables"],
+        json!({"owner":"acme","name":"widgets","n0":4})
+    );
+    let annotated = serde_json::to_value(entries).unwrap();
+    assert_eq!(
+        annotated[0]["target"]["changeStack"]["below"][0]["number"],
+        2
+    );
+    assert!(annotated[1]["pullRequest"].get("changeStack").is_none());
+    assert!(annotated[2]["pullRequest"].get("changeStack").is_none());
+}
+
+#[tokio::test]
 async fn native_annotations_stay_out_of_the_day_cache_and_reach_cached_entries() {
     let server = TestServer::start(|request| {
         if request.method == "GET" {
@@ -735,6 +811,13 @@ async fn native_annotations_stay_out_of_the_day_cache_and_reach_cached_entries()
                 }}}}))
             }
             "OwnPullRequests" => reply(json!({"data":{"viewer":{"page":page(Vec::new())}}})),
+            "StateChanges" => {
+                let mut empty = page(Vec::new());
+                empty["issueCount"] = json!(0);
+                reply(json!({"data":{
+                    "mergeInvolved":empty,"mergeReviewed":empty,"closePulls":empty,"closeIssues":empty
+                }}))
+            }
             "ViewerIssueComments" => {
                 let target = json!({
                     "id":"PR_4","number":4,"title":"Old title","repository":{"nameWithOwner":REPO}

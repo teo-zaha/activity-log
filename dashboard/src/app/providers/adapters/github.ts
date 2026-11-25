@@ -31,10 +31,12 @@ function issueDetails(issue: IssueRef) {
 function detailsOf(entry: Exclude<GitHubEntry, { type: 'committed' }>) {
   switch (entry.type) {
     case 'opened':
+    case 'closed':
       return entry.target.kind === 'pullRequest'
         ? pullDetails(entry.target)
         : issueDetails(entry.target)
     case 'reviewed':
+    case 'merged':
       return pullDetails(entry.pullRequest)
     case 'commentedOn':
       switch (entry.target.kind) {

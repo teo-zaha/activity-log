@@ -10,6 +10,14 @@ pub enum GitHubAction {
     Opened {
         target: Item,
     },
+    Closed {
+        target: Item,
+    },
+    Merged {
+        #[serde(rename = "pullRequest")]
+        #[ts(rename = "pullRequest")]
+        pull_request: PullRequestRef,
+    },
     Reviewed {
         #[serde(rename = "pullRequest")]
         #[ts(rename = "pullRequest")]
@@ -40,6 +48,10 @@ impl GitHubAction {
             Self::Opened {
                 target: Item::PullRequest(pull_request),
             }
+            | Self::Closed {
+                target: Item::PullRequest(pull_request),
+            }
+            | Self::Merged { pull_request }
             | Self::CommentedOn {
                 target:
                     CommentTarget::PullRequest(pull_request)
@@ -48,6 +60,9 @@ impl GitHubAction {
             }
             | Self::Reviewed { pull_request, .. } => Some(pull_request),
             Self::Opened {
+                target: Item::Issue(_),
+            }
+            | Self::Closed {
                 target: Item::Issue(_),
             }
             | Self::CommentedOn {

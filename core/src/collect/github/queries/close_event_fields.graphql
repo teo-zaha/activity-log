@@ -1,0 +1,34 @@
+fragment PullCloseEvents on PullRequestTimelineItemsConnection {
+  pageInfo {
+    hasNextPage
+    endCursor
+  }
+  nodes {
+    ...CloseEvent
+  }
+}
+
+fragment IssueCloseEvents on IssueTimelineItemsConnection {
+  pageInfo {
+    hasNextPage
+    endCursor
+  }
+  nodes {
+    ...CloseEvent
+  }
+}
+
+fragment CloseEvent on ClosedEvent {
+  id
+  createdAt
+  actor {
+    ...ViewerActor
+  }
+}
+
+fragment ViewerActor on Actor {
+  __typename
+  ... on User {
+    id
+  }
+}

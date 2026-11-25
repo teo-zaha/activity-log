@@ -4,6 +4,9 @@ pub(super) enum CollectionError {
     ReviewAuthorMismatch,
     CommentOrder,
     CommentReviewMismatch,
+    StateChangeKindMismatch,
+    CloseTimelineMismatch,
+    CloseTimelineUnreadable,
     IncompleteCommitDiscovery,
     CommitRepositoryMismatch,
     CommitRepositoryUnavailable,
@@ -19,6 +22,11 @@ impl std::fmt::Display for CollectionError {
             Self::ReviewAuthorMismatch => "GitHub returned a review by a different user",
             Self::CommentOrder => "GitHub returned conversation comments out of update order",
             Self::CommentReviewMismatch => "GitHub returned comments for a different review",
+            Self::StateChangeKindMismatch => {
+                "GitHub returned a different kind of item in a merge or close search"
+            }
+            Self::CloseTimelineMismatch => "GitHub returned close events for a different item",
+            Self::CloseTimelineUnreadable => "GitHub did not return the item's close events",
             Self::IncompleteCommitDiscovery => {
                 "GitHub did not list every repository with commits for one day"
             }

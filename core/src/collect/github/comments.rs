@@ -1,12 +1,11 @@
 use std::{
-    collections::{BTreeMap, HashMap, HashSet},
+    collections::{BTreeMap, HashMap},
     sync::{Arc, Mutex},
 };
 
 use anyhow::Result;
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Deserializer, Serialize};
-use serde_json::Value;
 use tokio::sync::Mutex as AsyncMutex;
 
 use crate::{
@@ -20,7 +19,7 @@ use crate::{
             GitHubApi,
             pager::{Page, PageError, Pager},
         },
-        remote_error::{ApiError, QueryAnswer, QueryError, QueryErrorKind, QueryPathSegment},
+        remote_error::{ApiError, QueryErrorKind},
     },
 };
 
@@ -29,7 +28,7 @@ use super::{
     commit_repositories::{RepositoryNode, RepositoryQuery},
     entry,
     error::CollectionError,
-    pull_request_ref,
+    node_refusals, pull_request_ref,
     response::{HostedItem, Viewer, nonblank},
 };
 
@@ -41,61 +40,80 @@ pub(super) const MORE_REVIEW_COMMENTS: &str = concat!(
 
 #[derive(Default)]
 pub(crate) struct GitHubCollection {
-    walks: Mutex<HashMap<ConnectionId, Arc<ConversationRun>>>,
+    runs: Mutex<HashMap<ConnectionId, Arc<ConnectionRun>>>,
 }
 
 impl GitHubCollection {
-    pub(super) fn conversations(&self, connection: &ConnectionId) -> Arc<ConversationRun> {
-        let mut walks = self.walks.lock().unwrap_or_else(|error| error.into_inner());
-        walks
-            .entry(connection.clone())
-            .or_insert_with(|| Arc::new(ConversationRun::new(connection.to_string())))
+    pub(super) fn run(&self, connection: &ConnectionId) -> Arc<ConnectionRun> {
+        let mut runs = self.runs.lock().unwrap_or_else(|error| error.into_inner());
+        runs.entry(connection.clone())
+            .or_insert_with(|| Arc::new(ConnectionRun::new(connection.to_string())))
             .clone()
     }
 }
 
-pub(super) struct ConversationRun {
+pub(super) struct ConnectionRun {
     scope: String,
-    state: AsyncMutex<ConversationState>,
+    state: AsyncMutex<ConnectionState>,
 }
 
-impl Default for ConversationRun {
+impl Default for ConnectionRun {
     fn default() -> Self {
         Self::new("github".into())
     }
 }
 
-impl ConversationRun {
+impl ConnectionRun {
     fn new(scope: String) -> Self {
         Self {
             scope,
             state: AsyncMutex::default(),
         }
     }
+
+    pub(super) async fn record_refused_candidates(&self, count: usize) {
+        if count > 0 {
+            self.state.lock().await.refused_candidates += count;
+        }
+    }
 }
 
-impl Drop for ConversationRun {
+impl Drop for ConnectionRun {
     fn drop(&mut self) {
-        let count = self.state.get_mut().restricted;
-        if count > 0 {
+        let state = self.state.get_mut();
+        if state.refused_comments > 0 {
             diagnostics::warn(
                 &self.scope,
-                format!("Skipped {count} GitHub conversation comments the token could not read"),
+                format!(
+                    "Skipped {} GitHub conversation comments the token could not read",
+                    state.refused_comments,
+                ),
+            );
+        }
+        if state.refused_candidates > 0 {
+            diagnostics::warn(
+                &self.scope,
+                format!(
+                    "Skipped {} refused search results from GitHub",
+                    state.refused_candidates
+                ),
             );
         }
     }
 }
 
 #[derive(Default)]
-struct ConversationState {
+struct ConnectionState {
     walk: ConversationWalk,
-    restricted: usize,
+    refused_comments: usize,
+    refused_candidates: usize,
 }
 
 struct ConversationWalk {
     pager: Pager,
     oldest_update: Option<DateTime<Utc>>,
     comments: BTreeMap<DateTime<Utc>, Vec<ConversationComment>>,
+    refused_comments: usize,
 }
 
 impl Default for ConversationWalk {
@@ -104,6 +122,7 @@ impl Default for ConversationWalk {
             pager: Pager::new(),
             oldest_update: None,
             comments: BTreeMap::new(),
+            refused_comments: 0,
         }
     }
 }
@@ -157,9 +176,10 @@ struct ReviewComments {
 }
 
 impl Collection<'_> {
-    pub(super) async fn conversation_comments(&mut self, run: &ConversationRun) -> Result<()> {
+    pub(super) async fn conversation_comments(&mut self, run: &ConnectionRun) -> Result<()> {
         let mut state = run.state.lock().await;
-        // A failed or cancelled request can advance a pager. Publish the memo only on success.
+        // A failed or cancelled request can advance a pager. Publish the memo and new count
+        // only on success.
         let mut walk = std::mem::take(&mut state.walk);
         while walk
             .oldest_update
@@ -173,10 +193,14 @@ impl Collection<'_> {
                             .api
                             .graphql_answer(ISSUE_COMMENTS, &ConversationVariables { after })
                             .await?;
-                        let (page, restricted) =
-                            conversation_page(answer).map_err(GitHubApi::failure)?;
-                        state.restricted += restricted;
-                        Ok(page)
+                        let (response, refused): (Viewer<Conversations>, _) = node_refusals::read(
+                            answer,
+                            &[&["viewer", "issueComments", "nodes"]],
+                            &[QueryErrorKind::Forbidden, QueryErrorKind::NotFound],
+                        )
+                        .map_err(GitHubApi::failure)?;
+                        walk.refused_comments += refused;
+                        Ok(response.viewer.issue_comments)
                     },
                     |row: &ConversationComment| &row.id,
                 )
@@ -204,6 +228,7 @@ impl Collection<'_> {
                 self.conversation_comment(comment);
             }
         }
+        state.refused_comments += std::mem::take(&mut walk.refused_comments);
         state.walk = walk;
         Ok(())
     }
@@ -295,68 +320,6 @@ impl Collection<'_> {
             }
         }
         Ok(())
-    }
-}
-
-fn conversation_page(answer: QueryAnswer) -> Result<(Page, usize), ApiError> {
-    let (data, refusal) = answer.into_parts();
-    let Some(refusal) = refusal else {
-        let data = data.ok_or(ApiError::Decode)?;
-        let answer: Viewer<Conversations> =
-            serde_json::from_value(data).map_err(|_| ApiError::Decode)?;
-        return Ok((answer.viewer.issue_comments, 0));
-    };
-    let Some(mut data) = data else {
-        return Err(ApiError::Query(refusal));
-    };
-    let Some(nodes) = data
-        .pointer_mut("/viewer/issueComments/nodes")
-        .and_then(Value::as_array_mut)
-    else {
-        return Err(ApiError::Query(refusal));
-    };
-    let refused: Option<HashSet<_>> = refusal
-        .errors()
-        .iter()
-        .map(|error| refused_comment_index(error, nodes.len()))
-        .collect();
-    let Some(refused) = refused else {
-        return Err(ApiError::Query(refusal));
-    };
-    // Drop only the affected slots, even when a non-null comment object survived the refusal.
-    let mut index = 0;
-    nodes.retain(|_| {
-        let keep = !refused.contains(&index);
-        index += 1;
-        keep
-    });
-    let answer: Viewer<Conversations> =
-        serde_json::from_value(data).map_err(|_| ApiError::Query(refusal))?;
-    Ok((answer.viewer.issue_comments, refused.len()))
-}
-
-fn refused_comment_index(error: &QueryError, rows: usize) -> Option<usize> {
-    use QueryPathSegment::{Field, Index};
-    match (error.kind, error.path.as_deref()) {
-        (
-            QueryErrorKind::Forbidden | QueryErrorKind::NotFound,
-            Some(
-                [
-                    Field(viewer),
-                    Field(comments),
-                    Field(nodes),
-                    Index(index),
-                    ..,
-                ],
-            ),
-        ) if viewer == "viewer"
-            && comments == "issueComments"
-            && nodes == "nodes"
-            && *index < rows =>
-        {
-            Some(*index)
-        }
-        _ => None,
     }
 }
 

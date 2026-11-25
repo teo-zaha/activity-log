@@ -1,0 +1,27 @@
+query MoreCloseEvents($id: ID!, $since: DateTime!, $after: String!, $closeSize: Int!) {
+  node(id: $id) {
+    __typename
+    ... on PullRequest {
+      id
+      pullTimeline: timelineItems(
+        itemTypes: [CLOSED_EVENT]
+        since: $since
+        first: $closeSize
+        after: $after
+      ) {
+        ...PullCloseEvents
+      }
+    }
+    ... on Issue {
+      id
+      issueTimeline: timelineItems(
+        itemTypes: [CLOSED_EVENT]
+        since: $since
+        first: $closeSize
+        after: $after
+      ) {
+        ...IssueCloseEvents
+      }
+    }
+  }
+}

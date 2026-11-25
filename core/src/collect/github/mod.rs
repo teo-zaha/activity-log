@@ -2,12 +2,14 @@ mod comments;
 mod commit_repositories;
 mod commits;
 mod error;
+mod node_refusals;
 mod response;
+mod state_changes;
 
 use std::collections::HashSet;
 
 use anyhow::{Result, anyhow};
-use chrono::{Days, SecondsFormat};
+use chrono::{Days, SecondsFormat, TimeDelta};
 use serde::Serialize;
 use url::{Host, Origin};
 
@@ -30,7 +32,7 @@ use crate::{
     },
 };
 
-use comments::ConversationRun;
+use comments::ConnectionRun;
 pub(crate) use comments::GitHubCollection;
 use error::CollectionError;
 use response::{
@@ -65,7 +67,7 @@ pub(crate) async fn collect_github(
     let walk = context
         .collection_state::<GitHubCollection>()
         .zip(context.connection())
-        .map(|(state, connection)| state.conversations(&connection.id))
+        .map(|(state, connection)| state.run(&connection.id))
         .unwrap_or_default();
     collect(&api, *options, &walk).await
 }
@@ -73,7 +75,7 @@ pub(crate) async fn collect_github(
 async fn collect(
     api: &GitHubApi,
     options: CollectOptions,
-    walk: &ConversationRun,
+    run: &ConnectionRun,
 ) -> Result<Vec<GitHubEntry>> {
     let Viewer {
         viewer: ViewerUser {
@@ -101,8 +103,9 @@ async fn collect(
         collection.review_contributions(window).await?;
         collection.commits_in(window).await?;
     }
+    collection.state_changes(run).await?;
     collection.own_pull_requests().await?;
-    collection.conversation_comments(walk).await?;
+    collection.conversation_comments(run).await?;
 
     if collection.restricted > 0 {
         diagnostics::warn(
@@ -177,6 +180,24 @@ fn windows(options: CollectOptions) -> impl Iterator<Item = CollectOptions> {
             .checked_add_days(CONTRIBUTION_WINDOW_DAYS)
             .map_or(end, |next| next.min(end)),
     })
+}
+
+fn split_window(window: CollectOptions) -> Option<(CollectOptions, CollectOptions)> {
+    let span = window.end - window.start;
+    if span <= TimeDelta::days(1) {
+        return None;
+    }
+    let middle = window.start + TimeDelta::days((span.num_days() / 2).max(1));
+    Some((
+        CollectOptions {
+            end: middle,
+            ..window
+        },
+        CollectOptions {
+            start: middle,
+            ..window
+        },
+    ))
 }
 
 #[derive(Serialize)]

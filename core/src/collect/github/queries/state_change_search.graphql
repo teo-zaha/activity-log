@@ -1,0 +1,16 @@
+query StateChangeSearch(
+  $query: String!
+  $after: String
+  $merge: Boolean!
+  $since: DateTime!
+  $searchSize: Int!
+  $closeSize: Int!
+) {
+  merges: search(type: ISSUE, query: $query, first: $searchSize, after: $after)
+    @include(if: $merge) {
+    ...MergeCandidates
+  }
+  closes: search(type: ISSUE, query: $query, first: $searchSize, after: $after) @skip(if: $merge) {
+    ...CloseCandidates
+  }
+}

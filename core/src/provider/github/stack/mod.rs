@@ -13,7 +13,7 @@ use crate::{
         Budget, ChangeRef, UnreadChanges, change_stacks, change_stacks_with_seeds,
     },
     diagnostics,
-    model::{ActivityEntry, ChangeStack},
+    model::{ActivityEntry, ChangeStack, github::GitHubAction},
     provider::{
         github::{GitHubConfig, api::GitHubApi},
         provider_context::ProviderContext,
@@ -36,6 +36,9 @@ pub(super) async fn annotate(entries: &mut [ActivityEntry], context: ProviderCon
             let ActivityEntry::GitHub(entry) = entry else {
                 return None;
             };
+            if matches!(entry.action, GitHubAction::Merged { .. }) {
+                return None;
+            }
             let pull = entry.action.pull_request_mut()?;
             Some((
                 change_ref(&entry.repository, pull.number)?,
@@ -49,11 +52,16 @@ pub(super) async fn annotate(entries: &mut [ActivityEntry], context: ProviderCon
         look_up(wanted, &context).await
     };
     for entry in entries {
-        if let ActivityEntry::GitHub(entry) = entry
-            && let Some(pull) = entry.action.pull_request_mut()
-        {
-            pull.change_stack = change_ref(&entry.repository, pull.number)
-                .and_then(|change| stacks.get(&change).cloned());
+        if let ActivityEntry::GitHub(entry) = entry {
+            match &mut entry.action {
+                GitHubAction::Merged { pull_request } => pull_request.change_stack = None,
+                action => {
+                    if let Some(pull) = action.pull_request_mut() {
+                        pull.change_stack = change_ref(&entry.repository, pull.number)
+                            .and_then(|change| stacks.get(&change).cloned());
+                    }
+                }
+            }
         }
     }
 }

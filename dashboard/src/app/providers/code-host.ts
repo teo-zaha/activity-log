@@ -121,7 +121,10 @@ export function gitlabAction(entry: GitLabEntry): ActionWords {
 export function githubAction(entry: GitHubEntry): ActionWords {
   switch (entry.type) {
     case 'opened':
-      return itemAction(ACTION_WORDS.opened, entry.target.kind, entry.target.number)
+    case 'closed':
+      return itemAction(ACTION_WORDS[entry.type], entry.target.kind, entry.target.number)
+    case 'merged':
+      return itemAction(ACTION_WORDS.merged, 'pullRequest', entry.pullRequest.number)
     case 'reviewed':
       return itemAction(
         'Reviewed',
