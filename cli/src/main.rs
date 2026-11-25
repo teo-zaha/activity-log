@@ -34,11 +34,8 @@ mod results;
 mod sources;
 
 use range::{RangePreset, day_range, parse_day, resolve_preset, today};
-use results::connection_results;
+use results::{connection_results, exit_status_help};
 use sources::{SourcesError, Terminal, list_lines, resolve_connection};
-
-/// What the exit status says; the README says it in the same words (a test checks).
-const EXIT_STATUS: &str = "Exit status: 0 when every source was collected or skipped (another OS, not installed, not running, nothing to read); 1 when a source failed (refused, server busy, unreachable, timed out, not configured, not permitted, its check or its collection failed), after the export of the others is written, or on any error, an invalid flag or value included.";
 
 /// Collects your activity, or manages the sources it is collected from.
 #[derive(Parser)]
@@ -46,7 +43,7 @@ const EXIT_STATUS: &str = "Exit status: 0 when every source was collected or ski
     author,
     version,
     about,
-    after_help = EXIT_STATUS
+    after_help = exit_status_help()
 )]
 struct Cli {
     /// The config file; default: ACTIVITY_LOG_CONFIG, else activity-log/config.toml in the OS

@@ -541,7 +541,7 @@ Dates are whole local days. `--range week` and `--range lastweek` start on Monda
 
 Each source gets one line: collected with its entry count, skipped when it has nothing to give on this machine (another OS, an app not installed or not running, no repositories), or failed. With `--output -` the export alone goes to standard output and every other line to standard error (in development run it as `pnpm -s cli:collect`, so pnpm's banner stays out of the export).
 
-Exit status: 0 when every source was collected or skipped (another OS, not installed, not running, nothing to read); 1 when a source failed (refused, server busy, unreachable, timed out, not configured, not permitted, its check or its collection failed), after the export of the others is written, or on any error, an invalid flag or value included.
+Exit status: 0 when every source was collected or skipped (not supported on this OS, not installed, not running, nothing to read); 1 when a source failed (timed out, not configured, credentials refused, token scope missing, calendar link unavailable, server busy, server unreachable, permission denied, check failed, collection failed, no key from the secure store), after the export of the others is written, or on any error, an invalid flag or value included.
 
 ```bash
 activity-log --range week

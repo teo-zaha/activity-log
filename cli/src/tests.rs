@@ -1,6 +1,6 @@
 use std::path::PathBuf;
 
-use activity_log_core::model::{ConnectionId, OutputFormat, Source};
+use activity_log_core::model::{ConnectionId, OutputFormat, ProviderProblem, Source};
 use chrono::NaiveDate;
 use clap::{CommandFactory, Parser, error::ErrorKind};
 use strum::IntoEnumIterator;
@@ -9,11 +9,28 @@ use tempfile::tempdir;
 #[path = "generate_ts_support.rs"]
 mod generate_ts_support;
 
+use crate::results::{Effect, problem_terms};
 use crate::{Cli, Output, collect_options, range::RangePreset};
 use generate_ts_support::{generate_ts, stale_files};
 
 fn parse(args: &[&str]) -> Result<Cli, clap::Error> {
     Cli::try_parse_from(std::iter::once("activity-log").chain(args.iter().copied()))
+}
+
+#[test]
+fn exit_status_help_names_every_failing_provider_problem() {
+    let help = Cli::command().render_long_help().to_string();
+    let (failed, _) = help
+        .split_once("1 when a source failed (")
+        .and_then(|(_, after)| after.split_once(')'))
+        .expect("the help lists why a provider can fail the run");
+    let listed: Vec<_> = failed.split(", ").collect();
+    for problem in ProviderProblem::iter() {
+        let (words, effect) = problem_terms(problem);
+        if effect == Effect::Fails {
+            assert!(listed.contains(&words), "{problem:?}: {failed}");
+        }
+    }
 }
 
 #[test]

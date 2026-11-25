@@ -5,6 +5,8 @@ use activity_log_core::{
     model::{CollectedActivitySummary, ProviderInfo, ProviderProblem},
     runtime::report::{CollectFailure, Outcome, RunReport, Slot},
 };
+use clap::builder::StyledStr;
+use strum::IntoEnumIterator;
 
 #[cfg(test)]
 mod tests;
@@ -56,6 +58,24 @@ pub(crate) fn problem_terms(problem: ProviderProblem) -> (&'static str, Effect) 
         ProviderProblem::NotRunning => ("not running", Effect::Skips),
         ProviderProblem::NoData => ("nothing to read", Effect::Skips),
     }
+}
+
+/// The README uses the same words, checked against the rendered help.
+pub(crate) fn exit_status_help() -> StyledStr {
+    let terms_for = |wanted| {
+        ProviderProblem::iter()
+            .map(problem_terms)
+            .filter_map(|(words, effect)| (effect == wanted).then_some(words))
+            .collect::<Vec<_>>()
+            .join(", ")
+    };
+    StyledStr::from(format!(
+        "Exit status: 0 when every source was collected or skipped ({}); \
+         1 when a source failed ({}), after the export of the others is written, \
+         or on any error, an invalid flag or value included.",
+        terms_for(Effect::Skips),
+        terms_for(Effect::Fails),
+    ))
 }
 
 /// Words for a check without a problem, which an unusable connection should never have.

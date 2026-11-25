@@ -3,7 +3,7 @@ use ts_rs::TS;
 
 /// Why a connection's check or last collection did not pass cleanly; its `reason` says it in
 /// words.
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, TS, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, TS, PartialEq, Eq, strum::EnumIter)]
 #[serde(rename_all = "camelCase")]
 #[ts(export, rename_all = "camelCase")]
 pub enum ProviderProblem {
