@@ -6,13 +6,10 @@ use super::remote_identity::RemoteIdentity;
 pub enum IdentityEvidence {
     /// The identity request succeeded and named the principal (non-empty id).
     Verified(RemoteIdentity),
-    /// The identity request succeeded (2xx) but named no one: the token works, whose it is is
-    /// unknown.
-    Unnamed,
     /// The identity request was refused with 401 or a 403 without signs of throttling.
     Denied,
-    /// No usable answer because the server was busy or unreachable, the request timed out,
-    /// the server failed in another way, or the source has no identity request.
+    /// No usable answer, including a successful response without an account ID, a request
+    /// failure without denial evidence, or a source without an identity request.
     #[default]
     None,
 }

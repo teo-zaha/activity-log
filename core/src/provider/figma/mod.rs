@@ -8,14 +8,14 @@ mod tests;
 use std::{future::Future, sync::Arc};
 
 use crate::{
-    collect::figma::{FigmaCollectError, FigmaCollection, collect_figma, file_book, local_tabs},
+    collect::figma::{FigmaCollection, collect_figma, file_book, local_tabs},
     model::{IdentityEvidence, IntoActivityEntries, ProviderProblem, Source, SupportedOs},
     provider::{
         connection::Instances,
         provider_adapter::CollectionState,
         provider_check_result::ProviderCheckResult,
         provider_context::ProviderContext,
-        remote_api::{SetupError, identity_check},
+        remote_api::{SetupError, identity_check, missing_identity},
     },
 };
 use api::FigmaApi;
@@ -74,11 +74,6 @@ async fn check(
         Err(error) => return error.check_result(FigmaApi::SERVICE),
     };
     match api.me().await {
-        Ok(None) => ProviderCheckResult::unavailable_as(
-            ProviderProblem::Failed,
-            FigmaCollectError::NoIdentity.to_string(),
-        )
-        .with_identity(IdentityEvidence::Unnamed),
         Ok(Some(principal)) => {
             if scope.files.is_empty() && scope.teams.is_empty() {
                 let tabs = tabs.await;
@@ -97,7 +92,11 @@ async fn check(
             }
             identity_check(FigmaApi::SERVICE, Ok(Some(principal)))
         }
-        answer => identity_check(FigmaApi::SERVICE, answer),
+        Ok(None) => missing_identity(
+            FigmaApi::SERVICE,
+            "Activity Log can't identify your versions or comments. Use Check again to retry.",
+        ),
+        Err(error) => identity_check(FigmaApi::SERVICE, Err(error)),
     }
 }
 

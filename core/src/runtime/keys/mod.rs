@@ -43,9 +43,6 @@ enum IdentityState {
     /// No check of these values has said anything yet.
     Unknown,
     Verified(RemoteIdentity),
-    /// The remote accepted the token without naming its owner. The number is new for every such
-    /// check, so two unnamed checks are never the same state.
-    Unnamed(u64),
     /// The last check was refused (401/403).
     Denied,
 }
@@ -110,8 +107,8 @@ impl KeyTable {
     }
 
     /// Records what a check of `id` said about its token's owner and returns the connection's
-    /// key with how it changed; `None` for a connection not installed. A check that read
-    /// something replaces the state; one without a usable answer keeps it.
+    /// key with how it changed, or `None` for a connection not installed. Verification and
+    /// denial update the state, while an inconclusive check keeps it.
     pub(crate) fn record(
         &mut self,
         id: &ConnectionId,
@@ -119,10 +116,6 @@ impl KeyTable {
     ) -> Option<(CollectionKey, KeyChange)> {
         let identity = match evidence {
             IdentityEvidence::Verified(identity) => Some(IdentityState::Verified(identity.clone())),
-            IdentityEvidence::Unnamed => {
-                self.next += 1;
-                Some(IdentityState::Unnamed(self.next))
-            }
             IdentityEvidence::Denied => Some(IdentityState::Denied),
             IdentityEvidence::None => None,
         };

@@ -960,7 +960,7 @@ fn file_names(dir: &std::path::Path) -> Vec<String> {
 
 #[tokio::test]
 async fn collectors_receive_the_startup_checks_identity_evidence() {
-    for identity in [verified("alice"), IdentityEvidence::Unnamed] {
+    for identity in [verified("alice"), IdentityEvidence::None] {
         let dir = tempdir().unwrap();
         let (runtime, fetches) =
             cached_runtime("work", "https://jira.example", "token-1", identity).await;
@@ -970,6 +970,42 @@ async fn collectors_receive_the_startup_checks_identity_evidence() {
             .unwrap();
         assert!(fetches.load(Ordering::SeqCst) > 0);
     }
+}
+
+#[tokio::test]
+async fn a_nameless_github_answer_never_starts_collection() {
+    use crate::{
+        provider::remote_api::test_server::{Reply, TestServer},
+        runtime::report::Slot,
+    };
+
+    let server = TestServer::start(|_| Reply::json(200, r#"{"login":"jdoe"}"#));
+    let connection = Connection::new(
+        ConnectionId::new(Source::Github, "nameless-account"),
+        "Example GitHub",
+        ConnectionLocation::Local,
+        ConnectionValues::new(
+            [
+                ("GITHUB_URL".into(), Some(server.url.clone())),
+                ("GITHUB_TOKEN".into(), Some("example-token".into())),
+            ]
+            .into(),
+        ),
+    );
+    let runtime = ProviderRuntime::inspect(
+        crate::provider::adapter(&Source::Github).clone(),
+        &connection,
+        &crate::secrets::Secrets::none(),
+    )
+    .await;
+    let report = crate::collect_runtimes(last_week(), std::slice::from_ref(&runtime)).await;
+
+    assert!(matches!(report.slots.as_slice(), [(_, Slot::Skipped)]));
+    assert_eq!(runtime.info().problem, Some(ProviderProblem::Failed));
+    assert_eq!(runtime.identity(), &IdentityEvidence::None);
+    let requests = server.requests();
+    assert_eq!(requests.len(), 1);
+    assert_eq!(requests[0].path(), "/api/v3/user");
 }
 
 #[tokio::test]
@@ -1067,7 +1103,6 @@ async fn entries_are_stamped_before_the_cache_stores_them() {
 #[tokio::test]
 async fn uncached_connections_touch_no_file_and_log_no_credential() {
     let cases = [
-        ("unnamed", "https://jira.example", IdentityEvidence::Unnamed),
         ("unchecked", "https://jira.example", IdentityEvidence::None),
         (
             "userinfo",

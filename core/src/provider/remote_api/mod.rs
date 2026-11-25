@@ -395,9 +395,9 @@ fn retry_wait(status: StatusCode, headers: &HeaderMap, now: DateTime<Utc>) -> Op
 }
 
 /// A startup check's answer from its identity request (Jira `/myself`, GitLab `/user`):
-/// `Ok(None)` is a complete success that named no one. Status and headers tell a refusal
-/// from a busy answer. A complete success that is not the API's JSON (an SSO sign-in page)
-/// leaves the connection unavailable and names no one.
+/// `Ok(None)` leaves the connection unavailable and supplies no identity evidence.
+/// Status and headers distinguish a refusal from a busy answer. A successful response
+/// containing an SSO sign-in page also leaves the connection unavailable.
 pub(crate) fn identity_check(
     service: &str,
     answer: Result<Option<RemoteIdentity>, ApiError>,
@@ -406,7 +406,10 @@ pub(crate) fn identity_check(
         Ok(Some(identity)) => {
             ProviderCheckResult::available().with_identity(IdentityEvidence::Verified(identity))
         }
-        Ok(None) => ProviderCheckResult::available().with_identity(IdentityEvidence::Unnamed),
+        Ok(None) => missing_identity(
+            service,
+            "Check the server address in this connection's settings.",
+        ),
         Err(err) => {
             let problem = err.problem().unwrap_or(ProviderProblem::Failed);
             match err {
@@ -435,6 +438,12 @@ pub(crate) fn identity_check(
             }
         }
     }
+}
+
+pub(crate) fn missing_identity(service: &str, advice: &str) -> ProviderCheckResult {
+    ProviderCheckResult::unavailable(format!(
+        "{service} did not return an account ID for this token. {advice}"
+    ))
 }
 
 /// `message` says more than the status line (`401 Unauthorized`, `Unauthorized`).

@@ -86,14 +86,21 @@ fn the_same_principal_found_again_keeps_the_key_and_another_one_changes_it() {
 }
 
 #[test]
-fn every_unnamed_check_gives_a_new_key() {
-    let mut keys = installed(jira("Work", "token-a"));
-    let (a, _) = keys.record(&id(), &verified("a")).unwrap();
+fn a_nameless_identity_answer_keeps_the_verified_collection_key() {
+    use crate::provider::remote_api::identity_check;
 
-    let (first, changed) = keys.record(&id(), &IdentityEvidence::Unnamed).unwrap();
-    assert!(changed == KeyChange::Replaced && first != a);
-    let (second, changed) = keys.record(&id(), &IdentityEvidence::Unnamed).unwrap();
-    assert!(changed == KeyChange::Replaced && second != first);
+    let mut keys = installed(jira("Work", "token-a"));
+    let (key, _) = keys.record(&id(), &verified("a")).unwrap();
+    let check = identity_check("Jira", Ok(None));
+
+    assert_eq!(
+        keys.record(&id(), &check.identity),
+        Some((key, KeyChange::Kept))
+    );
+    assert_eq!(
+        keys.record(&id(), &verified("a")),
+        Some((key, KeyChange::Kept))
+    );
 }
 
 #[test]

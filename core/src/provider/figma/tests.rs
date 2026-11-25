@@ -77,7 +77,7 @@ async fn startup_check_keeps_the_identity_evidence_from_figma_me() {
             200,
             "{}",
             Some(ProviderProblem::Failed),
-            IdentityEvidence::Unnamed,
+            IdentityEvidence::None,
         ),
         (
             403,
@@ -106,6 +106,15 @@ async fn startup_check_keeps_the_identity_evidence_from_figma_me() {
             problem.is_none()
         );
         assert_eq!(result.identity, identity);
+        if status == 200 && problem.is_some() {
+            assert_eq!(
+                result.outcome.reason(),
+                Some(concat!(
+                    "Figma did not return an account ID for this token. ",
+                    "Activity Log can't identify your versions or comments. Use Check again to retry."
+                ))
+            );
+        }
         assert_eq!(server.requests()[0].path(), "/v1/me");
     }
 }

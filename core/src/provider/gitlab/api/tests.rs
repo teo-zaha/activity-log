@@ -1,13 +1,16 @@
 use std::sync::Arc;
 
 use crate::{
-    model::{ConnectionId, IdentityEvidence, ProviderProblem, RemoteIdentity, Source},
+    model::{
+        CollectOptions, ConnectionId, IdentityEvidence, ProviderProblem, RemoteIdentity, Source,
+    },
     provider::{
         connection::{Connection, ConnectionLocation, ConnectionValues},
         gitlab::GitLabProvider,
         provider_runtime::ProviderRuntime,
         remote_api::test_server::{Reply, TestServer},
     },
+    runtime::report::Slot,
 };
 
 pub(crate) const TOKEN: &str = "glpat-example-token";
@@ -57,10 +60,20 @@ async fn the_check_names_the_token_owner_not_the_configured_user() {
 }
 
 #[tokio::test]
-async fn a_success_without_an_id_is_unnamed() {
-    let (runtime, _server) = check(|| Reply::json(200, r#"{"username":"jdoe"}"#)).await;
-    assert!(runtime.usable());
-    assert_eq!(runtime.identity(), &IdentityEvidence::Unnamed);
+async fn a_nameless_gitlab_answer_never_starts_collection() {
+    let (runtime, server) = check(|| Reply::json(200, r#"{"username":"jdoe"}"#)).await;
+    let range = CollectOptions {
+        start: "2026-11-01T00:00:00Z".parse().unwrap(),
+        end: "2026-11-02T00:00:00Z".parse().unwrap(),
+    };
+    let report = crate::collect_runtimes(range, std::slice::from_ref(&runtime)).await;
+
+    assert!(matches!(report.slots.as_slice(), [(_, Slot::Skipped)]));
+    assert_eq!(runtime.info().problem, Some(ProviderProblem::Failed));
+    assert_eq!(runtime.identity(), &IdentityEvidence::None);
+    let requests = server.requests();
+    assert_eq!(requests.len(), 1);
+    assert_eq!(requests[0].path(), "/gitlab/api/v4/user");
 }
 
 #[tokio::test]
@@ -109,15 +122,20 @@ async fn a_server_error_says_nothing_about_the_owner() {
 }
 
 #[tokio::test]
-async fn an_id_that_is_no_whole_number_names_no_one() {
+async fn an_invalid_account_id_leaves_gitlab_unavailable() {
     for body in [
         r#"{"id":"42","username":"jdoe"}"#,
         r#"{"id":4.2}"#,
         r#"{"id":-1}"#,
     ] {
         let (runtime, _server) = check(move || Reply::json(200, body)).await;
-        assert!(runtime.usable(), "{body}");
-        assert_eq!(runtime.identity(), &IdentityEvidence::Unnamed, "{body}");
+        assert!(!runtime.usable(), "{body}");
+        assert_eq!(
+            runtime.info().problem,
+            Some(ProviderProblem::Failed),
+            "{body}"
+        );
+        assert_eq!(runtime.identity(), &IdentityEvidence::None, "{body}");
     }
 }
 

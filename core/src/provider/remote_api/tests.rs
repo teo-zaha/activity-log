@@ -619,7 +619,7 @@ fn identity_answers_become_evidence() {
         named("JIRAUSER10100")
     );
 
-    for unnamed in [
+    for nameless in [
         json!({}),
         json!({ "id": null, "username": "jdoe" }),
         json!({ "id": "42" }),
@@ -628,20 +628,20 @@ fn identity_answers_become_evidence() {
         json!([1]),
     ] {
         assert_eq!(
-            identity_from(Ok(unnamed.clone()), Integer("id"), "username"),
+            identity_from(Ok(nameless.clone()), Integer("id"), "username"),
             Ok(None),
-            "{unnamed}"
+            "{nameless}"
         );
     }
-    for unnamed in [
+    for nameless in [
         json!({ "key": "" }),
         json!({ "key": "  " }),
         json!({ "key": 42 }),
     ] {
         assert_eq!(
-            identity_from(Ok(unnamed.clone()), Text("key"), "name"),
+            identity_from(Ok(nameless.clone()), Text("key"), "name"),
             Ok(None),
-            "{unnamed}"
+            "{nameless}"
         );
     }
     assert_eq!(
@@ -673,9 +673,16 @@ fn checks_map_identity_answers() {
     assert_eq!(verified.outcome.status(), ProviderStatus::Available);
     assert_eq!(verified.identity, IdentityEvidence::Verified(identity));
 
-    let unnamed = identity_check("GitLab", Ok(None));
-    assert_eq!(unnamed.outcome.status(), ProviderStatus::Available);
-    assert_eq!(unnamed.identity, IdentityEvidence::Unnamed);
+    let missing_id = identity_check("GitLab", Ok(None));
+    assert_eq!(missing_id.outcome.status(), ProviderStatus::Unavailable);
+    assert_eq!(missing_id.outcome.problem(), Some(ProviderProblem::Failed));
+    assert_eq!(missing_id.identity, IdentityEvidence::None);
+    assert_eq!(
+        missing_id.outcome.reason(),
+        Some(
+            "GitLab did not return an account ID for this token. Check the server address in this connection's settings."
+        )
+    );
 
     let status = |status, message: &str| {
         Err(ApiError::Status {

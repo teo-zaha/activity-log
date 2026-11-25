@@ -615,11 +615,7 @@ async fn a_file_request_failure_keeps_the_original_position_and_remote_problem()
 
 #[tokio::test]
 async fn collection_requires_a_verified_identity() {
-    for identity in [
-        IdentityEvidence::None,
-        IdentityEvidence::Unnamed,
-        IdentityEvidence::Denied,
-    ] {
+    for identity in [IdentityEvidence::None, IdentityEvidence::Denied] {
         let mut context = ProviderContext::default();
         context.set_identity(identity);
         let error = collect_figma(&options(), &context).await.unwrap_err();
