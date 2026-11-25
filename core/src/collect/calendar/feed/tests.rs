@@ -1,15 +1,20 @@
-use super::{FeedLocation, FeedUnavailable, check_feed, feed_location, read_feed, service_for};
+use super::{
+    FeedLocation, FeedUnavailable, check_feed, feed_location, read_feed,
+    redirect::InsecureRedirect, request_feed, service_for,
+};
 use crate::{
     collect::calendar::tests::OUTLOOK_FEED,
     model::{CalendarFeedService, ProviderProblem},
     provider::{
+        http_client_builder,
         provider_check_result::ProviderCheckResult,
-        remote_api::test_server::{Reply, TestServer},
+        remote_api::test_server::{Reply, TestServer, tls_client_builder},
         remote_error::{ApiError, RemoteFailure},
         source_failure::FixCause,
     },
     runtime::CollectFailure,
 };
+use reqwest::Url;
 
 #[test]
 fn accepts_https_webcal_and_files_but_not_http() {
@@ -170,7 +175,9 @@ async fn a_failed_feed_request_names_its_problem() {
         });
         // The test server speaks plain HTTP, which `feed_location` refuses: ask it directly.
         let url = format!("{}/feed/path-secret.ics?key=query-secret", server.url);
-        let error = super::request_feed(url.parse().unwrap()).await.unwrap_err();
+        let error = request_feed(url.parse().unwrap(), http_client_builder())
+            .await
+            .unwrap_err();
         let check = ProviderCheckResult::unavailable_from(&error).outcome;
         let collection = CollectFailure::of(&error);
         assert_eq!(check.problem(), Some(expected));
@@ -231,7 +238,7 @@ async fn redirected_feed_failures_keep_the_original_host_and_omit_referrers() {
             }
         });
         let address = format!("{}/start-secret.ics?key=query-secret", server.url);
-        let error = super::request_feed(address.parse().unwrap())
+        let error = request_feed(address.parse().unwrap(), http_client_builder())
             .await
             .unwrap_err();
         let failure = error.downcast_ref::<FeedUnavailable>().unwrap();
@@ -259,4 +266,127 @@ async fn redirected_feed_failures_keep_the_original_host_and_omit_referrers() {
         assert_eq!(followed.path(), "/redirect-secret.ics");
         assert_eq!(followed.header("referer"), None);
     }
+}
+
+#[tokio::test]
+async fn a_calendar_downgrade_is_refused_at_any_hop_without_leaking_addresses() {
+    let plaintext = TestServer::start(|_| Reply::html(200, OUTLOOK_FEED));
+    let mut target = Url::parse(&plaintext.url)
+        .unwrap()
+        .join("/target-path-secret?key=target-query-secret")
+        .unwrap();
+    target.set_host(Some("localhost")).unwrap();
+    let https = TestServer::start_tls(move |request| match request.path() {
+        "/chain-path-secret" => {
+            Reply::redirect("/origin-path-secret?key=intermediate-query-secret")
+        }
+        _ => Reply::redirect(target.as_str()),
+    });
+    let tls = Url::parse(&https.url).unwrap();
+    let direct = tls
+        .join("/origin-path-secret?key=origin-query-secret")
+        .unwrap();
+    let upgrade = {
+        let direct = direct.clone();
+        TestServer::start(move |_| Reply::redirect(direct.as_str()))
+    };
+
+    for start in [
+        direct,
+        tls.join("/chain-path-secret?key=origin-query-secret")
+            .unwrap(),
+        Url::parse(&upgrade.url)
+            .unwrap()
+            .join("/initial-path-secret?key=origin-query-secret")
+            .unwrap(),
+    ] {
+        let answer = request_feed(start, tls_client_builder()).await;
+        assert!(
+            plaintext.requests().is_empty(),
+            "the redirect target received a request"
+        );
+        let error = answer.unwrap_err();
+        assert!(error.is::<InsecureRedirect>(), "{error:#}");
+        let check = ProviderCheckResult::unavailable_from(&error).outcome;
+        let collection = CollectFailure::of(&error);
+        assert_eq!(check.problem(), Some(ProviderProblem::Failed));
+        assert_eq!(collection.problem(), ProviderProblem::CollectionFailed);
+        let [cause] = error.chain().collect::<Vec<_>>()[..] else {
+            panic!("the sanitized error must not retain reqwest's error chain");
+        };
+        let expected = "The calendar server at 127.0.0.1 redirected to an insecure (http) address. Activity Log refused it.";
+        assert_eq!(cause.to_string(), expected);
+        assert_eq!(check.reason(), Some(expected));
+        assert_eq!(collection.message(), expected);
+        for secret in [
+            "localhost",
+            "target-path-secret",
+            "target-query-secret",
+            "chain-path-secret",
+            "origin-path-secret",
+            "initial-path-secret",
+            "origin-query-secret",
+            "intermediate-query-secret",
+        ] {
+            assert!(!format!("{error:?}").contains(secret));
+        }
+    }
+    assert_eq!(
+        https
+            .requests()
+            .iter()
+            .map(|request| request.path())
+            .collect::<Vec<_>>(),
+        [
+            "/origin-path-secret",
+            "/chain-path-secret",
+            "/origin-path-secret",
+            "/origin-path-secret"
+        ]
+    );
+    assert_eq!(upgrade.requests().len(), 1);
+}
+
+#[tokio::test]
+async fn calendar_follows_upgrades_and_same_scheme_redirects_with_the_default_limit() {
+    let https = TestServer::start_tls(|request| match request.path() {
+        "/before" => Reply::redirect("/feed"),
+        "/loop" => Reply::redirect("/loop"),
+        _ => Reply::html(200, OUTLOOK_FEED),
+    });
+    let tls = Url::parse(&https.url).unwrap();
+    let http = {
+        let target = tls.join("/before").unwrap();
+        TestServer::start(move |request| match request.path() {
+            "/" => Reply::redirect("/upgrade"),
+            _ => Reply::redirect(target.as_str()),
+        })
+    };
+    let (_, response) = request_feed(Url::parse(&http.url).unwrap(), tls_client_builder())
+        .await
+        .unwrap();
+    assert_eq!(response.text().await.unwrap(), OUTLOOK_FEED);
+    assert_eq!(http.requests().len(), 2);
+    assert_eq!(
+        https
+            .requests()
+            .iter()
+            .map(|request| request.path())
+            .collect::<Vec<_>>(),
+        ["/before", "/feed"]
+    );
+
+    let error = request_feed(tls.join("/loop").unwrap(), tls_client_builder())
+        .await
+        .unwrap_err();
+    assert!(error.is::<RemoteFailure>());
+    assert_eq!(
+        https
+            .requests()
+            .iter()
+            .filter(|request| request.path() == "/loop")
+            .count(),
+        11,
+        "the initial request plus reqwest's ten allowed redirects"
+    );
 }

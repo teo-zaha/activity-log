@@ -3,7 +3,7 @@ use serde_json::{Value, json};
 
 use super::{
     PostJsonError, RemoteClient, Retry, SetupError, follows, identity_check, identity_from,
-    test_server::{Reply, TestServer, closed_port},
+    test_server::{Reply, TestServer, closed_port, tls_client_builder},
 };
 use crate::{
     model::{IdentityEvidence, ProviderProblem, ProviderStatus, RemoteIdentity},
@@ -157,6 +157,43 @@ async fn a_same_origin_redirect_is_followed_with_the_token() {
     assert_eq!(requests.len(), 2);
     assert_eq!(requests[1].path(), "/new");
     assert_eq!(requests[1].header("private-token"), Some(TOKEN));
+}
+
+#[tokio::test]
+async fn a_redirect_to_http_on_the_same_host_and_port_is_not_followed() {
+    let server = TestServer::start_tls(|request| {
+        if request.path() == "/original" {
+            let mut target = Url::parse("http://127.0.0.1/cleartext").unwrap();
+            let (_, port) = request.header("host").unwrap().rsplit_once(':').unwrap();
+            target.set_port(Some(port.parse().unwrap())).unwrap();
+            Reply::redirect(target.as_str())
+        } else {
+            Reply::json(200, "{}")
+        }
+    });
+    let api = RemoteClient::new(
+        &server.url,
+        HeaderName::from_static("private-token"),
+        TOKEN,
+        TOKEN,
+        tls_client_builder(),
+    )
+    .unwrap();
+    let answer = api.get_json::<Value>(api.endpoint(&["original"])).await;
+
+    let requests = server.requests();
+    let [request] = requests.as_slice() else {
+        panic!("an HTTPS credential request crossed schemes");
+    };
+    assert_eq!(request.path(), "/original");
+    assert_eq!(request.header("private-token"), Some(TOKEN));
+    assert!(matches!(
+        answer,
+        Err(ApiError::Status {
+            status: StatusCode::FOUND,
+            ..
+        })
+    ));
 }
 
 #[tokio::test]

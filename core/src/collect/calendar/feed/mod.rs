@@ -3,13 +3,15 @@
 use std::path::PathBuf;
 
 use anyhow::{Context, Result, anyhow, bail};
-use reqwest::{StatusCode, Url};
+use reqwest::{ClientBuilder, StatusCode, Url};
 
 use crate::provider::{
     fix_action::calendar::service_for,
+    http_client_builder,
     remote_error::{ApiError, RemoteFailure},
 };
 
+mod redirect;
 mod unavailable;
 pub(crate) use unavailable::FeedUnavailable;
 
@@ -69,7 +71,7 @@ pub async fn read_feed(raw: &str) -> Result<String> {
             std::fs::read_to_string(&path).with_context(|| format!("Reading {}", path.display()))
         }
         FeedLocation::Url(url) => {
-            let (host, response) = request_feed(url).await?;
+            let (host, response) = request_feed(url, http_client_builder()).await?;
             response.text().await.map_err(|err| {
                 anyhow::Error::new(RemoteFailure {
                     service: host.into(),
@@ -93,28 +95,31 @@ pub async fn check_feed(raw: &str) -> Result<()> {
             }
             Ok(())
         }
-        FeedLocation::Url(url) => request_feed(url).await.map(drop),
+        FeedLocation::Url(url) => request_feed(url, http_client_builder()).await.map(drop),
     }
 }
 
 /// The response to a feed request before its body is read. A `RemoteFailure` names only the
 /// host and keeps the typed cause.
-async fn request_feed(url: Url) -> Result<(String, reqwest::Response)> {
+async fn request_feed(url: Url, builder: ClientBuilder) -> Result<(String, reqwest::Response)> {
     let host = url.host_str().unwrap_or("the calendar host").to_string();
     let service = service_for(&url);
     let failed = |error| RemoteFailure {
         service: host.clone().into(),
         error,
     };
-    let client = crate::provider::http_client_builder()
+    let client = builder
         .referer(false)
+        .redirect(redirect::policy(host.clone()))
         .build()
         .map_err(|err| anyhow!("HTTP client setup failed: {}", err.without_url()))?;
-    let response = client
-        .get(url)
-        .send()
-        .await
-        .map_err(|err| failed(ApiError::from_transport(&err)))?;
+    let response = client.get(url).send().await.map_err(|err| {
+        if let Some(refusal) = redirect::InsecureRedirect::from_transport(&err) {
+            anyhow::Error::new(refusal)
+        } else {
+            anyhow::Error::new(failed(ApiError::from_transport(&err)))
+        }
+    })?;
     let status = response.status();
     if status.is_success() {
         return Ok((host, response));
