@@ -4,7 +4,7 @@
 use std::io::{BufRead, IsTerminal, Write};
 
 use activity_log_core::{
-    model::{ConnectionId, ProviderInfo, Source},
+    model::{ConnectionId, ProviderFixAction, ProviderInfo, Source, WebFixAction},
     provider::{
         connection::{Connection, ConnectionLocation},
         provider_config::{ProviderConfigKey, ProviderConfigShape, parse_config_list},
@@ -273,7 +273,7 @@ pub(crate) fn secret_of(source: &Source) -> Result<ProviderConfigKey, SourcesErr
         .ok_or_else(|| SourcesError::NoSecret(source.clone()))
 }
 
-/// One line per connection: id, label and status.
+/// Each connection's id, label and status, with a token setup link when available.
 pub(crate) fn list_lines(providers: &[ProviderInfo]) -> Vec<String> {
     if providers.is_empty() {
         return vec![NO_SOURCES.to_string()];
@@ -290,7 +290,7 @@ pub(crate) fn list_lines(providers: &[ProviderInfo]) -> Vec<String> {
         .unwrap_or(0);
     providers
         .iter()
-        .map(|info| {
+        .flat_map(|info| {
             let status = match (&info.reason, info.usable) {
                 (None, true) => "✓ ready".to_string(),
                 (Some(reason), true) => format!("! {reason}"),
@@ -301,11 +301,18 @@ pub(crate) fn list_lines(providers: &[ProviderInfo]) -> Vec<String> {
                         .map_or("unavailable", |problem| problem_terms(problem).0)
                 ),
             };
-            format!(
+            let line = format!(
                 "{:width$}  {:label_width$}  {status}",
                 info.connection.to_string(),
                 info.label,
-            )
+            );
+            let token = match &info.fix_action {
+                Some(ProviderFixAction::Web {
+                    action: WebFixAction::CreateToken { url, .. },
+                }) => Some(format!("    Create token  {url}")),
+                _ => None,
+            };
+            std::iter::once(line).chain(token)
         })
         .collect()
 }

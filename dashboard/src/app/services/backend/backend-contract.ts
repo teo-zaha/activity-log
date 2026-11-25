@@ -10,7 +10,7 @@ import {
   type ExportRequest,
   type LegacyImportReportDto,
   type LogsResponse,
-  type ProviderConfigFieldIssueDto,
+  type ProviderConfigCheckResponseDto,
   type ProviderConfigSaveRequestDto,
   type ProviderConfigSaveResponseDto,
   type ProviderConfigSnapshotDto,
@@ -18,6 +18,7 @@ import {
   type RecheckAnswer,
   type RuntimeState,
 } from '../../generated/activity'
+import { hasSavedSettings, isSettingsCheck, isSettingsSnapshot } from './provider-config-response'
 
 /** A command the desktop app registers (`core::ipc`). */
 export type DesktopCommand = (typeof DESKTOP_COMMANDS)[keyof typeof DESKTOP_COMMANDS]
@@ -42,6 +43,7 @@ export interface BackendOperation<Req, Res> {
   readonly http: HttpEndpoint | null
   readonly request?: Req
   readonly response?: Res
+  readonly validate?: (response: unknown) => boolean
 }
 
 /** An operation without a request, served by `GET`; usable as a signal resource. */
@@ -52,12 +54,14 @@ export interface ReadOperation<Res> extends BackendOperation<void, Res> {
 interface OperationSpec {
   readonly label: string
   readonly tauri: DesktopCommand | null
+  readonly validate?: (response: unknown) => boolean
 }
 
 function read<Res>(spec: OperationSpec & { readonly route?: string }): ReadOperation<Res> {
   return {
     label: spec.label,
     tauriCommand: spec.tauri,
+    ...(spec.validate && { validate: spec.validate }),
     http: spec.route ? { method: 'GET', url: spec.route } : null,
   }
 }
@@ -65,7 +69,12 @@ function read<Res>(spec: OperationSpec & { readonly route?: string }): ReadOpera
 function command<Req, Res>(
   spec: OperationSpec & { readonly http?: HttpEndpoint }
 ): BackendOperation<Req, Res> {
-  return { label: spec.label, tauriCommand: spec.tauri, http: spec.http ?? null }
+  return {
+    label: spec.label,
+    tauriCommand: spec.tauri,
+    http: spec.http ?? null,
+    ...(spec.validate && { validate: spec.validate }),
+  }
 }
 
 export const BackendOperations = {
@@ -80,6 +89,7 @@ export const BackendOperations = {
   providerConfig: read<ProviderConfigSnapshotDto>({
     label: 'Provider configuration',
     tauri: DESKTOP_COMMANDS.getProviderConfig,
+    validate: isSettingsSnapshot,
   }),
   logs: read<LogsResponse>({ label: 'Logs', tauri: DESKTOP_COMMANDS.getLogs, route: '/api/logs' }),
   collect: command<CollectRequest, CollectAnswer>({
@@ -90,15 +100,18 @@ export const BackendOperations = {
   saveProviderConfig: command<ProviderConfigSaveRequestDto, ProviderConfigSaveResponseDto>({
     label: 'Provider configuration',
     tauri: DESKTOP_COMMANDS.saveProviderConfig,
+    validate: hasSavedSettings,
   }),
   /** The issues a save would be refused for, at their fields; nothing is saved. */
-  checkProviderConfig: command<ProviderConfigSaveRequestDto, ProviderConfigFieldIssueDto[]>({
+  checkProviderConfig: command<ProviderConfigSaveRequestDto, ProviderConfigCheckResponseDto>({
     label: 'Check settings',
     tauri: DESKTOP_COMMANDS.checkProviderConfig,
+    validate: isSettingsCheck,
   }),
   addConnection: command<AddConnectionRequestDto, AddConnectionResponseDto>({
     label: 'Add source',
     tauri: DESKTOP_COMMANDS.addConnection,
+    validate: hasSavedSettings,
   }),
   /** Runs a source's startup check again; the backend then collects its kind again. */
   recheckConnection: command<ConnectionId, RecheckAnswer>({
@@ -109,6 +122,7 @@ export const BackendOperations = {
   removeConnection: command<RemoveConnectionRequestDto, ProviderConfigSaveResponseDto>({
     label: 'Remove source',
     tauri: DESKTOP_COMMANDS.removeConnection,
+    validate: hasSavedSettings,
   }),
   /** Renders the export and saves it through a native dialog. */
   saveExport: command<ExportRequest, ExportOutcome>({

@@ -57,7 +57,7 @@ const ACTIVITY_KINDS: Readonly<Record<ActivityState['kind'], true>> = {
   failed: true,
 }
 
-function isRecord(value: unknown): value is Readonly<Record<string, unknown>> {
+export function isRecord(value: unknown): value is Readonly<Record<string, unknown>> {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
 }
 
@@ -162,7 +162,9 @@ function isCalendarFeedGuide(value: unknown): value is CalendarFeedGuide {
 }
 
 function isWebUrl(value: unknown): value is string {
-  return typeof value === 'string' && isWebLink(value)
+  if (typeof value !== 'string' || !isWebLink(value)) return false
+  const url = new URL(value)
+  return url.username === '' && url.password === ''
 }
 
 function isConnectionCount(value: unknown): value is ConnectionCount {
@@ -231,7 +233,10 @@ const KEY_FILE_REASONS: Readonly<Record<KeyFileReason, true>> = {
 }
 const NO_STORE_REASONS: Readonly<Record<NoStoreReason, true>> = { noOsStore: true }
 
-function isOneOf<T extends string>(value: unknown, values: Readonly<Record<T, true>>): value is T {
+export function isOneOf<T extends string>(
+  value: unknown,
+  values: Readonly<Record<T, true>>
+): value is T {
   return typeof value === 'string' && Object.hasOwn(values, value)
 }
 

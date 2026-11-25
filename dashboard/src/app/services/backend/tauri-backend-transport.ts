@@ -31,9 +31,19 @@ export class TauriBackendTransport implements BackendTransport {
     if (signal?.aborted) return Promise.reject(signal.reason)
     if (command === null) return Promise.reject(unsupportedIn('the browser', operation.label))
     const args = request === undefined ? undefined : { request }
-    const answer = invoke<Res>(command, args).catch((error: unknown) => {
-      throw tauriFailureOf(error)
-    })
+    const answer = invoke<Res>(command, args)
+      .catch((error: unknown) => {
+        throw tauriFailureOf(error)
+      })
+      .then(response => {
+        if (operation.validate && !operation.validate(response)) {
+          throw new BackendFailure(
+            'internal',
+            `The desktop app sent an unreadable response for ${operation.label}`
+          )
+        }
+        return response
+      })
     // An invoke cannot be cancelled: an abort only stops the caller waiting for it.
     return signal === undefined ? answer : Promise.race([answer, abortOf(signal)])
   }

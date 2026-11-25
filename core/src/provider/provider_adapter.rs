@@ -6,6 +6,7 @@ use crate::{
     cache::CachePolicy,
     model::{ActivityEntry, CollectOptions, ConnectionId, Source, SupportedOs},
     provider::{
+        CredentialSetup,
         connection::Instances,
         provider_check_result::ProviderCheckResult,
         provider_config::{ConfigBinding, ProviderConfigKey},
@@ -51,6 +52,10 @@ pub trait ProviderAdapter: Send + Sync {
     }
 
     fn config_binding(&self) -> Option<ConfigBinding> {
+        None
+    }
+
+    fn credential_setup(&self) -> Option<&'static CredentialSetup> {
         None
     }
 

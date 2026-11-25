@@ -38,6 +38,10 @@ crate::provider! {
             Box::pin(stack::annotate(entries, context))
         }
 
+        fn credential_setup(&self) -> Option<&'static crate::provider::CredentialSetup> {
+            Some(&config::CREDENTIAL_SETUP)
+        }
+
         fn description(&self) -> &'static str {
             "Pull requests, reviews, issues and commits. Commit history requires Contents read access."
         }

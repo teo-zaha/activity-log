@@ -475,7 +475,8 @@ fn a_settings_check_answers_the_issues_at_their_fields() {
         "check_provider_config",
         serde_json::json!({ "request": request }),
     )
-    .unwrap();
+    .unwrap()["issues"]
+        .clone();
 
     assert_eq!(
         issues,
@@ -485,6 +486,48 @@ fn a_settings_check_answers_the_issues_at_their_fields() {
             "message": "Enter an http or https address.",
         }])
     );
+    assert_eq!(std::fs::read_to_string(&path).unwrap(), text);
+}
+
+#[test]
+fn a_settings_check_returns_token_setup_for_the_draft_without_saving() {
+    use std::sync::Arc;
+
+    use activity_log_core::secrets::{FrontEnd, MemoryStore, Secrets, StoreKind};
+
+    let text = "[[jira]]\nname = 'work'\nlabel = 'Work'\n";
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("config.toml");
+    std::fs::write(&path, text).unwrap();
+    let store = Arc::new(MemoryStore::new(StoreKind::File));
+    let state = AppState::start(
+        Some(path.clone()),
+        Secrets::with_stores(FrontEnd::Desktop, None, (store.clone(), None)),
+    );
+    let checked = invoke(
+        state.clone(),
+        "check_provider_config",
+        serde_json::json!({ "request": {
+            "connection": { "source": "jira", "name": "work" },
+            "values": [
+                { "key": "JIRA_URL", "value": "https://jira.example.org/jira" },
+                { "key": "JIRA_TOKEN", "value": "example-token" },
+            ],
+            "basedOn": snapshot_revision(&state),
+        }}),
+    )
+    .unwrap();
+
+    assert_eq!(checked["issues"], serde_json::json!([]));
+    assert_eq!(checked["fieldFix"]["key"], "JIRA_TOKEN");
+    assert_eq!(checked["fieldFix"]["action"]["kind"], "createToken");
+    assert_eq!(
+        checked["fieldFix"]["action"]["url"],
+        "https://jira.example.org/jira/secure/ViewProfile.jspa"
+    );
+    assert!(!checked.to_string().contains("example-token"));
+    assert_eq!(store.calls().reads, 0);
+    assert_eq!(store.calls().creates, 0);
     assert_eq!(std::fs::read_to_string(&path).unwrap(), text);
 }
 
@@ -526,7 +569,8 @@ fn a_save_over_a_field_another_program_changed_is_a_conflict() {
         "check_provider_config",
         serde_json::json!({ "request": request }),
     )
-    .unwrap();
+    .unwrap()["issues"]
+        .clone();
     let refused = refusal(state.clone(), "save_provider_config", request);
 
     assert_eq!(refused.kind, BackendErrorKind::Conflict);
@@ -704,7 +748,8 @@ fn a_token_without_an_address_is_refused() {
         "check_provider_config",
         serde_json::json!({ "request": request }),
     )
-    .unwrap();
+    .unwrap()["issues"]
+        .clone();
     let refused = refusal(state, "save_provider_config", request);
 
     assert_eq!(

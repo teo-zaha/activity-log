@@ -4,13 +4,15 @@
 
 use crate::{
     model::{
-        AddConnectionRequestDto, BackendError, ConnectionId, ProviderConfigConnectionStateDto,
-        ProviderConfigFieldIssueDto, ProviderConfigFieldRefDto, ProviderConfigFieldStateDto,
-        ProviderConfigFieldValueDto, ProviderConfigIssueKindDto, ProviderConfigSaveRequestDto,
-        ProviderConfigSnapshotDto, ProviderConfigValueDto, ProviderKindDto, SecretStoreKindDto,
-        SecretStoredDto, Source, SupportedOs,
+        AddConnectionRequestDto, BackendError, ConnectionId, ProviderConfigCheckResponseDto,
+        ProviderConfigConnectionStateDto, ProviderConfigFieldFixDto, ProviderConfigFieldIssueDto,
+        ProviderConfigFieldRefDto, ProviderConfigFieldStateDto, ProviderConfigFieldValueDto,
+        ProviderConfigIssueKindDto, ProviderConfigSaveRequestDto, ProviderConfigSnapshotDto,
+        ProviderConfigValueDto, ProviderKindDto, SecretStoreKindDto, SecretStoredDto, Source,
+        SupportedOs,
     },
     provider::{
+        adapter,
         connection::{Connection, ConnectionLocation, Instances, StoredSecret, StoredValue},
         git::{GIT_DIRS, WSL_HOME, default_git_root},
         provider_config::{
@@ -144,20 +146,58 @@ pub fn check_save(
     request: &ProviderConfigSaveRequestDto,
     base: SaveBase,
     current: Option<&ConfigFile>,
-) -> Vec<ProviderConfigFieldIssueDto> {
-    let prepared = prepare_save(request);
-    let mut issues = match (&prepared, current) {
-        (Err(issues), _) => issues.clone(),
-        (Ok(changes), Some(current)) => binding_issues(changes, current),
-        (Ok(_), None) => Vec::new(),
-    };
+) -> ProviderConfigCheckResponseDto {
+    let (changes, mut issues) = prepare_save(request);
+    if issues.is_empty()
+        && let Some(current) = current
+    {
+        issues = binding_issues(&changes, current);
+    }
     let conflict = match (base.precondition(), current) {
         (Err(conflict), _) => Some(conflict),
         (Ok(precondition), Some(current)) => check_precondition(current, &precondition).err(),
         (Ok(_), None) => None,
     };
+    let field_fix = current
+        .filter(|_| conflict.is_none())
+        .and_then(|current| draft_field_fix(current, &changes, &issues));
     issues.extend(conflict.iter().flat_map(conflict_issues));
-    issues
+    ProviderConfigCheckResponseDto { issues, field_fix }
+}
+
+fn draft_field_fix(
+    current: &ConfigFile,
+    changes: &SaveChanges,
+    issues: &[ProviderConfigFieldIssueDto],
+) -> Option<ProviderConfigFieldFixDto> {
+    let setup = adapter(&changes.connection.source).credential_setup()?;
+    let connection = current
+        .connections()
+        .connections
+        .into_iter()
+        .find(|connection| connection.id == changes.connection)?;
+    let address = if let Some(key) = setup.address_key() {
+        if issues.iter().any(|issue| {
+            matches!(&issue.field, ProviderConfigFieldRefDto::Value { key: invalid } if invalid == key.name)
+        }) {
+            return None;
+        }
+        match changes
+            .values
+            .iter()
+            .rev()
+            .find(|(edited, _)| *edited == key)
+        {
+            Some((_, value)) => value.clone(),
+            None => connection.values().get(key.name),
+        }
+    } else {
+        None
+    };
+    Some(ProviderConfigFieldFixDto {
+        key: setup.token.name.to_owned(),
+        action: setup.action(address.as_deref())?,
+    })
 }
 
 /// A save that changes what a sealed secret is bound to (its server's address, Jira's TLS
@@ -244,21 +284,22 @@ impl SaveChanges {
 
 /// The edits of `request`, or `invalidRequest` with its first issue as `{field}: {message}`.
 pub fn save_changes(request: &ProviderConfigSaveRequestDto) -> Result<SaveChanges, BackendError> {
-    prepare_save(request).map_err(|issues| {
-        let first = &issues[0];
+    let (changes, issues) = prepare_save(request);
+    if let Some(first) = issues.first() {
         let keys = config_keys(&request.connection.source);
-        BackendError::invalid_request(format!(
+        return Err(BackendError::invalid_request(format!(
             "{}: {}",
             field_label(&first.field, keys),
             first.message
-        ))
-    })
+        )));
+    }
+    Ok(changes)
 }
 
-/// One pass over `request`: its edits in their stored form, or every issue it has.
+/// One pass over `request`: valid edits in their stored form and every issue.
 fn prepare_save(
     request: &ProviderConfigSaveRequestDto,
-) -> Result<SaveChanges, Vec<ProviderConfigFieldIssueDto>> {
+) -> (SaveChanges, Vec<ProviderConfigFieldIssueDto>) {
     let keys = config_keys(&request.connection.source);
     let mut issues = Vec::new();
     if request
@@ -287,14 +328,14 @@ fn prepare_save(
             Some(Err(found)) => issues.extend(found),
         }
     }
-    if !issues.is_empty() {
-        return Err(issues);
-    }
-    Ok(SaveChanges {
-        connection: request.connection.clone(),
-        label: request.label.clone(),
-        values,
-    })
+    (
+        SaveChanges {
+            connection: request.connection.clone(),
+            label: request.label.clone(),
+            values,
+        },
+        issues,
+    )
 }
 
 /// Applies checked edits to the file as read under the config lock.
@@ -354,6 +395,9 @@ pub fn build_snapshot(
             let adapter = registry
                 .iter()
                 .find(|adapter| adapter.id() == *connection.source())?;
+            let field_fix = adapter
+                .credential_setup()
+                .and_then(|setup| Some((setup.token, setup.saved(connection)?)));
             Some(ProviderConfigConnectionStateDto {
                 connection: connection.id.clone(),
                 label: connection.label.clone(),
@@ -367,6 +411,10 @@ pub fn build_snapshot(
                         placeholder: key.placeholder.map(str::to_owned),
                         required: key.required,
                         is_set: connection.values().get_stored(key.name).is_some(),
+                        fix_action: field_fix
+                            .as_ref()
+                            .filter(|(token, _)| token == key)
+                            .map(|(_, action)| action.clone()),
                         value: field_value(connection, *key, secrets),
                     })
                     .collect(),

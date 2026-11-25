@@ -1,8 +1,11 @@
 //! Selects an action for the outcome the host is about to publish.
 
+pub(crate) mod credential;
+pub use credential::CredentialSetup;
+
 use crate::model::{
-    LocalApp, LocalFixTarget, ProviderFixAction, ProviderInfo, ProviderStatus, Source, SupportedOs,
-    SystemSettingsPane,
+    LocalApp, LocalFixTarget, ProviderFixAction, ProviderInfo, ProviderProblem, ProviderStatus,
+    Source, SupportedOs, SystemSettingsPane,
 };
 
 use super::{
@@ -17,11 +20,11 @@ pub enum FixSurface {
     Desktop,
 }
 
-pub(crate) fn select(
+pub fn select(
     surface: FixSurface,
     os: &SupportedOs,
     connection: &Connection,
-    info: &ProviderInfo,
+    info: &mut ProviderInfo,
     cause: Option<FixCause>,
 ) -> Option<ProviderFixAction> {
     if !matches!(
@@ -29,6 +32,18 @@ pub(crate) fn select(
         ProviderStatus::Degraded | ProviderStatus::Unavailable
     ) {
         return None;
+    }
+    if let Some(problem @ (ProviderProblem::Refused | ProviderProblem::ScopeMissing)) = info.problem
+        && let Some(setup) = super::adapter(connection.source()).credential_setup()
+    {
+        let hint = setup.recovery_hint(problem);
+        info.reason = Some(match info.reason.take() {
+            Some(reason) => format!("{reason} {hint}"),
+            None => hint,
+        });
+        return setup
+            .saved(connection)
+            .map(|action| ProviderFixAction::Web { action });
     }
     if surface != FixSurface::Desktop || *os != SupportedOs::Macos {
         return None;

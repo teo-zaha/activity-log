@@ -3,7 +3,7 @@ use crate::{
         AddConnectionRequestDto, BackendError, BackendErrorKind, ConnectionId,
         ProviderConfigConnectionStateDto, ProviderConfigFieldRefDto, ProviderConfigFieldValueDto,
         ProviderConfigIssueKindDto, ProviderConfigSaveRequestDto, ProviderConfigSaveValueDto,
-        ProviderConfigValueDto, ProviderConfigValueTypeDto, Source, SupportedOs,
+        ProviderConfigValueDto, ProviderConfigValueTypeDto, Source, SupportedOs, WebFixAction,
     },
     provider::{connection::Connection, git::default_git_root},
     settings::ConfigFile,
@@ -12,6 +12,14 @@ use crate::{
 use super::{
     SaveBase, Submitted, apply_add, apply_save, build_snapshot, check_save, normalize, save_changes,
 };
+
+fn check_issues(
+    request: &ProviderConfigSaveRequestDto,
+    base: SaveBase,
+    current: Option<&ConfigFile>,
+) -> Vec<crate::model::ProviderConfigFieldIssueDto> {
+    check_save(request, base, current).issues
+}
 
 const OS: SupportedOs = SupportedOs::Macos;
 
@@ -453,7 +461,7 @@ fn a_save_lists_every_issue_in_request_order_without_the_values() {
     let read = file("[[gitlab]]\nlabel = \"Work\"\n");
     let base = SaveBase::Known(read.edit_base(&request.connection, &[]).unwrap());
 
-    let issues = check_save(&request, base, None);
+    let issues = check_issues(&request, base, None);
 
     assert_eq!(
         issues
@@ -534,13 +542,13 @@ fn a_check_against_the_current_file_names_what_changed_since_the_base() {
     request.label = Some("Mine".to_string());
     let base = || SaveBase::Known(read.edit_base(&id, &[FieldId::Label]).unwrap());
 
-    let unchanged = check_save(&request, base(), Some(&read));
+    let unchanged = check_issues(&request, base(), Some(&read));
     assert!(unchanged.is_empty(), "{unchanged:?}");
 
     let relabelled = file(
         "[[gitlab]]\nlabel = \"Theirs\"\nname = \"work\"\nurl = \"https://gitlab.example.org\"\n",
     );
-    let issues = check_save(&request, base(), Some(&relabelled));
+    let issues = check_issues(&request, base(), Some(&relabelled));
     assert_eq!(
         issues
             .iter()
@@ -556,7 +564,7 @@ fn a_check_against_the_current_file_names_what_changed_since_the_base() {
     // Another account: an untouched account field changed too.
     let moved = file("[[gitlab]]\nlabel = \"Work\"\nurl = \"https://other.example.org\"\n");
     assert_eq!(
-        check_save(&request, base(), Some(&moved))[0].field,
+        check_issues(&request, base(), Some(&moved))[0].field,
         ProviderConfigFieldRefDto::Value {
             key: "GITLAB_URL".into()
         }
@@ -564,11 +572,11 @@ fn a_check_against_the_current_file_names_what_changed_since_the_base() {
 
     let gone = file("");
     assert_eq!(
-        check_save(&request, base(), Some(&gone))[0].problem,
+        check_issues(&request, base(), Some(&gone))[0].problem,
         ProviderConfigIssueKindDto::Removed
     );
     assert_eq!(
-        check_save(&request, SaveBase::Unknown(id), Some(&read))[0].problem,
+        check_issues(&request, SaveBase::Unknown(id), Some(&read))[0].problem,
         ProviderConfigIssueKindDto::UnknownBase
     );
 }
@@ -683,9 +691,16 @@ fn a_new_address_for_a_sealed_token_is_an_issue_at_the_token() {
         "gitlab/work",
         vec![("GITLAB_URL", text("https://other.example.test"))],
     );
-    let issues = check_save(&moved, base(), Some(&read));
+    let checked = check_save(&moved, base(), Some(&read));
+    let fix = checked.field_fix.unwrap();
+    assert_eq!(fix.key, "GITLAB_TOKEN");
+    assert!(matches!(
+        fix.action,
+        WebFixAction::CreateToken { url, .. } if url.starts_with("https://other.example.test/")
+    ));
     assert_eq!(
-        issues
+        checked
+            .issues
             .iter()
             .map(|issue| (issue.field.clone(), issue.problem))
             .collect::<Vec<_>>(),
@@ -704,7 +719,70 @@ fn a_new_address_for_a_sealed_token_is_an_issue_at_the_token() {
             ("GITLAB_TOKEN", text("glpat-test-0001")),
         ],
     );
-    assert!(check_save(&with_token, base(), Some(&read)).is_empty());
+    assert!(check_issues(&with_token, base(), Some(&read)).is_empty());
+}
+
+#[test]
+fn token_setup_tracks_the_effective_address_and_omits_conflicted_drafts() {
+    let read = file(
+        "[[jira]]\nname = 'work'\nurl = 'https://jira.example.org/jira'\ntoken = 'example-secret'\n",
+    );
+    let id = "jira/work".parse::<ConnectionId>().unwrap();
+    let based_on = || {
+        SaveBase::Known(
+            read.edit_base(&id, &[crate::settings::FieldId::Value("JIRA_URL")])
+                .unwrap(),
+        )
+    };
+    let state = connection_state(&read, "jira/work");
+    let [token] = state
+        .fields
+        .iter()
+        .filter(|field| field.fix_action.is_some())
+        .collect::<Vec<_>>()[..]
+    else {
+        panic!("expected an action only on the token field");
+    };
+    assert_eq!(token.key, "JIRA_TOKEN");
+    let url_of = |action| match action {
+        WebFixAction::CreateToken { url, .. } => url,
+        _ => panic!("expected token setup"),
+    };
+    let saved_url = "https://jira.example.org/jira/secure/ViewProfile.jspa";
+    assert_eq!(url_of(token.fix_action.clone().unwrap()), saved_url);
+    for (values, expected) in [
+        (vec![], Some(saved_url)),
+        (vec![("JIRA_URL", None)], None),
+        (vec![("JIRA_URL", text("ftp://jira.example.org"))], None),
+        (
+            vec![
+                ("JIRA_URL", text("https://unused.example.org")),
+                ("JIRA_URL", text(" https://new.example.org/install/ ")),
+                ("JIRA_INSECURE", text("invalid")),
+            ],
+            Some("https://new.example.org/install/secure/ViewProfile.jspa"),
+        ),
+    ] {
+        let request = save("jira/work", values);
+        let checked = check_save(&request, based_on(), Some(&read));
+        let url = checked.field_fix.map(|fix| {
+            assert_eq!(fix.key, "JIRA_TOKEN");
+            url_of(fix.action)
+        });
+        assert_eq!(url.as_deref(), expected);
+    }
+    let changed = file("[[jira]]\nname = 'work'\nurl = 'https://changed.example.org'\n");
+    let request = save(
+        "jira/work",
+        vec![("JIRA_URL", text("https://draft.example.org"))],
+    );
+    let checked = check_save(&request, based_on(), Some(&changed));
+    assert!(checked.field_fix.is_none());
+    assert_eq!(
+        checked.issues[0].problem,
+        ProviderConfigIssueKindDto::Changed
+    );
+    assert!(check_save(&request, based_on(), None).field_fix.is_none());
 }
 
 /// A token for a connection without an address is an issue at the token's field, as the save
@@ -719,7 +797,7 @@ fn a_token_without_an_address_is_an_issue_at_the_token() {
         "gitlab/new",
         vec![("GITLAB_TOKEN", text("glpat-test-0001"))],
     );
-    let issues = check_save(&token, base(), Some(&read));
+    let issues = check_issues(&token, base(), Some(&read));
     assert_eq!(
         issues
             .iter()
@@ -740,7 +818,7 @@ fn a_token_without_an_address_is_an_issue_at_the_token() {
             ("GITLAB_TOKEN", text("glpat-test-0001")),
         ],
     );
-    assert!(check_save(&with_url, base(), Some(&read)).is_empty());
+    assert!(check_issues(&with_url, base(), Some(&read)).is_empty());
 }
 
 #[test]
@@ -753,7 +831,7 @@ fn github_url_validation_reports_the_field_and_uses_the_web_address() {
     ] {
         let request = save("github/work", vec![("GITHUB_URL", text(value))]);
         let base = SaveBase::Known(read.edit_base(&request.connection, &[]).unwrap());
-        let issues = check_save(&request, base, Some(&read));
+        let issues = check_issues(&request, base, Some(&read));
         assert_eq!(issues.len(), 1);
         assert_eq!(
             issues[0].field,
@@ -776,7 +854,7 @@ fn github_url_validation_reports_the_field_and_uses_the_web_address() {
         vec![("GITHUB_URL", text("https://github.com"))],
     );
     let base = SaveBase::Known(read.edit_base(&request.connection, &[]).unwrap());
-    assert!(check_save(&request, base, Some(&read)).is_empty());
+    assert!(check_issues(&request, base, Some(&read)).is_empty());
 }
 
 #[test]
@@ -825,5 +903,5 @@ fn figma_settings_offer_file_and_team_lists_and_a_token_with_no_address_to_bind(
         vec![("FIGMA_TOKEN", text("test-figma-token"))],
     );
     let base = SaveBase::Known(configured.edit_base(&request.connection, &[]).unwrap());
-    assert!(check_save(&request, base, Some(&configured)).is_empty());
+    assert!(check_issues(&request, base, Some(&configured)).is_empty());
 }

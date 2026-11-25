@@ -35,6 +35,10 @@ crate::provider! {
                 .map(|entries| entries.into_activity_entries())
         }
 
+        fn credential_setup(&self) -> Option<&'static crate::provider::CredentialSetup> {
+            Some(&config::CREDENTIAL_SETUP)
+        }
+
         fn description(&self) -> &'static str {
             "Merge requests, pushes, comments and reviews"
         }

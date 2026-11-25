@@ -10,7 +10,11 @@ use activity_log_core::{
     collect_runtimes, diagnostics,
     export::render_export,
     model::{CollectOptions, ConnectionId, LegacyImportReportDto, OutputFormat, Source},
-    provider::{connection::ConnectionLocation, inspect_provider_runtimes_with},
+    provider::{
+        connection::ConnectionLocation, current_os, inspect_provider_runtimes_with,
+        select_fix_action,
+    },
+    runtime::FixSurface,
     secrets::{FrontEnd, Interaction, Secrets},
     settings::{
         ConfigEditError, ConfigFile, EditError, Editor, ExternalEdit, FieldId, NO_LOCATION,
@@ -316,10 +320,17 @@ async fn list_sources(config: Option<&Path>) -> Result<()> {
         status.say(&format!("{}\n", path.display()))?;
     }
     let secrets = Secrets::cli(ConfigFile::resolve_path(config).as_deref());
-    let runtimes = inspect_provider_runtimes_with(&load_connections(config)?, &secrets).await;
+    let connections = load_connections(config)?;
+    let runtimes = inspect_provider_runtimes_with(&connections, &secrets).await;
+    let os = current_os();
     let providers = runtimes
         .iter()
-        .map(|runtime| runtime.info().clone())
+        .zip(&connections)
+        .map(|(runtime, connection)| {
+            let mut info = runtime.info().clone();
+            info.fix_action = select_fix_action(FixSurface::Web, &os, connection, &mut info, None);
+            info
+        })
         .collect::<Vec<_>>();
     for line in list_lines(&providers) {
         status.say(&line)?;

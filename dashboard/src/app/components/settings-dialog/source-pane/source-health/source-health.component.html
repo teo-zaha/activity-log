@@ -12,6 +12,9 @@
         }
       </span>
     </p>
+    @if (credentialAction(); as action) {
+      <app-credential-recovery class="health-recovery" [action]="action" />
+    }
   </div>
   @if (canRecheck() || rechecking()) {
     <button

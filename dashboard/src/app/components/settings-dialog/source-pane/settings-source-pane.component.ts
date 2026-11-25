@@ -21,11 +21,14 @@ import { AutoAnimateDirective } from '../../auto-animate/auto-animate.directive'
 import { FeedbackComponent } from '../../feedback/feedback.component'
 import { IconButtonComponent } from '../../button/icon-button.component'
 import { ButtonComponent } from '../../button/button.component'
+import { CredentialRecoveryComponent } from '../credential-recovery.component'
 import type {
+  ProviderConfigCheckResponseDto,
   ProviderConfigFieldIssueDto,
   ProviderConfigFieldRefDto,
   ProviderConfigFieldStateDto,
   ProviderConfigSaveRequestDto,
+  WebFixAction,
 } from '../../../generated/activity'
 import { type ConnectionKey, connectionKey } from '../../../providers/connection'
 import { ActivityDataService } from '../../../services/activity-data.service'
@@ -57,7 +60,7 @@ import {
 
 /** How a check of a draft ended: what a save of it would be refused for, or why it failed. */
 type CheckResult =
-  | { readonly kind: 'issues'; readonly issues: readonly ProviderConfigFieldIssueDto[] }
+  | ({ readonly kind: 'issues' } & ProviderConfigCheckResponseDto)
   | { readonly kind: 'failed'; readonly failure: Failure }
 
 /**
@@ -85,6 +88,8 @@ type Recovery =
 interface CheckedDraft {
   readonly key: ConnectionKey
   readonly draft: SourceDraft
+  readonly epoch: string | null
+  readonly revision: string
   readonly result: CheckResult
 }
 
@@ -98,6 +103,7 @@ interface StoredTag {
   selector: 'app-settings-source-pane',
   imports: [
     SourceHealthComponent,
+    CredentialRecoveryComponent,
     RemovedSourceDraftComponent,
     AutoAnimateDirective,
     FeedbackComponent,
@@ -150,9 +156,10 @@ export class SettingsSourcePaneComponent {
     params: () => (this.isDesktop ? this.selectionKey() : undefined),
     loader: async () => {
       try {
-        const snapshot = await readOnHost(this.data.hostEpoch, () =>
-          this.settings.loadProviderConfig()
-        )
+        const snapshot = await readOnHost(this.data.hostEpoch, async () => {
+          const epoch = this.data.hostEpoch()
+          return { epoch, value: await this.settings.loadProviderConfig() }
+        })
         this.snapshotReads++
         return snapshot
       } catch (error) {
@@ -174,7 +181,7 @@ export class SettingsSourcePaneComponent {
     return (
       this.config
         .value()
-        .connections.find(connection => connectionKey(connection.connection) === key) ?? null
+        .value.connections.find(connection => connectionKey(connection.connection) === key) ?? null
     )
   })
 
@@ -264,7 +271,7 @@ export class SettingsSourcePaneComponent {
 
   /** The revision of the snapshot on screen, which a removal is based on. */
   private readonly snapshotRevision = computed(() =>
-    this.config.hasValue() ? this.config.value().revision : null
+    this.config.hasValue() ? this.config.value().value.revision : null
   )
 
   /**
@@ -309,10 +316,25 @@ export class SettingsSourcePaneComponent {
     const current =
       checked !== null &&
       draft !== null &&
+      checked.epoch === this.data.hostEpoch() &&
+      checked.revision === this.snapshotRevision() &&
       checked.key === this.selectionKey() &&
       sameDraft(checked.draft, draft)
     return current ? checked.result : null
   })
+
+  protected fieldFixAction(field: ProviderConfigFieldStateDto): WebFixAction | undefined {
+    if (!isSecretField(field)) return undefined
+    if (this.pendingRequest() === null) {
+      return this.config.hasValue() && this.config.value().epoch === this.data.hostEpoch()
+        ? field.fixAction
+        : undefined
+    }
+    if (this.recovery()?.phase === 'reading' || this.shownRecovery()) return undefined
+    const result = this.checkResult()
+    const fix = result?.kind === 'issues' ? result.fieldFix : undefined
+    return fix?.key === field.key ? fix.action : undefined
+  }
 
   /** The recovery of the draft on screen, if another program got in before it. */
   private readonly recovery = signal<Recovery | null>(null)
@@ -425,28 +447,46 @@ export class SettingsSourcePaneComponent {
   /** Once the snapshot the recovery asked for is in: its request checked against it. */
   private async showRecovery(
     recovery: Extract<Recovery, { phase: 'reading' }>,
-    revision: string
+    revision: string,
+    epoch: string | null
   ): Promise<void> {
-    let issues: readonly ProviderConfigFieldIssueDto[]
+    const stillCurrent = () =>
+      this.recovery() === recovery &&
+      this.selectionKey() === recovery.key &&
+      this.data.hostEpoch() === epoch &&
+      this.snapshotRevision() === revision
+    let response: ProviderConfigCheckResponseDto
     try {
-      issues = await this.settings.checkProviderConfig(recovery.request)
+      response = await this.settings.checkProviderConfig(recovery.request)
     } catch (error) {
-      if (this.recovery() !== recovery) return
+      if (!stillCurrent()) return
       this.recovery.set(null)
       this.checked.set({
         key: recovery.key,
         draft: recovery.draft,
+        epoch,
+        revision,
         result: { kind: 'failed', failure: failureOf(error, 'Checking the settings failed.') },
       })
       return
     }
-    if (this.recovery() !== recovery) return
+    if (!stillCurrent()) return
+    const { issues } = response
     const conflicting = issues.some(({ problem }) => problem !== 'invalid')
     this.recovery.set(
       conflicting
         ? { phase: 'shown', key: recovery.key, draft: recovery.draft, issues, revision }
         : null
     )
+    if (!conflicting) {
+      this.checked.set({
+        key: recovery.key,
+        draft: recovery.draft,
+        epoch,
+        revision,
+        result: { kind: 'issues', ...response },
+      })
+    }
   }
 
   /**
@@ -458,20 +498,29 @@ export class SettingsSourcePaneComponent {
     const key = this.selectionKey()
     const draft = this.draft()
     const request = this.pendingRequest()
-    if (!this.isDesktop || draft === null || request === null) return
+    const epoch = this.data.hostEpoch()
+    const revision = this.snapshotRevision()
+    if (!this.isDesktop || draft === null || request === null || revision === null) return
     let result: CheckResult
     try {
-      result = { kind: 'issues', issues: await this.settings.checkProviderConfig(request) }
+      result = { kind: 'issues', ...(await this.settings.checkProviderConfig(request)) }
     } catch (error) {
       result = { kind: 'failed', failure: failureOf(error, 'Checking the settings failed.') }
     }
     const now = this.draft()
-    if (now === null || this.selectionKey() !== key || !sameDraft(now, draft)) return
+    if (
+      now === null ||
+      this.selectionKey() !== key ||
+      this.data.hostEpoch() !== epoch ||
+      this.snapshotRevision() !== revision ||
+      !sameDraft(now, draft)
+    )
+      return
     if (result.kind === 'issues' && result.issues.some(({ problem }) => problem !== 'invalid')) {
       this.beginRecovery(key)
       return
     }
-    this.checked.set({ key, draft, result })
+    this.checked.set({ key, draft, epoch, revision, result })
   }
 
   protected readonly draftForm = form(
@@ -524,9 +573,16 @@ export class SettingsSourcePaneComponent {
     // A recovery's snapshot is in: the draft's request is checked against it.
     effect(() => {
       const recovery = this.recovery()
-      if (recovery?.phase !== 'reading' || this.loadingConfig() || !this.config.hasValue()) return
-      const revision = this.config.value().revision
-      untracked(() => void this.showRecovery(recovery, revision))
+      if (
+        recovery?.phase !== 'reading' ||
+        recovery.key !== this.selectionKey() ||
+        this.loadingConfig() ||
+        !this.config.hasValue()
+      )
+        return
+      const revision = this.config.value().value.revision
+      const epoch = this.data.hostEpoch()
+      untracked(() => void this.showRecovery(recovery, revision, epoch))
     })
     // Keeps the edits of the loaded connection for when it is opened again; see `SourceDrafts`.
     effect(() => {
@@ -767,7 +823,7 @@ export class SettingsSourcePaneComponent {
       this.data.receiptStanding(saved.value.installed) === 'current' &&
       this.snapshotReads === readsAtSend
     if (newest) {
-      this.config.set(saved.value.snapshot)
+      this.config.set({ epoch: this.data.hostEpoch(), value: saved.value.snapshot })
     } else {
       this.config.reload()
     }

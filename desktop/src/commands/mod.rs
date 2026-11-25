@@ -4,8 +4,9 @@ use activity_log_core::{
     model::{
         AddConnectionRequestDto, AddConnectionResponseDto, BackendError, BackendErrorKind,
         CollectAnswer, CollectRequest, ConnectionId, ExportOutcome, ExportRequest, LogsResponse,
-        ProviderConfigFieldIssueDto, ProviderConfigSaveRequestDto, ProviderConfigSaveResponseDto,
-        ProviderConfigSnapshotDto, RecheckAnswer, RemoveConnectionRequestDto, RuntimeState,
+        ProviderConfigCheckResponseDto, ProviderConfigSaveRequestDto,
+        ProviderConfigSaveResponseDto, ProviderConfigSnapshotDto, RecheckAnswer,
+        RemoveConnectionRequestDto, RuntimeState,
     },
     provider::current_os,
     runtime::{answer_collect, answer_recheck},
@@ -77,7 +78,7 @@ pub(crate) async fn get_provider_config(
 pub(crate) async fn check_provider_config(
     state: tauri::State<'_, AppState>,
     request: ProviderConfigSaveRequestDto,
-) -> Result<Vec<ProviderConfigFieldIssueDto>, BackendError> {
+) -> Result<ProviderConfigCheckResponseDto, BackendError> {
     let base = state.snapshots.base(
         &request.based_on,
         &request.connection,

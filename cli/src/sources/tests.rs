@@ -1,7 +1,7 @@
 use std::collections::VecDeque;
 
 use activity_log_core::{
-    model::{ConnectionId, ProviderInfo, ProviderStatus, Source},
+    model::{ConnectionId, ProviderFixAction, ProviderInfo, ProviderStatus, Source, WebFixAction},
     provider::{connection::Connection, jira::JIRA_INSECURE, provider_config::ConfigSource},
     settings::ConfigFile,
 };
@@ -212,15 +212,25 @@ fn lists_connections_in_columns() {
         }
     };
 
+    let mut gitlab = info(
+        Source::Gitlab,
+        "oss",
+        "OSS",
+        false,
+        Some("GitLab credentials invalid"),
+    );
+    gitlab.fix_action = Some(ProviderFixAction::Web {
+        action: WebFixAction::CreateToken {
+            url:
+                "https://gitlab.example.org/-/user_settings/personal_access_tokens?scopes=read_api"
+                    .into(),
+            instructions: "Create a legacy token with read_api.".into(),
+            classic_url: None,
+        },
+    });
     let lines = list_lines(&[
         info(Source::Git, "this-computer", "This computer", true, None),
-        info(
-            Source::Gitlab,
-            "oss",
-            "OSS",
-            false,
-            Some("GitLab credentials invalid"),
-        ),
+        gitlab,
     ]);
 
     assert_eq!(
@@ -228,6 +238,7 @@ fn lists_connections_in_columns() {
         [
             "git/this-computer  This computer  ✓ ready",
             "gitlab/oss         OSS            ✗ GitLab credentials invalid",
+            "    Create token  https://gitlab.example.org/-/user_settings/personal_access_tokens?scopes=read_api",
         ]
     );
     assert_eq!(list_lines(&[]), [NO_SOURCES]);

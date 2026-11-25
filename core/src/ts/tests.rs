@@ -108,6 +108,8 @@ fn provider_fix_actions_keep_the_generated_wire_shape() {
     for shape in [
         r#"export type ProviderFixAction = { "kind": "web", action: WebFixAction, } | { "kind": "local", target: LocalFixTarget, };"#,
         "fixAction?: ProviderFixAction",
+        "fixAction?: WebFixAction",
+        "fieldFix?: ProviderConfigFieldFixDto",
         "classicUrl?: string",
         "\"scopeMissing\"",
         "\"iCloud\"",

@@ -135,17 +135,7 @@ impl RemoteClient {
         secret: &str,
         builder: ClientBuilder,
     ) -> Result<Self, SetupError> {
-        let mut base = Url::parse(base.trim()).map_err(|_| SetupError::NotAnAddress)?;
-        if base.cannot_be_a_base() {
-            return Err(SetupError::NotAnAddress);
-        }
-        if !base.username().is_empty() || base.password().is_some() {
-            return Err(SetupError::Credentials);
-        }
-        base.set_query(None);
-        base.set_fragment(None);
-        let path = base.path().trim_end_matches('/').to_string();
-        base.set_path(&path);
+        let base = public_base(base)?;
 
         let mut auth_value = HeaderValue::from_str(auth_value).map_err(|_| SetupError::Token)?;
         auth_value.set_sensitive(true);
@@ -323,6 +313,22 @@ impl RemoteClient {
         let value = serde_json::from_slice(&body).map_err(|_| ApiError::Decode)?;
         Ok((value, headers))
     }
+}
+
+/// A web installation address without user info, query or fragment.
+pub(crate) fn public_base(address: &str) -> Result<Url, SetupError> {
+    let mut base = Url::parse(address.trim()).map_err(|_| SetupError::NotAnAddress)?;
+    if !matches!(base.scheme(), "http" | "https") || !base.has_host() {
+        return Err(SetupError::NotAnAddress);
+    }
+    if !base.username().is_empty() || base.password().is_some() {
+        return Err(SetupError::Credentials);
+    }
+    base.set_query(None);
+    base.set_fragment(None);
+    let path = base.path().trim_end_matches('/').to_string();
+    base.set_path(&path);
+    Ok(base)
 }
 
 /// `value` reaches the server as itself in one path segment.

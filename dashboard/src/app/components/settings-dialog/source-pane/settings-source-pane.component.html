@@ -202,6 +202,9 @@
                   {{ error }}
                 </p>
               }
+              @if (fieldFixAction(field); as action) {
+                <app-credential-recovery [action]="action" />
+              }
             </div>
           }
         </fieldset>

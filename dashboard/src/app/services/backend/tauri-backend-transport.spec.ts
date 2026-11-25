@@ -52,7 +52,12 @@ describe('TauriBackendTransport', () => {
   })
 
   it('invokes the desktop-only commands', async () => {
-    const invocations = mockInvoke()
+    const snapshot = { revision: 'r1', kinds: [], connections: [] }
+    const invocations = mockInvoke(command => {
+      if (command === 'get_provider_config') return snapshot
+      if (command === 'save_provider_config') return { snapshot, installed: null }
+      return undefined
+    })
     const transport = setup()
 
     await transport.call(BackendOperations.providerConfig, undefined)
@@ -77,6 +82,54 @@ describe('TauriBackendTransport', () => {
       },
       { command: 'clear_logs', args: {} },
     ])
+  })
+
+  const checkRequest = {
+    connection: { source: 'jira', name: 'default' } as const,
+    values: [],
+    basedOn: 'r1',
+  }
+  const createToken = {
+    kind: 'createToken',
+    url: 'https://jira.example.org/secure/ViewProfile.jspa',
+    instructions: 'Create a personal access token.',
+  }
+
+  it.each([undefined, createToken])('reads a settings action of %j', async action => {
+    const field = { key: 'JIRA_TOKEN', ...(action && { fixAction: action }) }
+    const snapshot = { revision: 'r1', kinds: [], connections: [{ fields: [field] }] }
+    const check = { issues: [], ...(action && { fieldFix: { key: field.key, action } }) }
+    mockInvoke(command => (command === 'check_provider_config' ? check : snapshot))
+
+    await expect(setup().call(BackendOperations.providerConfig, undefined)).resolves.toEqual(
+      snapshot
+    )
+    await expect(
+      setup().call(BackendOperations.checkProviderConfig, checkRequest)
+    ).resolves.toEqual(check)
+  })
+
+  it.each([
+    { ...createToken, url: 'javascript:alert(1)' },
+    { ...createToken, classicUrl: 'https://user@github.example.org/settings/tokens/new' },
+    { kind: 'createToken', url: createToken.url },
+    { kind: 'local', target: { kind: 'openApp', app: 'outlook' } },
+  ])('rejects a settings action of %j', async action => {
+    const field = { key: 'JIRA_TOKEN', fixAction: action }
+    mockInvoke(command =>
+      command === 'check_provider_config'
+        ? { issues: [], fieldFix: { key: field.key, action } }
+        : { revision: 'r1', kinds: [], connections: [{ fields: [field] }] }
+    )
+
+    await expect(setup().call(BackendOperations.providerConfig, undefined)).rejects.toMatchObject({
+      kind: 'internal',
+    })
+    await expect(
+      setup().call(BackendOperations.checkProviderConfig, checkRequest)
+    ).rejects.toMatchObject({
+      kind: 'internal',
+    })
   })
 
   it('saves exports through save_export, and says whether the user saved', async () => {

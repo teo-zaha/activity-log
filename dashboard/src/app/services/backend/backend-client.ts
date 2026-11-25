@@ -8,7 +8,7 @@ import type {
   ExportOutcome,
   ExportRequest,
   LegacyImportReportDto,
-  ProviderConfigFieldIssueDto,
+  ProviderConfigCheckResponseDto,
   ProviderConfigSaveRequestDto,
   ProviderConfigSaveResponseDto,
   ProviderConfigSnapshotDto,
@@ -44,7 +44,7 @@ export class ActivityBackendClient {
 
   checkProviderConfig(
     request: ProviderConfigSaveRequestDto
-  ): Promise<ProviderConfigFieldIssueDto[]> {
+  ): Promise<ProviderConfigCheckResponseDto> {
     return this.transport.call(BackendOperations.checkProviderConfig, request)
   }
 

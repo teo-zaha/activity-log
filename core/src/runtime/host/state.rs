@@ -197,8 +197,13 @@ impl HostState {
                     .apply_to(&mut info);
                     cause = classification.cause();
                 }
-                info.fix_action =
-                    fix_action::select(self.fix_surface, &self.os, &check.connection, &info, cause);
+                info.fix_action = fix_action::select(
+                    self.fix_surface,
+                    &self.os,
+                    &check.connection,
+                    &mut info,
+                    cause,
+                );
                 info
             })
             .collect();

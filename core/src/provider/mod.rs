@@ -35,6 +35,7 @@ use self::{
     provider_adapter::ProviderAdapter, system::SystemProvider,
 };
 
+pub use fix_action::{CredentialSetup, select as select_fix_action};
 pub use provider_runtime::{
     ProviderRuntime, inspect_provider_runtimes_with, start_check, start_checks,
 };

@@ -1,11 +1,12 @@
 import { signal, type WritableSignal } from '@angular/core'
 import { TestBed } from '@angular/core/testing'
-import { render, screen, within } from '@testing-library/angular'
+import { fireEvent, render, screen, within } from '@testing-library/angular'
 import userEvent from '@testing-library/user-event'
 import { describe, expect, it, vi } from 'vitest'
 import type {
   AddConnectionRequestDto,
   AddConnectionResponseDto,
+  ProviderConfigCheckResponseDto,
   ProviderConfigFieldIssueDto,
   RemoveConnectionRequestDto,
   ConnectionId,
@@ -17,6 +18,7 @@ import type {
   ProviderConfigSnapshotDto,
   SecretStoreInfo,
   SecretStoredDto,
+  WebFixAction,
 } from '../../../generated/activity'
 import { ActivityDataService } from '../../../services/activity-data.service'
 import { ConnectionSettings } from '../../../services/connection-settings.service'
@@ -28,6 +30,7 @@ import { SettingsSourcePaneComponent } from './settings-source-pane.component'
 import { SourceDrafts } from './source-drafts.service'
 import { ToastService } from '../../../services/toast.service'
 import { BackendFailure } from '../../../services/backend/backend-failure'
+import { ActivityBackendClient } from '../../../services/backend/backend-client'
 
 const row = (index: 0 | 1): SettingsProviderRow => ({
   info: { ...providerInfo[index], label: index === 0 ? 'Git' : 'Jira' },
@@ -84,6 +87,16 @@ const jiraFields: ProviderConfigFieldStateDto[] = [
   },
 ]
 
+const tokenSetup = (site: string): Extract<WebFixAction, { kind: 'createToken' }> => ({
+  kind: 'createToken',
+  url: `https://${site}/secure/ViewProfile.jspa`,
+  instructions: 'Create a personal access token in your profile.',
+})
+
+const savedTokenSetup = tokenSetup('jira.example.com')
+const draftTokenSetup = tokenSetup('other.example.org')
+const tokenCheck = { issues: [], fieldFix: { key: 'apiToken', action: draftTokenSetup } }
+
 const snapshot = (
   fields: ProviderConfigFieldStateDto[] = jiraFields
 ): ProviderConfigSnapshotDto => ({
@@ -94,9 +107,10 @@ const snapshot = (
 
 type CheckProviderConfig = (
   request: ProviderConfigSaveRequestDto
-) => Promise<ProviderConfigFieldIssueDto[]>
+) => Promise<ProviderConfigCheckResponseDto>
 
 interface Setup {
+  openUrl: ReturnType<typeof vi.fn<(url: string) => Promise<void>>>
   switchProvider: (provider: SettingsProviderRow) => Promise<void>
   /** The backend's check of a draft; no issues unless a test says otherwise. */
   checkProviderConfig: ReturnType<typeof vi.fn<CheckProviderConfig>>
@@ -141,7 +155,7 @@ async function setup(
     Promise.resolve()
   )
   const receiptStanding = vi.fn<(receipt: InstallReceipt) => ReceiptStanding>(() => 'current')
-  const checkProviderConfig = vi.fn<CheckProviderConfig>(() => Promise.resolve([]))
+  const checkProviderConfig = vi.fn<CheckProviderConfig>(() => Promise.resolve({ issues: [] }))
   const hostEpoch = signal<string | null>('mock-host')
   const secretStore = signal<SecretStoreInfo | null>(
     options.secretStore ?? { store: 'os', state: 'ready' }
@@ -152,10 +166,12 @@ async function setup(
     vi.fn<(request: AddConnectionRequestDto) => Promise<AddConnectionResponseDto>>()
   const removed = vi.fn()
   const opened = vi.fn()
+  const openUrl = vi.fn<(url: string) => Promise<void>>().mockResolvedValue(undefined)
   const { rerender, fixture } = await render(SettingsSourcePaneComponent, {
     inputs: { provider: options.provider ?? row(1) },
     on: { removed, opened },
     providers: [
+      { provide: ActivityBackendClient, useValue: { openUrl } },
       {
         provide: ConnectionSettings,
         useValue: {
@@ -183,6 +199,7 @@ async function setup(
     ],
   })
   return {
+    openUrl,
     removeConnection,
     addConnection,
     removed,
@@ -608,13 +625,15 @@ describe('SettingsSourcePaneComponent', () => {
 
   it('shows what the backend refuses as a field is left, and blocks saving until it changes', async () => {
     const { checkProviderConfig } = await setup()
-    checkProviderConfig.mockResolvedValue([
-      {
-        field: { kind: 'value', key: 'baseUrl' },
-        problem: 'invalid',
-        message: 'Enter an http or https address.',
-      },
-    ])
+    checkProviderConfig.mockResolvedValue({
+      issues: [
+        {
+          field: { kind: 'value', key: 'baseUrl' },
+          problem: 'invalid',
+          message: 'Enter an http or https address.',
+        },
+      ],
+    })
     const baseUrl = await screen.findByLabelText('Base URL')
 
     await userEvent.clear(baseUrl)
@@ -638,8 +657,8 @@ describe('SettingsSourcePaneComponent', () => {
 
   it('drops a check that comes back after the draft it checked was changed', async () => {
     const { checkProviderConfig, whenStable } = await setup()
-    let resolve: (issues: ProviderConfigFieldIssueDto[]) => void = () => undefined
-    const answer = new Promise<ProviderConfigFieldIssueDto[]>(done => (resolve = done))
+    let resolve: (response: ProviderConfigCheckResponseDto) => void = () => undefined
+    const answer = new Promise<ProviderConfigCheckResponseDto>(done => (resolve = done))
     checkProviderConfig.mockReturnValueOnce(answer)
     const baseUrl = await screen.findByLabelText('Base URL')
 
@@ -647,24 +666,130 @@ describe('SettingsSourcePaneComponent', () => {
     await userEvent.type(baseUrl, 'ftp://a')
     await userEvent.tab()
     await userEvent.type(baseUrl, '-b')
-    resolve([
-      {
-        field: { kind: 'value', key: 'baseUrl' },
-        problem: 'invalid',
-        message: 'Enter an http or https address.',
-      },
-    ])
+    resolve({
+      fieldFix: tokenCheck.fieldFix,
+      issues: [
+        {
+          field: { kind: 'value', key: 'baseUrl' },
+          problem: 'invalid',
+          message: 'Enter an http or https address.',
+        },
+      ],
+    })
     await answer
     await whenStable()
 
     expect(screen.queryByText('Enter an http or https address.')).toBeNull()
+    expect(screen.queryByRole('link', { name: /Create token/ })).toBeNull()
     expect(screen.getByRole('button', { name: 'Save settings' })).toHaveProperty('disabled', false)
+  })
+
+  it('replaces saved token setup with the checked draft destination', async () => {
+    const fields = jiraFields.map(field =>
+      field.key === 'apiToken' ? { ...field, fixAction: savedTokenSetup } : field
+    )
+    const { checkProviderConfig, openUrl } = await setup({
+      load: () => Promise.resolve(snapshot(fields)),
+    })
+    checkProviderConfig.mockResolvedValue(tokenCheck)
+    const link = { name: /Create token/ }
+    expect((await screen.findByRole('link', link)).getAttribute('href')).toBe(savedTokenSetup.url)
+    const address = screen.getByLabelText('Base URL')
+    await userEvent.clear(address)
+    await userEvent.type(address, 'https://other.example.org')
+    expect(screen.queryByRole('link', link)).toBeNull()
+
+    await userEvent.tab()
+    const draftLink = await screen.findByRole('link', link)
+    expect(draftLink.getAttribute('href')).toBe(draftTokenSetup.url)
+    await userEvent.click(draftLink)
+    expect(openUrl).toHaveBeenCalledWith(draftTokenSetup.url)
+  })
+
+  it.each(['host', 'source'])('drops draft token setup when the %s changes', async changed => {
+    const { checkProviderConfig, hostEpoch, switchProvider, whenStable } = await setup()
+    let resolve: (response: ProviderConfigCheckResponseDto) => void = () => undefined
+    const answer = new Promise<ProviderConfigCheckResponseDto>(done => (resolve = done))
+    checkProviderConfig.mockReturnValueOnce(answer)
+    const address = await screen.findByLabelText('Base URL')
+    await userEvent.clear(address)
+    await userEvent.type(address, 'https://other.example.org')
+    await userEvent.tab()
+    await vi.waitFor(() => expect(checkProviderConfig).toHaveBeenCalled())
+    if (changed === 'host') hostEpoch.set('new-host')
+    else await switchProvider(row(0))
+
+    resolve(tokenCheck)
+    await answer
+    await whenStable()
+
+    expect(screen.queryByRole('link', { name: /Create token/ })).toBeNull()
+  })
+
+  it('clears earlier and in-flight issues and token setup when the snapshot revision changes', async () => {
+    const { checkProviderConfig, loadProviderConfig, switchProvider, whenStable } = await setup()
+    const message = 'Re-enter the token for this address.'
+    const checked: ProviderConfigCheckResponseDto = {
+      ...tokenCheck,
+      issues: [{ field: { kind: 'value', key: 'apiToken' }, problem: 'invalid', message }],
+    }
+    let resolve: (response: ProviderConfigCheckResponseDto) => void = () => undefined
+    const answer = new Promise<ProviderConfigCheckResponseDto>(done => (resolve = done))
+    checkProviderConfig.mockResolvedValueOnce(checked).mockReturnValueOnce(answer)
+    const address = await screen.findByLabelText('Base URL')
+    await userEvent.clear(address)
+    await userEvent.type(address, 'https://other.example.org')
+    await userEvent.tab()
+    const link = { name: /Create token/ }
+    expect(await screen.findByText(message)).toBeTruthy()
+    expect(await screen.findByRole('link', link)).toBeTruthy()
+
+    fireEvent.focusOut(address)
+    expect(checkProviderConfig).toHaveBeenCalledTimes(2)
+    loadProviderConfig.mockResolvedValue({
+      ...snapshot(
+        jiraFields.map(field => (field.key === 'maxResults' ? { ...field, value: '60' } : field))
+      ),
+      revision: 'r2',
+    })
+    await switchProvider(row(0))
+    await switchProvider(row(1))
+    await whenStable()
+    expect(screen.getByLabelText('Max results')).toHaveProperty('value', '60')
+    expect(screen.getByLabelText('Base URL')).toHaveProperty('value', 'https://other.example.org')
+    expect(screen.queryByText(message)).toBeNull()
+    expect(screen.queryByRole('link', link)).toBeNull()
+
+    resolve(checked)
+    await answer
+    await whenStable()
+    expect(screen.queryByText(message)).toBeNull()
+    expect(screen.queryByRole('link', link)).toBeNull()
+  })
+
+  it('offers installed credential recovery in the browser', async () => {
+    const provider = row(1)
+    const { openUrl } = await setup({
+      desktop: false,
+      provider: {
+        ...provider,
+        info: {
+          ...provider.info,
+          status: 'unavailable',
+          usable: false,
+          problem: 'refused',
+          fixAction: { kind: 'web', action: savedTokenSetup },
+        },
+      },
+    })
+    await userEvent.click(screen.getByRole('link', { name: /Create token/ }))
+    expect(openUrl).toHaveBeenCalledWith(savedTokenSetup.url)
   })
 
   it('keeps a failed check with the draft it was sent for', async () => {
     const { checkProviderConfig, whenStable } = await setup()
     let reject: (error: unknown) => void = () => undefined
-    const answer = new Promise<ProviderConfigFieldIssueDto[]>((_, fail) => (reject = fail))
+    const answer = new Promise<ProviderConfigCheckResponseDto>((_, fail) => (reject = fail))
     checkProviderConfig.mockReturnValueOnce(answer)
     const baseUrl = await screen.findByLabelText('Base URL')
 
@@ -718,7 +843,7 @@ describe('SettingsSourcePaneComponent', () => {
       const { saveProviderConfig, checkProviderConfig, loadProviderConfig, whenStable } =
         await setup({ load })
       checkProviderConfig.mockImplementation(request =>
-        Promise.resolve(request.basedOn === 'r1' ? changedHere() : [])
+        Promise.resolve({ issues: request.basedOn === 'r1' ? changedHere() : [] })
       )
       const baseUrl = await screen.findByLabelText('Base URL')
       await userEvent.clear(baseUrl)
@@ -752,17 +877,18 @@ describe('SettingsSourcePaneComponent', () => {
       )
       const { checkProviderConfig, whenStable } = await setup({ load: loads(relabelled) })
       checkProviderConfig.mockImplementation(request =>
-        Promise.resolve(
-          request.basedOn === 'r1'
-            ? [
-                {
-                  field: { kind: 'label' },
-                  problem: 'changed',
-                  message: 'Another program changed this since you started editing.',
-                },
-              ]
-            : []
-        )
+        Promise.resolve({
+          issues:
+            request.basedOn === 'r1'
+              ? [
+                  {
+                    field: { kind: 'label' },
+                    problem: 'changed',
+                    message: 'Another program changed this since you started editing.',
+                  },
+                ]
+              : [],
+        })
       )
       const label = await screen.findByLabelText('Label')
       await userEvent.clear(label)
@@ -783,17 +909,18 @@ describe('SettingsSourcePaneComponent', () => {
         drafts,
       })
       checkProviderConfig.mockImplementation(request =>
-        Promise.resolve(
-          request.basedOn === 'r1'
-            ? [
-                {
-                  field: { kind: 'connection' },
-                  problem: 'removed',
-                  message: 'Another program removed this source.',
-                },
-              ]
-            : []
-        )
+        Promise.resolve({
+          issues:
+            request.basedOn === 'r1'
+              ? [
+                  {
+                    field: { kind: 'connection' },
+                    problem: 'removed',
+                    message: 'Another program removed this source.',
+                  },
+                ]
+              : [],
+        })
       )
       const baseUrl = await screen.findByLabelText('Base URL')
       await userEvent.clear(baseUrl)
@@ -831,17 +958,18 @@ describe('SettingsSourcePaneComponent', () => {
       const { checkProviderConfig, addConnection, receiptStanding, opened, whenStable } =
         await setup({ load: loads(gone), drafts })
       checkProviderConfig.mockImplementation(request =>
-        Promise.resolve(
-          request.basedOn === 'r1'
-            ? [
-                {
-                  field: { kind: 'connection' },
-                  problem: 'removed',
-                  message: 'Another program removed this source.',
-                },
-              ]
-            : []
-        )
+        Promise.resolve({
+          issues:
+            request.basedOn === 'r1'
+              ? [
+                  {
+                    field: { kind: 'connection' },
+                    problem: 'removed',
+                    message: 'Another program removed this source.',
+                  },
+                ]
+              : [],
+        })
       )
       const baseUrl = await screen.findByLabelText('Base URL')
       await userEvent.type(baseUrl, '/x')
@@ -877,7 +1005,7 @@ describe('SettingsSourcePaneComponent', () => {
         load,
       })
       checkProviderConfig.mockImplementation(request =>
-        Promise.resolve(request.basedOn === 'r1' ? changedHere() : [])
+        Promise.resolve({ issues: request.basedOn === 'r1' ? changedHere() : [] })
       )
       const baseUrl = await screen.findByLabelText('Base URL')
       await userEvent.clear(baseUrl)
@@ -909,17 +1037,18 @@ describe('SettingsSourcePaneComponent', () => {
       const gone: ProviderConfigSnapshotDto = { revision: 'r2', kinds: [], connections: [] }
       const { checkProviderConfig, removed, whenStable } = await setup({ load: loads(gone) })
       checkProviderConfig.mockImplementation(request =>
-        Promise.resolve(
-          request.basedOn === 'r1'
-            ? [
-                {
-                  field: { kind: 'connection' },
-                  problem: 'removed',
-                  message: 'Another program removed this source.',
-                },
-              ]
-            : []
-        )
+        Promise.resolve({
+          issues:
+            request.basedOn === 'r1'
+              ? [
+                  {
+                    field: { kind: 'connection' },
+                    problem: 'removed',
+                    message: 'Another program removed this source.',
+                  },
+                ]
+              : [],
+        })
       )
       const baseUrl = await screen.findByLabelText('Base URL')
       await userEvent.type(baseUrl, '/x')
@@ -977,7 +1106,7 @@ describe('SettingsSourcePaneComponent', () => {
         )
       })
       checkProviderConfig.mockImplementation(request =>
-        Promise.resolve(refused && request.basedOn === 'r1' ? changedHere() : [])
+        Promise.resolve({ issues: refused && request.basedOn === 'r1' ? changedHere() : [] })
       )
       const baseUrl = await screen.findByLabelText('Base URL')
       await userEvent.clear(baseUrl)
@@ -1016,8 +1145,8 @@ describe('SettingsSourcePaneComponent', () => {
         )
       })
       checkProviderConfig.mockImplementation(() =>
-        Promise.resolve(
-          refused
+        Promise.resolve({
+          issues: refused
             ? [
                 {
                   field: { kind: 'connection' },
@@ -1025,8 +1154,8 @@ describe('SettingsSourcePaneComponent', () => {
                   message: 'Another program removed this source.',
                 },
               ]
-            : []
-        )
+            : [],
+        })
       )
       const baseUrl = await screen.findByLabelText('Base URL')
       await userEvent.clear(baseUrl)
@@ -1735,13 +1864,15 @@ describe('SettingsSourcePaneComponent', () => {
       const { checkProviderConfig } = await setupList(
         gitDirs({ itemType: 'url', items: ['https://a.example'] })
       )
-      checkProviderConfig.mockResolvedValue([
-        {
-          field: { kind: 'item', key: 'GIT_DIRS', index: 1 },
-          problem: 'invalid',
-          message: 'Enter an http or https address.',
-        },
-      ])
+      checkProviderConfig.mockResolvedValue({
+        issues: [
+          {
+            field: { kind: 'item', key: 'GIT_DIRS', index: 1 },
+            problem: 'invalid',
+            message: 'Enter an http or https address.',
+          },
+        ],
+      })
 
       await userEvent.click(screen.getByRole('button', { name: 'Add' }))
       await userEvent.click(screen.getByRole('button', { name: 'Add' }))
@@ -1759,17 +1890,18 @@ describe('SettingsSourcePaneComponent', () => {
         gitDirs({ isSet: true, items: ['/work'] })
       )
       checkProviderConfig.mockImplementation(request =>
-        Promise.resolve(
-          request.basedOn === 'r1'
-            ? [
-                {
-                  field: { kind: 'value', key: 'GIT_DIRS' },
-                  problem: 'changed',
-                  message: 'Another program changed this since you started editing.',
-                },
-              ]
-            : []
-        )
+        Promise.resolve({
+          issues:
+            request.basedOn === 'r1'
+              ? [
+                  {
+                    field: { kind: 'value', key: 'GIT_DIRS' },
+                    problem: 'changed',
+                    message: 'Another program changed this since you started editing.',
+                  },
+                ]
+              : [],
+        })
       )
 
       await userEvent.type(screen.getByLabelText('Git Dirs 1'), '/more')

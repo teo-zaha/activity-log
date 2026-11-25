@@ -88,7 +88,7 @@ export type ProviderConfigFieldValueDto = { "shape": "single", valueType: Provid
  */
 items: Array<string>, };
 
-export type ProviderConfigFieldStateDto = { key: string, label: string, placeholder?: string, required: boolean, isSet: boolean, } & ({ "shape": "single", valueType: ProviderConfigValueTypeDto, value?: string, } | { "shape": "secret", valueType: ProviderConfigValueTypeDto, stored: SecretStoredDto | null, } | { "shape": "list", itemType: ProviderConfigValueTypeDto, 
+export type ProviderConfigFieldStateDto = { key: string, label: string, placeholder?: string, required: boolean, isSet: boolean, fixAction?: WebFixAction, } & ({ "shape": "single", valueType: ProviderConfigValueTypeDto, value?: string, } | { "shape": "secret", valueType: ProviderConfigValueTypeDto, stored: SecretStoredDto | null, } | { "shape": "list", itemType: ProviderConfigValueTypeDto, 
 /**
  * The configured items, or the default the provider uses while the key is unset.
  */
@@ -152,6 +152,10 @@ export type ProviderConfigFieldRefDto = { "kind": "label" } | { "kind": "value",
 export type ProviderConfigIssueKindDto = "invalid" | "changed" | "removed" | "replaced" | "unknownBase";
 
 export type ProviderConfigFieldIssueDto = { field: ProviderConfigFieldRefDto, problem: ProviderConfigIssueKindDto, message: string, };
+
+export type ProviderConfigFieldFixDto = { key: string, action: WebFixAction, };
+
+export type ProviderConfigCheckResponseDto = { issues: Array<ProviderConfigFieldIssueDto>, fieldFix?: ProviderConfigFieldFixDto, };
 
 export type AddConnectionRequestDto = { source: Source, 
 /**

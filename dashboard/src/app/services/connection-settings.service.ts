@@ -2,7 +2,7 @@ import { inject, Service } from '@angular/core'
 import type {
   AddConnectionRequestDto,
   AddConnectionResponseDto,
-  ProviderConfigFieldIssueDto,
+  ProviderConfigCheckResponseDto,
   ProviderConfigSaveRequestDto,
   ProviderConfigSaveResponseDto,
   ProviderConfigSnapshotDto,
@@ -36,7 +36,7 @@ export class ConnectionSettings {
   /** What a save of `request` would be refused for; changes nothing. */
   checkProviderConfig(
     request: ProviderConfigSaveRequestDto
-  ): Promise<ProviderConfigFieldIssueDto[]> {
+  ): Promise<ProviderConfigCheckResponseDto> {
     return this.backend.checkProviderConfig(request)
   }
 

@@ -4,6 +4,7 @@ import type { ProviderInfo, ProviderProblem, ProviderStatus } from '../../../../
 import { supportedOsLabel } from '../../../../providers/source-catalog'
 import { ButtonComponent } from '../../../button/button.component'
 import { FeedbackComponent } from '../../../feedback/feedback.component'
+import { CredentialRecoveryComponent } from '../../credential-recovery.component'
 
 interface ProviderHealthVm {
   readonly icon: string
@@ -16,7 +17,7 @@ interface ProviderHealthVm {
 /** A source's startup check: how it went, when, on which systems, and "Check again". */
 @Component({
   selector: 'app-source-health',
-  imports: [ButtonComponent, FeedbackComponent, MatIconModule],
+  imports: [ButtonComponent, CredentialRecoveryComponent, FeedbackComponent, MatIconModule],
   templateUrl: './source-health.component.html',
   styleUrl: './source-health.component.scss',
 })
@@ -29,6 +30,10 @@ export class SourceHealthComponent {
   readonly recheck = output<void>()
 
   protected readonly supportedOsLabel = supportedOsLabel
+  protected readonly credentialAction = computed(() => {
+    const fix = this.info().fixAction
+    return fix?.kind === 'web' && fix.action.kind === 'createToken' ? fix.action : undefined
+  })
 
   protected readonly health = computed<ProviderHealthVm>(() => {
     const { status, reason, problem } = this.info()
