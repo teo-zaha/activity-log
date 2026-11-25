@@ -58,8 +58,8 @@ pub(super) struct HostState {
     pub(super) logs: Vec<(LogLevel, String, String)>,
     /// Set by `shutdown`: no run, check, install or edit is current any more.
     pub(super) shut_down: bool,
-    /// This transition is an authority boundary: it installed a config, or a check changed a
-    /// connection's collection key. The published authority rises and both parts are stamped,
+    /// This transition is an authority boundary: it installed a config, or an identity change
+    /// invalidated a collection key. The published authority rises and both parts are stamped,
     /// so a subscriber gets what changed as one pair.
     pub(super) new_authority: bool,
     /// Where new secrets are sealed, as the settings show it: from the probe at start, then

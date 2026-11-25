@@ -7,10 +7,14 @@ use futures::future::BoxFuture;
 
 use crate::{
     aggregator::{carried_for, collect_activity_from_results},
-    model::{ActivityEntry, CollectOptions, CollectedActivity, ConnectionId, ProviderProblem},
+    model::{
+        ActivityEntry, CollectOptions, CollectedActivity, ConnectionId, IdentityEvidence,
+        ProviderProblem,
+    },
     provider::{
         ProviderRuntime,
-        source_failure::{ClassifiedProblem, problem_of},
+        remote_error::{ApiError, RemoteFailure},
+        source_failure::{ClassifiedProblem, collection_identity_of, problem_of},
     },
 };
 
@@ -28,10 +32,11 @@ pub struct Stored {
 #[derive(Debug, Clone)]
 pub enum Outcome {
     Collected(Stored),
-    /// Listed with no entries and marked degraded.
+    /// A failed refresh can retain earlier entries of the same key.
     Failed {
         key: CollectionKey,
         failure: CollectFailure,
+        carried: Option<Arc<[ActivityEntry]>>,
     },
 }
 
@@ -41,6 +46,8 @@ pub enum Outcome {
 pub struct CollectFailure {
     problem: ClassifiedProblem,
     message: String,
+    identity: IdentityEvidence,
+    keeps_carried_entries: bool,
 }
 
 impl CollectFailure {
@@ -49,17 +56,55 @@ impl CollectFailure {
     pub fn of(err: &anyhow::Error) -> Self {
         let problem = problem_of(err)
             .unwrap_or_else(|| ClassifiedProblem::plain(ProviderProblem::CollectionFailed));
-        Self {
+        Self::new(
             problem,
-            message: format!("{err:#}"),
-        }
+            format!("{err:#}"),
+            collection_identity_of(err, problem.problem()),
+            Some(err),
+        )
     }
 
     /// A collection that did not end in `limit`.
     pub fn timed_out(limit: Duration) -> Self {
+        Self::new(
+            ClassifiedProblem::plain(ProviderProblem::TimedOut),
+            format!("Collection timed out after {}s", limit.as_secs()),
+            IdentityEvidence::None,
+            None,
+        )
+    }
+
+    fn new(
+        problem: ClassifiedProblem,
+        message: String,
+        identity: IdentityEvidence,
+        error: Option<&anyhow::Error>,
+    ) -> Self {
+        let keeps_carried_entries = identity == IdentityEvidence::None
+            && match problem.problem() {
+                ProviderProblem::Refused
+                | ProviderProblem::ScopeMissing
+                | ProviderProblem::Throttled
+                | ProviderProblem::TimedOut
+                | ProviderProblem::Unreachable => true,
+                ProviderProblem::CollectionFailed => error.is_some_and(|error| {
+                    error.chain().any(|cause| {
+                        matches!(
+                            cause.downcast_ref::<RemoteFailure>(),
+                            Some(RemoteFailure {
+                                error: ApiError::Decode,
+                                ..
+                            })
+                        )
+                    })
+                }),
+                _ => false,
+            };
         Self {
-            problem: ClassifiedProblem::plain(ProviderProblem::TimedOut),
-            message: format!("Collection timed out after {}s", limit.as_secs()),
+            problem,
+            message,
+            identity,
+            keeps_carried_entries,
         }
     }
 
@@ -73,6 +118,14 @@ impl CollectFailure {
         self.problem
     }
 
+    pub(crate) fn identity(&self) -> &IdentityEvidence {
+        &self.identity
+    }
+
+    pub(crate) fn keeps_carried_entries(&self) -> bool {
+        self.keeps_carried_entries
+    }
+
     pub fn message(&self) -> &str {
         &self.message
     }
@@ -83,6 +136,13 @@ impl Outcome {
         match self {
             Self::Collected(stored) => stored.key,
             Self::Failed { key, .. } => *key,
+        }
+    }
+
+    pub(crate) fn entries(&self) -> Option<&Arc<[ActivityEntry]>> {
+        match self {
+            Self::Collected(stored) => Some(&stored.entries),
+            Self::Failed { carried, .. } => carried.as_ref(),
         }
     }
 }
@@ -110,7 +170,7 @@ pub struct RunReport {
 }
 
 impl RunReport {
-    /// The log clients see: finished connections in order, a failed one listed without
+    /// The log clients see: finished connections in order, and failed ones with any retained
     /// entries; pending ones named in `meta.pending` and shown with what they carry (not
     /// counted, a commit a finished connection has shown once); skipped ones left out. GitLab
     /// pushes fold into their commits here, from each connection's own entries.
@@ -128,10 +188,9 @@ impl RunReport {
                 }
                 Slot::Skipped => {}
                 Slot::Settled(outcome) | Slot::Kept(outcome) => {
-                    let entries = match outcome {
-                        Outcome::Collected(stored) => stored.entries.to_vec(),
-                        Outcome::Failed { .. } => Vec::new(),
-                    };
+                    let entries = outcome
+                        .entries()
+                        .map_or_else(Vec::new, |entries| entries.to_vec());
                     results.push((id.clone(), entries));
                 }
             }

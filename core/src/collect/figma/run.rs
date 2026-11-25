@@ -10,10 +10,11 @@ use tokio::sync::OnceCell;
 
 use crate::{
     diagnostics,
-    model::{ConnectionId, ProviderProblem, Source},
+    model::{ConnectionId, ProviderProblem, RemoteIdentity, Source},
     provider::{
         figma::{api::FigmaApi, scope::FigmaFileKey},
-        remote_error::ApiError,
+        remote_error::{ApiError, RemoteFailure},
+        source_failure::{CollectionIdentityError, refused_account},
     },
 };
 
@@ -66,7 +67,7 @@ pub(super) struct ConnectionRun {
     scope: String,
     pub(super) book: Arc<FileBook>,
     pub(super) team_listing: OnceCell<()>,
-    still_signed_in: OnceCell<Result<bool, ApiError>>,
+    account: OnceCell<Result<Option<RemoteIdentity>, ApiError>>,
     lost: Mutex<BTreeSet<FigmaFileKey>>,
 }
 
@@ -76,35 +77,34 @@ impl ConnectionRun {
             book: Arc::new(FileBook::new(path, scope.clone())),
             team_listing: OnceCell::new(),
             scope,
-            still_signed_in: OnceCell::new(),
+            account: OnceCell::new(),
             lost: Mutex::default(),
         }
     }
 
-    pub(super) async fn proves_loss(
+    /// An ambiguous resource refusal needs one account request for the whole run.
+    /// A matching ID proves that only the resource is inaccessible.
+    pub(super) async fn probe_account(
         &self,
         api: &FigmaApi,
         principal: &str,
         error: &ApiError,
-    ) -> Result<bool, ApiError> {
+    ) -> Result<bool, CollectionIdentityError> {
         match error {
-            ApiError::Status {
-                status: StatusCode::NOT_FOUND,
-                ..
-            } => Ok(true),
-            // A confirmed token scope error leaves the file recorded and skips the identity probe.
             ApiError::Status {
                 status: StatusCode::FORBIDDEN,
                 ..
-            } if error.problem() == Some(ProviderProblem::Refused) => self
-                .still_signed_in
-                .get_or_init(|| async {
-                    api.me()
-                        .await
-                        .map(|answer| answer.is_some_and(|identity| identity.id == principal))
-                })
-                .await
-                .clone(),
+            } if error.problem() == Some(ProviderProblem::Refused) && !refused_account(error) => {
+                match self.account.get_or_init(|| api.me()).await {
+                    Ok(Some(identity)) if identity.id == principal => Ok(true),
+                    Ok(Some(identity)) => Err(CollectionIdentityError::Changed(identity.clone())),
+                    Ok(None) => Ok(false),
+                    Err(error) => Err(CollectionIdentityError::AccountRequest(RemoteFailure {
+                        service: FigmaApi::SERVICE.into(),
+                        error: error.clone(),
+                    })),
+                }
+            }
             _ => Ok(false),
         }
     }

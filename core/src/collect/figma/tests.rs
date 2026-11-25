@@ -3,11 +3,12 @@ use std::collections::BTreeMap;
 use serde_json::{Value, json};
 
 use crate::{
-    model::{ConnectionId, LogLevel, ProviderProblem},
+    model::{ConnectionId, LogLevel, ProviderProblem, RemoteIdentity},
     provider::{
         remote_api::test_server::{Reply, TestServer},
         source_failure::{ClassifiedProblem, problem_of},
     },
+    runtime::CollectFailure,
 };
 
 use super::*;
@@ -149,10 +150,11 @@ async fn partial_folder_discovery_keeps_the_previous_complete_set() {
             "folders":[{"id":"200001","name":"Root","parent_folder_id":null}]
         })),
         "/v2/folders/200001/folders" => Reply::json(403, r#"{"status":403,"err":"No access"}"#),
+        "/v1/me" => Reply::json(200, r#"{"id":"1001","handle":"ada"}"#),
         _ => Reply::json(500, "{}"),
     });
     let api = FigmaApi::at(&server.url, &config).unwrap();
-    let error = team_discovery::refresh(&api, &run.book, &scope.teams, true)
+    let error = team_discovery::refresh(&api, &run, MINE, &scope.teams, true)
         .await
         .unwrap_err();
     assert!(matches!(
@@ -165,7 +167,7 @@ async fn partial_folder_discovery_keeps_the_previous_complete_set() {
         Some(ClassifiedProblem::plain(ProviderProblem::Refused))
     );
     assert_eq!(std::fs::read(&path).unwrap(), before);
-    assert_eq!(server.requests().len(), 2);
+    assert_eq!(server.requests().len(), 3);
 }
 
 #[tokio::test]
@@ -214,7 +216,7 @@ async fn pagination_on_any_folder_endpoint_refuses_the_listing_without_saving_it
         let api = FigmaApi::at(&server.url, &config).unwrap();
         let state = FigmaCollection::default();
         let run = state.run(None, None);
-        let error = team_discovery::refresh(&api, &run.book, &scope.teams, true)
+        let error = team_discovery::refresh(&api, &run, MINE, &scope.teams, true)
             .await
             .unwrap_err();
         assert!(matches!(
@@ -276,7 +278,7 @@ async fn an_unreadable_saved_folder_triggers_one_rediscovery() {
             .await
             .unwrap();
 
-        let result = team_discovery::refresh(&api, &run.book, &scope.teams, true).await;
+        let result = team_discovery::refresh(&api, &run, MINE, &scope.teams, true).await;
         let stored = run
             .book
             .team_folders(team, Utc::now())
@@ -594,6 +596,7 @@ async fn a_file_request_failure_keeps_the_original_position_and_remote_problem()
             "/v1/files/Unreadable/versions" => reply(json!({
                 "versions": [version("13", MINE, START, None)], "pagination": {}
             })),
+            "/v1/me" => Reply::json(200, r#"{"id":"1001","handle":"ada"}"#),
             _ => Reply::json(status, r#"{"err":"File unavailable"}"#),
         });
         let error = collect(
@@ -603,6 +606,10 @@ async fn a_file_request_failure_keeps_the_original_position_and_remote_problem()
         .await
         .unwrap_err();
         assert_eq!(problem_of(&error), expected.map(ClassifiedProblem::plain));
+        assert_eq!(
+            CollectFailure::of(&error).identity(),
+            &IdentityEvidence::None
+        );
         assert!(matches!(
             error.downcast_ref::<FigmaCollectError>(),
             Some(FigmaCollectError::FileRequest {
@@ -610,6 +617,111 @@ async fn a_file_request_failure_keeps_the_original_position_and_remote_problem()
                 failure: RemoteFailure { error: ApiError::Status { status: got, .. }, .. },
             }) if got.as_u16() == status
         ));
+    }
+}
+
+#[tokio::test]
+async fn a_revoked_token_on_a_pasted_only_connection_probes_the_account_once() {
+    let server = TestServer::start(|request| match request.path() {
+        "/v1/files/Pasted/meta" | "/v1/me" => Reply::json(403, r#"{"err":"Invalid token"}"#),
+        _ => panic!("unexpected request"),
+    });
+    let config = config(&["Pasted"]);
+    let api = FigmaApi::at(&server.url, &config).unwrap();
+    let state = FigmaCollection::default();
+    let run = state.run(None, None);
+    let tabs = tabs_for(&[]);
+    for _ in 0..2 {
+        let error = collect_files(
+            &options(),
+            &api,
+            FigmaScope::of(&config).unwrap(),
+            MINE,
+            &run,
+            &tabs,
+        )
+        .await
+        .unwrap_err();
+        let failure = CollectFailure::of(&error);
+        assert_eq!(failure.problem(), ProviderProblem::Refused);
+        assert_eq!(failure.identity(), &IdentityEvidence::Denied);
+    }
+    assert_eq!(
+        server
+            .requests()
+            .iter()
+            .map(|request| request.path())
+            .collect::<Vec<_>>(),
+        ["/v1/files/Pasted/meta", "/v1/me", "/v1/files/Pasted/meta"]
+    );
+}
+
+#[tokio::test]
+async fn a_revoked_token_on_a_team_only_connection_is_checked_before_rediscovery() {
+    use super::{
+        file_book::TeamFolders,
+        team_discovery::{TeamDiscoveryError, TeamFailure},
+    };
+
+    for cached in [false, true] {
+        let listing = if cached {
+            "/v2/folders/200001/files"
+        } else {
+            "/v2/teams/100001/folders"
+        };
+        let server = TestServer::start(move |request| match request.path() {
+            path if path == listing || path == "/v1/me" => {
+                Reply::json(403, r#"{"err":"Invalid token"}"#)
+            }
+            _ => panic!("unexpected listing request"),
+        });
+        let mut config = config(&[]);
+        config.teams = Some(vec!["100001".into()]);
+        let scope = FigmaScope::of(&config).unwrap();
+        let api = FigmaApi::at(&server.url, &config).unwrap();
+        let state = FigmaCollection::default();
+        let run = state.run(None, None);
+        let now = Utc::now();
+        if cached {
+            let folder = serde_json::from_value(json!("200001")).unwrap();
+            run.book
+                .remember_team(
+                    scope.teams[0].1.clone(),
+                    Some(TeamFolders {
+                        folders: [folder].into(),
+                        discovered_at: now,
+                    }),
+                    BTreeMap::new(),
+                    now,
+                )
+                .await
+                .unwrap();
+        }
+        let range = CollectOptions {
+            start: now - TimeDelta::minutes(15),
+            end: now,
+        };
+        let error = collect_files(&range, &api, scope, MINE, &run, &tabs_for(&[]))
+            .await
+            .unwrap_err();
+        assert!(matches!(
+            error.downcast_ref::<TeamDiscoveryError>(),
+            Some(TeamDiscoveryError {
+                position: 1,
+                cause: TeamFailure::Account(_),
+            })
+        ));
+        let failure = CollectFailure::of(&error);
+        assert_eq!(failure.problem(), ProviderProblem::Refused);
+        assert_eq!(failure.identity(), &IdentityEvidence::Denied);
+        assert_eq!(
+            server
+                .requests()
+                .iter()
+                .map(|request| request.path())
+                .collect::<Vec<_>>(),
+            [listing, "/v1/me"]
+        );
     }
 }
 
@@ -685,6 +797,64 @@ async fn discovered_denials_share_one_identity_check_and_one_warning() {
 }
 
 #[tokio::test]
+async fn the_discovered_file_probe_preserves_only_definite_account_evidence() {
+    for (status, body, problem, identity) in [
+        (
+            200,
+            r#"{"id":"2002","handle":"bea"}"#,
+            ProviderProblem::Refused,
+            IdentityEvidence::Verified(RemoteIdentity {
+                id: OTHER.into(),
+                username: "bea".into(),
+            }),
+        ),
+        (200, "{}", ProviderProblem::Refused, IdentityEvidence::None),
+        (
+            403,
+            "{}",
+            ProviderProblem::Refused,
+            IdentityEvidence::Denied,
+        ),
+        (
+            429,
+            "{}",
+            ProviderProblem::Throttled,
+            IdentityEvidence::None,
+        ),
+    ] {
+        let server = TestServer::start(move |req| match req.path() {
+            "/v1/me" => Reply::json(status, body),
+            _ => Reply::json(403, "{}"),
+        });
+        let config = config(&[]);
+        let api = FigmaApi::at(&server.url, &config).unwrap();
+        let state = FigmaCollection::default();
+        let run = state.run(None, None);
+        let error = collect_files(
+            &options(),
+            &api,
+            FigmaScope::of(&config).unwrap(),
+            MINE,
+            &run,
+            &tabs_for(&["Discovered"]),
+        )
+        .await
+        .unwrap_err();
+        let failure = CollectFailure::of(&error);
+        assert_eq!(failure.problem(), problem);
+        assert_eq!(failure.identity(), &identity);
+        assert_eq!(
+            server
+                .requests()
+                .iter()
+                .map(|request| request.path())
+                .collect::<Vec<_>>(),
+            ["/v1/files/Discovered/meta", "/v1/me"]
+        );
+    }
+}
+
+#[tokio::test]
 async fn a_busy_discovered_403_fails_the_chunk_without_an_identity_probe() {
     let server =
         TestServer::start(|_| Reply::json(403, "{}").with_header("X-RateLimit-Remaining", "0"));
@@ -718,37 +888,49 @@ async fn a_busy_discovered_403_fails_the_chunk_without_an_identity_probe() {
 }
 
 #[tokio::test]
-async fn a_scope_refusal_keeps_the_discovered_file_and_skips_the_identity_probe() {
-    let server = TestServer::start(|_| Reply::json(403, r#"{"error":"insufficient_scope"}"#));
-    let config = config(&[]);
-    let api = FigmaApi::at(&server.url, &config).unwrap();
-    let state = FigmaCollection::default();
-    let run = state.run(None, None);
-    let tabs = tabs_for(&["Example"]);
-    for _ in 0..2 {
-        let error = collect_files(
-            &options(),
-            &api,
-            FigmaScope::of(&config).unwrap(),
-            MINE,
-            &run,
-            &tabs,
-        )
-        .await
-        .unwrap_err();
+async fn a_typed_token_refusal_keeps_the_discovered_file_and_skips_the_identity_probe() {
+    for (body, problem, identity) in [
+        (
+            r#"{"error":"insufficient_scope"}"#,
+            ProviderProblem::ScopeMissing,
+            IdentityEvidence::None,
+        ),
+        (
+            r#"{"error":"invalid_token"}"#,
+            ProviderProblem::Refused,
+            IdentityEvidence::Denied,
+        ),
+    ] {
+        let server = TestServer::start(move |_| Reply::json(403, body));
+        let config = config(&[]);
+        let api = FigmaApi::at(&server.url, &config).unwrap();
+        let state = FigmaCollection::default();
+        let run = state.run(None, None);
+        let tabs = tabs_for(&["Example"]);
+        for _ in 0..2 {
+            let error = collect_files(
+                &options(),
+                &api,
+                FigmaScope::of(&config).unwrap(),
+                MINE,
+                &run,
+                &tabs,
+            )
+            .await
+            .unwrap_err();
+            let failure = CollectFailure::of(&error);
+            assert_eq!(failure.problem(), problem);
+            assert_eq!(failure.identity(), &identity);
+        }
         assert_eq!(
-            problem_of(&error),
-            Some(ClassifiedProblem::plain(ProviderProblem::ScopeMissing))
+            server
+                .requests()
+                .iter()
+                .map(|request| request.path())
+                .collect::<Vec<_>>(),
+            ["/v1/files/Example/meta"; 2]
         );
     }
-    assert_eq!(
-        server
-            .requests()
-            .iter()
-            .map(|request| request.path())
-            .collect::<Vec<_>>(),
-        ["/v1/files/Example/meta"; 2]
-    );
 }
 
 #[tokio::test]

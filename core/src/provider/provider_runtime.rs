@@ -54,7 +54,7 @@ impl ProviderRuntime {
     ) -> Self {
         let requirements = adapter.config_requirements();
         let supported = adapter.supported_os().contains(&current_os());
-        let (info, context, fix_cause) = diagnostics::in_connection(connection.id.clone(), async {
+        let (result, context) = diagnostics::in_connection(connection.id.clone(), async {
             let opened = if supported {
                 open_connection(connection.source(), connection.values(), secrets).await
             } else {
@@ -75,19 +75,20 @@ impl ProviderRuntime {
                 ),
             };
             context.set_state_dir(adapter.cache_policy().map(|_| crate::cache::cache_dir()));
-            let (info, identity, fix_cause) =
-                build_provider_info(adapter.as_ref(), connection, &mut context, unopened).await;
-            context.set_identity(identity);
-            (info, context, fix_cause)
+            let result = check_provider(adapter.as_ref(), connection, &mut context, unopened).await;
+            (result, context)
         })
         .await;
 
-        Self {
+        let info = provider_info(adapter.as_ref(), connection);
+        let mut runtime = Self {
             adapter,
             context,
             info,
-            fix_cause,
-        }
+            fix_cause: None,
+        };
+        runtime.record_check_result(result);
+        runtime
     }
 
     /// A runtime that only reports `info`, for a host built from a fixed list of checked
@@ -131,6 +132,16 @@ impl ProviderRuntime {
     /// Whose token the startup check saw.
     pub fn identity(&self) -> &IdentityEvidence {
         self.context.identity()
+    }
+
+    pub(crate) fn record_check_result(&mut self, result: ProviderCheckResult) {
+        result.outcome.apply_to(&mut self.info);
+        self.info.checked_at = now_iso();
+        self.fix_cause = result
+            .outcome
+            .classification()
+            .and_then(ClassifiedProblem::cause);
+        self.context.set_identity(result.identity);
     }
 
     /// The day cache's scope for this connection: its safe fingerprint and the principal the
@@ -302,12 +313,12 @@ pub(crate) fn start_check_with(
     (checking, check.boxed())
 }
 
-async fn build_provider_info(
+async fn check_provider(
     adapter: &dyn ProviderAdapter,
     connection: &Connection,
     context: &mut ProviderContext,
     unopened: Option<&Unopened>,
-) -> (ProviderInfo, IdentityEvidence, Option<FixCause>) {
+) -> ProviderCheckResult {
     let current_os = current_os();
     let requirements = adapter.config_requirements();
     let started = std::time::Instant::now();
@@ -355,13 +366,7 @@ async fn build_provider_info(
     };
     diagnostics::record(level, connection.id.to_string(), summary);
 
-    let mut info = provider_info(adapter, connection);
-    result.outcome.apply_to(&mut info);
-    let fix_cause = result
-        .outcome
-        .classification()
-        .and_then(ClassifiedProblem::cause);
-    (info, result.identity, fix_cause)
+    result
 }
 
 fn unavailable(problem: ProviderProblem, reason: impl Into<String>) -> ProviderCheckResult {

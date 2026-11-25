@@ -784,6 +784,7 @@ async fn providers_and_events_only_publish_native_actions_for_a_desktop_host() {
             *slot = Slot::Settled(Outcome::Failed {
                 key: stored.key,
                 failure: CollectFailure::of(&error.into()),
+                carried: None,
             });
             report
         })

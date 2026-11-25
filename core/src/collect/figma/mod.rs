@@ -7,9 +7,9 @@ use std::{collections::HashMap, fmt};
 
 use chrono::{TimeDelta, Utc};
 
-use anyhow::Result;
+use anyhow::{Context, Result};
 use futures::{StreamExt, stream};
-use reqwest::Url;
+use reqwest::{StatusCode, Url};
 
 use crate::{
     collect::web_link::{Unshown, web_link},
@@ -132,7 +132,7 @@ async fn collect_files(
     if !teams.is_empty() {
         let recent = end >= today - TimeDelta::days(1) && start <= today;
         run.team_listing
-            .get_or_try_init(|| team_discovery::refresh(api, &run.book, &teams, recent))
+            .get_or_try_init(|| team_discovery::refresh(api, run, principal, &teams, recent))
             .await?;
     }
     let pasted = files.iter().map(|(_, file)| file.clone()).collect();
@@ -161,9 +161,21 @@ async fn collect_files(
         let result = collect_file(options, api, file.key(), principal).await;
         match (file, result) {
             (file, Ok(collected)) => Ok::<_, anyhow::Error>(Some((file, collected))),
-            (SelectedFile::Discovered(file), Err(FileError::Request(error))) => {
-                let error = match run.proves_loss(api, principal, &error).await {
-                    Ok(true) => {
+            (file, Err(FileError::Request(error))) => {
+                let same_account = run
+                    .probe_account(api, principal, &error)
+                    .await
+                    .with_context(|| format!("Could not read {}", file.place()))?;
+                let lost = same_account
+                    || matches!(
+                        error,
+                        ApiError::Status {
+                            status: StatusCode::NOT_FOUND,
+                            ..
+                        }
+                    );
+                match file {
+                    SelectedFile::Discovered(file) if lost => {
                         let observed_at = Utc::now();
                         let key = file.key.clone();
                         run.book
@@ -176,15 +188,10 @@ async fn collect_files(
                             )
                             .await?;
                         run.record_lost([key]);
-                        return Ok(None);
+                        Ok(None)
                     }
-                    Ok(false) => error,
-                    Err(identity_error) => identity_error,
-                };
-                Err(request_failure(FilePlace::Discovered(file.key), error).into())
-            }
-            (file, Err(FileError::Request(error))) => {
-                Err(request_failure(file.place(), error).into())
+                    file => Err(request_failure(file.place(), error).into()),
+                }
             }
             (file, Err(FileError::RepeatedVersions)) => {
                 Err(FigmaCollectError::RepeatedVersions { file: file.place() }.into())

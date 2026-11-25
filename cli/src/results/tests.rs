@@ -128,6 +128,7 @@ fn each_connection_gets_its_own_result() {
                 Slot::Settled(Outcome::Failed {
                     key: CollectionKey::UNKEYED,
                     failure: failure.clone(),
+                    carried: None,
                 }),
             ),
             (outlook.connection.clone(), Slot::Skipped),

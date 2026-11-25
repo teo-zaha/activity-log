@@ -29,6 +29,7 @@ use crate::{
         provider_check_result::ProviderCheckResult,
         provider_context::ProviderContext,
         provider_runtime::start_check_with,
+        remote_error::{ApiError, OAuthRefusal, RemoteFailure},
     },
     runtime::{
         Collector, FixSurface,
@@ -36,6 +37,8 @@ use crate::{
     },
     settings::{EditError, Precondition},
 };
+
+mod denial;
 
 pub(super) fn march() -> CollectOptions {
     CollectOptions {
@@ -59,9 +62,19 @@ fn gitlab() -> ConnectionId {
     ConnectionId::new(Source::Gitlab, "work")
 }
 
+fn http_error(status: reqwest::StatusCode, refusal: Option<OAuthRefusal>) -> ApiError {
+    ApiError::Status {
+        status,
+        message: String::new(),
+        retry_after: None,
+        quota: None,
+        refusal,
+    }
+}
+
 /// Sources the tests control. A connection's check names the account `identities` gives it,
 /// its collection gives one entry labelled `<name> as <account>` (or fails, for one in
-/// `failing`, or fails with the status in `remote_statuses`), and either waits while a
+/// `failing`, or fails with the error in `remote_failures`), and either waits while a
 /// gate is set for it.
 #[derive(Default)]
 struct World {
@@ -69,7 +82,7 @@ struct World {
     check_outcomes:
         Mutex<BTreeMap<ConnectionId, crate::provider::provider_check_result::CheckOutcome>>,
     failing: Mutex<BTreeSet<ConnectionId>>,
-    remote_statuses: Mutex<BTreeMap<ConnectionId, reqwest::StatusCode>>,
+    remote_failures: Mutex<BTreeMap<ConnectionId, ApiError>>,
     check_gates: Mutex<BTreeMap<ConnectionId, Arc<Semaphore>>>,
     collect_gates: Mutex<BTreeMap<ConnectionId, Arc<Semaphore>>>,
     /// Each collection of a connection, with its range.
@@ -206,16 +219,10 @@ impl ProviderAdapter for Fake {
             if self.world.failing.lock().unwrap().contains(&id) {
                 anyhow::bail!("unreachable host");
             }
-            if let Some(&status) = self.world.remote_statuses.lock().unwrap().get(&id) {
-                anyhow::bail!(crate::provider::remote_error::RemoteFailure {
-                    service: "Jira".into(),
-                    error: crate::provider::remote_error::ApiError::Status {
-                        status,
-                        message: String::new(),
-                        retry_after: None,
-                        quota: None,
-                        refusal: None,
-                    },
+            if let Some(error) = self.world.remote_failures.lock().unwrap().get(&id) {
+                anyhow::bail!(RemoteFailure {
+                    service: "Example API".into(),
+                    error: error.clone(),
                 });
             }
             if let Some(entries) = self.world.entries.lock().unwrap().get(&id) {
@@ -520,6 +527,7 @@ async fn macos_outlook_collection_failures_publish_their_native_actions() {
                         Slot::Settled(Outcome::Failed {
                             key: checked.key,
                             failure: CollectFailure::of(&error),
+                            carried: None,
                         }),
                     )],
                 }
@@ -843,7 +851,14 @@ async fn a_superseded_run_marks_nothing_degraded_and_shows_nothing() {
             jira(),
             Slot::Settled(Outcome::Failed {
                 key,
-                failure: crate::runtime::CollectFailure::of(&anyhow::anyhow!("unreachable host")),
+                failure: crate::runtime::CollectFailure::of(
+                    &RemoteFailure {
+                        service: "Jira".into(),
+                        error: http_error(reqwest::StatusCode::UNAUTHORIZED, None),
+                    }
+                    .into(),
+                ),
+                carried: None,
             }),
         )],
     };
@@ -1834,19 +1849,23 @@ async fn both_pushes_of_one_commit_survive_a_recheck_of_either_kind() {
 
 // Accounts and failures
 
-/// A refusal or busy server gives a degraded connection its own problem and can be checked
+/// A resource refusal or busy server gives a degraded connection its own problem and can be checked
 /// again. Other failures show as a failed collection.
 #[tokio::test]
 async fn a_failed_collection_shows_how_it_failed() {
     for (status, problem) in [
-        (reqwest::StatusCode::UNAUTHORIZED, ProviderProblem::Refused),
+        (reqwest::StatusCode::FORBIDDEN, ProviderProblem::Refused),
         (
             reqwest::StatusCode::TOO_MANY_REQUESTS,
             ProviderProblem::Throttled,
         ),
     ] {
         let world = World::shared();
-        world.remote_statuses.lock().unwrap().insert(jira(), status);
+        world
+            .remote_failures
+            .lock()
+            .unwrap()
+            .insert(jira(), http_error(status, None));
         world.failing.lock().unwrap().insert(gitlab());
         let (_dir, _path, host, _spawned) = ready_at(TWO_SOURCES, &world).await;
 

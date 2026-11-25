@@ -1,7 +1,6 @@
 use std::{
     collections::{BTreeMap, BTreeSet, VecDeque, btree_map::Entry},
     fmt,
-    sync::Arc,
 };
 
 use anyhow::Result;
@@ -17,10 +16,11 @@ use crate::{
             scope::{FigmaFileKey, FigmaTeamId},
         },
         remote_error::{ApiError, RemoteFailure},
+        source_failure::{CollectionIdentityError, refused_account},
     },
 };
 
-use super::file_book::{FileBook, TeamFolders};
+use super::{ConnectionRun, file_book::TeamFolders};
 
 #[derive(Debug)]
 pub(super) struct TeamDiscoveryError {
@@ -38,6 +38,7 @@ impl std::error::Error for TeamDiscoveryError {
     fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
         match &self.cause {
             TeamFailure::Request(failure) => Some(failure),
+            TeamFailure::Account(failure) => Some(failure),
             cause => Some(cause),
         }
     }
@@ -46,6 +47,7 @@ impl std::error::Error for TeamDiscoveryError {
 #[derive(Debug)]
 pub(super) enum TeamFailure {
     Request(RemoteFailure),
+    Account(CollectionIdentityError),
     InconsistentFolders,
     Paginated,
 }
@@ -63,6 +65,20 @@ impl From<FolderListingError> for TeamFailure {
 }
 
 impl TeamFailure {
+    async fn with_account_probe(
+        self,
+        api: &FigmaApi,
+        run: &ConnectionRun,
+        principal: &str,
+    ) -> Self {
+        if let Self::Request(failure) = &self
+            && let Err(error) = run.probe_account(api, principal, &failure.error).await
+        {
+            return Self::Account(error);
+        }
+        self
+    }
+
     fn folder_unavailable(&self) -> bool {
         matches!(
             self,
@@ -70,7 +86,7 @@ impl TeamFailure {
                 error: error @ ApiError::Status {
                     status: StatusCode::FORBIDDEN | StatusCode::NOT_FOUND, ..
                 }, ..
-            }) if !error.is_busy()
+            }) if !error.is_busy() && !refused_account(error)
         )
     }
 }
@@ -79,6 +95,7 @@ impl fmt::Display for TeamFailure {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::Request(failure) => failure.fmt(f),
+            Self::Account(failure) => failure.fmt(f),
             Self::InconsistentFolders => f.write_str("Figma returned an inconsistent folder tree"),
             Self::Paginated => f.write_str("Figma returned a paged folder listing"),
         }
@@ -89,10 +106,12 @@ impl std::error::Error for TeamFailure {}
 
 pub(super) async fn refresh(
     api: &FigmaApi,
-    book: &Arc<FileBook>,
+    run: &ConnectionRun,
+    principal: &str,
     teams: &[(usize, FigmaTeamId)],
     recent_range: bool,
 ) -> Result<()> {
+    let book = &run.book;
     let mut listed = BTreeMap::new();
     let mut invalid_keys = 0;
     for (position, team) in teams {
@@ -112,20 +131,32 @@ pub(super) async fn refresh(
                         .await?;
                     continue;
                 }
-                Err(cause) if cause.folder_unavailable() => {
+                Err(cause) => {
+                    let cause = cause.with_account_probe(api, run, principal).await;
+                    if !cause.folder_unavailable() {
+                        return Err(failed(cause).into());
+                    }
                     // A cached folder may have been deleted or become invisible since discovery.
                 }
-                Err(cause) => return Err(failed(cause).into()),
             }
         }
-        let folders = discover_folders(api, team).await.map_err(failed)?;
-        let discovered = TeamFolders {
-            folders,
-            discovered_at: Utc::now(),
+        let listing = async {
+            let folders = discover_folders(api, team).await?;
+            let discovered = TeamFolders {
+                folders,
+                discovered_at: Utc::now(),
+            };
+            let files =
+                list_files(api, &discovered.folders, &mut listed, &mut invalid_keys).await?;
+            Ok::<_, TeamFailure>((discovered, files))
+        }
+        .await;
+        let (discovered, files) = match listing {
+            Ok(listing) => listing,
+            Err(cause) => {
+                return Err(failed(cause.with_account_probe(api, run, principal).await).into());
+            }
         };
-        let files = list_files(api, &discovered.folders, &mut listed, &mut invalid_keys)
-            .await
-            .map_err(failed)?;
         book.remember_team(team.clone(), Some(discovered), files, Utc::now())
             .await?;
     }

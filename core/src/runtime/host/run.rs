@@ -14,17 +14,22 @@ use futures::{
 
 use super::{
     Answered, Host, HostInner, HostWork,
-    state::{ConnectionCheck, HostState, Shown},
+    state::{CheckState, ConnectionCheck, HostState, Shown},
 };
 use crate::{
     collect_planned,
     model::{
-        ActivityState, CollectOptions, CollectionFailedResponse, ConnectionId, LogLevel, RunEnd,
-        RunId, RunOutcome, Source,
+        ActivityState, CollectOptions, CollectionFailedResponse, ConnectionId, IdentityEvidence,
+        LogLevel, RunEnd, RunId, RunOutcome, Source,
     },
+    provider::provider_check_result::{CheckOutcome, ProviderCheckResult},
     runtime::{
-        default_collect_options, panic_message,
-        report::{Collector, Outcome, Plan, Progress, RunReport, Slot},
+        default_collect_options,
+        keys::KeyChange,
+        panic_message,
+        report::{
+            CollectFailure, CollectionKey, Collector, Outcome, Plan, Progress, RunReport, Slot,
+        },
         result_store::{Candidate, ResultStore, Scope, Seed, evict},
     },
 };
@@ -70,6 +75,7 @@ impl Host {
             if !state.is_running(run) {
                 return;
             }
+            record_collection_denials(state, &report);
             let log = if evict(&mut report, &state.keys) {
                 report.project(options).log
             } else {
@@ -127,6 +133,7 @@ impl Host {
             if !state.is_running(run) {
                 return RunOutcome::Stopped;
             }
+            record_collection_denials(state, &report);
             let log = if evict(&mut report, &state.keys) {
                 report.project(options).log
             } else {
@@ -154,6 +161,59 @@ impl Host {
             RunOutcome::Ready { entries }
         })
     }
+}
+
+/// Consume evidence from a current run before projecting it under the resulting keys.
+/// The progress and final reports can contain the same failure. Its old key stops it from
+/// being recorded again.
+fn record_collection_denials(state: &mut HostState, report: &RunReport) {
+    for (id, slot) in &report.slots {
+        if let Slot::Settled(Outcome::Failed { key, failure, .. }) = slot {
+            record_collection_denial(state, id, *key, failure);
+        }
+    }
+}
+
+fn record_collection_denial(
+    state: &mut HostState,
+    id: &ConnectionId,
+    planned: CollectionKey,
+    failure: &CollectFailure,
+) {
+    let identity = failure.identity();
+    if *identity == IdentityEvidence::None || state.keys.key(id) != Some(planned) {
+        return;
+    }
+    let Some(check) = state.checks.iter_mut().find(|check| check.id() == id) else {
+        return;
+    };
+    let CheckState::Recorded(checked) = &mut check.state else {
+        return;
+    };
+    if checked.key != planned || !checked.runtime.usable() {
+        return;
+    }
+    let Some((key, change)) = state.keys.record(id, identity) else {
+        return;
+    };
+    if change == KeyChange::Kept {
+        return;
+    }
+    checked.key = key;
+    checked.runtime.record_check_result(ProviderCheckResult {
+        outcome: CheckOutcome::Unavailable {
+            problem: failure.classification(),
+            reason: format!("Collection failed: {}", failure.message()),
+        },
+        identity: identity.clone(),
+    });
+    state.failures.remove(id);
+    state.new_authority |= change == KeyChange::Replaced;
+    state.log(
+        LogLevel::Warn,
+        id.to_string(),
+        "Invalidated the previous account's collection key",
+    );
 }
 
 pub(super) fn planned_collector() -> Collector {

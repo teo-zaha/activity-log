@@ -2,9 +2,93 @@ use anyhow::Context;
 
 use super::{ClassifiedProblem, SourceFailure, SourceProblem, problem_of};
 use crate::{
-    model::ProviderProblem,
-    provider::remote_error::{ApiError, RemoteFailure},
+    model::{IdentityEvidence, ProviderProblem},
+    provider::{
+        jira::api::JiraResponseError,
+        remote_error::{ApiError, OAuthRefusal, RemoteFailure, query_data},
+    },
+    runtime::CollectFailure,
 };
+
+#[test]
+fn collection_identity_requires_account_level_evidence() {
+    use reqwest::StatusCode;
+    use serde_json::{Value, json};
+
+    let query = |path| {
+        query_data::<Value>(json!({"errors":[{"type":"FORBIDDEN", "path":path}]}), &[]).unwrap_err()
+    };
+    let http = |status, refusal, retry_after| ApiError::Status {
+        status,
+        refusal,
+        retry_after,
+        quota: None,
+        message: String::new(),
+    };
+
+    for (error, problem, evidence) in [
+        (
+            query(json!(["viewer"])),
+            ProviderProblem::Refused,
+            IdentityEvidence::Denied,
+        ),
+        (
+            query(json!(["viewer", "issueComments"])),
+            ProviderProblem::Refused,
+            IdentityEvidence::None,
+        ),
+        (
+            query(json!(["nodes", 0])),
+            ProviderProblem::Refused,
+            IdentityEvidence::None,
+        ),
+        (
+            query(Value::Null),
+            ProviderProblem::Refused,
+            IdentityEvidence::None,
+        ),
+        (
+            http(
+                StatusCode::FORBIDDEN,
+                Some(OAuthRefusal::InvalidToken),
+                None,
+            ),
+            ProviderProblem::Refused,
+            IdentityEvidence::Denied,
+        ),
+        (
+            http(
+                StatusCode::FORBIDDEN,
+                Some(OAuthRefusal::InvalidToken),
+                Some(1),
+            ),
+            ProviderProblem::Throttled,
+            IdentityEvidence::None,
+        ),
+        (
+            ApiError::Decode,
+            ProviderProblem::CollectionFailed,
+            IdentityEvidence::None,
+        ),
+    ] {
+        let failure = CollectFailure::of(
+            &RemoteFailure {
+                service: "Example API".into(),
+                error,
+            }
+            .into(),
+        );
+        assert_eq!(failure.problem(), problem);
+        assert_eq!(failure.identity(), &evidence);
+    }
+    let anonymous = CollectFailure::of(&JiraResponseError::Anonymous.into());
+    assert_eq!(anonymous.problem(), ProviderProblem::Refused);
+    assert_eq!(anonymous.identity(), &IdentityEvidence::Denied);
+    assert_eq!(
+        CollectFailure::timed_out(std::time::Duration::from_secs(1)).identity(),
+        &IdentityEvidence::None
+    );
+}
 
 #[test]
 fn the_first_typed_cause_names_the_problem() {

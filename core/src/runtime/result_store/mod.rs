@@ -109,14 +109,18 @@ impl ResultStore {
                         return None;
                     }
                     let shown = match slot {
-                        Some(Slot::Pending { carried }) => carried.as_ref(),
-                        Some(Slot::Settled(Outcome::Collected(stored)))
-                        | Some(Slot::Kept(Outcome::Collected(stored))) => Some(stored),
+                        Some(Slot::Pending { carried }) => carried.clone(),
+                        Some(Slot::Settled(outcome) | Slot::Kept(outcome)) => {
+                            outcome.entries().map(|entries| Stored {
+                                key: outcome.key(),
+                                entries: entries.clone(),
+                            })
+                        }
                         _ => None,
                     };
                     let carried = shown
                         .filter(|stored| stored.key == key)
-                        .and_then(|stored| self.carry(stored, options));
+                        .and_then(|stored| self.carry(&stored, options));
                     return Some((id.clone(), Seed::Collect { carried }));
                 }
                 let outcome = self.outcome(id).filter(|outcome| outcome.key() == key)?;

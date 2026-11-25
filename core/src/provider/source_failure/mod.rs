@@ -5,11 +5,43 @@
 
 use std::fmt;
 
+use reqwest::StatusCode;
+
 use crate::{
     collect::calendar::FeedUnavailable,
-    model::{CalendarFeedService, LocalApp, ProviderProblem},
-    provider::{jira::api::JiraResponseError, remote_error::RemoteFailure},
+    model::{CalendarFeedService, IdentityEvidence, LocalApp, ProviderProblem, RemoteIdentity},
+    provider::{
+        jira::api::JiraResponseError,
+        remote_error::{ApiError, OAuthRefusal, QueryErrorKind, QueryPathSegment, RemoteFailure},
+    },
 };
+
+/// What the collector learned from a request for the token's own account.
+#[derive(Debug)]
+pub(crate) enum CollectionIdentityError {
+    AccountRequest(RemoteFailure),
+    Changed(RemoteIdentity),
+}
+
+impl fmt::Display for CollectionIdentityError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::AccountRequest(_) => f.write_str("Could not verify the token's account"),
+            Self::Changed(_) => f.write_str(
+                "The token now identifies a different account. Check the connection again.",
+            ),
+        }
+    }
+}
+
+impl std::error::Error for CollectionIdentityError {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        match self {
+            Self::AccountRequest(failure) => Some(failure),
+            Self::Changed(_) => None,
+        }
+    }
+}
 
 /// Typed evidence used to select recovery for a settled health outcome.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -134,6 +166,9 @@ pub fn problem_of(err: &anyhow::Error) -> Option<ClassifiedProblem> {
         if matches!(
             cause.downcast_ref::<JiraResponseError>(),
             Some(JiraResponseError::Anonymous)
+        ) || matches!(
+            cause.downcast_ref::<CollectionIdentityError>(),
+            Some(CollectionIdentityError::Changed(_))
         ) {
             return Some(ClassifiedProblem::plain(ProviderProblem::Refused));
         }
@@ -146,6 +181,54 @@ pub fn problem_of(err: &anyhow::Error) -> Option<ClassifiedProblem> {
         }
         apple_script_problem(cause)
     })
+}
+
+/// A refused resource can belong to an otherwise valid account. Only a refusal of the token
+/// or its account, or a verified change of account, affects ownership of earlier entries.
+pub(crate) fn collection_identity_of(
+    err: &anyhow::Error,
+    problem: ProviderProblem,
+) -> IdentityEvidence {
+    if problem != ProviderProblem::Refused {
+        return IdentityEvidence::None;
+    }
+    for cause in err.chain() {
+        if let Some(error) = cause.downcast_ref::<CollectionIdentityError>() {
+            return match error {
+                CollectionIdentityError::AccountRequest(_) => IdentityEvidence::Denied,
+                CollectionIdentityError::Changed(identity) => {
+                    IdentityEvidence::Verified(identity.clone())
+                }
+            };
+        }
+        if matches!(
+            cause.downcast_ref::<JiraResponseError>(),
+            Some(JiraResponseError::Anonymous)
+        ) {
+            return IdentityEvidence::Denied;
+        }
+        if let Some(failure) = cause.downcast_ref::<RemoteFailure>() {
+            return if refused_account(&failure.error) {
+                IdentityEvidence::Denied
+            } else {
+                IdentityEvidence::None
+            };
+        }
+    }
+    IdentityEvidence::None
+}
+
+pub(crate) fn refused_account(error: &ApiError) -> bool {
+    match error {
+        ApiError::Status { status, refusal, .. } => {
+            *status == StatusCode::UNAUTHORIZED || *refusal == Some(OAuthRefusal::InvalidToken)
+        }
+        ApiError::Query(refusal) => refusal.errors().iter().any(|error| {
+            error.kind == QueryErrorKind::Forbidden
+                && matches!(error.path.as_deref(), Some([QueryPathSegment::Field(field)]) if field == "viewer")
+        }),
+        _ => false,
+    }
 }
 
 #[cfg(target_os = "macos")]

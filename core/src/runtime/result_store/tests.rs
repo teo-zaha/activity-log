@@ -296,6 +296,7 @@ fn failed_skipped_and_empty_connections_show_and_carry_differently() {
             Slot::Settled(Outcome::Failed {
                 key: keys.key(&jira()).unwrap(),
                 failure: crate::runtime::CollectFailure::of(&anyhow::anyhow!("unreachable host")),
+                carried: None,
             }),
         ),
         (calendar(), Slot::Skipped),

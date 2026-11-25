@@ -113,7 +113,11 @@ enum Slot {
     Skipped,
     /// Collected under this key, as the source gave them; what shows is its kind's `finished`.
     Done(CollectionKey, Vec<ActivityEntry>),
-    Failed(CollectionKey, CollectFailure),
+    Failed {
+        key: CollectionKey,
+        failure: CollectFailure,
+        carried: Option<Arc<[ActivityEntry]>>,
+    },
     /// Not collected: what an earlier collection found stays.
     Kept(Outcome),
 }
@@ -187,8 +191,21 @@ pub async fn collect_planned(
                 slots[index] = Slot::Done(keys[index], entries);
                 index
             }
-            Step::Collected(index, Err(err)) => {
-                slots[index] = Slot::Failed(keys[index], err);
+            Step::Collected(index, Err(failure)) => {
+                let key = keys[index];
+                let carried = match &slots[index] {
+                    Slot::Pending(Some(stored))
+                        if stored.key == key && failure.keeps_carried_entries() =>
+                    {
+                        Some(stored.entries.clone())
+                    }
+                    _ => None,
+                };
+                slots[index] = Slot::Failed {
+                    key,
+                    failure,
+                    carried,
+                };
                 index
             }
         };
@@ -303,9 +320,14 @@ fn report(ids: &[ConnectionId], slots: &[Slot], kinds: &BTreeMap<Source, Kind>) 
                     carried: carried.clone(),
                 },
                 Slot::Skipped => ReportSlot::Skipped,
-                Slot::Failed(key, failure) => ReportSlot::Settled(Outcome::Failed {
+                Slot::Failed {
+                    key,
+                    failure,
+                    carried,
+                } => ReportSlot::Settled(Outcome::Failed {
                     key: *key,
                     failure: failure.clone(),
+                    carried: carried.clone(),
                 }),
                 Slot::Kept(outcome) => ReportSlot::Kept(outcome.clone()),
                 Slot::Done(key, _) => {

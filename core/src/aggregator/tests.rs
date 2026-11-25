@@ -535,6 +535,7 @@ fn projected_fixture() -> String {
                 Slot::Settled(Outcome::Failed {
                     key: CollectionKey::UNKEYED,
                     failure: CollectFailure::timed_out(std::time::Duration::from_secs(1)),
+                    carried: None,
                 }),
             ),
             (id(Source::System, "system"), Slot::Skipped),

@@ -32,8 +32,8 @@ impl<T> Clone for Part<T> {
 
 /// What a host shows, as one coherent value: replaced whole, under the host's state lock, at
 /// every transition that changes a part. Revisions rise in the order transitions are installed.
-/// `epoch` names the host; `authority` rises at every config install and every collection key a
-/// check changes, which stamps both parts.
+/// `epoch` names the host; `authority` rises at a config install or an identity change that
+/// invalidates a collection key, which stamps both parts.
 #[derive(Debug, Clone)]
 pub struct Published {
     pub epoch: Arc<str>,

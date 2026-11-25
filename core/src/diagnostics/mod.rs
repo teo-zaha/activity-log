@@ -19,6 +19,9 @@ use crate::{
 #[cfg(test)]
 mod tests;
 
+#[cfg(test)]
+pub(crate) use local_log::LocalLog;
+
 const CAPACITY: usize = 1000;
 
 static LOG: LazyLock<Mutex<LogBuffer>> = LazyLock::new(|| Mutex::new(LogBuffer::new(CAPACITY)));
@@ -126,6 +129,8 @@ pub fn record(level: LogLevel, scope: impl Into<String>, message: impl Into<Stri
             format_args!("  [{scope}] {message}\n"),
         );
     }
+    #[cfg(test)]
+    local_log::record(level, &scope, &message);
     with_log(|log| {
         log.push(level, scope, message);
     });
@@ -159,4 +164,47 @@ pub fn entries() -> Vec<LogEntry> {
 
 pub fn clear() {
     with_log(LogBuffer::clear);
+}
+
+#[cfg(test)]
+mod local_log {
+    use std::rc::Rc;
+
+    use super::*;
+
+    thread_local! {
+        static ACTIVE: RefCell<Option<Rc<RefCell<LogBuffer>>>> = const { RefCell::new(None) };
+    }
+
+    /// Captures logs on this thread, including tasks on a current-thread test runtime.
+    pub(crate) struct LocalLog(Rc<RefCell<LogBuffer>>);
+
+    impl LocalLog {
+        pub(crate) fn start() -> Self {
+            let log = Rc::new(RefCell::new(LogBuffer::new(CAPACITY)));
+            ACTIVE.with(|active| {
+                assert!(active.borrow().is_none());
+                active.replace(Some(log.clone()));
+            });
+            Self(log)
+        }
+
+        pub(crate) fn entries(&self) -> Vec<LogEntry> {
+            self.0.borrow().entries()
+        }
+    }
+
+    impl Drop for LocalLog {
+        fn drop(&mut self) {
+            ACTIVE.with(|active| active.replace(None));
+        }
+    }
+
+    pub(super) fn record(level: LogLevel, scope: &str, message: &str) {
+        ACTIVE.with(|active| {
+            if let Some(log) = active.borrow().as_ref() {
+                log.borrow_mut().push(level, scope.into(), message.into());
+            }
+        });
+    }
 }

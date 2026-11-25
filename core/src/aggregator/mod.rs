@@ -15,8 +15,8 @@ use crate::{
 /// Combines what the connections collected so far: host events fold into their Git commits,
 /// and everything is sorted newest first.
 ///
-/// `results` holds the connections that finished, in connection order; one that failed comes
-/// with no entries (its failure is logged where providers run, see `collect_progressively`).
+/// `results` holds the connections that finished, in connection order, with newly collected or
+/// retained entries. A failure is logged where providers run, see `collect_progressively`.
 /// `pending` holds those still being checked or collected: they are named in `meta.pending`
 /// and join `summary.connections` only once they finish. `carried` holds what the previous
 /// collection had for pending connections (see `carried_for`): shown and merged like the rest

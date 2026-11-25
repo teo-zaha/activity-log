@@ -1,6 +1,6 @@
 //! Whose entries a connection's collection holds. A connection's collection key changes with
-//! its values, its location or the principal its check found, so entries collected under one
-//! key are never carried, kept or shown under another (B4).
+//! its values, its location or the account evidence, so entries collected under one key are
+//! never carried, kept or shown under another (B4).
 
 use std::{
     collections::{BTreeMap, BTreeSet},
@@ -25,7 +25,7 @@ impl CollectionKey {
     pub const UNKEYED: Self = Self(0);
 }
 
-/// How a recorded check changed a connection's collection key.
+/// How identity evidence changed a connection's collection key.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum KeyChange {
     /// The check said what was known already, or nothing usable.
@@ -37,13 +37,13 @@ pub(crate) enum KeyChange {
     Replaced,
 }
 
-/// What the checks of a connection's current values said about whose token it is.
+/// What the check and collection have learned about whose token it is.
 #[derive(Debug, Clone, PartialEq, Eq)]
 enum IdentityState {
     /// No check of these values has said anything yet.
     Unknown,
     Verified(RemoteIdentity),
-    /// The last check was refused (401/403).
+    /// The account was refused.
     Denied,
 }
 
@@ -106,7 +106,7 @@ impl KeyTable {
         changed
     }
 
-    /// Records what a check of `id` said about its token's owner and returns the connection's
+    /// Records evidence about `id`'s token owner and returns the connection's
     /// key with how it changed, or `None` for a connection not installed. Verification and
     /// denial update the state, while an inconclusive check keeps it.
     pub(crate) fn record(
