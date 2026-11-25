@@ -37,7 +37,7 @@ Reconstructing a week of work usually means hopping across Git logs, GitLab, Git
 
 ## Getting started
 
-Packaged desktop builds are available from [GitHub Releases](https://github.com/teo-zaha/activity-log/releases) once a release is published. To build from source, follow the steps below.
+Packaged desktop builds are available from [GitHub Releases](https://github.com/wiwiwi-inc-tm/activity-log/releases) once a release is published. To build from source, follow the steps below.
 
 ### Requirements
 
@@ -50,7 +50,7 @@ Packaged desktop builds are available from [GitHub Releases](https://github.com/
 ### Setup
 
 ```bash
-git clone https://github.com/teo-zaha/activity-log.git
+git clone https://github.com/wiwiwi-inc-tm/activity-log.git
 cd activity-log
 pnpm install
 ```

@@ -5,7 +5,7 @@ scarce part: a focused change with evidence gets in much faster than a large one
 
 ## Before you start
 
-- **Bugs:** open an [issue](https://github.com/teo-zaha/activity-log/issues/new/choose) with the
+- **Bugs:** open an [issue](https://github.com/wiwiwi-inc-tm/activity-log/issues/new/choose) with the
   steps, or a pull request for a small, obvious fix.
 - **Features, new sources, larger refactors:** open an issue first and wait for an answer, so
   nobody spends a weekend on a change that cannot be merged.

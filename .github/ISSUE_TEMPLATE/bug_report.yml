@@ -18,7 +18,7 @@ body:
         - Desktop app
         - Web dashboard and API
         - CLI
-        - A source (Git, GitLab, Jira, Outlook, calendar feed, system)
+        - A source (Git, GitLab, GitHub, Jira, Figma, Outlook, calendar feed, system)
         - Settings and secrets
         - Windows installer
         - Build, CI or docs
@@ -55,7 +55,7 @@ body:
     id: version
     attributes:
       label: Version or commit
-      placeholder: main @ abc1234
+      placeholder: 1.0.0, or main @ abc1234
     validations:
       required: true
 
