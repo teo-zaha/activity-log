@@ -9,7 +9,7 @@ import { ProviderIconComponent } from '../provider-icon/provider-icon.component'
   imports: [ProviderIconComponent],
   template: `<app-provider-icon class="icon" [source]="source()" [fallbackIcon]="icon() ?? null" />
     <span class="label">{{ label() }}</span>
-    @if (split(); as split) {
+    @for (split of splits(); track split.source) {
       <span class="split" [attr.data-src]="split.source">{{ split.label }}</span>
     }`,
   styleUrl: './source-badge.component.scss',
@@ -22,8 +22,8 @@ import { ProviderIconComponent } from '../provider-icon/provider-icon.component'
 export class SourceBadgeComponent {
   readonly source = input.required<Source>()
   readonly label = input.required<string>()
-  /** A second source sharing the badge, in its own colours after a slanted split. */
-  readonly split = input<EntryBadgeSplit>()
+  /** Sources shown in their own colours after a slanted split. */
+  readonly splits = input<readonly EntryBadgeSplit[]>([])
   /** The glyph shown when the source has no logo. */
   readonly icon = input<string>()
   /** `sm` in list rows, `md` in the event details. */

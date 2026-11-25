@@ -212,8 +212,7 @@ $breakpoints: (
     font-size: 13px;
   }
 
-  // A second source sharing the badge (a Git commit with its GitLab push): the badge's end in
-  // that source's colours (its own `[data-src]`), cut from the first part on a slant like a slash.
+  // Each additional source uses its own colours and a slanted leading edge.
   .split {
     --seam: 5px;
 
@@ -227,6 +226,10 @@ $breakpoints: (
     background: var(--badge-bg);
     color: var(--badge-fg);
     clip-path: polygon(var(--seam) 0, 100% 0, 100% 100%, 0 100%);
+
+    &:not(:last-child) {
+      border-radius: 0;
+    }
   }
 }
 

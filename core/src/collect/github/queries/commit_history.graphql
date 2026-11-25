@@ -1,0 +1,28 @@
+query CommitHistory($ids: [ID!]!, $viewerId: ID!, $from: GitTimestamp!, $to: GitTimestamp!) {
+  nodes(ids: $ids) {
+    ... on Repository {
+      id
+      nameWithOwner
+      defaultBranchRef {
+        name
+        target {
+          ... on Commit {
+            history(first: 100, author: { id: $viewerId }, since: $from, until: $to) {
+              pageInfo {
+                hasNextPage
+                endCursor
+              }
+              nodes {
+                id
+                oid
+                committedDate
+                messageHeadline
+                url
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

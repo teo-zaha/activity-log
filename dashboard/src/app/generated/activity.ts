@@ -267,9 +267,9 @@ export type IssueRef = { number: number, title: string, webUrl?: string, };
 
 export type Item = { "kind": "pullRequest" } & PullRequestRef | { "kind": "issue" } & IssueRef;
 
-export type GitHubAction = { "type": "opened", target: Item, } | { "type": "reviewed", pullRequest: PullRequestRef, state: GitHubReviewState, };
+export type GitHubAction = { "type": "opened", target: Item, } | { "type": "reviewed", pullRequest: PullRequestRef, state: GitHubReviewState, } | { "type": "committed", sha: string, message?: string, branch: string, webUrl?: string, };
 
-export type GitHubEntry = { source: "github", connection: string, id: string, timestamp: string, repository: string, } & ({ "type": "opened", target: Item, } | { "type": "reviewed", pullRequest: PullRequestRef, state: GitHubReviewState, });
+export type GitHubEntry = { source: "github", connection: string, id: string, timestamp: string, repository: string, } & ({ "type": "opened", target: Item, } | { "type": "reviewed", pullRequest: PullRequestRef, state: GitHubReviewState, } | { "type": "committed", sha: string, message?: string, branch: string, webUrl?: string, });
 
 export type GitEntry = { source: "git", 
 /**
@@ -285,7 +285,7 @@ id: string, timestamp: string, repo: string, hash: string, message: string, auth
 /**
  * The branch HEAD names, on the commit HEAD points at; absent on every other commit.
  */
-branch?: string, gitlabEvent?: GitLabEntry, };
+branch?: string, gitlabEvent?: GitLabEntry, githubEvent?: Extract<GitHubEntry, { type: 'committed' }>, };
 
 export type JiraEntry = { source: "jira", 
 /**

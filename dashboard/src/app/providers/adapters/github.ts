@@ -1,7 +1,7 @@
 import type { GitHubEntry, GitHubReviewState, PullRequestRef } from '../../generated/activity'
 import { changeReference, changeStackVmOf } from '../change-stack'
 import { EntryUiAdapter, ProviderUiAdapterDefinition } from '../types'
-import { createBadge, joinParts } from '../utils'
+import { createBadge, joinParts, toDefinedStrings } from '../utils'
 
 const REVIEW_ACTION: Record<GitHubReviewState, string> = {
   approved: 'Approved',
@@ -21,7 +21,7 @@ function pullDetails(pull: PullRequestRef, action: string) {
   }
 }
 
-function detailsOf(entry: GitHubEntry) {
+function detailsOf(entry: Exclude<GitHubEntry, { type: 'committed' }>) {
   switch (entry.type) {
     case 'opened':
       return entry.target.kind === 'pullRequest'
@@ -41,6 +41,28 @@ function detailsOf(entry: GitHubEntry) {
 
 class GitHubEntryUiAdapter extends EntryUiAdapter<GitHubEntry> {
   constructor(provider: GitHubProviderAdapter, entry: GitHubEntry) {
+    if (entry.type === 'committed') {
+      const action = `Committed to ${entry.branch}`
+      const badge = createBadge(provider.source, provider.label, 'commit')
+      super(provider, entry, {
+        title: entry.message ?? 'Commit',
+        meta: joinParts([entry.repository, action, entry.sha.slice(0, 7)]),
+        entryIcon: 'commit',
+        searchTerms: toDefinedStrings([entry.message, entry.repository, action, entry.sha]),
+        calendarDurationMinutes: null,
+        detailLink: entry.webUrl ? { label: 'Open commit', url: entry.webUrl } : null,
+        detailFields: [
+          { label: 'Action', value: action },
+          { label: 'Repository', value: entry.repository },
+          { label: 'Commit', value: entry.sha },
+        ],
+        badge,
+        badges: [badge],
+        detailSections: [],
+        styleKey: provider.source,
+      })
+      return
+    }
     const { target, action, itemLabel, linkLabel, entryIcon, changeStack } = detailsOf(entry)
     const number = changeReference('#', target.number)
     const badge = createBadge(provider.source, provider.label, entryIcon)

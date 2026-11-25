@@ -30,7 +30,7 @@
 
 Reconstructing a week of work usually means hopping across Git logs, GitLab, GitHub, Jira, calendars, and Figma. Activity Log puts all of it in one place without sending your history to a third party.
 
-- **One timeline across your sources.** Combines local Git commits, GitLab and GitHub activity, Jira Data Center issues, Outlook meetings, ICS calendar feeds, OS boot/sleep history, and Figma edits and comments. Matching local Git commits and GitLab push events merge into a single **git/lab** entry instead of showing up twice.
+- **One timeline across your sources.** Combines local Git commits, GitLab and GitHub activity, Jira Data Center issues, Outlook meetings, ICS calendar feeds, OS boot/sleep history, and Figma edits and comments. Each local Git row can absorb a matching event from each code host.
 - **Local and private.** Everything runs on your machine. Nothing leaves your computer except requests to the servers you configure. Your config file and per-day cache are written as owner-only files.
 - **Fast and live.** The app opens immediately without blocking on slow servers. Provider startup checks run in the background, entries stream in live as each source finishes, and remote API sources cache completed days on disk.
 - **Desktop app, web dashboard, or CLI.** Run the Tauri desktop app on macOS, Windows, or Linux, use the browser dashboard against the local Rocket API, or export Markdown and JSON straight from the command line.
@@ -119,7 +119,7 @@ Switch between **Timeline** (newest day first), **Day**, **Work week** (Monday�
 
 - **Instant filter:** Type in **Filter activity…** on Timeline (<kbd>/</kbd> to focus, <kbd>Esc</kbd> to clear) to match case-insensitively across commit messages, repositories, branches, GitLab titles and comments, Jira keys and statuses, Figma file names, versions, and comments, and meeting titles, locations, organizers, and descriptions.
 - **Source chips:** Every connection gets a chip with its label and entry count. Click to toggle a connection; double-click to isolate it, and double-click again to restore all sources.
-- **Entry details and git/lab merge:** Click any entry to open its detail panel. When a local Git commit SHA matches a GitLab push event, Activity Log folds them into one **git/lab** entry whose detail panel shows separate Git and GitLab sections.
+- Open any entry to see its details. A local Git row can fold in a GitLab push and a GitHub commit with the same SHA. The detail panel shows a section for Git and each attached source.
 
 <p align="center">
   <img src="pics/search.png" width="820" alt="Timeline filtered by the text order history">
@@ -269,16 +269,16 @@ Total: 70 events
 
 ## Sources in detail
 
-| Source       | What it collects                                             | Platforms             | Multiple connections | Cached on disk |
-| ------------ | ------------------------------------------------------------ | --------------------- | -------------------- | -------------- |
-| **Git**      | Commits from local repositories (and WSL on Windows)         | Windows, macOS, Linux | Yes                  | No             |
-| **GitLab**   | Merge requests, pushes, comments, and reviews                | Windows, macOS, Linux | Yes                  | Yes            |
-| **GitHub**   | Pull requests and issues opened, and submitted reviews       | Windows, macOS, Linux | Yes                  | Yes            |
-| **Jira**     | Issues assigned to or reported by you (Jira Data Center)     | Windows, macOS, Linux | Yes                  | Yes            |
-| **Outlook**  | Calendar meetings from the running Outlook desktop app       | Windows, macOS        | No                   | No             |
-| **Calendar** | Events from `https://`/`webcal://` ICS feeds or `.ics` files | Windows, macOS, Linux | Yes                  | No             |
-| **System**   | Boot, shutdown, and (macOS) sleep/wake sessions              | Windows, macOS        | No                   | No             |
-| **Figma**    | Versions, edit checkpoints, comments, and replies            | Windows, macOS, Linux | Yes                  | Yes            |
+| Source       | What it collects                                                | Platforms             | Multiple connections | Cached on disk |
+| ------------ | --------------------------------------------------------------- | --------------------- | -------------------- | -------------- |
+| **Git**      | Commits from local repositories (and WSL on Windows)            | Windows, macOS, Linux | Yes                  | No             |
+| **GitLab**   | Merge requests, pushes, comments, and reviews                   | Windows, macOS, Linux | Yes                  | Yes            |
+| **GitHub**   | Opened pull requests and issues, submitted reviews, and commits | Windows, macOS, Linux | Yes                  | Yes            |
+| **Jira**     | Issues assigned to or reported by you (Jira Data Center)        | Windows, macOS, Linux | Yes                  | Yes            |
+| **Outlook**  | Calendar meetings from the running Outlook desktop app          | Windows, macOS        | No                   | No             |
+| **Calendar** | Events from `https://`/`webcal://` ICS feeds or `.ics` files    | Windows, macOS, Linux | Yes                  | No             |
+| **System**   | Boot, shutdown, and (macOS) sleep/wake sessions                 | Windows, macOS        | No                   | No             |
+| **Figma**    | Versions, edit checkpoints, comments, and replies               | Windows, macOS, Linux | Yes                  | Yes            |
 
 Each source below lists its entry types, Timeline subtitle line, detail panel fields (empty fields are omitted), and configuration keys.
 
@@ -290,7 +290,7 @@ Each source below lists its entry types, Timeline subtitle line, detail panel fi
 
 - **Entries:** One per commit authored with any of your emails across all refs, matched case-insensitively against every `user.email` found across your configured Git connections (local configs and WSL global configs). Commits are filtered by author time, walking 30 days of committer history before the range so rebased commits are not missed. Worktrees and duplicate clones are deduplicated by commit hash.
 - **Timeline line:** repository · branch (`HEAD` commit only) · 7-character hash
-- **Detail panel:** Repository, Branch, Commit (full hash), Author, Message (plus a GitLab section when merged into a **git/lab** entry)
+- **Detail panel:** Repository, Branch, Commit (full hash), Author, Message (plus a section for each attached code host)
 - **Integration:** Library-backed (`gix`, in-process) on local disks; runs `git` inside the distribution (`wsl.exe -d <distro>`) for WSL connections on Windows.
 - **Configuration:** Optional `dirs` list (folders with `.git` are read directly; other folders are scanned up to 4 levels deep; unset defaults to your home folder, or `~` in WSL; an empty list `[]` scans nothing) and optional `wsl` distribution name on Windows. When adding a Git source on Windows, **Add source** lists this computer and user WSL distributions (skipping Docker, Rancher, and Podman distributions).
 
@@ -320,12 +320,12 @@ Each source below lists its entry types, Timeline subtitle line, detail panel fi
 
 ### GitHub
 
-- **Entries** cover the pull requests and issues you opened and each review you submitted, with its state, from repositories the token can read.
-- The **Timeline line** shows repository · action · item number.
-- The **detail panel** shows the action, repository, and PR or issue number. It links to the item when GitHub supplies a URL on the configured web origin.
+- **Entries** cover the pull requests and issues you opened and each review you submitted, with its state, from repositories the token can read. Commits come from default-branch history in repositories GitHub lists for your contributions. They use the commit date. A repository may be omitted when GitHub assigns its contribution to an author date outside the requested range. When you grant access to another repository, its commits appear as cached days are fetched again. Settled GitHub days can stay fresh for up to 30 days.
+- The **Timeline line** shows repository · action · item number or short commit SHA.
+- The **detail panel** shows the action, repository, and PR or issue number or full commit SHA. It links to the item when GitHub supplies a URL on the configured web origin.
 - For **configuration**, add **GitHub** in the desktop app or run `activity-log sources add github`. Set up one connection per account with the `url` and `token` fields. Use `https://github.com` or your GitHub Enterprise web URL. Activity Log derives the API URL and seals the token for the web origin. [GitHub API origins](docs/adr/0007-github-api-origin.md)
 
-- For a **fine-grained token**, select the repositories to include and grant **Read-only** access to **Contents**, **Issues**, and **Pull requests**. GitHub adds **Metadata** read access automatically. [Create a fine-grained token](https://github.com/settings/personal-access-tokens/new?name=Activity%20Log&contents=read&issues=read&pull_requests=read)
+- For a **fine-grained token**, select the repositories to include and grant **Read-only** access to **Contents**, **Issues**, and **Pull requests**. Commit history requires **Contents**. GitHub adds **Metadata** read access automatically. [Create a fine-grained token](https://github.com/settings/personal-access-tokens/new?name=Activity%20Log&contents=read&issues=read&pull_requests=read)
 - If you need a **classic token**, use the broader `repo` scope. Activity Log makes read-only requests. Authorize the token for SSO if your organization requires it. [Authorize a classic token for SSO](https://docs.github.com/en/authentication/authenticating-with-single-sign-on/authorizing-a-personal-access-token-for-use-with-single-sign-on)
 
 ### Jira Data Center

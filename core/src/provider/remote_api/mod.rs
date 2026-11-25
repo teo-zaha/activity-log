@@ -16,7 +16,7 @@ use crate::{
     provider::{
         provider_check_result::ProviderCheckResult,
         provider_runtime::check_time_left,
-        remote_error::{ApiError, Quota, busy, query_data, retry_after},
+        remote_error::{ApiError, QueryAnswer, Quota, busy, query_data, retry_after},
     },
 };
 
@@ -224,6 +224,17 @@ impl RemoteClient {
     ) -> Result<T, PostJsonError> {
         let response = self.post_json(url, body, retry).await?;
         query_data(response, &[&self.secret]).map_err(PostJsonError::from)
+    }
+
+    /// Gives a provider its response envelope to apply its own partial-answer policy.
+    pub(crate) async fn post_graphql_answer<B: Serialize + ?Sized>(
+        &self,
+        url: Url,
+        body: &B,
+        retry: Retry,
+    ) -> Result<QueryAnswer, PostJsonError> {
+        let response = self.post_json(url, body, retry).await?;
+        QueryAnswer::read(response, &[&self.secret]).map_err(PostJsonError::from)
     }
 
     async fn request_json<T: DeserializeOwned>(

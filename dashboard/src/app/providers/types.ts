@@ -31,8 +31,8 @@ export interface EntryBadgeVm {
   source: Source
   label: string
   icon: string
-  /** A second source sharing the badge in its own colours, such as `LAB` after `GIT`. */
-  split?: EntryBadgeSplit
+  /** Other sources sharing the badge in their own colours, such as `LAB` after `GIT`. */
+  splits?: readonly EntryBadgeSplit[]
 }
 
 export interface EntryBadgeSplit {

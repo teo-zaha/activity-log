@@ -131,6 +131,27 @@ fn github_review_export_uses_repository_and_escapes_the_title() {
     assert!(!markdown.lines().any(|line| line == "## Example"));
 }
 #[test]
+fn github_commit_export_includes_the_branch_and_short_sha() {
+    let entry = serde_json::from_value(serde_json::json!({
+        "source": "github",
+        "connection": "work",
+        "id": "C_example",
+        "timestamp": "2026-03-10T09:00:00Z",
+        "repository": "acme/widgets",
+        "type": "committed",
+        "sha": "0123456789abcdef0123456789abcdef01234567",
+        "message": "Fix *widgets*",
+        "branch": "main",
+    }))
+    .unwrap();
+    let markdown = to_markdown(&log_of(vec![entry]), &FixedOffset::east_opt(0).unwrap());
+
+    assert!(markdown.contains(
+        "- **[github]** `acme/widgets` Committed to `main` `0123456` Fix \\*widgets\\* (09:00)\n"
+    ));
+}
+
+#[test]
 fn figma_markdown_escapes_the_file_name_and_text_of_each_activity() {
     use crate::model::{ConnectionName, FigmaActivity, FigmaEntry, FigmaTag};
     let entry = |activity| {

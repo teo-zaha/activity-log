@@ -91,7 +91,7 @@ async fn collects_openings_and_each_submitted_review_across_distinct_pages() {
         }
 
         match body["query"].as_str().unwrap() {
-            VIEWER => answer(json!({ "viewer": { "login": "jdoe" } })),
+            VIEWER => answer(json!({ "viewer": { "id": "U_example", "login": "jdoe" } })),
             OPENED_PULL_REQUESTS if variables["after"].is_null() => answer(contributions(
                 vec![
                     json!({ "occurredAt": START,
@@ -140,6 +140,7 @@ async fn collects_openings_and_each_submitted_review_across_distinct_pages() {
                     ], None,
                 ) } }))
             }
+            commits::REPOSITORIES => answer(commit_discovery(&[], 0)),
             OWN_PULL_REQUESTS => {
                 assert!(variables["after"].is_null());
                 answer(json!({ "viewer": { "page": page(vec![
@@ -171,7 +172,7 @@ async fn collects_openings_and_each_submitted_review_across_distinct_pages() {
         warnings,
         ["Omitted 2 GitHub links to another origin, first: https://other.example.org"]
     );
-    assert_eq!(server.requests().len(), 7);
+    assert_eq!(server.requests().len(), 8);
     assert_eq!(
         entries
             .iter()
@@ -246,7 +247,7 @@ async fn a_partial_contribution_answer_fails_collection_with_its_typed_cause() {
     let server = TestServer::start(|request| {
         let body = request_body(request);
         if body["query"] == VIEWER {
-            return answer(json!({ "viewer": { "login": "jdoe" } }));
+            return answer(json!({ "viewer": { "id": "U_example", "login": "jdoe" } }));
         }
         Reply::json(
             200,
@@ -271,7 +272,7 @@ async fn a_repeated_cursor_stops_before_it_is_requested_again() {
     let server = TestServer::start(|request| {
         let body = request_body(request);
         if body["query"] == VIEWER {
-            return answer(json!({ "viewer": { "login": "jdoe" } }));
+            return answer(json!({ "viewer": { "id": "U_example", "login": "jdoe" } }));
         }
         assert_eq!(body["query"], OPENED_PULL_REQUESTS);
         answer(contributions(vec![], Some("same-cursor")))
@@ -343,7 +344,7 @@ async fn wrong_review_pages_keep_their_protocol_error_kind() {
         let server = TestServer::start(move |request| {
             let body = request_body(request);
             match body["query"].as_str().unwrap() {
-                VIEWER => answer(json!({ "viewer": { "login": "jdoe" } })),
+                VIEWER => answer(json!({ "viewer": { "id": "U_example", "login": "jdoe" } })),
                 OPENED_PULL_REQUESTS | OPENED_ISSUES => answer(contributions(vec![], None)),
                 REVIEWED_PULL_REQUESTS => {
                     let reviews = match expected {
@@ -356,7 +357,7 @@ async fn wrong_review_pages_keep_their_protocol_error_kind() {
                             row["author"]["login"] = json!("other-example-user");
                             page(vec![row], None)
                         }
-                        CollectionError::RepeatedPage => unreachable!("checked separately"),
+                        _ => unreachable!("checked separately"),
                     };
                     answer(contributions(
                         vec![json!({ "pullRequest": pull("pr-a", 12, IN_RANGE, reviews) })],
@@ -371,5 +372,329 @@ async fn wrong_review_pages_keep_their_protocol_error_kind() {
         });
         let error = collect(&api(&server), options()).await.unwrap_err();
         assert_eq!(error.downcast::<CollectionError>().unwrap(), expected);
+    }
+}
+
+// Live read-only check: use a repository with one viewer commit whose authored and committed
+// dates fall in different UTC windows. In each window compare CommitRepositories' total to
+// the returned list length, then use CommitHistory to check dates and exact range endpoints.
+// Record the typed error paths from refused history requests, including MoreCommitHistory
+// when there is a continuation. Record shapes and counts only.
+
+fn commit_discovery(ids: &[&str], total: usize) -> Value {
+    let repositories = ids
+        .iter()
+        .map(|id| json!({"repository": {"id": id}}))
+        .collect::<Vec<_>>();
+    json!({"viewer": {"contributionsCollection": {
+        "restrictedContributionsCount": 0,
+        "totalRepositoriesWithContributedCommits": total,
+        "commitContributionsByRepository": repositories,
+    }}})
+}
+
+fn full_commit_discovery() -> Value {
+    let ids: Vec<_> = (0..100).map(|i| format!("repo-{i}")).collect();
+    let names: Vec<_> = ids.iter().map(String::as_str).collect();
+    commit_discovery(&names, 101)
+}
+
+fn history_repository(id: &str, history: Value) -> Value {
+    json!({
+        "id": id,
+        "nameWithOwner": "acme/widgets",
+        "defaultBranchRef": {"name": "main", "target": {"history": history}},
+    })
+}
+
+const COMMIT_SHA: &str = "0123456789abcdef0123456789abcdef01234567";
+
+fn commit_row(id: &str, date: &str) -> Value {
+    json!({
+        "id": id,
+        "oid": COMMIT_SHA,
+        "committedDate": date,
+        "messageHeadline": "Build widgets",
+    })
+}
+
+fn standard_query(query: &str) -> Option<Reply> {
+    match query {
+        VIEWER => Some(answer(
+            json!({"viewer": {"id": "U_example", "login": "jdoe"}}),
+        )),
+        OPENED_PULL_REQUESTS | OPENED_ISSUES | REVIEWED_PULL_REQUESTS => {
+            Some(answer(contributions(vec![], None)))
+        }
+        OWN_PULL_REQUESTS => Some(answer(json!({"viewer": {"page": page(vec![], None)}}))),
+        _ => None,
+    }
+}
+
+#[tokio::test]
+async fn commit_history_splits_discovery_and_keeps_only_completed_readable_repositories() {
+    const MID: &str = "2026-11-11T00:00:00Z";
+    let server = TestServer::start(|request| {
+        let body = request_body(request);
+        let query = body["query"].as_str().unwrap();
+        let variables = &body["variables"];
+        if let Some(reply) = standard_query(query) {
+            return reply;
+        }
+        match query {
+            commits::REPOSITORIES => {
+                assert_eq!(variables["maxRepositories"], 100);
+                let bounds = (
+                    variables["from"].as_str().unwrap(),
+                    variables["to"].as_str().unwrap(),
+                );
+                match bounds {
+                    (START, END) => answer(full_commit_discovery()),
+                    (START, MID) => answer(commit_discovery(&["repo-a"], 1)),
+                    (MID, END) => answer(commit_discovery(
+                        &["repo-a", "repo-b", "repo-c", "repo-d", "repo-e"],
+                        5,
+                    )),
+                    _ => panic!("unexpected bounds {bounds:?}"),
+                }
+            }
+            commits::HISTORY => {
+                assert_eq!(
+                    variables["ids"],
+                    json!(["repo-a", "repo-b", "repo-c", "repo-d", "repo-e"])
+                );
+                assert_eq!(variables["viewerId"], "U_example");
+                assert_eq!(variables["from"], START);
+                assert_eq!(variables["to"], END);
+                let mut first_commit = commit_row("C_start", START);
+                let host = request.header("host").unwrap();
+                first_commit["url"] =
+                    json!(format!("http://{host}/acme/widgets/commit/{COMMIT_SHA}"));
+                let data = json!({"nodes": [
+                    history_repository("repo-a", page(vec![first_commit, commit_row("C_end", END)], Some("a-next"))),
+                    {},
+                    null,
+                    {"id": "repo-d", "nameWithOwner": "acme/empty", "defaultBranchRef": null},
+                    history_repository("repo-e", page(vec![commit_row("C_partial", IN_RANGE)], Some("e-next"))),
+                ]});
+                Reply::json(
+                    200,
+                    json!({"data": data, "errors": [{
+                        "type": "FORBIDDEN", "path": ["nodes", 1, "defaultBranchRef"]
+                    }]})
+                    .to_string(),
+                )
+            }
+            commits::MORE_HISTORY => match variables["id"].as_str().unwrap() {
+                "repo-a" => {
+                    assert_eq!(variables["after"], "a-next");
+                    let mut row = commit_row("C_in", IN_RANGE);
+                    row["messageHeadline"] = json!(" ");
+                    answer(json!({"node": history_repository("repo-a", page(vec![row], None))}))
+                }
+                "repo-e" => {
+                    assert_eq!(variables["after"], "e-next");
+                    Reply::json(
+                        200,
+                        json!({"data": {"node": null}, "errors": [{
+                            "type": "NOT_FOUND", "path": ["node", "defaultBranchRef", "target", "history"]
+                        }]})
+                        .to_string(),
+                    )
+                }
+                id => panic!("unexpected continuation {id}"),
+            },
+            _ => panic!("unexpected operation {query}"),
+        }
+    });
+    let connection = ConnectionId::new(Source::Github, "commit-history");
+    let scope = connection.to_string();
+    let entries = diagnostics::in_connection(connection, collect(&api(&server), options()))
+        .await
+        .unwrap();
+    assert_eq!(
+        entries
+            .iter()
+            .map(|entry| entry.id.as_str())
+            .collect::<Vec<_>>(),
+        ["C_start", "C_in"]
+    );
+    assert!(matches!(
+        &entries[0].action,
+        GitHubAction::Committed { sha, branch, message, web_url }
+        if sha == COMMIT_SHA && branch == "main" && message.as_deref() == Some("Build widgets")
+            && web_url.as_deref() == Some(format!("{}/acme/widgets/commit/{COMMIT_SHA}", server.url.trim_end_matches('/')).as_str())
+    ));
+    assert!(matches!(
+        entries[1].action,
+        GitHubAction::Committed { message: None, .. }
+    ));
+    assert_eq!(
+        diagnostics::entries()
+            .into_iter()
+            .filter(|row| row.scope == scope && row.level == LogLevel::Warn)
+            .map(|row| row.message)
+            .collect::<Vec<_>>(),
+        [
+            "Could not read commit history for 3 GitHub repositories. Check repository access and Contents permission."
+        ]
+    );
+}
+
+#[tokio::test]
+async fn a_truncated_one_day_discovery_fails_the_window() {
+    let server = TestServer::start(|request| {
+        let body = request_body(request);
+        let query = body["query"].as_str().unwrap();
+        if let Some(reply) = standard_query(query) {
+            return reply;
+        }
+        assert_eq!(query, commits::REPOSITORIES);
+        answer(full_commit_discovery())
+    });
+    let start = options().start;
+    let error = collect(
+        &api(&server),
+        CollectOptions {
+            start,
+            end: start + Days::new(1),
+        },
+    )
+    .await
+    .unwrap_err();
+    assert_eq!(
+        error.downcast_ref::<CollectionError>(),
+        Some(&CollectionError::IncompleteCommitDiscovery)
+    );
+}
+
+#[tokio::test]
+async fn discovery_below_the_cap_warns_and_keeps_available_commits() {
+    let server = TestServer::start(|request| {
+        let body = request_body(request);
+        let query = body["query"].as_str().unwrap();
+        if let Some(reply) = standard_query(query) {
+            return reply;
+        }
+        match query {
+            commits::REPOSITORIES => {
+                assert_eq!(body["variables"]["from"], START);
+                assert_eq!(body["variables"]["to"], END);
+                answer(commit_discovery(&["repo-a"], 3))
+            }
+            commits::HISTORY => answer(json!({"nodes": [
+                history_repository("repo-a", page(vec![commit_row("C_start", START)], None))
+            ]})),
+            _ => panic!("unexpected operation {query}"),
+        }
+    });
+    let connection = ConnectionId::new(Source::Github, "short-discovery");
+    let scope = connection.to_string();
+    let entries = diagnostics::in_connection(connection, collect(&api(&server), options()))
+        .await
+        .unwrap();
+    assert_eq!(entries.len(), 1);
+    assert_eq!(entries[0].id, "C_start");
+    assert_eq!(
+        diagnostics::entries()
+            .into_iter()
+            .filter(|row| row.scope == scope && row.level == LogLevel::Warn)
+            .map(|row| row.message)
+            .collect::<Vec<_>>(),
+        [
+            "GitHub listed 2 fewer repositories than it reported in a commit contribution window. Check repository access."
+        ],
+    );
+}
+
+#[tokio::test]
+async fn a_repeated_commit_history_page_fails_the_window() {
+    let server = TestServer::start(|request| {
+        let body = request_body(request);
+        let query = body["query"].as_str().unwrap();
+        if let Some(reply) = standard_query(query) {
+            return reply;
+        }
+        match query {
+            commits::REPOSITORIES => answer(commit_discovery(&["repo-a"], 1)),
+            commits::HISTORY => answer(json!({"nodes": [
+                history_repository("repo-a", page(vec![commit_row("C_start", START)], Some("second")))
+            ]})),
+            commits::MORE_HISTORY => answer(json!({"node":
+                history_repository("repo-a", page(vec![commit_row("C_start", START)], None))
+            })),
+            _ => panic!("unexpected operation {query}"),
+        }
+    });
+    let error = collect(&api(&server), options()).await.unwrap_err();
+    assert_eq!(
+        error.downcast_ref::<CollectionError>(),
+        Some(&CollectionError::RepeatedPage)
+    );
+}
+
+#[tokio::test]
+async fn unrelated_and_non_access_history_errors_fail_the_window() {
+    for (code, path, kind) in [
+        ("FORBIDDEN", json!(["viewer"]), QueryErrorKind::Forbidden),
+        ("FORBIDDEN", json!(["nodes", 1]), QueryErrorKind::Forbidden),
+        (
+            "RATE_LIMITED",
+            json!(["nodes", 0]),
+            QueryErrorKind::RateLimited,
+        ),
+    ] {
+        let server = TestServer::start(move |request| {
+            let body = request_body(request);
+            let query = body["query"].as_str().unwrap();
+            if let Some(reply) = standard_query(query) {
+                return reply;
+            }
+            match query {
+                commits::REPOSITORIES => answer(commit_discovery(&["repo-a"], 1)),
+                commits::HISTORY => Reply::json(
+                    200,
+                    json!({"data": {"nodes": [null]}, "errors": [{"type": code, "path": path}]})
+                        .to_string(),
+                ),
+                _ => panic!("unexpected operation {query}"),
+            }
+        });
+        let error = collect(&api(&server), options()).await.unwrap_err();
+        let remote = error.downcast::<RemoteFailure>().unwrap();
+        assert!(matches!(remote.error, ApiError::Query(refusal) if refusal.kinds().eq([kind])));
+    }
+}
+
+#[tokio::test]
+async fn history_rejects_a_changed_repository_or_default_branch() {
+    use CollectionError::{CommitBranchChanged, CommitRepositoryMismatch};
+    for (first_id, more_id, branch, expected) in [
+        ("repo-b", "repo-a", "main", CommitRepositoryMismatch),
+        ("repo-a", "repo-b", "main", CommitRepositoryMismatch),
+        ("repo-a", "repo-a", "next", CommitBranchChanged),
+    ] {
+        let server = TestServer::start(move |request| {
+            let body = request_body(request);
+            let query = body["query"].as_str().unwrap();
+            if let Some(reply) = standard_query(query) {
+                return reply;
+            }
+            match query {
+                commits::REPOSITORIES => answer(commit_discovery(&["repo-a"], 1)),
+                commits::HISTORY => answer(json!({"nodes": [
+                    history_repository(first_id, page(vec![commit_row("C_start", START)], Some("second")))
+                ]})),
+                commits::MORE_HISTORY => {
+                    let mut row =
+                        history_repository(more_id, page(vec![commit_row("C_in", IN_RANGE)], None));
+                    row["defaultBranchRef"]["name"] = json!(branch);
+                    answer(json!({"node": row}))
+                }
+                _ => panic!("unexpected operation {query}"),
+            }
+        });
+        let error = collect(&api(&server), options()).await.unwrap_err();
+        assert_eq!(error.downcast_ref::<CollectionError>(), Some(&expected));
     }
 }

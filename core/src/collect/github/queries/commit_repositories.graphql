@@ -1,0 +1,13 @@
+query CommitRepositories($from: DateTime!, $to: DateTime!, $maxRepositories: Int!) {
+  viewer {
+    contributionsCollection(from: $from, to: $to) {
+      restrictedContributionsCount
+      totalRepositoriesWithContributedCommits
+      commitContributionsByRepository(maxRepositories: $maxRepositories) {
+        repository {
+          id
+        }
+      }
+    }
+  }
+}

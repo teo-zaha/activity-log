@@ -1,5 +1,6 @@
 query ActivityViewer {
   viewer {
+    id
     login
   }
 }

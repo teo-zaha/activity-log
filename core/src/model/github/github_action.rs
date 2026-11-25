@@ -16,4 +16,14 @@ pub enum GitHubAction {
         pull_request: PullRequestRef,
         state: GitHubReviewState,
     },
+    Committed {
+        sha: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[ts(optional)]
+        message: Option<String>,
+        branch: String,
+        #[serde(default, skip_serializing_if = "Option::is_none", rename = "webUrl")]
+        #[ts(optional, rename = "webUrl")]
+        web_url: Option<String>,
+    },
 }

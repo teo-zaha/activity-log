@@ -157,6 +157,23 @@ fn github_line(entry: &GitHubEntry, time: impl std::fmt::Display) -> String {
                 &pull_request.title,
             )
         }
+        GitHubAction::Committed {
+            sha,
+            message,
+            branch,
+            ..
+        } => {
+            let short_sha = sha.chars().take(7).collect::<String>();
+            let headline = message
+                .as_deref()
+                .map_or_else(String::new, |message| format!(" {}", text(message)));
+            return format!(
+                "- **[github]** {} Committed to {} {}{headline} ({time})\n",
+                code(&entry.repository),
+                code(branch),
+                code(&short_sha),
+            );
+        }
     };
     format!(
         "- **[github]** {} {action} {kind} #{number} {} ({time})\n",

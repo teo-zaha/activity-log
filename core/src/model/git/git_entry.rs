@@ -1,7 +1,11 @@
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
-use crate::model::{ConnectionName, GitTag, Timestamp, gitlab::gitlab_entry::GitLabEntry};
+use crate::model::{
+    ConnectionName, GitTag, Timestamp,
+    github::{GitHubAction, GitHubEntry},
+    gitlab::gitlab_entry::GitLabEntry,
+};
 
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
 #[ts(export)]
@@ -29,11 +33,23 @@ pub struct GitEntry {
     #[serde(rename = "gitlabEvent")]
     #[ts(rename = "gitlabEvent", optional)]
     pub gitlab_event: Option<Box<GitLabEntry>>,
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        rename = "githubEvent",
+        deserialize_with = "read_github_commit"
+    )]
+    #[ts(
+        rename = "githubEvent",
+        optional,
+        type = "Extract<GitHubEntry, { type: 'committed' }>"
+    )]
+    pub github_event: Option<Box<GitHubEntry>>,
 }
 
 impl GitEntry {
     pub(crate) fn has_host_event(&self) -> bool {
-        self.gitlab_event.is_some()
+        self.gitlab_event.is_some() || self.github_event.is_some()
     }
 
     pub fn new(
@@ -55,6 +71,23 @@ impl GitEntry {
             author,
             branch,
             gitlab_event: None,
+            github_event: None,
         }
     }
+}
+
+fn read_github_commit<'de, D>(deserializer: D) -> Result<Option<Box<GitHubEntry>>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    use serde::de::Error as _;
+
+    let event = Option::<Box<GitHubEntry>>::deserialize(deserializer)?;
+    if event
+        .as_ref()
+        .is_some_and(|entry| !matches!(entry.action, GitHubAction::Committed { .. }))
+    {
+        return Err(D::Error::custom("a folded GitHub event must name a commit"));
+    }
+    Ok(event)
 }

@@ -4,6 +4,10 @@ pub(super) enum CollectionError {
     MissingNextCursor,
     ReviewPullRequestMismatch,
     ReviewAuthorMismatch,
+    IncompleteCommitDiscovery,
+    CommitRepositoryMismatch,
+    CommitRepositoryUnavailable,
+    CommitBranchChanged,
 }
 
 impl std::fmt::Display for CollectionError {
@@ -15,6 +19,18 @@ impl std::fmt::Display for CollectionError {
                 "GitHub returned reviews for a different pull request"
             }
             Self::ReviewAuthorMismatch => "GitHub returned a review by a different user",
+            Self::IncompleteCommitDiscovery => {
+                "GitHub did not list every repository with commits for one day"
+            }
+            Self::CommitRepositoryMismatch => {
+                "GitHub returned commit history for a different repository"
+            }
+            Self::CommitRepositoryUnavailable => {
+                "GitHub did not return the repository's commit history"
+            }
+            Self::CommitBranchChanged => {
+                "GitHub changed the default branch during commit history pagination"
+            }
         })
     }
 }

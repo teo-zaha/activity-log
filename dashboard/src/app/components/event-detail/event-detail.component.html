@@ -268,7 +268,7 @@
                         [source]="entry.badge.source"
                         [label]="entry.badge.label"
                         [icon]="entry.badge.icon"
-                        [split]="entry.badge.split"
+                        [splits]="entry.badge.splits ?? []"
                       />
                       @if (entry.joinUrl) {
                         <mat-icon class="overlap-online" title="Online meeting">videocam</mat-icon>

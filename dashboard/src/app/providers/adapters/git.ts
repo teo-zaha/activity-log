@@ -6,6 +6,7 @@ import {
   type ProviderDetailField,
 } from '../types'
 import { createBadge, joinParts, toDefinedStrings } from '../utils'
+import { githubAdapter } from './github'
 import { gitlabAdapter } from './gitlab'
 
 class GitEntryUiAdapter extends EntryUiAdapter<GitEntry> {
@@ -18,30 +19,36 @@ class GitEntryUiAdapter extends EntryUiAdapter<GitEntry> {
       { label: 'Message', value: entry.message },
       { label: 'GitLab event', value: entry.gitlabEvent?.title ?? '' },
     ].filter(field => field.value)
-    const mergedGitlabEntry = entry.gitlabEvent ? gitlabAdapter.create(entry.gitlabEvent) : null
-    const detailSections: EntryDetailSection[] =
-      mergedGitlabEntry == null
-        ? []
-        : [
-            {
-              source: provider.source,
-              title: provider.label,
-              icon: provider.providerIcon,
-              fields: detailFields,
-            },
-            {
-              source: gitlabAdapter.source,
-              title: gitlabAdapter.label,
-              icon: gitlabAdapter.providerIcon,
-              fields: mergedGitlabEntry.detailFields,
-            },
-          ]
+    const gitlab = entry.gitlabEvent ? gitlabAdapter.create(entry.gitlabEvent) : null
+    const github = entry.githubEvent ? githubAdapter.create(entry.githubEvent) : null
+    const hosts = [
+      gitlab && { entry: gitlab, label: 'Lab' },
+      github && { entry: github, label: 'Hub' },
+    ].filter(host => host !== null)
+    const detailSections: EntryDetailSection[] = hosts.length
+      ? [
+          {
+            source: provider.source,
+            title: provider.label,
+            icon: provider.providerIcon,
+            fields: detailFields,
+          },
+          ...hosts.map(({ entry }) => ({
+            source: entry.source,
+            title: entry.provider.label,
+            icon: entry.provider.providerIcon,
+            fields: entry.detailFields,
+          })),
+        ]
+      : []
     const badge = createBadge(provider.source, provider.label, 'commit')
-    if (entry.gitlabEvent) badge.split = { source: gitlabAdapter.source, label: 'Lab' }
-    const badges = entry.gitlabEvent
+    if (hosts.length) {
+      badge.splits = hosts.map(({ entry, label }) => ({ source: entry.source, label }))
+    }
+    const badges = hosts.length
       ? [
           createBadge(provider.source, provider.label, provider.providerIcon),
-          createBadge(gitlabAdapter.source, gitlabAdapter.label, gitlabAdapter.providerIcon),
+          ...hosts.map(({ entry }) => entry.badge),
         ]
       : [badge]
 
@@ -58,14 +65,15 @@ class GitEntryUiAdapter extends EntryUiAdapter<GitEntry> {
         entry.message,
         entry.branch,
         entry.repo,
-        ...(mergedGitlabEntry?.searchTerms ?? []),
+        ...hosts.flatMap(({ entry }) => entry.searchTerms),
       ]),
       calendarDurationMinutes: null,
       detailFields,
+      detailLink: github?.detailLink,
       badge,
       badges,
       detailSections,
-      styleKey: entry.gitlabEvent ? 'gitab' : provider.source,
+      styleKey: [provider.source, ...hosts.map(({ entry }) => entry.source)].join(' '),
     })
   }
 }

@@ -41,11 +41,12 @@ export function parseEntryKey(value: string): EntryKey | null {
   return isSource(source) ? `${source}/${name}/${value.slice(second + 1)}` : null
 }
 
-/** The connections an entry came from: a git commit also names its merged GitLab push. */
+/** The entry's own connection followed by the connections that supplied any folded events. */
 export function entryConnectionKeys(entry: ActivityEntry): ConnectionKey[] {
-  const own: ConnectionKey = `${entry.source}/${entry.connection}`
-  if (entry.source === 'git' && entry.gitlabEvent) {
-    return [own, `gitlab/${entry.gitlabEvent.connection}`]
+  const keys: ConnectionKey[] = [`${entry.source}/${entry.connection}`]
+  if (entry.source === 'git') {
+    if (entry.gitlabEvent) keys.push(`gitlab/${entry.gitlabEvent.connection}`)
+    if (entry.githubEvent) keys.push(`github/${entry.githubEvent.connection}`)
   }
-  return [own]
+  return keys
 }

@@ -552,7 +552,7 @@ async fn collect(args: &CollectArgs, config: Option<&Path>) -> Result<ExitCode> 
     }
     if collected.summary.merged_count > 0 {
         status.say(&format!(
-            "  {} GitLab pushes shown with their git commits",
+            "  Git commits with code host activity ({})",
             collected.summary.merged_count
         ))?;
     }

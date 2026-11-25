@@ -19,6 +19,7 @@ const GITHUB_OPENED_PR: &str = r#"{"source":"github","connection":"oss","id":"PR
 const GITHUB_LINKED_PR: &str = r#"{"source":"github","connection":"oss","id":"PR_z","timestamp":"2026-11-17T10:00:00Z","repository":"acme/widgets","type":"opened","target":{"kind":"pullRequest","number":12,"title":"Add widget","webUrl":"https://github.com/acme/widgets/pull/12"}}"#;
 const GITHUB_STACKED_PR: &str = r#"{"source":"github","connection":"oss","id":"PR_y","timestamp":"2026-11-17T10:00:00Z","repository":"acme/widgets","type":"opened","target":{"kind":"pullRequest","number":12,"title":"Add widget","changeStack":{"current":{"number":12,"title":"Add widget","webUrl":"https://github.com/acme/widgets/pull/12"},"below":[{"number":11,"title":"Parse widget"}],"bottom":{"kind":"reached","branch":"main"},"above":{"changes":[],"end":{"kind":"complete"}}}}}"#;
 const GITHUB_REVIEWED: &str = r#"{"source":"github","connection":"oss","id":"PRR_x","timestamp":"2026-11-17T10:05:00.000Z","repository":"acme/widgets","type":"reviewed","pullRequest":{"number":12,"title":"Add widget"},"state":"changesRequested"}"#;
+const GITHUB_COMMITTED: &str = r#"{"source":"github","connection":"oss","id":"C_example","timestamp":"2026-11-17T10:10:00Z","repository":"acme/widgets","type":"committed","sha":"0123456789abcdef0123456789abcdef01234567","message":"Add widget","branch":"main","webUrl":"https://github.com/acme/widgets/commit/0123456789abcdef0123456789abcdef01234567"}"#;
 const JIRA: &str = r#"{"source":"jira","connection":"work","id":"OPS-1:status:9","type":"statusChanged","timestamp":"2026-11-17T10:00:00+00:00","key":"OPS-1","title":"Rotate keys","status":"Done","issueType":"Task","fromStatus":"In Progress","toStatus":"Done"}"#;
 const OUTLOOK: &str = r#"{"source":"outlook","connection":"outlook","id":"AAMk1","timestamp":"2026-11-17T13:00:00+00:00","title":"Planning","location":"Room 4","organizer":"lead@example.org","isOrganizer":false,"durationMinutes":45,"busyStatus":"busy","meetingWeight":"busy","description":"Agenda","descriptionBlocks":[{"kind":"paragraph","segments":[{"kind":"text","text":"Agenda"}]}],"joinUrl":"https://meet.example.org/j/1"}"#;
 const OUTLOOK_BARE: &str = r#"{"source":"outlook","connection":"outlook","id":"AAMk2","timestamp":"2026-11-17T15:00:00+00:00","title":"Focus","durationMinutes":30,"meetingWeight":"none"}"#;
@@ -50,6 +51,11 @@ fn every_kind_keeps_its_wire_shape() {
     round_trip(GITHUB_LINKED_PR, Source::Github);
     round_trip(GITHUB_STACKED_PR, Source::Github);
     round_trip(GITHUB_REVIEWED, Source::Github);
+    round_trip(GITHUB_COMMITTED, Source::Github);
+    round_trip(
+        &GITHUB_COMMITTED.replace(r#""message":"Add widget","#, ""),
+        Source::Github,
+    );
     round_trip(JIRA, Source::Jira);
     round_trip(OUTLOOK, Source::Outlook);
     round_trip(OUTLOOK_BARE, Source::Outlook);
@@ -58,6 +64,29 @@ fn every_kind_keeps_its_wire_shape() {
     for fixture in [FIGMA_VERSION, FIGMA_EDITED, FIGMA_COMMENTED, FIGMA_REPLIED] {
         round_trip(fixture, Source::Figma);
     }
+}
+
+#[test]
+fn git_keeps_its_wire_shape_with_github_and_gitlab_attached() {
+    for git in [GIT, GIT_WITH_PUSH] {
+        let git = git.replace("1f3a", "0123456789abcdef0123456789abcdef01234567");
+        let base = git.strip_suffix('}').unwrap();
+        let folded = format!(r#"{base},"githubEvent":{GITHUB_COMMITTED}}}"#);
+        round_trip(&folded, Source::Git);
+    }
+}
+
+#[test]
+fn a_folded_github_event_must_be_a_github_commit() {
+    let base = GIT.strip_suffix('}').unwrap();
+    for event in [GITHUB_OPENED, GITLAB] {
+        let folded = format!(r#"{base},"githubEvent":{event}}}"#);
+        assert!(serde_json::from_str::<ActivityEntry>(&folded).is_err());
+    }
+    let mut missing_sha: serde_json::Value = serde_json::from_str(GITHUB_COMMITTED).unwrap();
+    missing_sha.as_object_mut().unwrap().remove("sha");
+    let folded = format!(r#"{base},"githubEvent":{missing_sha}}}"#);
+    assert!(serde_json::from_str::<ActivityEntry>(&folded).is_err());
 }
 
 /// B38: an entry is read as the kind its `source` names, or not at all.

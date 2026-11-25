@@ -25,13 +25,18 @@ describe('SourceBadgeComponent', () => {
     expect(screen.getByText('Git')).toBeTruthy()
   })
 
-  it('shows a second source after the first, in its own colours', async () => {
+  it('shows each attached source in its own colours', async () => {
     await render(
-      `<app-source-badge source="git" label="Git" [split]="{ source: 'gitlab', label: 'Lab' }" />`,
+      `<app-source-badge
+         source="git"
+         label="Git"
+         [splits]="[{ source: 'gitlab', label: 'Lab' }, { source: 'github', label: 'Hub' }]"
+       />`,
       { imports: [SourceBadgeComponent] }
     )
 
     expect(screen.getByText('Git').closest('[data-src]')?.getAttribute('data-src')).toBe('git')
     expect(screen.getByText('Lab').getAttribute('data-src')).toBe('gitlab')
+    expect(screen.getByText('Hub').getAttribute('data-src')).toBe('github')
   })
 })

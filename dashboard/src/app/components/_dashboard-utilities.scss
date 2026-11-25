@@ -1,3 +1,5 @@
+@use 'sass:list';
+@use 'sass:math';
 @use './dashboard-shared' as ui;
 
 // ── Source colours ───────────────────────────────────────────────────────────
@@ -29,16 +31,25 @@ html.dark img[data-mono] {
   filter: invert(1);
 }
 
-// `gitab`: a Git commit that absorbed its GitLab push, drawn in both sources' colours.
-[data-src='gitab'] {
-  --badge-bg: linear-gradient(135deg, var(--badge-git-bg) 50%, var(--badge-gitlab-bg) 50%);
-  --badge-fg: var(--text-primary);
-  --badge-accent: var(--badge-git-accent);
-  --badge-accent-fill: linear-gradient(
-    to bottom,
-    var(--badge-git-accent) 50%,
-    var(--badge-gitlab-accent) 50%
-  );
+// Keep these source combinations in the host order used by styleKey in providers/adapters/git.ts.
+@each $sources in (git gitlab), (git github), (git gitlab github) {
+  $bg-stops: ();
+  $accent-stops: ();
+  $count: list.length($sources);
+  @for $index from 1 through $count {
+    $source: list.nth($sources, $index);
+    $start: math.div(($index - 1) * 100%, $count);
+    $end: math.div($index * 100%, $count);
+    $bg-stops: list.append($bg-stops, var(--badge-#{$source}-bg) $start $end, comma);
+    $accent-stops: list.append($accent-stops, var(--badge-#{$source}-accent) $start $end, comma);
+  }
+
+  [data-src='#{$sources}'] {
+    --badge-bg: linear-gradient(135deg, #{$bg-stops});
+    --badge-fg: var(--text-primary);
+    --badge-accent: var(--badge-git-accent);
+    --badge-accent-fill: linear-gradient(to bottom, #{$accent-stops});
+  }
 }
 
 .u-kicker {

@@ -148,7 +148,7 @@
                             }}</span>
                           }
                           <span class="label">{{ row.entry.badge.label }}</span>
-                          @if (row.entry.badge.split; as split) {
+                          @for (split of row.entry.badge.splits ?? []; track split.source) {
                             <span class="split" [attr.data-src]="split.source">{{
                               split.label
                             }}</span>

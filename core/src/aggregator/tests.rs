@@ -763,3 +763,185 @@ fn benchmark_projection() {
         elapsed
     });
 }
+
+const MIRROR_SHA: &str = "0123456789abcdef0123456789abcdef01234567";
+fn hosted_github_commit(sha: &str, name: &str, id: &str, at: &str) -> ActivityEntry {
+    ActivityEntry::GitHub(crate::model::github::GitHubEntry {
+        source: crate::model::GitHubTag,
+        connection: name.into(),
+        id: id.into(),
+        timestamp: at.into(),
+        repository: "acme/widgets".into(),
+        action: crate::model::github::GitHubAction::Committed {
+            sha: sha.into(),
+            message: Some("Build a widget".into()),
+            branch: "main".into(),
+            web_url: None,
+        },
+    })
+}
+
+#[test]
+fn github_commits_fold_without_gitlab_and_stay_when_git_has_no_match() {
+    const FIRST: &str = "2026-03-10T10:00:00Z";
+    let matched = hosted_github_commit(MIRROR_SHA, "oss", "C_match", FIRST);
+    let orphan = hosted_github_commit(
+        "0123456789abcdef0123456789abcdef01234568",
+        "oss",
+        "C_orphan",
+        FIRST,
+    );
+
+    let (entries, remaining) =
+        fold_hosted_commits(vec![git_commit(MIRROR_SHA)], vec![matched, orphan]);
+    assert_eq!(entries[0].github_event.as_ref().unwrap().id, "C_match");
+    assert!(entries[0].gitlab_event.is_none());
+    assert_eq!(
+        remaining.iter().map(ActivityEntry::id).collect::<Vec<_>>(),
+        ["C_orphan"]
+    );
+}
+
+#[test]
+fn mirrors_fold_one_event_per_host_into_one_row_and_count_once() {
+    const FIRST: &str = "2026-03-10T09:00:00Z";
+    const SECOND: &str = "2026-03-10T10:00:00Z";
+    const LATE: &str = "2026-03-10T13:00:00Z";
+    for (gitlab_time, github_time) in [
+        (FIRST, SECOND),
+        (SECOND, FIRST),
+        (FIRST, "2026-03-10T10:00:00+01:00"),
+    ] {
+        let mut early_push = gitlab_push(MIRROR_SHA);
+        early_push.timestamp = gitlab_time.into();
+        early_push.id = "earliest".into();
+        let mut late_push = gitlab_push(MIRROR_SHA);
+        late_push.timestamp = LATE.into();
+        late_push.id = "later-lab".into();
+        let collected = collect_activity_from_results(
+            march(),
+            vec![
+                (
+                    id(Source::Git, "work"),
+                    vec![commit_in("work", MIRROR_SHA, FIRST)],
+                ),
+                (
+                    id(Source::Github, "work"),
+                    vec![
+                        hosted_github_commit(MIRROR_SHA, "work", "later-hub", LATE),
+                        hosted_github_commit(MIRROR_SHA, "work", "earliest", github_time),
+                    ],
+                ),
+                (
+                    id(Source::Gitlab, "work"),
+                    vec![
+                        ActivityEntry::GitLab(late_push),
+                        ActivityEntry::GitLab(early_push),
+                    ],
+                ),
+            ],
+            Vec::new(),
+            Vec::new(),
+        );
+        let folded: Vec<_> = collected
+            .log
+            .entries
+            .iter()
+            .filter_map(|entry| match entry {
+                ActivityEntry::Git(git) if git.has_host_event() => Some(git),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(folded.len(), 1);
+        assert_eq!(folded[0].connection, "work");
+        assert_eq!(folded[0].gitlab_event.as_ref().unwrap().id, "earliest");
+        assert_eq!(folded[0].github_event.as_ref().unwrap().id, "earliest");
+        assert_eq!(collected.summary.merged_count, 1);
+        assert!(
+            collected
+                .log
+                .entries
+                .iter()
+                .any(|entry| entry.id() == "later-hub")
+        );
+        assert!(
+            collected
+                .log
+                .entries
+                .iter()
+                .any(|entry| entry.id() == "later-lab")
+        );
+
+        let file = crate::export::render_export_request(crate::model::ExportRequest {
+            format: crate::model::OutputFormat::Json,
+            start: march().start.to_rfc3339(),
+            end: march().end.to_rfc3339(),
+            time_zone: "UTC".into(),
+            entries: collected.log.entries,
+        })
+        .unwrap();
+        let exported: crate::model::ActivityLog = serde_json::from_str(&file.content).unwrap();
+        assert_eq!(exported.summary.merged_count, 1);
+    }
+}
+
+#[test]
+fn a_carried_github_commit_folds_into_a_fresh_git_commit() {
+    let github = id(Source::Github, "oss");
+    let finished = vec![(
+        id(Source::Git, "work"),
+        vec![commit_in("work", MIRROR_SHA, "2026-03-10T09:00:00Z")],
+    )];
+    let carried = carried_for(
+        entries_of(&[(
+            github.clone(),
+            vec![hosted_github_commit(
+                MIRROR_SHA,
+                "oss",
+                "C_carried",
+                "2026-03-10T10:00:00Z",
+            )],
+        )]),
+        std::slice::from_ref(&github),
+        &finished,
+    );
+    let collected = collect_activity_from_results(march(), finished, vec![github], carried);
+    let [ActivityEntry::Git(entry)] = collected.log.entries.as_slice() else {
+        panic!("expected a single folded Git commit");
+    };
+    assert_eq!(entry.github_event.as_ref().unwrap().id, "C_carried");
+    assert_eq!(collected.summary.merged_count, 1);
+    assert_eq!(collected.summary.connections.len(), 1);
+}
+
+#[test]
+fn each_hosts_events_zip_onto_the_same_ordered_clones() {
+    const AT: &str = "2026-03-10T09:00:00Z";
+    for with_gitlab in [false, true] {
+        let mut first_clone = git_commit(MIRROR_SHA);
+        first_clone.connection = "a".into();
+        let mut second_clone = git_commit(MIRROR_SHA);
+        second_clone.connection = "z".into();
+        let mut hosts = vec![hosted_github_commit(MIRROR_SHA, "oss", "C_match", AT)];
+        if with_gitlab {
+            let mut second_push = gitlab_push(MIRROR_SHA);
+            second_push.id = "second".into();
+            hosts.extend([
+                ActivityEntry::GitLab(second_push),
+                ActivityEntry::GitLab(gitlab_push(MIRROR_SHA)),
+            ]);
+        }
+        let (rows, remaining) = fold_hosted_commits(vec![second_clone, first_clone], hosts);
+        assert!(remaining.is_empty());
+        assert!(rows[0].github_event.is_none());
+        assert_eq!(rows[1].github_event.as_ref().unwrap().id, "C_match");
+        assert_eq!(
+            rows[0].gitlab_event.as_ref().map(|entry| entry.id.as_str()),
+            with_gitlab.then_some("second")
+        );
+        assert_eq!(
+            rows[1].gitlab_event.as_ref().map(|entry| entry.id.as_str()),
+            with_gitlab.then_some(MIRROR_SHA)
+        );
+    }
+}

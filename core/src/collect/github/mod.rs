@@ -1,3 +1,5 @@
+mod commit_repositories;
+mod commits;
 mod error;
 mod pager;
 mod response;
@@ -26,7 +28,7 @@ use error::CollectionError;
 use pager::{Page, Pager};
 use response::{
     Contributions, HostedItem, MoreReviews, Opened, OwnPullRequest, OwnPullRequests, Review,
-    ReviewCandidate, ReviewContribution, ReviewState, User, Viewer,
+    ReviewCandidate, ReviewContribution, ReviewState, User, Viewer, ViewerUser,
 };
 
 const VIEWER: &str = include_str!("queries/viewer.graphql");
@@ -48,22 +50,29 @@ pub(crate) async fn collect_github(
 
 async fn collect(api: &GitHubApi, options: CollectOptions) -> Result<Vec<GitHubEntry>> {
     let Viewer {
-        viewer: User { login },
+        viewer: ViewerUser {
+            id,
+            user: User { login },
+        },
     } = api.graphql(VIEWER, &ViewerVariables {}).await?;
     let mut collection = Collection {
         api,
         options,
         login,
+        viewer_id: id,
         entries: Vec::new(),
         reviewed_pulls: HashSet::new(),
         skipped: 0,
         restricted: 0,
         links_elsewhere: None,
+        unreadable_repositories: HashSet::new(),
+        undiscovered_repositories: 0,
     };
     for window in windows(options) {
         collection.opened(window, OpenKind::PullRequest).await?;
         collection.opened(window, OpenKind::Issue).await?;
         collection.review_contributions(window).await?;
+        collection.commits_in(window).await?;
     }
     collection.own_pull_requests().await?;
 
@@ -73,6 +82,24 @@ async fn collect(api: &GitHubApi, options: CollectOptions) -> Result<Vec<GitHubE
             format!(
                 "{} GitHub contributions are in repositories this token cannot read",
                 collection.restricted
+            ),
+        );
+    }
+    if !collection.unreadable_repositories.is_empty() {
+        diagnostics::warn(
+            "github",
+            format!(
+                "Could not read commit history for {} GitHub repositories. Check repository access and Contents permission.",
+                collection.unreadable_repositories.len()
+            ),
+        );
+    }
+    if collection.undiscovered_repositories > 0 {
+        diagnostics::warn(
+            "github",
+            format!(
+                "GitHub listed {} fewer repositories than it reported in a commit contribution window. Check repository access.",
+                collection.undiscovered_repositories
             ),
         );
     }
@@ -164,11 +191,14 @@ struct Collection<'a> {
     api: &'a GitHubApi,
     options: CollectOptions,
     login: String,
+    viewer_id: String,
     entries: Vec<GitHubEntry>,
     reviewed_pulls: HashSet<String>,
     skipped: usize,
     restricted: u64,
     links_elsewhere: Option<(usize, Origin)>,
+    unreadable_repositories: HashSet<String>,
+    undiscovered_repositories: usize,
 }
 
 impl Collection<'_> {

@@ -13,7 +13,7 @@ use crate::{
     provider::{
         http_client_builder,
         remote_api::{IdField, PostJsonError, RemoteClient, Retry, identity_from},
-        remote_error::{ApiError, RemoteFailure},
+        remote_error::{ApiError, QueryAnswer, RemoteFailure},
     },
 };
 
@@ -95,15 +95,35 @@ impl GitHubApi {
         query: &'static str,
         variables: &V,
     ) -> Result<T> {
-        match self
-            .remote
-            .post_graphql(
-                self.graphql.clone(),
-                &Query { query, variables },
-                Retry::OnceShort,
-            )
-            .await
-        {
+        Self::query_result(
+            self.remote
+                .post_graphql(
+                    self.graphql.clone(),
+                    &Query { query, variables },
+                    Retry::OnceShort,
+                )
+                .await,
+        )
+    }
+
+    pub(crate) async fn graphql_answer<V: Serialize>(
+        &self,
+        query: &'static str,
+        variables: &V,
+    ) -> Result<QueryAnswer> {
+        Self::query_result(
+            self.remote
+                .post_graphql_answer(
+                    self.graphql.clone(),
+                    &Query { query, variables },
+                    Retry::OnceShort,
+                )
+                .await,
+        )
+    }
+
+    fn query_result<T>(result: Result<T, PostJsonError>) -> Result<T> {
+        match result {
             Ok(data) => Ok(data),
             Err(PostJsonError::Remote(error)) => Err(Self::failure(error).into()),
             Err(PostJsonError::Encode(error)) => {

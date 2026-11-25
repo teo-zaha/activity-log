@@ -18,6 +18,14 @@ pub(super) struct User {
 }
 
 #[derive(Deserialize)]
+pub(super) struct ViewerUser {
+    #[serde(deserialize_with = "nonblank")]
+    pub(super) id: String,
+    #[serde(flatten)]
+    pub(super) user: User,
+}
+
+#[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub(super) struct Contributions {
     pub(super) contributions_collection: ContributionPage,
@@ -112,7 +120,7 @@ pub(super) enum ReviewState {
     Pending,
 }
 
-fn nonblank<'de, D: Deserializer<'de>>(deserializer: D) -> Result<String, D::Error> {
+pub(super) fn nonblank<'de, D: Deserializer<'de>>(deserializer: D) -> Result<String, D::Error> {
     let value = String::deserialize(deserializer)?;
     if value.trim().is_empty() {
         return Err(D::Error::custom("expected nonblank text"));
