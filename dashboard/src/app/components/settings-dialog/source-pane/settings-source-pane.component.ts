@@ -21,7 +21,7 @@ import { AutoAnimateDirective } from '../../auto-animate/auto-animate.directive'
 import { FeedbackComponent } from '../../feedback/feedback.component'
 import { IconButtonComponent } from '../../button/icon-button.component'
 import { ButtonComponent } from '../../button/button.component'
-import { CredentialRecoveryComponent } from '../credential-recovery.component'
+import { WebFixActionComponent } from '../web-fix-action.component'
 import type {
   ProviderConfigCheckResponseDto,
   ProviderConfigFieldIssueDto,
@@ -103,7 +103,7 @@ interface StoredTag {
   selector: 'app-settings-source-pane',
   imports: [
     SourceHealthComponent,
-    CredentialRecoveryComponent,
+    WebFixActionComponent,
     RemovedSourceDraftComponent,
     AutoAnimateDirective,
     FeedbackComponent,
@@ -325,11 +325,11 @@ export class SettingsSourcePaneComponent {
 
   protected fieldFixAction(field: ProviderConfigFieldStateDto): WebFixAction | undefined {
     if (!isSecretField(field)) return undefined
-    if (this.pendingRequest() === null) {
-      return this.config.hasValue() && this.config.value().epoch === this.data.hostEpoch()
+    const saved =
+      this.config.hasValue() && this.config.value().epoch === this.data.hostEpoch()
         ? field.fixAction
         : undefined
-    }
+    if (saved?.kind === 'feedHelp' || this.pendingRequest() === null) return saved
     if (this.recovery()?.phase === 'reading' || this.shownRecovery()) return undefined
     const result = this.checkResult()
     const fix = result?.kind === 'issues' ? result.fieldFix : undefined

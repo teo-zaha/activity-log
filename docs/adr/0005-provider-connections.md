@@ -8,4 +8,6 @@ The file is the only list of sources. A new install has none and asks for a firs
 
 Git connections are locations (this computer, or a WSL distribution) rather than accounts. Emails found in any Git connection are pooled through a per-kind collection state and `finish_kind` step, so repositories without their own `user.email` keep matching across locations.
 
+Each Calendar connection keeps its own feed check and collection outcome. If a feed is unavailable, that connection’s health shows recovery based on the original feed host, including when the failure followed a redirect.
+
 This replaces the per-distribution `WSL_GIT_DIRS` map, `WSL_DISTROS` and the CLI's `--set KEY=VALUE`, none of which were released.

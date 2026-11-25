@@ -104,6 +104,20 @@ fn provider_fix_actions_keep_the_generated_wire_shape() {
         serde_json::to_value(ProviderProblem::ScopeMissing).unwrap(),
         json!("scopeMissing")
     );
+    assert_eq!(
+        serde_json::to_string(&ProviderProblem::FeedUnavailable).unwrap(),
+        r#""feedUnavailable""#
+    );
+    let recovery = ProviderFixAction::Web {
+        action: WebFixAction::FeedHelp {
+            guides: vec![],
+            recovery: Some("Paste the current ICS link.".into()),
+        },
+    };
+    assert_eq!(
+        serde_json::to_string(&recovery).unwrap(),
+        r#"{"kind":"web","action":{"kind":"feedHelp","guides":[],"recovery":"Paste the current ICS link."}}"#
+    );
     let ts = activity_typescript();
     for shape in [
         r#"export type ProviderFixAction = { "kind": "web", action: WebFixAction, } | { "kind": "local", target: LocalFixTarget, };"#,
@@ -112,6 +126,7 @@ fn provider_fix_actions_keep_the_generated_wire_shape() {
         "fieldFix?: ProviderConfigFieldFixDto",
         "classicUrl?: string",
         "\"scopeMissing\"",
+        "\"feedUnavailable\"",
         "\"iCloud\"",
     ] {
         assert!(ts.contains(shape), "{shape}");

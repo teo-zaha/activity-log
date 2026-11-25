@@ -4,7 +4,7 @@ import type { ProviderInfo, ProviderProblem, ProviderStatus } from '../../../../
 import { supportedOsLabel } from '../../../../providers/source-catalog'
 import { ButtonComponent } from '../../../button/button.component'
 import { FeedbackComponent } from '../../../feedback/feedback.component'
-import { CredentialRecoveryComponent } from '../../credential-recovery.component'
+import { WebFixActionComponent } from '../../web-fix-action.component'
 
 interface ProviderHealthVm {
   readonly icon: string
@@ -17,7 +17,7 @@ interface ProviderHealthVm {
 /** A source's startup check: how it went, when, on which systems, and "Check again". */
 @Component({
   selector: 'app-source-health',
-  imports: [ButtonComponent, CredentialRecoveryComponent, FeedbackComponent, MatIconModule],
+  imports: [ButtonComponent, WebFixActionComponent, FeedbackComponent, MatIconModule],
   templateUrl: './source-health.component.html',
   styleUrl: './source-health.component.scss',
 })
@@ -30,9 +30,9 @@ export class SourceHealthComponent {
   readonly recheck = output<void>()
 
   protected readonly supportedOsLabel = supportedOsLabel
-  protected readonly credentialAction = computed(() => {
+  protected readonly webAction = computed(() => {
     const fix = this.info().fixAction
-    return fix?.kind === 'web' && fix.action.kind === 'createToken' ? fix.action : undefined
+    return fix?.kind === 'web' ? fix.action : undefined
   })
 
   protected readonly health = computed<ProviderHealthVm>(() => {
@@ -83,6 +83,7 @@ const PROBLEM_ICONS: Partial<Record<ProviderProblem, string>> = {
   timedOut: 'timer_off',
   refused: 'lock',
   scopeMissing: 'lock',
+  feedUnavailable: 'link_off',
   throttled: 'speed',
   secretUnavailable: 'key_off',
   unreachable: 'cloud_off',
@@ -99,6 +100,7 @@ const PROBLEM_TITLES: Record<ProviderProblem, string | null> = {
   notConfigured: 'Not configured',
   refused: 'Access refused',
   scopeMissing: 'Token permission missing',
+  feedUnavailable: 'Calendar link unavailable',
   throttled: 'Server busy',
   unreachable: 'Server unreachable',
   notInstalled: 'Not installed',

@@ -6,7 +6,8 @@
 use std::fmt;
 
 use crate::{
-    model::{LocalApp, ProviderProblem},
+    collect::calendar::FeedUnavailable,
+    model::{CalendarFeedService, LocalApp, ProviderProblem},
     provider::{jira::api::JiraResponseError, remote_error::RemoteFailure},
 };
 
@@ -16,6 +17,7 @@ pub enum FixCause {
     AutomationDenied,
     FolderDenied,
     AppNotRunning(LocalApp),
+    FeedUnavailable(Option<CalendarFeedService>),
 }
 
 impl FixCause {
@@ -23,6 +25,7 @@ impl FixCause {
         match self {
             Self::AutomationDenied | Self::FolderDenied => ProviderProblem::PermissionDenied,
             Self::AppNotRunning(_) => ProviderProblem::NotRunning,
+            Self::FeedUnavailable(_) => ProviderProblem::FeedUnavailable,
         }
     }
 }
@@ -120,6 +123,11 @@ impl std::error::Error for SourceFailure {}
 /// than that something failed.
 pub fn problem_of(err: &anyhow::Error) -> Option<ClassifiedProblem> {
     err.chain().find_map(|cause| {
+        if let Some(failure) = cause.downcast_ref::<FeedUnavailable>() {
+            return Some(ClassifiedProblem::caused(FixCause::FeedUnavailable(
+                failure.service,
+            )));
+        }
         if let Some(failure) = cause.downcast_ref::<RemoteFailure>() {
             return failure.error.problem().map(ClassifiedProblem::plain);
         }

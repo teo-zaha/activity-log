@@ -46,12 +46,38 @@ impl ApiError {
         body: &str,
         secrets: &[&str],
     ) -> Self {
+        Self::status(
+            status,
+            headers,
+            now,
+            remote_message(body, secrets),
+            OAuthRefusal::of_answer(headers, body),
+        )
+    }
+
+    /// Keeps the status and busy evidence for a request that uses neither an error body nor
+    /// an OAuth challenge.
+    pub(crate) fn status_without_body(
+        status: StatusCode,
+        headers: &HeaderMap,
+        now: DateTime<Utc>,
+    ) -> Self {
+        Self::status(status, headers, now, String::new(), None)
+    }
+
+    fn status(
+        status: StatusCode,
+        headers: &HeaderMap,
+        now: DateTime<Utc>,
+        message: String,
+        refusal: Option<OAuthRefusal>,
+    ) -> Self {
         Self::Status {
             status,
-            message: remote_message(body, secrets),
+            message,
             retry_after: retry_after(headers, now),
             quota: Quota::from_headers(headers),
-            refusal: OAuthRefusal::of_answer(headers, body),
+            refusal,
         }
     }
 

@@ -97,6 +97,23 @@ const savedTokenSetup = tokenSetup('jira.example.com')
 const draftTokenSetup = tokenSetup('other.example.org')
 const tokenCheck = { issues: [], fieldFix: { key: 'apiToken', action: draftTokenSetup } }
 
+const calendarRow: SettingsProviderRow = {
+  ...row(1),
+  info: {
+    ...row(1).info,
+    connection: { source: 'calendar', name: 'default' },
+    label: 'Calendar',
+  },
+  key: 'calendar/default',
+  kindLabel: 'Calendar',
+}
+const outlookGuide = {
+  service: 'outlookCom',
+  label: 'Outlook.com',
+  instructions: 'Publish a calendar and copy the ICS link.',
+  url: 'https://outlook.live.com/calendar/',
+} as const
+
 const snapshot = (
   fields: ProviderConfigFieldStateDto[] = jiraFields
 ): ProviderConfigSnapshotDto => ({
@@ -785,6 +802,78 @@ describe('SettingsSourcePaneComponent', () => {
     await userEvent.click(screen.getByRole('link', { name: /Create token/ }))
     expect(openUrl).toHaveBeenCalledWith(savedTokenSetup.url)
   })
+
+  it('discloses calendar setup guides beside the secret field and keeps them during an edit', async () => {
+    const { openUrl } = await setup({
+      provider: calendarRow,
+      load: () =>
+        Promise.resolve({
+          revision: 'r1',
+          kinds: [],
+          connections: [
+            {
+              connection: calendarRow.info.connection,
+              label: 'Calendar',
+              fields: [
+                {
+                  key: 'icsUrl',
+                  label: 'Calendar ICS URL',
+                  shape: 'secret',
+                  valueType: 'password',
+                  required: true,
+                  isSet: false,
+                  stored: null,
+                  fixAction: { kind: 'feedHelp', guides: [outlookGuide] },
+                },
+              ],
+            },
+          ],
+        }),
+    })
+    const summary = await screen.findByText('Where do I find my calendar link?')
+    expect(summary.parentElement).toHaveProperty('open', false)
+    await userEvent.type(
+      await screen.findByLabelText('Calendar ICS URL'),
+      'https://calendar.example.org/example.ics'
+    )
+    await userEvent.click(summary)
+    expect(summary.parentElement).toHaveProperty('open', true)
+    expect(screen.getByText(outlookGuide.instructions)).toBeTruthy()
+    await userEvent.click(screen.getByRole('link', { name: outlookGuide.label }))
+    expect(openUrl).toHaveBeenCalledWith(outlookGuide.url)
+  })
+
+  it.each([false, true])(
+    'shows calendar recovery separately from the HTTP reason (with guide: %s)',
+    async known => {
+      const guides = known ? [outlookGuide] : []
+      const recovery = 'Check sharing settings and paste the current ICS link.'
+      const reason = 'Could not read the calendar feed: calendar.example.org answered 404 Not Found'
+      await setup({
+        desktop: false,
+        provider: {
+          ...calendarRow,
+          info: {
+            ...calendarRow.info,
+            status: 'degraded',
+            problem: 'feedUnavailable',
+            reason,
+            fixAction: { kind: 'web', action: { kind: 'feedHelp', guides, recovery } },
+          },
+        },
+      })
+      expect(screen.getByRole('heading', { name: 'Calendar link unavailable' })).toBeTruthy()
+      expect(screen.getByText(reason)).toBeTruthy()
+      expect(screen.getByText(recovery)).toBeTruthy()
+      const instructions = screen.queryByText('Calendar link instructions')
+      if (guides.length === 0) {
+        expect(instructions).toBeNull()
+      } else {
+        expect(instructions?.parentElement).toHaveProperty('open', true)
+        expect(screen.getByRole('link', { name: outlookGuide.label })).toBeTruthy()
+      }
+    }
+  )
 
   it('keeps a failed check with the draft it was sent for', async () => {
     const { checkProviderConfig, whenStable } = await setup()

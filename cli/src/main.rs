@@ -328,7 +328,13 @@ async fn list_sources(config: Option<&Path>) -> Result<()> {
         .zip(&connections)
         .map(|(runtime, connection)| {
             let mut info = runtime.info().clone();
-            info.fix_action = select_fix_action(FixSurface::Web, &os, connection, &mut info, None);
+            info.fix_action = select_fix_action(
+                FixSurface::Web,
+                &os,
+                connection,
+                &mut info,
+                runtime.fix_cause(),
+            );
             info
         })
         .collect::<Vec<_>>();

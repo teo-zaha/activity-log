@@ -397,7 +397,8 @@ pub fn build_snapshot(
                 .find(|adapter| adapter.id() == *connection.source())?;
             let field_fix = adapter
                 .credential_setup()
-                .and_then(|setup| Some((setup.token, setup.saved(connection)?)));
+                .and_then(|setup| Some((setup.token, setup.saved(connection)?)))
+                .or_else(|| adapter.field_help());
             Some(ProviderConfigConnectionStateDto {
                 connection: connection.id.clone(),
                 label: connection.label.clone(),

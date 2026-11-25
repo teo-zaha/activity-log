@@ -1,5 +1,6 @@
 //! Selects an action for the outcome the host is about to publish.
 
+pub(crate) mod calendar;
 pub(crate) mod credential;
 pub use credential::CredentialSetup;
 
@@ -45,10 +46,15 @@ pub fn select(
             .saved(connection)
             .map(|action| ProviderFixAction::Web { action });
     }
+    let cause = cause.filter(|cause| info.problem == Some(cause.problem()))?;
+    if let (Source::Calendar, FixCause::FeedUnavailable(service)) = (connection.source(), cause) {
+        return Some(ProviderFixAction::Web {
+            action: calendar::recovery(service),
+        });
+    }
     if surface != FixSurface::Desktop || *os != SupportedOs::Macos {
         return None;
     }
-    let cause = cause.filter(|cause| info.problem == Some(cause.problem()))?;
     let target = match (connection.source(), cause) {
         (Source::Outlook, FixCause::AutomationDenied) => LocalFixTarget::SystemSettings {
             pane: SystemSettingsPane::Automation,

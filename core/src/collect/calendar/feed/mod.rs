@@ -3,9 +3,15 @@
 use std::path::PathBuf;
 
 use anyhow::{Context, Result, anyhow, bail};
-use reqwest::Url;
+use reqwest::{StatusCode, Url};
 
-use crate::provider::remote_error::{ApiError, RemoteFailure};
+use crate::provider::{
+    fix_action::calendar::service_for,
+    remote_error::{ApiError, RemoteFailure},
+};
+
+mod unavailable;
+pub(crate) use unavailable::FeedUnavailable;
 
 #[cfg(test)]
 mod tests;
@@ -51,7 +57,7 @@ pub(crate) fn feed_location(raw: &str) -> Result<FeedLocation> {
             .map(FeedLocation::File)
             .map_err(|()| anyhow!("Not a file path")),
         "http" => bail!("Use an https:// link; calendar links are secrets"),
-        other => bail!("Unsupported link type {other}://"),
+        _ => bail!("Use an https:// or webcal:// link, or the path of an .ics file"),
     }
 }
 
@@ -95,11 +101,13 @@ pub async fn check_feed(raw: &str) -> Result<()> {
 /// host and keeps the typed cause.
 async fn request_feed(url: Url) -> Result<(String, reqwest::Response)> {
     let host = url.host_str().unwrap_or("the calendar host").to_string();
+    let service = service_for(&url);
     let failed = |error| RemoteFailure {
         service: host.clone().into(),
         error,
     };
     let client = crate::provider::http_client_builder()
+        .referer(false)
         .build()
         .map_err(|err| anyhow!("HTTP client setup failed: {}", err.without_url()))?;
     let response = client
@@ -108,15 +116,24 @@ async fn request_feed(url: Url) -> Result<(String, reqwest::Response)> {
         .await
         .map_err(|err| failed(ApiError::from_transport(&err)))?;
     let status = response.status();
-    if !status.is_success() {
-        return Err(failed(ApiError::from_status(
-            status,
-            response.headers(),
-            chrono::Utc::now(),
-            "",
-            &[],
-        ))
-        .into());
+    if status.is_success() {
+        return Ok((host, response));
     }
-    Ok((host, response))
+    // Keep the status and busy evidence. Feed failure bodies can echo the link, and OAuth
+    // challenges do not describe access to an ICS link.
+    let error = ApiError::status_without_body(status, response.headers(), chrono::Utc::now());
+    let unavailable = !error.is_busy()
+        && matches!(
+            status,
+            StatusCode::UNAUTHORIZED | StatusCode::FORBIDDEN | StatusCode::NOT_FOUND
+        );
+    let failure = RemoteFailure {
+        service: format!("The calendar link on {host}").into(),
+        error,
+    };
+    if unavailable {
+        Err(FeedUnavailable { service, failure }.into())
+    } else {
+        Err(failure.into())
+    }
 }

@@ -42,6 +42,7 @@ fn a_problem_fails_the_run_only_where_the_source_cannot_work() {
         ProviderProblem::TimedOut,
         ProviderProblem::Refused,
         ProviderProblem::ScopeMissing,
+        ProviderProblem::FeedUnavailable,
         ProviderProblem::Throttled,
         ProviderProblem::Unreachable,
         ProviderProblem::PermissionDenied,
@@ -61,6 +62,10 @@ fn a_problem_fails_the_run_only_where_the_source_cannot_work() {
         let refused = ConnectionResult::Unusable { info: &info };
         assert!(refused.fails_run(), "{problem:?}");
     }
+    assert_eq!(
+        problem_terms(ProviderProblem::FeedUnavailable).0,
+        "calendar link unavailable"
+    );
 }
 
 /// A collection that ran and failed fails the run, whatever its problem.

@@ -8,6 +8,118 @@ use crate::{
 };
 
 #[test]
+fn calendar_guides_use_the_approved_public_destinations_and_explain_link_access() {
+    use crate::model::CalendarFeedService::*;
+
+    let WebFixAction::FeedHelp { guides, recovery } = super::calendar::field_help() else {
+        panic!("expected calendar help");
+    };
+    assert_eq!(recovery, None);
+    let expected = [
+        (OutlookWork, "https://outlook.office.com/calendar/", true),
+        (OutlookCom, "https://outlook.live.com/calendar/", true),
+        (
+            GoogleCalendar,
+            "https://calendar.google.com/calendar/u/0/r/settings",
+            false,
+        ),
+        (ICloud, "https://www.icloud.com/calendar/", true),
+        (
+            Fastmail,
+            "https://app.fastmail.com/settings/calendars?sessionpicker=1",
+            true,
+        ),
+    ];
+    assert_eq!(guides.len(), expected.len());
+    for (guide, (service, url, publishes)) in guides.iter().zip(expected) {
+        assert_eq!(guide.service, service);
+        assert_eq!(guide.url.as_deref(), Some(url));
+        assert!(guide.instructions.contains("apps you trust"));
+        assert_eq!(
+            guide.instructions.contains("Anyone with the link"),
+            publishes
+        );
+    }
+}
+
+#[test]
+fn calendar_unavailable_reuses_the_matched_guide_or_gives_generic_help_on_both_surfaces() {
+    use crate::model::CalendarFeedService::{GoogleCalendar, OutlookCom, OutlookWork};
+
+    let WebFixAction::FeedHelp {
+        guides: catalog, ..
+    } = super::calendar::field_help()
+    else {
+        panic!("expected calendar help");
+    };
+    let connection = Connection::new(
+        ConnectionId::new(Source::Calendar, "work"),
+        "Work",
+        ConnectionLocation::Local,
+        Default::default(),
+    );
+    let mut info = ProviderInfo {
+        connection: connection.id.clone(),
+        label: connection.label.clone(),
+        wsl_distro: None,
+        status: ProviderStatus::Unavailable,
+        usable: false,
+        supported_os: vec![SupportedOs::Linux],
+        reason: Some("calendar.example.org answered 404 Not Found".into()),
+        problem: Some(ProviderProblem::FeedUnavailable),
+        fix_action: None,
+        recheckable: true,
+        checked_at: "2026-11-25T00:00:00Z".into(),
+    };
+    for surface in [FixSurface::Web, FixSurface::Desktop] {
+        for (service, words) in [
+            (Some(OutlookWork), "Publish it again"),
+            (Some(OutlookCom), "Publish it again"),
+            (Some(GoogleCalendar), "reset it first"),
+            (None, "Check the calendar’s sharing settings"),
+        ] {
+            let result = select(
+                surface,
+                &SupportedOs::Linux,
+                &connection,
+                &mut info,
+                Some(FixCause::FeedUnavailable(service)),
+            );
+            let Some(ProviderFixAction::Web {
+                action: WebFixAction::FeedHelp { guides, recovery },
+            }) = result
+            else {
+                panic!("expected a web recovery");
+            };
+            assert!(recovery.unwrap().contains(words));
+            assert_eq!(
+                guides,
+                catalog
+                    .iter()
+                    .filter(|guide| Some(guide.service) == service)
+                    .cloned()
+                    .collect::<Vec<_>>()
+            );
+        }
+    }
+    assert_eq!(
+        info.reason.as_deref(),
+        Some("calendar.example.org answered 404 Not Found")
+    );
+    info.problem = Some(ProviderProblem::Throttled);
+    assert_eq!(
+        select(
+            FixSurface::Web,
+            &SupportedOs::Linux,
+            &connection,
+            &mut info,
+            Some(FixCause::FeedUnavailable(None))
+        ),
+        None
+    );
+}
+
+#[test]
 fn native_recovery_requires_a_matching_problem_on_the_macos_desktop() {
     for (source, problem, cause, target) in [
         (

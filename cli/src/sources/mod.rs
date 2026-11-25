@@ -273,7 +273,7 @@ pub(crate) fn secret_of(source: &Source) -> Result<ProviderConfigKey, SourcesErr
         .ok_or_else(|| SourcesError::NoSecret(source.clone()))
 }
 
-/// Each connection's id, label and status, with a token setup link when available.
+/// Each connection's id, label and status, with any web recovery instructions.
 pub(crate) fn list_lines(providers: &[ProviderInfo]) -> Vec<String> {
     if providers.is_empty() {
         return vec![NO_SOURCES.to_string()];
@@ -306,13 +306,23 @@ pub(crate) fn list_lines(providers: &[ProviderInfo]) -> Vec<String> {
                 info.connection.to_string(),
                 info.label,
             );
-            let token = match &info.fix_action {
+            let recovery = match &info.fix_action {
                 Some(ProviderFixAction::Web {
                     action: WebFixAction::CreateToken { url, .. },
-                }) => Some(format!("    Create token  {url}")),
-                _ => None,
+                }) => vec![format!("    Create token  {url}")],
+                Some(ProviderFixAction::Web {
+                    action: WebFixAction::FeedHelp { guides, recovery },
+                }) => recovery
+                    .iter()
+                    .map(|text| format!("    {text}"))
+                    .chain(guides.iter().filter_map(|guide| {
+                        let url = guide.url.as_ref()?;
+                        Some(format!("    {}  {url}", guide.label))
+                    }))
+                    .collect(),
+                _ => Vec::new(),
             };
-            std::iter::once(line).chain(token)
+            std::iter::once(line).chain(recovery)
         })
         .collect()
 }

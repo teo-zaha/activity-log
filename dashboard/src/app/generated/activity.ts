@@ -8,7 +8,7 @@ export type SupportedOs = "windows" | "macos" | "linux";
 
 export type ProviderStatus = "checking" | "available" | "unavailable" | "degraded";
 
-export type ProviderProblem = "timedOut" | "unsupported" | "notConfigured" | "refused" | "scopeMissing" | "throttled" | "unreachable" | "notInstalled" | "notRunning" | "permissionDenied" | "noData" | "failed" | "collectionFailed" | "secretUnavailable";
+export type ProviderProblem = "timedOut" | "unsupported" | "notConfigured" | "refused" | "scopeMissing" | "feedUnavailable" | "throttled" | "unreachable" | "notInstalled" | "notRunning" | "permissionDenied" | "noData" | "failed" | "collectionFailed" | "secretUnavailable";
 
 export type SystemSettingsPane = "automation" | "filesAndFolders";
 

@@ -123,7 +123,8 @@ impl ProviderRuntime {
         &self.info
     }
 
-    pub(crate) fn fix_cause(&self) -> Option<FixCause> {
+    /// Recovery evidence from this connection's startup check.
+    pub fn fix_cause(&self) -> Option<FixCause> {
         self.fix_cause
     }
 

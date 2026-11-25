@@ -25,6 +25,7 @@ mod prepare;
 #[cfg(test)]
 mod tests;
 
+pub(crate) use feed::FeedUnavailable;
 #[cfg(test)]
 pub(crate) use feed::feed_location;
 pub use feed::{check_feed, read_feed};

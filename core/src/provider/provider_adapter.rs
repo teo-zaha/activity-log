@@ -4,7 +4,7 @@ use futures::future::BoxFuture;
 
 use crate::{
     cache::CachePolicy,
-    model::{ActivityEntry, CollectOptions, ConnectionId, Source, SupportedOs},
+    model::{ActivityEntry, CollectOptions, ConnectionId, Source, SupportedOs, WebFixAction},
     provider::{
         CredentialSetup,
         connection::Instances,
@@ -56,6 +56,11 @@ pub trait ProviderAdapter: Send + Sync {
     }
 
     fn credential_setup(&self) -> Option<&'static CredentialSetup> {
+        None
+    }
+
+    /// Help for a field that applies independently of its configured value.
+    fn field_help(&self) -> Option<(ProviderConfigKey, WebFixAction)> {
         None
     }
 

@@ -12,8 +12,8 @@
         }
       </span>
     </p>
-    @if (credentialAction(); as action) {
-      <app-credential-recovery class="health-recovery" [action]="action" />
+    @if (webAction(); as action) {
+      <app-web-fix-action class="health-recovery" [action]="action" />
     }
   </div>
   @if (canRecheck() || rechecking()) {

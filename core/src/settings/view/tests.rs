@@ -785,6 +785,31 @@ fn token_setup_tracks_the_effective_address_and_omits_conflicted_drafts() {
     assert!(check_save(&request, based_on(), None).field_fix.is_none());
 }
 
+#[test]
+fn calendar_help_is_on_the_secret_field_even_without_a_link() {
+    for saved in [
+        "",
+        "ics_url = 'https://calendar.example.org/path-secret.ics?key=query-secret'",
+    ] {
+        let read = file(&format!("[[calendar]]\nname = 'work'\n{saved}\n"));
+        let state = connection_state(&read, "calendar/work");
+        let [field] = state.fields.as_slice() else {
+            panic!("expected one Calendar field");
+        };
+        assert_eq!(field.key, "CALENDAR_ICS_URL");
+        assert!(matches!(
+            field.value,
+            ProviderConfigFieldValueDto::Secret { .. }
+        ));
+        assert_eq!(
+            field.fix_action.as_ref(),
+            Some(&crate::provider::fix_action::calendar::field_help())
+        );
+        let wire = serde_json::to_string(&state).unwrap();
+        assert!(!wire.contains("path-secret") && !wire.contains("query-secret"));
+    }
+}
+
 /// A token for a connection without an address is an issue at the token's field, as the save
 /// would be refused; with the address in the same save it is none.
 #[test]

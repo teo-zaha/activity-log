@@ -17,6 +17,8 @@ pub enum ProviderProblem {
     Refused,
     /// The server identified a permission missing from the token.
     ScopeMissing,
+    /// The network calendar feed could not be accessed at its configured link.
+    FeedUnavailable,
     /// The server is busy. Check again later.
     Throttled,
     /// The server could not be reached.

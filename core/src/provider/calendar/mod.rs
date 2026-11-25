@@ -2,8 +2,11 @@
 
 use crate::{
     collect::calendar::{check_feed, collect_calendar},
-    model::{IntoActivityEntries, Source, SupportedOs},
-    provider::{connection::Instances, provider_check_result::ProviderCheckResult},
+    model::{IntoActivityEntries, Source, SupportedOs, WebFixAction},
+    provider::{
+        connection::Instances, fix_action::calendar::field_help,
+        provider_check_result::ProviderCheckResult, provider_config::ProviderConfigKey,
+    },
 };
 
 crate::provider_config! {
@@ -29,6 +32,10 @@ crate::provider! {
 
         fn description(&self) -> &'static str {
             "Events from an ICS calendar link or .ics file"
+        }
+
+        fn field_help(&self) -> Option<(ProviderConfigKey, WebFixAction)> {
+            Some((CALENDAR_ICS_URL, field_help()))
         }
 
         fn instances(&self) -> Instances {

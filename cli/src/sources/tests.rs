@@ -242,6 +242,33 @@ fn lists_connections_in_columns() {
         ]
     );
     assert_eq!(list_lines(&[]), [NO_SOURCES]);
+
+    let mut calendar = info(
+        Source::Calendar,
+        "work",
+        "Work",
+        false,
+        Some("calendar.example.org answered 404"),
+    );
+    calendar.fix_action = Some(ProviderFixAction::Web {
+        action: WebFixAction::FeedHelp {
+            guides: vec![activity_log_core::model::CalendarFeedGuide {
+                service: activity_log_core::model::CalendarFeedService::OutlookCom,
+                label: "Outlook.com".into(),
+                instructions: "Publish the calendar.".into(),
+                url: Some("https://outlook.live.com/calendar/".into()),
+            }],
+            recovery: Some("Paste the current ICS link.".into()),
+        },
+    });
+    assert_eq!(
+        list_lines(&[calendar]),
+        [
+            "calendar/work  Work  ✗ calendar.example.org answered 404",
+            "    Paste the current ICS link.",
+            "    Outlook.com  https://outlook.live.com/calendar/",
+        ]
+    );
 }
 
 #[test]
