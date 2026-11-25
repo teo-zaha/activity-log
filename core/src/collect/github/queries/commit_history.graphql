@@ -1,4 +1,12 @@
-query CommitHistory($ids: [ID!]!, $viewerId: ID!, $from: GitTimestamp!, $to: GitTimestamp!) {
+query CommitHistory(
+  $ids: [ID!]!
+  $viewerId: ID!
+  $from: GitTimestamp!
+  $to: GitTimestamp!
+  $releaseIds: [ID!]!
+  $readReleases: Boolean!
+  $pageSize: Int!
+) {
   nodes(ids: $ids) {
     ... on Repository {
       id
@@ -22,6 +30,15 @@ query CommitHistory($ids: [ID!]!, $viewerId: ID!, $from: GitTimestamp!, $to: Git
             }
           }
         }
+      }
+    }
+  }
+  releaseNodes: nodes(ids: $releaseIds) @include(if: $readReleases) {
+    ... on Repository {
+      id
+      nameWithOwner
+      releases(first: $pageSize, orderBy: { field: CREATED_AT, direction: DESC }) {
+        ...ReleasePage
       }
     }
   }

@@ -1,6 +1,7 @@
 use serde_json::{Value, json};
 
 use super::comments::{ISSUE_COMMENTS, MORE_REVIEW_COMMENTS};
+mod releases;
 mod state_changes;
 
 use super::*;
@@ -491,7 +492,7 @@ async fn commit_history_splits_discovery_and_keeps_only_completed_readable_repos
                 ]});
                 Reply::json(
                     200,
-                    json!({"data": data, "errors": [{
+                    json!({"data": releases::with_empty_release_pages(data, variables), "errors": [{
                         "type": "FORBIDDEN", "path": ["nodes", 1, "defaultBranchRef"]
                     }]})
                     .to_string(),
@@ -594,9 +595,12 @@ async fn discovery_below_the_cap_warns_and_keeps_available_commits() {
                 assert_eq!(body["variables"]["to"], END);
                 answer(commit_discovery(&["repo-a"], 3))
             }
-            commits::HISTORY => answer(json!({"nodes": [
-                history_repository("repo-a", page(vec![commit_row("C_start", START)], None))
-            ]})),
+            commits::HISTORY => answer(releases::with_empty_release_pages(
+                json!({"nodes": [
+                    history_repository("repo-a", page(vec![commit_row("C_start", START)], None))
+                ]}),
+                &body["variables"],
+            )),
             _ => panic!("unexpected operation {query}"),
         }
     });
@@ -629,9 +633,12 @@ async fn a_repeated_commit_history_page_fails_the_window() {
         }
         match query {
             commits::REPOSITORIES => answer(commit_discovery(&["repo-a"], 1)),
-            commits::HISTORY => answer(json!({"nodes": [
-                history_repository("repo-a", page(vec![commit_row("C_start", START)], Some("second")))
-            ]})),
+            commits::HISTORY => answer(releases::with_empty_release_pages(
+                json!({"nodes": [
+                    history_repository("repo-a", page(vec![commit_row("C_start", START)], Some("second")))
+                ]}),
+                &body["variables"],
+            )),
             commits::MORE_HISTORY => answer(json!({"node":
                 history_repository("repo-a", page(vec![commit_row("C_start", START)], None))
             })),
@@ -694,9 +701,12 @@ async fn history_rejects_a_changed_repository_or_default_branch() {
             }
             match query {
                 commits::REPOSITORIES => answer(commit_discovery(&["repo-a"], 1)),
-                commits::HISTORY => answer(json!({"nodes": [
-                    history_repository(first_id, page(vec![commit_row("C_start", START)], Some("second")))
-                ]})),
+                commits::HISTORY => answer(releases::with_empty_release_pages(
+                    json!({"nodes": [
+                        history_repository(first_id, page(vec![commit_row("C_start", START)], Some("second")))
+                    ]}),
+                    &body["variables"],
+                )),
                 commits::MORE_HISTORY => {
                     let mut row =
                         history_repository(more_id, page(vec![commit_row("C_in", IN_RANGE)], None));

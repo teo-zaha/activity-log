@@ -47,7 +47,7 @@ crate::provider! {
         }
 
         fn description(&self) -> &'static str {
-            "Pull requests, reviews, issues, comments and commits. Commit history requires Contents read access."
+            "Pull requests, reviews, issues, comments, commits and releases. Commits and releases require Contents read access."
         }
 
         fn instances(&self) -> crate::provider::connection::Instances {

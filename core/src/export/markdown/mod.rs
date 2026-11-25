@@ -206,6 +206,22 @@ fn github_line(entry: &GitHubEntry, time: impl std::fmt::Display) -> String {
                 code(&short_sha),
             );
         }
+        GitHubAction::Released { release } => {
+            let action = if release.prerelease {
+                "Published prerelease"
+            } else {
+                "Published release"
+            };
+            let name = release
+                .name
+                .as_deref()
+                .map_or_else(String::new, |name| format!(" {}", text(name)));
+            return format!(
+                "- **[github]** {} {action} {}{name} ({time})\n",
+                code(&entry.repository),
+                code(&release.tag),
+            );
+        }
     };
     format!(
         "- **[github]** {} {action} {kind} #{number} {} ({time})\n",

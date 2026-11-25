@@ -200,6 +200,24 @@ fn github_commit_export_includes_the_branch_and_short_sha() {
 }
 
 #[test]
+fn github_release_export_uses_the_tag_and_escapes_the_name() {
+    let entry = serde_json::from_value(serde_json::json!({
+        "source": "github",
+        "connection": "work",
+        "id": "R_example",
+        "timestamp": "2026-03-10T09:00:00Z",
+        "repository": "acme/widgets",
+        "type": "released",
+        "release": {"tag": "v1.2.0-rc1", "name": "Widgets *preview*", "prerelease": true},
+    }))
+    .unwrap();
+    let markdown = to_markdown(&log_of(vec![entry]), &FixedOffset::east_opt(0).unwrap());
+    assert!(markdown.contains(
+        "- **[github]** `acme/widgets` Published prerelease `v1.2.0-rc1` Widgets \\*preview\\* (09:00)\n"
+    ));
+}
+
+#[test]
 fn figma_markdown_escapes_the_file_name_and_text_of_each_activity() {
     use crate::model::{ConnectionName, FigmaActivity, FigmaEntry, FigmaTag};
     let entry = |activity| {

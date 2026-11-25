@@ -29,7 +29,7 @@ use crate::{
         SystemEntryType, SystemSettingsPane, TextSegment, WebFixAction,
         github::{
             CommentTarget, GitHubAction, GitHubEntry, GitHubReviewState, IssueRef, Item,
-            PullRequestRef,
+            PullRequestRef, ReleaseRef,
         },
     },
     runtime::{PING_INTERVAL, forward::RuntimeMessage},
@@ -102,6 +102,7 @@ pub fn activity_typescript() -> String {
         export_decl::<GitHubReviewState>(&cfg),
         export_decl::<PullRequestRef>(&cfg),
         export_decl::<IssueRef>(&cfg),
+        export_decl::<ReleaseRef>(&cfg),
         export_decl::<Item>(&cfg),
         export_decl::<CommentTarget>(&cfg),
         export_decl::<GitHubAction>(&cfg),

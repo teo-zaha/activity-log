@@ -22,6 +22,14 @@ impl<P: Eq + Hash, R: Eq + Hash> PageGuard<P, R> {
         self.asked.insert(page).then_some(()).ok_or(RepeatedPage)
     }
 
+    /// Check a position before including it in a batch whose response may fail.
+    pub(crate) fn check(&self, page: &P) -> Result<(), RepeatedPage> {
+        if self.asked.contains(page) {
+            return Err(RepeatedPage);
+        }
+        Ok(())
+    }
+
     /// Keeps the first occurrence of each row. An empty page can be legitimate; a nonempty
     /// page with nothing new is a repeat even when it was sent for a new position.
     pub(crate) fn new_rows<T>(

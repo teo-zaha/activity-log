@@ -142,5 +142,9 @@ export function githubAction(entry: GitHubEntry): ActionWords {
         : itemAction('Commented on', entry.target.kind, entry.target.number)
     case 'committed':
       return words(`Committed to ${entry.branch}`)
+    case 'released': {
+      const detail = entry.release.prerelease ? 'Published prerelease' : 'Published release'
+      return { summary: `${detail} ${entry.release.tag}`, detail }
+    }
   }
 }

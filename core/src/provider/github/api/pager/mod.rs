@@ -63,6 +63,17 @@ impl Pager {
         matches!(self.position, Position::After(_))
     }
 
+    /// A cursor that can be requested in a batch. Record it once the page arrives.
+    pub(crate) fn next_cursor(&self) -> Result<Option<&str>, PageError> {
+        let Position::After(cursor) = &self.position else {
+            return Ok(None);
+        };
+        self.guard
+            .check(&Some(cursor.clone()))
+            .map_err(|_| PageError::RepeatedPage)?;
+        Ok(Some(cursor))
+    }
+
     pub(crate) async fn next<T: DeserializeOwned, E: From<PageError>>(
         &mut self,
         fetch: impl AsyncFnOnce(Option<&str>) -> Result<Page, E>,

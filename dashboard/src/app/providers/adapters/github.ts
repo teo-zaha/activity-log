@@ -28,7 +28,7 @@ function issueDetails(issue: IssueRef) {
   }
 }
 
-function detailsOf(entry: Exclude<GitHubEntry, { type: 'committed' }>) {
+function detailsOf(entry: Exclude<GitHubEntry, { type: 'committed' | 'released' }>) {
   switch (entry.type) {
     case 'opened':
     case 'closed':
@@ -66,6 +66,28 @@ class GitHubEntryUiAdapter extends EntryUiAdapter<GitHubEntry> {
           { label: 'Action', value: action.detail },
           { label: 'Repository', value: entry.repository },
           { label: 'Commit', value: entry.sha },
+        ],
+        badge,
+        badges: [badge],
+        detailSections: [],
+        styleKey: provider.source,
+      })
+      return
+    }
+    if (entry.type === 'released') {
+      const { tag, name, webUrl } = entry.release
+      const badge = createBadge(provider.source, provider.label, 'sell')
+      super(provider, entry, {
+        title: name ?? tag,
+        meta: joinParts([entry.repository, action.summary]),
+        entryIcon: 'sell',
+        searchTerms: toDefinedStrings([name, tag, entry.repository, action.summary]),
+        calendarDurationMinutes: null,
+        detailLink: webUrl ? { label: 'Open release', url: webUrl } : null,
+        detailFields: [
+          { label: 'Action', value: action.detail },
+          { label: 'Repository', value: entry.repository },
+          { label: 'Tag', value: tag },
         ],
         badge,
         badges: [badge],

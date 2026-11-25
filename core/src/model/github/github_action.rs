@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
-use super::{CommentTarget, GitHubReviewState, Item, PullRequestRef};
+use super::{CommentTarget, GitHubReviewState, Item, PullRequestRef, ReleaseRef};
 
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
 #[serde(tag = "type", rename_all = "camelCase")]
@@ -40,6 +40,9 @@ pub enum GitHubAction {
         #[ts(optional, rename = "webUrl")]
         web_url: Option<String>,
     },
+    Released {
+        release: ReleaseRef,
+    },
 }
 
 impl GitHubAction {
@@ -69,7 +72,8 @@ impl GitHubAction {
                 target: CommentTarget::Issue(_),
                 ..
             }
-            | Self::Committed { .. } => None,
+            | Self::Committed { .. }
+            | Self::Released { .. } => None,
         }
     }
 }

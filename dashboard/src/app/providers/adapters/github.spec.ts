@@ -4,6 +4,31 @@ import { githubPullRequestEntry } from '../../testing/activity-fixtures'
 import { createEntryAdapter } from '../provider-adapter'
 
 describe('GitHub adapter', () => {
+  it('shows a release by its tag and links to the published page', () => {
+    const webUrl = 'https://github.com/acme/widgets/releases/tag/v1.2.0'
+    const entry = createEntryAdapter({
+      ...githubPullRequestEntry,
+      type: 'released',
+      release: { tag: 'v1.2.0', webUrl, prerelease: false },
+    })
+    expect(entry.title).toBe('v1.2.0')
+    expect(entry.meta).toBe('acme/widgets · Published release v1.2.0')
+    expect(entry.detailLink).toEqual({ label: 'Open release', url: webUrl })
+    expect(entry.detailFields).toContainEqual({ label: 'Tag', value: 'v1.2.0' })
+  })
+
+  it('distinguishes prereleases and shows their optional name', () => {
+    const entry = createEntryAdapter({
+      ...githubPullRequestEntry,
+      type: 'released',
+      release: { tag: 'v1.2.0-rc1', name: 'Widgets preview', prerelease: true },
+    })
+    expect(entry.title).toBe('Widgets preview')
+    expect(entry.meta).toBe('acme/widgets · Published prerelease v1.2.0-rc1')
+    expect(entry.detailLink).toBeNull()
+    expect(entry.detailFields).toContainEqual({ label: 'Action', value: 'Published prerelease' })
+  })
+
   it('names the subject of opened pull requests and issues', () => {
     const pull = createEntryAdapter(githubPullRequestEntry)
     const issue = createEntryAdapter({

@@ -51,25 +51,33 @@ fn remove_refused_rows(
         if refused.is_empty() {
             continue;
         }
-        let rows = fields
-            .iter()
-            .try_fold(&mut *data, |value, &field| value.get_mut(field))?
-            .as_array_mut()?;
-        if refused.iter().any(|&index| index >= rows.len()) {
-            return None;
-        }
-        let mut index = 0;
-        rows.retain(|_| {
-            let keep = !refused.contains(&index);
-            index += 1;
-            keep
-        });
-        count += refused.len();
+        count += remove_rows(data, fields, &refused)?;
     }
     Some(count)
 }
 
-fn row_index(path: &[QueryPathSegment], fields: &[&str]) -> Option<usize> {
+pub(super) fn remove_rows(
+    data: &mut Value,
+    fields: &[&str],
+    refused: &HashSet<usize>,
+) -> Option<usize> {
+    let rows = fields
+        .iter()
+        .try_fold(data, |value, &field| value.get_mut(field))?
+        .as_array_mut()?;
+    if refused.iter().any(|&index| index >= rows.len()) {
+        return None;
+    }
+    let mut index = 0;
+    rows.retain(|_| {
+        let keep = !refused.contains(&index);
+        index += 1;
+        keep
+    });
+    Some(refused.len())
+}
+
+pub(super) fn row_index(path: &[QueryPathSegment], fields: &[&str]) -> Option<usize> {
     use QueryPathSegment::{Field, Index};
 
     let [Index(index), ..] = path.get(fields.len()..)? else {

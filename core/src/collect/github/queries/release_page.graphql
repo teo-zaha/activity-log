@@ -1,0 +1,19 @@
+fragment ReleasePage on ReleaseConnection {
+  pageInfo {
+    hasNextPage
+    endCursor
+  }
+  nodes {
+    id
+    tagName
+    name
+    url
+    createdAt
+    publishedAt
+    isDraft
+    isPrerelease
+    author {
+      id
+    }
+  }
+}

@@ -29,6 +29,7 @@ use super::{
     entry,
     error::CollectionError,
     node_refusals, pull_request_ref,
+    releases::ReleaseScan,
     response::{HostedItem, Viewer, nonblank},
 };
 
@@ -55,6 +56,7 @@ impl GitHubCollection {
 pub(super) struct ConnectionRun {
     scope: String,
     state: AsyncMutex<ConnectionState>,
+    pub(super) releases: AsyncMutex<ReleaseScan>,
 }
 
 impl Default for ConnectionRun {
@@ -68,6 +70,7 @@ impl ConnectionRun {
         Self {
             scope,
             state: AsyncMutex::default(),
+            releases: AsyncMutex::default(),
         }
     }
 
@@ -81,6 +84,7 @@ impl ConnectionRun {
 impl Drop for ConnectionRun {
     fn drop(&mut self) {
         let state = self.state.get_mut();
+        self.releases.get_mut().report(&self.scope);
         if state.refused_comments > 0 {
             diagnostics::warn(
                 &self.scope,

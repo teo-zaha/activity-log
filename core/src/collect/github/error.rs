@@ -11,6 +11,7 @@ pub(super) enum CollectionError {
     CommitRepositoryMismatch,
     CommitRepositoryUnavailable,
     CommitBranchChanged,
+    ReleaseRepositoryMismatch,
 }
 
 impl std::fmt::Display for CollectionError {
@@ -38,6 +39,9 @@ impl std::fmt::Display for CollectionError {
             }
             Self::CommitBranchChanged => {
                 "GitHub changed the default branch during commit history pagination"
+            }
+            Self::ReleaseRepositoryMismatch => {
+                "GitHub returned releases for a different repository"
             }
         })
     }

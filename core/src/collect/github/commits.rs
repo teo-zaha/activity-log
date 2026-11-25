@@ -17,16 +17,19 @@ use crate::{
 
 use super::{
     Collection, CollectionError, Viewer,
-    commit_repositories::{RepositoryNode, RepositoryQuery},
+    commit_repositories::{REPOSITORIES_PER_REQUEST, RepositoryNode, RepositoryQuery},
     entry,
+    releases::{RELEASE_NODES, RELEASES_PER_PAGE, ReleaseRepository, ReleaseScan},
     response::{Repository, nonblank},
     split_window,
 };
 
 pub(super) const REPOSITORIES: &str = include_str!("queries/commit_repositories.graphql");
-pub(super) const HISTORY: &str = include_str!("queries/commit_history.graphql");
+pub(super) const HISTORY: &str = concat!(
+    include_str!("queries/commit_history.graphql"),
+    include_str!("queries/release_page.graphql"),
+);
 pub(super) const MORE_HISTORY: &str = include_str!("queries/more_commit_history.graphql");
-const REPOSITORIES_PER_REQUEST: usize = 20;
 const DISCOVERY_REPOSITORY_LIMIT: usize = 100;
 
 #[derive(Serialize)]
@@ -57,6 +60,9 @@ struct DiscoveryVariables {
 struct HistoryVariables<'a> {
     ids: &'a [String],
     viewer_id: &'a str,
+    release_ids: &'a [&'a str],
+    read_releases: bool,
+    page_size: usize,
     #[serde(flatten)]
     bounds: Bounds,
 }
@@ -142,9 +148,19 @@ fn commit_oid<'de, D: serde::Deserializer<'de>>(deserializer: D) -> Result<Strin
 }
 
 impl Collection<'_> {
-    pub(super) async fn commits_in(&mut self, window: CollectOptions) -> Result<()> {
-        let repositories = self.commit_repositories(window).await?;
+    pub(super) async fn commits_in(
+        &mut self,
+        window: CollectOptions,
+        repositories: &[String],
+        releases: &mut ReleaseScan,
+    ) -> Result<()> {
         for ids in repositories.chunks(REPOSITORIES_PER_REQUEST) {
+            let release_ids: Vec<_> = ids
+                .iter()
+                .map(String::as_str)
+                .filter(|id| releases.needs_first_page(id))
+                .collect();
+            let read_releases = !release_ids.is_empty();
             let answer = self
                 .api
                 .graphql_answer(
@@ -152,14 +168,30 @@ impl Collection<'_> {
                     &HistoryVariables {
                         ids,
                         viewer_id: &self.viewer_id,
+                        release_ids: &release_ids,
+                        read_releases,
+                        page_size: RELEASES_PER_PAGE,
                         bounds: window.into(),
                     },
                 )
                 .await?;
-            let nodes = RepositoryQuery::Nodes(ids.len())
-                .read::<HistoryRepository>(answer)
-                .map_err(GitHubApi::failure)?;
-            for (id, node) in ids.iter().zip(nodes) {
+            let response = RepositoryQuery::Nodes {
+                field: "nodes",
+                count: ids.len(),
+            }
+            .read_pair::<HistoryRepository, ReleaseRepository>(
+                read_releases.then_some(RepositoryQuery::Nodes {
+                    field: "releaseNodes",
+                    count: release_ids.len(),
+                }),
+                answer,
+                RELEASE_NODES,
+            )
+            .map_err(GitHubApi::failure)?;
+            if let Some(released) = response.secondary {
+                self.skipped += releases.read_pages(&release_ids, released).await?;
+            }
+            for (id, node) in ids.iter().zip(response.primary) {
                 if let RepositoryNode::Readable(repository) = node {
                     if repository.id != *id {
                         return Err(CollectionError::CommitRepositoryMismatch.into());
@@ -178,7 +210,10 @@ impl Collection<'_> {
         Ok(())
     }
 
-    async fn commit_repositories(&mut self, window: CollectOptions) -> Result<Vec<String>> {
+    pub(super) async fn commit_repositories(
+        &mut self,
+        window: CollectOptions,
+    ) -> Result<Vec<String>> {
         let mut pending = vec![window];
         let mut repositories = HashSet::new();
         while let Some(window) = pending.pop() {

@@ -3,6 +3,7 @@ mod commit_repositories;
 mod commits;
 mod error;
 mod node_refusals;
+mod releases;
 mod response;
 mod state_changes;
 
@@ -97,11 +98,20 @@ async fn collect(
         unreadable_comment_repositories: HashSet::new(),
         undiscovered_repositories: 0,
     };
-    for window in windows(options) {
-        collection.opened(window, OpenKind::PullRequest).await?;
-        collection.opened(window, OpenKind::Issue).await?;
-        collection.review_contributions(window).await?;
-        collection.commits_in(window).await?;
+    {
+        let mut releases = run.releases.lock().await;
+        for window in windows(options) {
+            collection.opened(window, OpenKind::PullRequest).await?;
+            collection.opened(window, OpenKind::Issue).await?;
+            collection.review_contributions(window).await?;
+            let repositories = collection.commit_repositories(window).await?;
+            collection
+                .commits_in(window, &repositories, &mut releases)
+                .await?;
+            collection
+                .releases_in(window, &repositories, &mut releases)
+                .await?;
+        }
     }
     collection.state_changes(run).await?;
     collection.own_pull_requests().await?;

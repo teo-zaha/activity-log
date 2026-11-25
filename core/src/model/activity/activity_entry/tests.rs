@@ -27,6 +27,8 @@ const GITHUB_COMMENTED_ISSUE: &str = r#"{"source":"github","connection":"oss","i
 const GITHUB_COMMENTED_PR: &str = r#"{"source":"github","connection":"oss","id":"IC_y","timestamp":"2026-11-17T10:05:00Z","repository":"acme/widgets","type":"commentedOn","target":{"kind":"pullRequest","number":12,"title":"Add widget"}}"#;
 const GITHUB_COMMENTED_LINE: &str = r#"{"source":"github","connection":"oss","id":"PRRC_x","timestamp":"2026-11-17T10:05:00Z","repository":"acme/widgets","type":"commentedOn","target":{"kind":"reviewLine","pullRequest":{"number":12,"title":"Add widget"},"path":"src/main.rs"},"body":"Check this line."}"#;
 const GITHUB_COMMITTED: &str = r#"{"source":"github","connection":"oss","id":"C_example","timestamp":"2026-11-17T10:10:00Z","repository":"acme/widgets","type":"committed","sha":"0123456789abcdef0123456789abcdef01234567","message":"Add widget","branch":"main","webUrl":"https://github.com/acme/widgets/commit/0123456789abcdef0123456789abcdef01234567"}"#;
+const GITHUB_RELEASED: &str = r#"{"source":"github","connection":"oss","id":"R_example","timestamp":"2026-11-17T10:10:00Z","repository":"acme/widgets","type":"released","release":{"tag":"v1.2.0-rc1","name":"Widgets","webUrl":"https://github.com/acme/widgets/releases/tag/v1.2.0-rc1","prerelease":true}}"#;
+const GITHUB_RELEASED_BARE: &str = r#"{"source":"github","connection":"oss","id":"R_bare","timestamp":"2026-11-17T10:10:00Z","repository":"acme/widgets","type":"released","release":{"tag":"v1.2.0","prerelease":false}}"#;
 const JIRA: &str = r#"{"source":"jira","connection":"work","id":"OPS-1:status:9","type":"statusChanged","timestamp":"2026-11-17T10:00:00+00:00","key":"OPS-1","title":"Rotate keys","status":"Done","issueType":"Task","fromStatus":"In Progress","toStatus":"Done"}"#;
 const OUTLOOK: &str = r#"{"source":"outlook","connection":"outlook","id":"AAMk1","timestamp":"2026-11-17T13:00:00+00:00","title":"Planning","location":"Room 4","organizer":"lead@example.org","isOrganizer":false,"durationMinutes":45,"busyStatus":"busy","meetingWeight":"busy","description":"Agenda","descriptionBlocks":[{"kind":"paragraph","segments":[{"kind":"text","text":"Agenda"}]}],"joinUrl":"https://meet.example.org/j/1"}"#;
 const OUTLOOK_BARE: &str = r#"{"source":"outlook","connection":"outlook","id":"AAMk2","timestamp":"2026-11-17T15:00:00+00:00","title":"Focus","durationMinutes":30,"meetingWeight":"none"}"#;
@@ -66,6 +68,8 @@ fn every_kind_keeps_its_wire_shape() {
     round_trip(GITHUB_COMMENTED_PR, Source::Github);
     round_trip(GITHUB_COMMENTED_LINE, Source::Github);
     round_trip(GITHUB_COMMITTED, Source::Github);
+    round_trip(GITHUB_RELEASED, Source::Github);
+    round_trip(GITHUB_RELEASED_BARE, Source::Github);
     round_trip(
         &GITHUB_COMMITTED.replace(r#""message":"Add widget","#, ""),
         Source::Github,
@@ -78,6 +82,18 @@ fn every_kind_keeps_its_wire_shape() {
     for fixture in [FIGMA_VERSION, FIGMA_EDITED, FIGMA_COMMENTED, FIGMA_REPLIED] {
         round_trip(fixture, Source::Figma);
     }
+}
+
+#[test]
+fn a_github_release_cannot_fold_or_request_a_change_stack() {
+    use crate::model::activity::hosted_commit::HostedCommit;
+
+    let mut entry = serde_json::from_str::<ActivityEntry>(GITHUB_RELEASED).unwrap();
+    assert!(HostedCommit::of(&entry).is_none());
+    let ActivityEntry::GitHub(entry) = &mut entry else {
+        panic!("expected GitHub")
+    };
+    assert!(entry.action.pull_request_mut().is_none());
 }
 
 #[test]

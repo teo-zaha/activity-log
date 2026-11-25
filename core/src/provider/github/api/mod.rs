@@ -117,7 +117,7 @@ impl GitHubApi {
 
     pub(crate) async fn graphql_answer<V: Serialize>(
         &self,
-        query: &'static str,
+        query: &str,
         variables: &V,
     ) -> Result<QueryAnswer> {
         Self::query_result(
