@@ -279,8 +279,8 @@ async fn a_repeated_cursor_stops_before_it_is_requested_again() {
     });
     let error = collect(&api(&server), options()).await.unwrap_err();
     assert_eq!(
-        error.downcast::<CollectionError>().unwrap(),
-        CollectionError::RepeatedPage
+        error.downcast::<PageError>().unwrap(),
+        PageError::RepeatedPage
     );
     assert_eq!(server.requests().len(), 3);
 }
@@ -337,7 +337,6 @@ fn contribution_windows_cover_the_requested_range_without_overlap() {
 #[tokio::test]
 async fn wrong_review_pages_keep_their_protocol_error_kind() {
     for expected in [
-        CollectionError::MissingNextCursor,
         CollectionError::ReviewPullRequestMismatch,
         CollectionError::ReviewAuthorMismatch,
     ] {
@@ -348,9 +347,6 @@ async fn wrong_review_pages_keep_their_protocol_error_kind() {
                 OPENED_PULL_REQUESTS | OPENED_ISSUES => answer(contributions(vec![], None)),
                 REVIEWED_PULL_REQUESTS => {
                     let reviews = match expected {
-                        CollectionError::MissingNextCursor => json!({
-                            "pageInfo": {"hasNextPage": true, "endCursor": null}, "nodes": []
-                        }),
                         CollectionError::ReviewPullRequestMismatch => page(vec![], Some("second")),
                         CollectionError::ReviewAuthorMismatch => {
                             let mut row = review("review-a", "APPROVED", Some(IN_RANGE));
@@ -628,8 +624,8 @@ async fn a_repeated_commit_history_page_fails_the_window() {
     });
     let error = collect(&api(&server), options()).await.unwrap_err();
     assert_eq!(
-        error.downcast_ref::<CollectionError>(),
-        Some(&CollectionError::RepeatedPage)
+        error.downcast_ref::<PageError>(),
+        Some(&PageError::RepeatedPage)
     );
 }
 

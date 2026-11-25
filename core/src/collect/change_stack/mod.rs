@@ -15,4 +15,6 @@ pub(crate) use budget::{Budget, STACK_BUDGET};
 pub(crate) use lookup::{
     ChangeLookup, ChangeRef, FailureKind, LookupCause, LookupFailure, OpenChange, OpenPage,
 };
-pub(crate) use walk::change_stacks;
+#[cfg(test)]
+pub(crate) use walk::STACK_DEPTH;
+pub(crate) use walk::{StackSeed, UnreadChanges, change_stacks, change_stacks_with_seeds};

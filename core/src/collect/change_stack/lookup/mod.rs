@@ -129,6 +129,11 @@ pub(crate) struct LookupFailure {
 pub(crate) enum LookupCause {
     /// The request's own failure: its status and the server's cleaned message.
     Request(ApiError),
+    /// The GraphQL request could not be encoded.
+    Encode {
+        kind: serde_json::error::Category,
+        detail: String,
+    },
     /// The host named a page it had already sent, or sent only rows already read.
     RepeatedPage,
     /// The host answered with changes the request did not ask for (another number, branch,
@@ -141,6 +146,9 @@ impl LookupCause {
     pub(crate) fn message(&self, service: &str) -> String {
         match self {
             Self::Request(error) => error.message(service),
+            Self::Encode { detail, .. } => {
+                format!("Could not encode the {service} query: {detail}")
+            }
             Self::RepeatedPage => format!("{service} sent a page it had sent before"),
             Self::IgnoredFilter => {
                 format!("{service} answered with changes it was not asked for")
@@ -180,7 +188,7 @@ impl From<FailureKind> for LookupFailure {
 }
 
 /// A code host's open changes, by repository key `R` (GitLab's project id, GitHub's
-/// `owner/repo` later). Each request a method sends is paid for with `budget` first
+/// `owner/repo`). Each request a method sends is paid for with `budget` first
 /// (`RequestBudget::try_spend`), and none is retried: the host's busy answer is `Throttled`.
 /// The runner bounds each call by the budget's deadline.
 pub(crate) trait ChangeLookup<R>: Send + Sync {

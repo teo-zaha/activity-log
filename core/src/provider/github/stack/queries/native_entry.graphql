@@ -1,0 +1,19 @@
+fragment NativeStackEntry on PullRequest {
+  stackEntry {
+    position
+    stack {
+      baseRefName
+      entries(first: 50) {
+        pageInfo {
+          hasNextPage
+        }
+        nodes {
+          position
+          pullRequest {
+            ...StackPull
+          }
+        }
+      }
+    }
+  }
+}

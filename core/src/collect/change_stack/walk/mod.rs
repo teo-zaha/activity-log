@@ -76,31 +76,58 @@ impl Failures {
     }
 }
 
-/// The failures of one collection's lookups as they come, from all walks at once.
-#[derive(Default)]
-struct Recorder(Mutex<BTreeMap<FailureKind, Failures>>);
+/// Changes whose openness could not be established before the walk began.
+pub(crate) struct UnreadChanges<R> {
+    pub repo: R,
+    pub count: usize,
+    pub failure: LookupFailure,
+}
 
-impl Recorder {
-    fn record(&self, failure: &LookupFailure, count: impl FnOnce(&mut Failures)) {
+struct RecordedFailure<R> {
+    summary: Failures,
+    unknown: HashSet<R>,
+}
+
+impl<R> Default for RecordedFailure<R> {
+    fn default() -> Self {
+        Self {
+            summary: Failures::default(),
+            unknown: HashSet::new(),
+        }
+    }
+}
+
+/// The failures of one collection's lookups as they come, from all walks at once.
+struct Recorder<R>(Mutex<BTreeMap<FailureKind, RecordedFailure<R>>>);
+
+impl<R: Clone + Eq + Hash> Recorder<R> {
+    fn record(&self, failure: &LookupFailure, count: impl FnOnce(&mut RecordedFailure<R>)) {
         let mut failures = self.0.lock().unwrap_or_else(PoisonError::into_inner);
         let entry = failures.entry(failure.kind()).or_default();
-        entry.add(failure);
+        entry.summary.add(failure);
         count(entry);
     }
 
-    fn unknown(&self, failure: &LookupFailure, changes: usize) {
+    fn unknown(&self, repo: &R, failure: &LookupFailure, changes: usize) {
         self.record(failure, |entry| {
-            entry.repositories += 1;
-            entry.changes += changes;
+            if entry.unknown.insert(repo.clone()) {
+                entry.summary.repositories += 1;
+            }
+            entry.summary.changes += changes;
         });
     }
 
     fn question(&self, failure: &LookupFailure) {
-        self.record(failure, |entry| entry.questions += 1);
+        self.record(failure, |entry| entry.summary.questions += 1);
     }
 
     fn into_inner(self) -> BTreeMap<FailureKind, Failures> {
-        self.0.into_inner().unwrap_or_else(PoisonError::into_inner)
+        self.0
+            .into_inner()
+            .unwrap_or_else(PoisonError::into_inner)
+            .into_iter()
+            .map(|(kind, entry)| (kind, entry.summary))
+            .collect()
     }
 }
 
@@ -170,10 +197,16 @@ fn counted(count: usize, one: &str, many: &str) -> String {
     format!("{count} {}", if count == 1 { one } else { many })
 }
 
-/// The stacks of `wanted`'s changes, each with the instant of its latest event. Infallible: what
-/// cannot be read is a cut, or absent. Two phases share the budget: first each repository's
-/// page (and the numbers it did not show), then the walks. Newest first holds within each
-/// phase, so many repositories' pages can use the budget before the newest change is walked.
+/// The parts of an open stack already established by the host, in bottom-to-top order.
+pub(crate) struct StackSeed {
+    pub current: OpenChange,
+    pub below: Vec<OpenChange>,
+    pub base_branch: String,
+    pub above: Vec<OpenChange>,
+    /// The host's page ended before it named the true top.
+    pub more_above: bool,
+}
+
 pub(crate) async fn change_stacks<R, L>(
     wanted: impl IntoIterator<Item = (ChangeRef<R>, DateTime<Utc>)>,
     lookup: &L,
@@ -183,9 +216,30 @@ where
     R: Clone + Eq + Hash + Ord + Send + Sync,
     L: ChangeLookup<R>,
 {
+    change_stacks_with_seeds(wanted, &HashMap::new(), [], lookup, budget).await
+}
+
+/// The stacks of `wanted`'s changes, each with the instant of its latest event. Infallible: what
+/// cannot be read is a cut, or absent. Two phases share the budget: first each repository's
+/// page (and the numbers it did not show), then the walks. Newest first holds within each
+/// phase, so many repositories' pages can use the budget before the newest change is walked.
+pub(crate) async fn change_stacks_with_seeds<R, L>(
+    wanted: impl IntoIterator<Item = (ChangeRef<R>, DateTime<Utc>)>,
+    seeds: &HashMap<ChangeRef<R>, StackSeed>,
+    unread: impl IntoIterator<Item = UnreadChanges<R>>,
+    lookup: &L,
+    budget: &Budget,
+) -> StackReport<R>
+where
+    R: Clone + Eq + Hash + Ord + Send + Sync,
+    L: ChangeLookup<R>,
+{
     let order = newest_first(wanted);
     let concurrency = lookup.concurrency().max(1);
-    let recorder = Recorder::default();
+    let recorder = Recorder(Mutex::default());
+    for unread in unread {
+        recorder.unknown(&unread.repo, &unread.failure, unread.count);
+    }
     let runner = Runner {
         lookup,
         budget,
@@ -194,7 +248,7 @@ where
     };
 
     let mut repos: Vec<(R, Vec<u64>)> = Vec::new();
-    for change in &order {
+    for change in order.iter().filter(|change| !seeds.contains_key(*change)) {
         match repos.iter_mut().find(|(repo, _)| *repo == change.repo) {
             Some((_, numbers)) => numbers.push(change.number),
             None => repos.push((change.repo.clone(), vec![change.number])),
@@ -220,10 +274,13 @@ where
         .collect();
     let mut walks = Vec::new();
     for change in &order {
-        if let Some(repo) = by_repo.get(&change.repo)
+        let repo = by_repo.get(&change.repo).copied();
+        if let Some(seed) = seeds.get(change) {
+            walks.push(runner.walk_seed(change, repo, seed).boxed());
+        } else if let Some(repo) = repo
             && let Some(open) = repo.open.get(&change.number)
         {
-            walks.push(runner.walk(change, repo, open));
+            walks.push(runner.walk(change, repo, open, None).boxed());
         }
     }
     let stacks = stream::iter(walks)
@@ -348,7 +405,7 @@ type MemoKey<R> = (R, Direction, String);
 struct Runner<'a, R, L> {
     lookup: &'a L,
     budget: &'a Budget,
-    recorder: &'a Recorder,
+    recorder: &'a Recorder<R>,
     /// Every branch question asked of the host, answered or still running: walks that reach
     /// the same branch at once share one request, and a failure is not asked again.
     memo: Mutex<HashMap<MemoKey<R>, Shared<BoxFuture<'a, Answer>>>>,
@@ -375,7 +432,7 @@ where
         };
         match page {
             Err(failure) => {
-                self.recorder.unknown(&failure, numbers.len());
+                self.recorder.unknown(&repo, &failure, numbers.len());
                 Resolved::Unread
             }
             Ok(OpenPage::Complete(changes)) => {
@@ -405,7 +462,7 @@ where
                                 .into_iter()
                                 .filter(|(number, _)| missing.contains(number)),
                         ),
-                        Err(failure) => self.recorder.unknown(&failure, missing.len()),
+                        Err(failure) => self.recorder.unknown(&repo, &failure, missing.len()),
                     }
                 }
                 Resolved::Read(Repo {
@@ -455,20 +512,43 @@ where
     }
 
     /// `current`'s stack by its reference, or `None` when it is in none.
+    async fn walk_seed(
+        &self,
+        change: &ChangeRef<R>,
+        repo: Option<&Repo<R>>,
+        seed: &StackSeed,
+    ) -> Option<(ChangeRef<R>, ChangeStack)> {
+        let remote = Repo {
+            repo: change.repo.clone(),
+            branches: Branches::Remote,
+            open: HashMap::new(),
+        };
+        self.walk(change, repo.unwrap_or(&remote), &seed.current, Some(seed))
+            .await
+    }
+
     async fn walk(
         &self,
         change: &ChangeRef<R>,
         repo: &Repo<R>,
         current: &OpenChange,
+        seed: Option<&StackSeed>,
     ) -> Option<(ChangeRef<R>, ChangeStack)> {
         let mut path: HashSet<u64> = HashSet::from([current.number()]);
-        // Nearest first.
-        let mut below: Vec<OpenChange> = Vec::new();
+        // Nearest first. Keep native successors reserved while looking for parents.
+        let mut below = Vec::new();
+        let mut base = seed.map(|seed| {
+            below.extend(seed.below.iter().rev().take(STACK_DEPTH).cloned());
+            path.extend(below.iter().chain(&seed.above).map(OpenChange::number));
+            seed.base_branch.clone()
+        });
         let bottom = loop {
             if below.len() == STACK_DEPTH {
                 break cut_bottom(StackCut::Limit);
             }
-            let target = below.last().unwrap_or(current).target_branch().to_string();
+            let target = base
+                .take()
+                .unwrap_or_else(|| below.last().unwrap_or(current).target_branch().to_string());
             let found = match self.branch(repo, Direction::From, &target).await {
                 Ok(found) => found,
                 Err(failure) => break cut_bottom(failure.kind().cut()),
@@ -487,8 +567,13 @@ where
                 _ => break ChangeStackBottom::Ambiguous,
             }
         };
+        if let Some(seed) = seed {
+            for successor in &seed.above {
+                path.remove(&successor.number());
+            }
+        }
         let above = self
-            .above(repo, current, &path, STACK_MEMBERS - below.len())
+            .above(repo, current, &path, STACK_MEMBERS - below.len(), seed)
             .await;
         let stack = ChangeStack::new(
             current.stacked(),
@@ -508,6 +593,7 @@ where
         current: &OpenChange,
         below: &HashSet<u64>,
         room: usize,
+        seed: Option<&StackSeed>,
     ) -> ChangeStackAbove {
         let mut tree = vec![Built::new(current.clone())];
         // A node, its depth and its path above `current`.
@@ -521,8 +607,17 @@ where
             } else if depth == STACK_DEPTH || shown == room {
                 cut_end(StackCut::Limit)
             } else {
-                let source = node.source_branch().to_string();
-                match self.branch(repo, Direction::Into, &source).await {
+                // The first nodes are the linear native prefix. Once it ends, ask the
+                // ordinary branch lookup unless pagination hid the actual top.
+                let children = match seed.filter(|seed| at <= seed.above.len()) {
+                    Some(seed) if at < seed.above.len() => Ok(Arc::from([seed.above[at].clone()])),
+                    Some(seed) if seed.more_above => Err(FailureKind::Limit.into()),
+                    _ => {
+                        self.branch(repo, Direction::Into, node.source_branch())
+                            .await
+                    }
+                };
+                match children {
                     Err(failure) => cut_end(failure.kind().cut()),
                     Ok(children) => {
                         let (mut cycle, mut full) = (false, false);

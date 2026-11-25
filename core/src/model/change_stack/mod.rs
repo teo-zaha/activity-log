@@ -1,4 +1,4 @@
-//! Where a change (a GitLab merge request, later a GitHub pull request) stands among its
+//! Where a change (a GitLab merge request or a GitHub pull request) stands among its
 //! repository's open changes: one wire type every code host's entries carry. `ChangeStack` is
 //! here, its parts one per file.
 

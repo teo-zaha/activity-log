@@ -1,7 +1,5 @@
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(super) enum CollectionError {
-    RepeatedPage,
-    MissingNextCursor,
     ReviewPullRequestMismatch,
     ReviewAuthorMismatch,
     IncompleteCommitDiscovery,
@@ -13,8 +11,6 @@ pub(super) enum CollectionError {
 impl std::fmt::Display for CollectionError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.write_str(match self {
-            Self::RepeatedPage => "GitHub repeated a page of results",
-            Self::MissingNextCursor => "GitHub did not name the next page of results",
             Self::ReviewPullRequestMismatch => {
                 "GitHub returned reviews for a different pull request"
             }

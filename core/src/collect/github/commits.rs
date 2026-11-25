@@ -6,14 +6,19 @@ use serde::{Deserialize, Serialize};
 
 use crate::{
     model::{CollectOptions, Timestamp, github::GitHubAction},
-    provider::{github::api::GitHubApi, remote_error::ApiError},
+    provider::{
+        github::api::{
+            GitHubApi,
+            pager::{Page, PageError, Pager},
+        },
+        remote_error::ApiError,
+    },
 };
 
 use super::{
     Collection, CollectionError, Viewer,
     commit_repositories::{RepositoryNode, RepositoryQuery},
     entry,
-    pager::{Page, Pager},
     response::{Repository, nonblank},
 };
 
@@ -227,12 +232,12 @@ impl Collection<'_> {
         let mut pager = Pager::new();
         let mut commits = Vec::new();
         while let Some(batch) = pager
-            .next(
+            .next::<_, anyhow::Error>(
                 async |after| {
                     if let Some(first) = first.take() {
                         return Ok(first);
                     }
-                    let after = after.ok_or(CollectionError::MissingNextCursor)?;
+                    let after = after.ok_or(PageError::MissingNextCursor)?;
                     let branch = next_history(
                         self.api,
                         MoreHistoryVariables {

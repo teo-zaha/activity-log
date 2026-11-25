@@ -1,0 +1,27 @@
+query OpenStackPulls(
+  $owner: String!
+  $name: String!
+  $head: String
+  $base: String
+  $after: String
+) {
+  repository(owner: $owner, name: $name) {
+    nameWithOwner
+    pullRequests(
+      states: [OPEN]
+      first: 100
+      after: $after
+      headRefName: $head
+      baseRefName: $base
+      orderBy: { field: CREATED_AT, direction: ASC }
+    ) {
+      pageInfo {
+        hasNextPage
+        endCursor
+      }
+      nodes {
+        ...StackPull
+      }
+    }
+  }
+}

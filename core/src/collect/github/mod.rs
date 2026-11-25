@@ -1,7 +1,6 @@
 mod commit_repositories;
 mod commits;
 mod error;
-mod pager;
 mod response;
 
 use std::collections::HashSet;
@@ -19,13 +18,18 @@ use crate::{
         github::{GitHubAction, GitHubEntry, GitHubReviewState, IssueRef, Item, PullRequestRef},
     },
     provider::{
-        github::{GitHubConfig, api::GitHubApi},
+        github::{
+            GitHubConfig,
+            api::{
+                GitHubApi,
+                pager::{Page, PageError, Pager},
+            },
+        },
         provider_context::ProviderContext,
     },
 };
 
 use error::CollectionError;
-use pager::{Page, Pager};
 use response::{
     Contributions, HostedItem, MoreReviews, Opened, OwnPullRequest, OwnPullRequests, Review,
     ReviewCandidate, ReviewContribution, ReviewState, User, Viewer, ViewerUser,
@@ -220,7 +224,7 @@ impl Collection<'_> {
         };
         let mut pager = Pager::new();
         while let Some(batch) = pager
-            .next(
+            .next::<_, anyhow::Error>(
                 async |after| {
                     self.contribution_page(query, &WindowVariables::new(window, after))
                         .await
@@ -258,7 +262,7 @@ impl Collection<'_> {
         let login = self.login.clone();
         let mut pager = Pager::new();
         while let Some(batch) = pager
-            .next(
+            .next::<_, anyhow::Error>(
                 async |after| {
                     self.contribution_page(
                         REVIEWED_PULL_REQUESTS,
@@ -285,7 +289,7 @@ impl Collection<'_> {
     async fn own_pull_requests(&mut self) -> Result<()> {
         let mut pager = Pager::new();
         while let Some(batch) = pager
-            .next(
+            .next::<_, anyhow::Error>(
                 async |after| {
                     let response: Viewer<OwnPullRequests> = self
                         .api
@@ -324,12 +328,12 @@ impl Collection<'_> {
         let mut first = Some(reviews);
         let mut pager = Pager::new();
         while let Some(batch) = pager
-            .next(
+            .next::<_, anyhow::Error>(
                 async |after| {
                     if let Some(first) = first.take() {
                         return Ok(first);
                     }
-                    let after = after.ok_or(CollectionError::MissingNextCursor)?;
+                    let after = after.ok_or(PageError::MissingNextCursor)?;
                     let response: MoreReviews = self
                         .api
                         .graphql(

@@ -514,6 +514,30 @@ describe('EventDetailComponent', () => {
     expect(backend.openedUrls).toEqual([githubPullRequestEntry.target.webUrl])
   })
 
+  it('renders a GitHub stack with pull request references and source links', async () => {
+    const backend = new MockBackendTransport()
+    const url = 'https://github.com/acme/widgets/pull/11'
+    const entry = createEntryAdapter({
+      ...githubPullRequestEntry,
+      target: {
+        ...githubPullRequestEntry.target,
+        changeStack: {
+          current: { number: githubPullRequestEntry.target.number, title: 'Add widget' },
+          below: [{ number: 11, title: 'Groundwork', webUrl: url }],
+          bottom: { kind: 'reached', branch: 'main' },
+          above: { changes: [], end: { kind: 'complete' } },
+        },
+      },
+    })
+    await renderDetails([entry], { event: entry.trackKey }, [provideMockBackend(backend)])
+
+    const stack = screen.getByRole('region', { name: 'Stack' })
+    const parent = within(stack).getByRole('link', { name: '#11 Groundwork' })
+    expect(parent.getAttribute('href')).toBe(url)
+    fireEvent.click(parent)
+    expect(backend.openedUrls).toEqual([url])
+  })
+
   it('opens a GitHub issue using its supplied URL', async () => {
     const backend = new MockBackendTransport()
     const url = 'https://github.com/acme/widgets/issues/7'

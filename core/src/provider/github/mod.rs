@@ -1,5 +1,6 @@
 pub(crate) mod api;
 mod config;
+mod stack;
 
 pub use config::*;
 
@@ -31,6 +32,10 @@ crate::provider! {
             collect_github(&options, &context)
                 .await
                 .map(|entries| entries.into_activity_entries())
+        }
+
+        fn annotate<'a>(&'a self, entries: &'a mut [crate::model::ActivityEntry], context: crate::provider::provider_context::ProviderContext) -> futures::future::BoxFuture<'a, ()> {
+            Box::pin(stack::annotate(entries, context))
         }
 
         fn description(&self) -> &'static str {

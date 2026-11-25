@@ -1,0 +1,10 @@
+fragment StackPull on PullRequest {
+  id
+  number
+  title
+  state
+  headRefName
+  baseRefName
+  isCrossRepository
+  url
+}

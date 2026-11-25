@@ -1,4 +1,5 @@
 mod endpoints;
+pub(crate) mod pager;
 
 use anyhow::{Context, Result};
 use reqwest::{
@@ -34,7 +35,7 @@ pub(crate) struct GitHubApi {
 
 #[derive(Serialize)]
 struct Query<'a, V> {
-    query: &'static str,
+    query: &'a str,
     variables: &'a V,
 }
 
@@ -112,14 +113,20 @@ impl GitHubApi {
         variables: &V,
     ) -> Result<QueryAnswer> {
         Self::query_result(
-            self.remote
-                .post_graphql_answer(
-                    self.graphql.clone(),
-                    &Query { query, variables },
-                    Retry::OnceShort,
-                )
+            self.graphql_answer_with(query, variables, Retry::OnceShort)
                 .await,
         )
+    }
+
+    pub(crate) async fn graphql_answer_with<V: Serialize>(
+        &self,
+        query: &str,
+        variables: &V,
+        retry: Retry,
+    ) -> Result<QueryAnswer, PostJsonError> {
+        self.remote
+            .post_graphql_answer(self.graphql.clone(), &Query { query, variables }, retry)
+            .await
     }
 
     fn query_result<T>(result: Result<T, PostJsonError>) -> Result<T> {

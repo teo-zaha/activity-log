@@ -27,3 +27,18 @@ pub enum GitHubAction {
         web_url: Option<String>,
     },
 }
+
+impl GitHubAction {
+    pub(crate) fn pull_request_mut(&mut self) -> Option<&mut PullRequestRef> {
+        match self {
+            Self::Opened {
+                target: Item::PullRequest(pull_request),
+            }
+            | Self::Reviewed { pull_request, .. } => Some(pull_request),
+            Self::Opened {
+                target: Item::Issue(_),
+            }
+            | Self::Committed { .. } => None,
+        }
+    }
+}

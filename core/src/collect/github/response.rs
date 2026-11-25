@@ -4,7 +4,7 @@ use serde::{Deserialize, Deserializer, de::Error as _};
 
 use crate::model::Timestamp;
 
-use super::pager::Page;
+use crate::provider::github::api::pager::Page;
 
 #[derive(Deserialize)]
 pub(super) struct Viewer<T> {
