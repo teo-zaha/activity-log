@@ -107,6 +107,12 @@ async function holdRemoval(): Promise<void> {
   }
 }
 
+function expectNoListPositionTransitions(): void {
+  for (const box of root().querySelectorAll('.timeline, .day-group')) {
+    expect(getComputedStyle(box).transitionProperty).toBe('none')
+  }
+}
+
 async function reduce(on: boolean): Promise<void> {
   await cdp().send('Emulation.setEmulatedMedia', {
     features: [{ name: 'prefers-reduced-motion', value: on ? 'reduce' : 'no-preference' }],
@@ -175,6 +181,7 @@ describe('Timeline collection motion', () => {
     await holdRemoval()
     await reduce(true)
     await expect.poll(ghosts).toHaveLength(0)
+    expectNoListPositionTransitions()
     const animate = vi.spyOn(HTMLElement.prototype, 'animate')
     publish(backend, base)
     await expect.poll(() => entry('below removed')).not.toBeNull()
@@ -231,14 +238,31 @@ describe('Timeline collection motion', () => {
 
   it('clears motion while the router holds the detached Timeline', async () => {
     const { backend, router } = await open()
+    const animate = HTMLElement.prototype.animate
+    vi.spyOn(HTMLElement.prototype, 'animate').mockImplementation(function (
+      this: HTMLElement,
+      keyframes,
+      options
+    ) {
+      const animation = animate.call(this, keyframes, options)
+      animation.pause()
+      return animation
+    })
     publish(backend, changed)
-    await holdRemoval()
+    await expect.poll(ghosts).not.toHaveLength(0)
     const scroller = root()
+    const inFlight = scroller
+      .getAnimations({ subtree: true })
+      .filter(
+        animation => !(animation instanceof CSSAnimation || animation instanceof CSSTransition)
+      )
+    expect(inFlight).not.toHaveLength(0)
     const host = scroller.closest('app-timeline')!
     const ghost = ghosts()[0]!
     await router.navigateByUrl(`/week/2026-05-18?${RANGE}`)
     await expect.poll(() => scroller.isConnected).toBe(false)
     await expect.poll(() => host.contains(ghost)).toBe(false)
+    expect(inFlight.map(animation => animation.playState)).toEqual(inFlight.map(() => 'idle'))
     publish(backend, base)
     const data = TestBed.inject(ActivityDataService)
     await expect.poll(() => data.allEntries().some(item => item.id === 'below removed')).toBe(true)
@@ -246,7 +270,10 @@ describe('Timeline collection motion', () => {
     await expect.poll(() => entry('below removed')).not.toBeNull()
     expect(root()).toBe(scroller)
     expect(ghosts()).toHaveLength(0)
-    expect(root().getAnimations({ subtree: true })).toHaveLength(0)
+    // Reattaching under the pointer can start the row's hover transitions.
+    const animations = root().getAnimations({ subtree: true })
+    expect(animations.filter(animation => !(animation instanceof CSSTransition))).toHaveLength(0)
+    expectNoListPositionTransitions()
   })
 
   it('keeps a collection replacement of more than 32 on-screen items still', async () => {
