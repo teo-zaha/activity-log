@@ -1,10 +1,59 @@
 use super::*;
+
+#[test]
+fn team_scope_reads_numeric_ids_and_both_link_shapes_in_list_order() {
+    let mut config = config(&[]);
+    config.teams = Some(
+        [
+            "100001",
+            "https://www.figma.com/files/team/200002/Design",
+            "https://figma.com/files/300003/team/100001/Design?fuid=8",
+            "https://www.figma.com/files/300003/team/400004",
+        ]
+        .map(str::to_owned)
+        .to_vec(),
+    );
+    let scope = FigmaScope::of(&config).unwrap();
+    let teams: Vec<_> = scope
+        .teams
+        .iter()
+        .map(|(item, id)| (*item, id.as_str()))
+        .collect();
+    assert_eq!(teams, [(1, "100001"), (2, "200002"), (4, "400004")]);
+}
+
+#[test]
+fn invalid_team_links_and_ids_report_the_original_list_position() {
+    for input in [
+        "",
+        "Team31",
+        "１２３",
+        "https://www.figma.com/files/team/%31",
+        "https://www.figma.com/files/team/31/..",
+        "https://www.figma.com/files/31",
+        "https://www.figma.com/files/31/team/",
+        "https://www.figma.com/files/team/31\\Design",
+        "https://www.figma.com.example.org/files/team/31",
+        "https://user@www.figma.com/files/team/31",
+        "https://www.figma.com:444/files/team/31",
+        "http://www.figma.com/files/team/31",
+    ] {
+        let mut config = config(&[]);
+        config.teams = Some(vec!["21".into(), "21".into(), input.into()]);
+        assert_eq!(
+            FigmaScope::of(&config).unwrap_err(),
+            ScopeError::NotATeam { item: 3 },
+            "{input}"
+        );
+    }
+}
 use crate::provider::provider_config::{ProviderConfigShape, ProviderConfigValueType};
 
 fn config(items: &[&str]) -> FigmaConfig {
     FigmaConfig {
         token: "test-secret".to_owned(),
         files: Some(items.iter().map(|item| (*item).to_owned()).collect()),
+        teams: None,
     }
 }
 
@@ -92,14 +141,16 @@ fn rejects_invalid_keys_and_reports_the_original_list_position() {
 }
 
 #[test]
-fn file_list_is_optional_and_does_not_bind_the_token() {
-    let [token, files] = FigmaConfig::binding().requirements else {
-        panic!("expected a token and a file list");
+fn file_and_team_lists_are_optional_and_do_not_bind_the_token() {
+    let [token, files, teams] = FigmaConfig::binding().requirements else {
+        panic!("expected a token, a file list and a team list");
     };
     assert!(token.is_secret() && token.account && !token.binds);
-    assert!(!files.required && !files.binds && !files.account);
-    assert_eq!(
-        files.shape,
-        ProviderConfigShape::List(ProviderConfigValueType::String)
-    );
+    for list in [files, teams] {
+        assert!(!list.required && !list.binds && !list.account);
+        assert_eq!(
+            list.shape,
+            ProviderConfigShape::List(ProviderConfigValueType::String)
+        );
+    }
 }

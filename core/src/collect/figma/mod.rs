@@ -1,10 +1,11 @@
 pub(crate) mod file_book;
 pub(crate) mod local_tabs;
 mod run;
+mod team_discovery;
 
 use std::{collections::HashMap, fmt};
 
-use chrono::Utc;
+use chrono::{TimeDelta, Utc};
 
 use anyhow::Result;
 use futures::{StreamExt, stream};
@@ -84,11 +85,7 @@ impl fmt::Display for FilePlace {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::Pasted(position) => write!(f, "Figma file list item {position}"),
-            Self::Discovered(key) => write!(
-                f,
-                "Figma file {} discovered from desktop tabs",
-                key.as_str()
-            ),
+            Self::Discovered(key) => write!(f, "Discovered Figma file {}", key.as_str()),
         }
     }
 }
@@ -124,13 +121,34 @@ async fn collect_files(
     run: &ConnectionRun,
     tabs: &TabSnapshot,
 ) -> Result<Vec<FigmaEntry>> {
-    let FigmaScope { files, duplicates } = scope;
+    let FigmaScope {
+        files,
+        teams,
+        duplicates,
+    } = scope;
+    let now = Utc::now();
+    let (start, end) = options.utc_days();
+    let today = now.date_naive();
+    if !teams.is_empty() {
+        let recent = end >= today - TimeDelta::days(1) && start <= today;
+        run.team_listing
+            .get_or_try_init(|| team_discovery::refresh(api, &run.book, &teams, recent))
+            .await?;
+    }
     let pasted = files.iter().map(|(_, file)| file.clone()).collect();
+    let configured_teams = teams.into_iter().map(|(_, team)| team).collect();
     let sightings = tabs.outcome.files_for(principal).cloned().collect();
     let seen_at = tabs.outcome.has_snapshot().then_some(tabs.seen_at);
     let from_book = run
         .book
-        .begin_chunk(sightings, seen_at, pasted, Utc::now())
+        .begin_chunk(
+            sightings,
+            seen_at,
+            pasted,
+            configured_teams,
+            options.start,
+            Utc::now(),
+        )
         .await?;
     run.record_lost(from_book.lost);
 

@@ -13,6 +13,7 @@ fn config() -> FigmaConfig {
     FigmaConfig {
         token: TOKEN.to_owned(),
         files: None,
+        teams: None,
     }
 }
 

@@ -65,6 +65,7 @@ pub(super) struct TabSnapshot {
 pub(super) struct ConnectionRun {
     scope: String,
     pub(super) book: Arc<FileBook>,
+    pub(super) team_listing: OnceCell<()>,
     still_signed_in: OnceCell<Result<bool, ApiError>>,
     lost: Mutex<BTreeSet<FigmaFileKey>>,
 }
@@ -73,6 +74,7 @@ impl ConnectionRun {
     fn new(path: Option<PathBuf>, scope: String) -> Self {
         Self {
             book: Arc::new(FileBook::new(path, scope.clone())),
+            team_listing: OnceCell::new(),
             scope,
             still_signed_in: OnceCell::new(),
             lost: Mutex::default(),

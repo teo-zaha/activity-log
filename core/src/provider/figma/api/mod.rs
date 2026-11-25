@@ -2,20 +2,28 @@
 //! OpenAPI spec (`figma/rest-api-spec` v0.47.0) as their reference.
 
 use chrono::{DateTime, Utc};
-use reqwest::{Url, header::HeaderName};
+use reqwest::{
+    Url,
+    header::{HeaderName, LINK},
+};
+use serde::de::DeserializeOwned;
+use serde_json::Value;
 
-use super::{config::FigmaConfig, scope::FigmaFileKey};
+use super::{
+    config::FigmaConfig,
+    scope::{FigmaFileKey, FigmaTeamId},
+};
 use crate::{
     model::{
         RemoteIdentity,
         figma::{
-            FigmaComment, FigmaCommentsPage, FigmaFileMeta, FigmaFileMetaResponse, FigmaVersion,
-            FigmaVersionsPage,
+            FigmaComment, FigmaCommentsPage, FigmaFileMeta, FigmaFileMetaResponse, FigmaFolder,
+            FigmaFolderFiles, FigmaFolderId, FigmaFolders, FigmaVersion, FigmaVersionsPage,
         },
     },
     provider::{
         http_client_builder,
-        remote_api::{IdField, RemoteClient, SetupError, identity_from, paging::PageGuard},
+        remote_api::{IdField, RemoteClient, Retry, SetupError, identity_from, paging::PageGuard},
         remote_error::ApiError,
     },
 };
@@ -28,6 +36,11 @@ pub(crate) struct FigmaApi {
 pub(crate) enum VersionsError {
     Request(ApiError),
     Repeated,
+}
+
+pub(crate) enum FolderListingError {
+    Request(ApiError),
+    Paginated,
 }
 
 impl FigmaApi {
@@ -66,6 +79,84 @@ impl FigmaApi {
             IdField::Text("id"),
             "handle",
         )
+    }
+
+    pub(crate) async fn team_folders(
+        &self,
+        team: &FigmaTeamId,
+    ) -> Result<Vec<FigmaFolder>, FolderListingError> {
+        self.folders("teams", team.as_str()).await
+    }
+
+    pub(crate) async fn subfolders(
+        &self,
+        folder: &FigmaFolderId,
+    ) -> Result<Vec<FigmaFolder>, FolderListingError> {
+        self.folders("folders", folder.as_str()).await
+    }
+
+    async fn folders(&self, route: &str, id: &str) -> Result<Vec<FigmaFolder>, FolderListingError> {
+        let url = self.remote.endpoint(&["v2", route, id, "folders"]);
+        let response: FigmaFolders = self.complete_folder_listing(url).await?;
+        Ok(response.folders)
+    }
+
+    pub(crate) async fn folder_files(
+        &self,
+        folder: &FigmaFolderId,
+    ) -> Result<FigmaFolderFiles, FolderListingError> {
+        let url = self
+            .remote
+            .endpoint(&["v2", "folders", folder.as_str(), "files"]);
+        self.complete_folder_listing(url).await
+    }
+
+    async fn complete_folder_listing<T: DeserializeOwned>(
+        &self,
+        url: Url,
+    ) -> Result<T, FolderListingError> {
+        let (answer, headers): (Value, _) = self
+            .remote
+            .get_json_with_headers(url, Retry::OnceShort)
+            .await
+            .map_err(FolderListingError::Request)?;
+        let continuation = |page: &Value| {
+            [
+                "cursor",
+                "next_cursor",
+                "next_page",
+                "nextCursor",
+                "nextPage",
+            ]
+            .into_iter()
+            .any(|field| page.get(field).is_some_and(|value| !value.is_null()))
+        };
+        let next_header = ["x-next-page", "x-next-cursor"].into_iter().any(|name| {
+            headers
+                .get_all(name)
+                .iter()
+                .any(|value| !value.as_bytes().is_empty())
+        });
+        let next_link = headers.get_all(LINK).iter().any(|link| {
+            link.to_str().is_ok_and(|link| {
+                link.split(';').skip(1).any(|parameter| {
+                    let relation = parameter.split(',').next().unwrap_or_default().trim();
+                    relation.split_once('=').is_some_and(|(name, value)| {
+                        name.trim().eq_ignore_ascii_case("rel")
+                            && value
+                                .trim()
+                                .trim_matches('"')
+                                .split_ascii_whitespace()
+                                .any(|kind| kind.eq_ignore_ascii_case("next"))
+                    })
+                })
+            })
+        });
+        if continuation(&answer) || continuation(&answer["pagination"]) || next_header || next_link
+        {
+            return Err(FolderListingError::Paginated);
+        }
+        serde_json::from_value(answer).map_err(|_| FolderListingError::Request(ApiError::Decode))
     }
 
     pub(crate) async fn file_meta(&self, file: &FigmaFileKey) -> Result<FigmaFileMeta, ApiError> {

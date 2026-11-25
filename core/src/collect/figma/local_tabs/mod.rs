@@ -24,6 +24,8 @@ use macos as imp;
 #[cfg(target_os = "windows")]
 use windows as imp;
 
+pub(crate) const SUPPORTED: bool = imp::SUPPORTED;
+
 const LIMIT: u32 = 4 * 1024 * 1024;
 
 #[derive(Debug)]

@@ -794,14 +794,22 @@ fn snapshot_only_sends_placeholders_declared_by_the_provider() {
 }
 
 #[test]
-fn figma_settings_offer_a_file_list_and_a_token_with_no_address_to_bind() {
-    let configured = file("[[figma]]\nlabel = \"Design\"\nfiles = [\"F1\", \"F2\"]\n");
+fn figma_settings_offer_file_and_team_lists_and_a_token_with_no_address_to_bind() {
+    let configured =
+        file("[[figma]]\nlabel = \"Design\"\nfiles = [\"F1\", \"F2\"]\nteams = [\"100001\"]\n");
     let state = connection_state(&configured, "figma/design");
     assert_eq!(
         field(&state, "FIGMA_FILES"),
         ProviderConfigFieldValueDto::List {
             item_type: ProviderConfigValueTypeDto::String,
             items: vec!["F1".into(), "F2".into()],
+        }
+    );
+    assert_eq!(
+        field(&state, "FIGMA_TEAMS"),
+        ProviderConfigFieldValueDto::List {
+            item_type: ProviderConfigValueTypeDto::String,
+            items: vec!["100001".into()],
         }
     );
     assert_eq!(

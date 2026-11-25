@@ -15,12 +15,15 @@ use serde::{Deserialize, Serialize};
 
 use crate::{
     cache::{PRUNE_AFTER, state_file},
-    model::RemoteIdentity,
+    model::{RemoteIdentity, figma::FigmaFolderId},
     platform::private_file::{Folder, OwnerOnly, create_private_folder, open_folder},
-    provider::{figma::scope::FigmaFileKey, provider_context::ProviderContext},
+    provider::{
+        figma::scope::{FigmaFileKey, FigmaTeamId},
+        provider_context::ProviderContext,
+    },
 };
 
-use record::{Access, AccessCheck, FileRecord};
+use record::{Access, AccessCheck, FileRecord, TeamSighting};
 
 const VERSION: u32 = 1;
 
@@ -31,6 +34,15 @@ struct Book {
     #[serde(default)]
     tab_snapshot_at: Option<DateTime<Utc>>,
     files: BTreeMap<FigmaFileKey, FileRecord>,
+    #[serde(default)]
+    teams: BTreeMap<FigmaTeamId, TeamFolders>,
+}
+
+/// Order by observation time, then by the complete set for equally timed observations.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+pub(super) struct TeamFolders {
+    pub(super) discovered_at: DateTime<Utc>,
+    pub(super) folders: BTreeSet<FigmaFolderId>,
 }
 
 impl Default for Book {
@@ -39,6 +51,7 @@ impl Default for Book {
             version: VERSION,
             tab_snapshot_at: None,
             files: BTreeMap::new(),
+            teams: BTreeMap::new(),
         }
     }
 }
@@ -49,11 +62,26 @@ impl Book {
         for (file, record) in other.files {
             self.files.entry(file).or_default().merge(record);
         }
+        for (team, folders) in other.teams {
+            self.record_team(team, folders);
+        }
+    }
+
+    fn record_team(&mut self, team: FigmaTeamId, folders: TeamFolders) {
+        if self.teams.get(&team).is_none_or(|known| &folders > known) {
+            self.teams.insert(team, folders);
+        }
     }
 
     fn prune(&mut self, now: DateTime<Utc>) {
         let cutoff = retention_cutoff(now);
-        self.files.retain(|_, record| record.keep_since(cutoff));
+        self.teams.retain(|_, team| team.discovered_at >= cutoff);
+        self.files.retain(|_, record| {
+            record
+                .team_sightings
+                .retain(|_, sighting| sighting.seen_at >= cutoff);
+            record.keep_since(cutoff)
+        });
     }
 
     fn observe_tabs(
@@ -90,6 +118,7 @@ fn retention_cutoff(now: DateTime<Utc>) -> DateTime<Utc> {
 pub(crate) enum BookError {
     Newer(PathBuf),
     Unreadable(PathBuf),
+    ReadFailed { path: PathBuf, cause: anyhow::Error },
     Failed { path: PathBuf, cause: anyhow::Error },
     WorkerStopped(tokio::task::JoinError),
 }
@@ -107,6 +136,13 @@ impl fmt::Display for BookError {
                 "Could not read the Figma file book. Delete {} to start over.",
                 path.display()
             ),
+            Self::ReadFailed { path, .. } => {
+                write!(
+                    f,
+                    "Could not read the Figma file book at {}",
+                    path.display()
+                )
+            }
             Self::Failed { path, .. } => write!(
                 f,
                 "Could not update the Figma file book at {}",
@@ -120,7 +156,7 @@ impl fmt::Display for BookError {
 impl std::error::Error for BookError {
     fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
         match self {
-            Self::Failed { cause, .. } => Some(cause.as_ref()),
+            Self::ReadFailed { cause, .. } | Self::Failed { cause, .. } => Some(cause.as_ref()),
             Self::WorkerStopped(cause) => Some(cause),
             _ => None,
         }
@@ -149,14 +185,21 @@ impl FileBook {
         sightings: Vec<FigmaFileKey>,
         seen_at: Option<DateTime<Utc>>,
         pasted: BTreeSet<FigmaFileKey>,
+        configured_teams: BTreeSet<FigmaTeamId>,
+        start: DateTime<Utc>,
         now: DateTime<Utc>,
     ) -> Result<ChunkFiles> {
         self.edit(move |book| {
             book.observe_tabs(sightings, seen_at, &pasted);
             book.prune(now);
+            let cutoff = retention_cutoff(now);
             let mut chunk = ChunkFiles::default();
             for (key, record) in &mut book.files {
-                if pasted.contains(key) {
+                let in_scope = record.tab_activity_since(cutoff)
+                    || record.team_sightings.iter().any(|(team, sighting)| {
+                        configured_teams.contains(team) && sighting.last_modified >= start
+                    });
+                if pasted.contains(key) || !in_scope {
                     continue;
                 }
                 if record.claim(now) {
@@ -169,6 +212,45 @@ impl FileBook {
                 }
             }
             chunk
+        })
+        .await
+    }
+
+    pub(super) async fn team_folders(
+        self: &Arc<Self>,
+        team: FigmaTeamId,
+        now: DateTime<Utc>,
+    ) -> Result<Option<TeamFolders>> {
+        self.edit(move |book| {
+            book.teams
+                .get(&team)
+                .filter(|known| known.discovered_at >= retention_cutoff(now))
+                .cloned()
+        })
+        .await
+    }
+
+    pub(super) async fn remember_team(
+        self: &Arc<Self>,
+        team: FigmaTeamId,
+        discovered: Option<TeamFolders>,
+        sighted: BTreeMap<FigmaFileKey, DateTime<Utc>>,
+        seen_at: DateTime<Utc>,
+    ) -> Result<()> {
+        self.edit(move |book| {
+            if let Some(discovered) = discovered {
+                book.record_team(team.clone(), discovered);
+            }
+            for (key, last_modified) in sighted {
+                book.files.entry(key).or_default().observe_team(
+                    team.clone(),
+                    TeamSighting {
+                        seen_at,
+                        last_modified,
+                    },
+                );
+            }
+            book.prune(seen_at);
         })
         .await
     }
@@ -251,7 +333,7 @@ pub(crate) fn path(context: &ProviderContext, principal: &RemoteIdentity) -> Opt
 }
 
 /// The startup check reads the book without reserving retries or changing retention.
-pub(crate) async fn has_recent_file(path: PathBuf) -> Result<bool, BookError> {
+pub(crate) async fn has_recent_tab_file(path: PathBuf) -> Result<bool, BookError> {
     state_file::blocking(move || {
         let check = || -> Result<bool> {
             let (dir, name) = state_file::path_parts(&path)?;
@@ -267,11 +349,11 @@ pub(crate) async fn has_recent_file(path: PathBuf) -> Result<bool, BookError> {
             Ok(read_book(&folder, name, &path)?
                 .files
                 .values()
-                .any(|record| record.keep_since(cutoff)))
+                .any(|record| record.tab_activity_since(cutoff)))
         };
         check().map_err(|cause| match cause.downcast::<BookError>() {
             Ok(error) => error,
-            Err(cause) => BookError::Failed { path, cause },
+            Err(cause) => BookError::ReadFailed { path, cause },
         })
     })
     .await

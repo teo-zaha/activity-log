@@ -76,20 +76,17 @@ async fn check(
         )
         .with_identity(IdentityEvidence::Unnamed),
         Ok(Some(principal)) => {
-            if scope.files.is_empty() {
+            if scope.files.is_empty() && scope.teams.is_empty() {
                 let tabs = tabs.await;
                 if tabs.files_for(&principal.id).next().is_none() {
                     let remembered = match file_book::path(context, &principal) {
-                        Some(path) => file_book::has_recent_file(path).await,
+                        Some(path) => file_book::has_recent_tab_file(path).await,
                         None => Ok(false),
                     };
                     let unavailable = match remembered {
                         Ok(true) => return identity_check(FigmaApi::SERVICE, Ok(Some(principal))),
                         Ok(false) => missing_files(&tabs),
-                        Err(error) => ProviderCheckResult::unavailable_as(
-                            ProviderProblem::Failed,
-                            error.to_string(),
-                        ),
+                        Err(error) => ProviderCheckResult::unavailable_from(&error.into()),
                     };
                     return unavailable.with_identity(IdentityEvidence::Verified(principal));
                 }
@@ -101,13 +98,13 @@ async fn check(
 }
 
 fn missing_files(tabs: &local_tabs::Outcome) -> ProviderCheckResult {
-    let reason = if cfg!(target_os = "linux") {
-        "No Figma file links or remembered files are available for this account. Add a Figma file link. Desktop tab discovery is available on macOS and Windows.".into()
-    } else {
+    let reason = if local_tabs::SUPPORTED {
         let explanation = tabs.warning().unwrap_or_else(|| {
-            "No file links, matching open tabs or remembered files are available for this Figma account.".into()
+            "No file links, teams, matching open tabs or remembered files are available for this Figma account.".into()
         });
-        format!("{explanation} Add a file link or open a file in the Figma desktop app.")
+        format!("{explanation} Add a file link or team, or open a file in the Figma desktop app.")
+    } else {
+        "No Figma file links, teams or remembered files are available for this account. Add a file link or team. Desktop tab discovery is available on macOS and Windows.".into()
     };
     ProviderCheckResult::unavailable_as(ProviderProblem::NotConfigured, reason)
 }

@@ -9,6 +9,28 @@ use crate::{
 use super::*;
 
 #[tokio::test]
+async fn a_team_only_connection_checks_the_token_without_listing_folders() {
+    let config = FigmaConfig {
+        token: "example-token".into(),
+        files: None,
+        teams: Some(vec!["100001".into()]),
+    };
+    let server = TestServer::start(|_| Reply::json(200, r#"{"id":"1001","handle":"ada"}"#));
+    let result = check(
+        &ProviderContext::default(),
+        &config,
+        |config| FigmaApi::at(&server.url, config),
+        async { local_tabs::Outcome::Absent },
+    )
+    .await;
+    assert!(matches!(result.outcome, CheckOutcome::Available));
+    assert!(matches!(result.identity, IdentityEvidence::Verified(_)));
+    let requests = server.requests();
+    assert_eq!(requests.len(), 1);
+    assert_eq!(requests[0].path(), "/v1/me");
+}
+
+#[tokio::test]
 async fn invalid_scope_is_not_configured_before_any_request() {
     let server = TestServer::start(|_| Reply::json(200, r#"{"id":"1001","handle":"ada"}"#));
     {
@@ -16,6 +38,7 @@ async fn invalid_scope_is_not_configured_before_any_request() {
         let config = FigmaConfig {
             token: "token".into(),
             files,
+            teams: None,
         };
         let result = check(
             &ProviderContext::default(),
@@ -38,6 +61,7 @@ async fn startup_check_keeps_the_identity_evidence_from_figma_me() {
     let config = FigmaConfig {
         token: "token".into(),
         files: Some(vec!["V1".into()]),
+        teams: None,
     };
     for (status, body, problem, identity) in [
         (
@@ -97,6 +121,7 @@ async fn a_tabs_only_connection_accepts_open_tabs_or_a_recent_book_for_the_verif
     let config = FigmaConfig {
         token: "example-token".into(),
         files: None,
+        teams: None,
     };
     let server = TestServer::start(|_| Reply::json(200, r#"{"id":"1001","handle":"ada"}"#));
     let temp = tempfile::tempdir().unwrap();

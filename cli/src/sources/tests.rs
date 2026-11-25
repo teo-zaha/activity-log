@@ -233,11 +233,12 @@ fn lists_connections_in_columns() {
 }
 
 #[test]
-fn adding_figma_prompts_for_a_hidden_token_and_a_file_list() {
+fn adding_figma_prompts_for_a_hidden_token_and_file_and_team_lists() {
     let mut file = ConfigFile::parse("config.toml", b"").unwrap();
     let mut script = Script::new(&[
         "test-figma-token",
         "https://www.figma.com/design/F1/One, F2",
+        "https://www.figma.com/files/team/100001/Design, 200002",
     ]);
     let values = ask_values(&Source::Figma, &mut script).unwrap();
     let id = add(&mut file, &Source::Figma, Some("Design"), None, &values).unwrap();
@@ -247,5 +248,9 @@ fn adding_figma_prompts_for_a_hidden_token_and_a_file_list() {
     assert_eq!(
         value(&file, "figma/design", "FIGMA_FILES").as_deref(),
         Some(r#"["https://www.figma.com/design/F1/One","F2"]"#)
+    );
+    assert_eq!(
+        value(&file, "figma/design", "FIGMA_TEAMS").as_deref(),
+        Some(r#"["https://www.figma.com/files/team/100001/Design","200002"]"#)
     );
 }

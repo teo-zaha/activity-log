@@ -403,15 +403,17 @@ Each source below lists its entry types, Timeline subtitle line, detail panel fi
 - **Entries.** Named versions, unlabeled version checkpoints, comments, and replies credited to your Figma account.
 - **Timeline line.** `Saved version "…"`, `Edited`, `Commented`, or `Replied`.
 - **Detail panel.** File and Kind, plus Version and Description for named versions, Comment for comments and replies, and Resolved for top-level comments. **Open in Figma** opens the file or the comment's node when available.
-- **Configuration.** `token` holds your personal access token. `files` optionally lists Figma file or branch links or keys. On macOS and Windows, Activity Log can also find files in open Figma desktop tabs for the same account.
+- **Configuration.** `token` holds your personal access token. `files` optionally lists Figma file or branch links or keys. `teams` optionally lists team links or numeric team IDs from your own Figma organization. On macOS and Windows, Activity Log can also find files in open Figma desktop tabs for the same account.
 
-Choose **Settings → Add source → Figma** or run `activity-log sources add figma`. Use a personal access token with `current_user:read`, `file_versions:read`, `file_comments:read`, and `file_metadata:read`. Figma lets you set an expiry of up to 90 days. Replace the saved token when it expires. [Create a Figma personal access token](https://developers.figma.com/docs/rest-api/personal-access-tokens/) · [Figma token expiry](https://developers.figma.com/docs/rest-api/changelog/#april-28-2025)
+Choose **Settings → Add source → Figma** or run `activity-log sources add figma`. Use a personal access token with `current_user:read`, `file_versions:read`, `file_comments:read`, and `file_metadata:read`. Add `folders:read` to use `teams`. Figma lets you set an expiry of up to 90 days. Replace the saved token when it expires. [Create a Figma personal access token](https://developers.figma.com/docs/rest-api/personal-access-tokens/) · [Figma folder endpoints](https://developers.figma.com/docs/rest-api/folders-endpoints/) · [Figma token expiry](https://developers.figma.com/docs/rest-api/changelog/#april-28-2025)
 
-Add a file link or open a file in the Figma desktop app to start collecting. The file book keeps recently discovered files available after their tabs close. A newly discovered file can take up to seven days to appear on older days while their cached results are still fresh.
+Add a file link or team, or open a file in the Figma desktop app to start collecting. The file book remembers discovered files after their tabs close. When a run fetches today or yesterday in UTC, it refreshes each configured team's folder tree if the saved tree is at least a day old, then lists the files in each folder. Fetches for older days use remembered files and discover any team whose folder tree is missing. A newly discovered file can take up to seven days to appear on older days while their cached results are still fresh.
 
-If the token can no longer read a configured file, the Figma connection’s collection fails and reports the file’s position in `files`. Remove that item from the list and collect again.
+If the token can no longer read a configured file or team, the Figma connection’s collection fails and reports the item's position in `files` or `teams`. Remove that item or restore access, then collect again.
 
-Each configured file uses one metadata request and one comments request per fetched range. Collection also uses one version-history request per page unless fresh metadata shows the file was last modified before the range began. Comments and version history count toward Figma's Tier 2 limits. A View or Collab seat can get up to five Tier 2 requests per minute, so a couple of active files can use most of that allowance. [Figma rate limits](https://developers.figma.com/docs/rest-api/rate-limits/)
+Team discovery selects files whose reported modification reaches the fetched range's start. A past-only run uses the last listing's modification times for remembered teams, so it can miss a newly changed file until a recent run lists its folder again. A file discovered in a desktop tab remains eligible under the tab rule even if it is also listed in a team. A comment on an otherwise untouched team file may be missed. Add the file to `files` to read it for every fetched range.
+
+Each file read uses one metadata request and one comments request per fetched range, plus one version-history request per page unless fresh metadata shows the file's last modification predates the range. Discovering a team uses one request for its top-level folders and one for each folder's subfolders. Refreshing the team's file list uses one request per folder. Folder and file listings, comments, and version history count toward Figma's Tier 2 limits. A View or Collab seat can get up to five Tier 2 requests per minute. [Figma rate limits](https://developers.figma.com/docs/rest-api/rate-limits/)
 
 ## Configuration
 
@@ -466,6 +468,7 @@ ics_url = "https://calendar.example.org/team/calendar.ics"
 label = "Design"
 token = "figd_example"
 files = ["https://www.figma.com/design/ExampleFile/Checkout", "ExampleBranch"]
+teams = ["https://www.figma.com/files/team/100001/Design"]
 ```
 
 Key rules:

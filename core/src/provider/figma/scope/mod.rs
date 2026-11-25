@@ -5,6 +5,9 @@ use serde::{Deserialize, Deserializer, Serialize};
 
 use super::config::FigmaConfig;
 
+mod team_id;
+pub(crate) use team_id::FigmaTeamId;
+
 /// The file or branch Figma's API reads as a single path segment.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Serialize)]
 #[serde(transparent)]
@@ -18,7 +21,7 @@ impl<'de> Deserialize<'de> for FigmaFileKey {
 }
 
 impl FigmaFileKey {
-    fn from_key(key: &str) -> Option<Self> {
+    pub(crate) fn from_key(key: &str) -> Option<Self> {
         (!key.is_empty()
             && key.len() <= 128
             && key.bytes().all(|byte| byte.is_ascii_alphanumeric()))
@@ -55,38 +58,48 @@ impl FigmaFileKey {
         if let Some(key) = Self::from_key(input) {
             return Ok(key);
         }
-        let invalid = ScopeError::NotAFile { item };
-        if input.chars().any(char::is_control) {
-            return Err(invalid);
-        }
-
-        let url = Url::parse(input).map_err(|_| invalid)?;
-        let host = url.host_str().ok_or(invalid)?;
-        if !matches!(host, "figma.com" | "www.figma.com") {
-            return Err(ScopeError::OtherHost { item });
-        }
-        if url.scheme() != "https"
-            || url.port().is_some()
-            || !url.username().is_empty()
-            || url.password().is_some()
-        {
-            return Err(invalid);
-        }
-
-        // Read keys from the original path so URL normalization cannot erase an invalid key.
-        let (_, after_scheme) = input.split_once("://").ok_or(invalid)?;
-        let start = after_scheme.find(['/', '?', '#', '\\']).ok_or(invalid)?;
-        let key = Self::from_path(&after_scheme[start..]).ok_or(invalid)?;
-        (Self::from_path(url.path()).as_ref() == Some(&key))
-            .then_some(key)
-            .ok_or(invalid)
+        from_link(input, ScopeError::NotAFile { item }, Self::from_path)
     }
+}
+
+fn from_link<T: PartialEq>(
+    input: &str,
+    invalid: ScopeError,
+    from_path: impl Fn(&str) -> Option<T>,
+) -> Result<T, ScopeError> {
+    if input.chars().any(char::is_control) {
+        return Err(invalid);
+    }
+    let url = Url::parse(input).map_err(|_| invalid)?;
+    let host = url.host_str().ok_or(invalid)?;
+    if !matches!(host, "figma.com" | "www.figma.com") {
+        return Err(match invalid {
+            ScopeError::NotAFile { item } => ScopeError::OtherHost { item },
+            _ => invalid,
+        });
+    }
+    if url.scheme() != "https"
+        || url.port().is_some()
+        || !url.username().is_empty()
+        || url.password().is_some()
+    {
+        return Err(invalid);
+    }
+
+    // Read keys from the original path so URL normalization cannot erase an invalid key.
+    let (_, after_scheme) = input.split_once("://").ok_or(invalid)?;
+    let start = after_scheme.find(['/', '?', '#', '\\']).ok_or(invalid)?;
+    let key = from_path(&after_scheme[start..]).ok_or(invalid)?;
+    (from_path(url.path()).as_ref() == Some(&key))
+        .then_some(key)
+        .ok_or(invalid)
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum ScopeError {
     NotAFile { item: usize },
     OtherHost { item: usize },
+    NotATeam { item: usize },
 }
 
 impl fmt::Display for ScopeError {
@@ -99,6 +112,12 @@ impl fmt::Display for ScopeError {
                     "Item {item} links to another site. Use a link from figma.com."
                 )
             }
+            Self::NotATeam { item } => {
+                write!(
+                    f,
+                    "Figma team list item {item} must be a team link from figma.com or a numeric team ID."
+                )
+            }
         }
     }
 }
@@ -109,6 +128,7 @@ impl std::error::Error for ScopeError {}
 pub(crate) struct FigmaScope {
     /// The original one-based list positions give people a way to identify failed files.
     pub(crate) files: Vec<(usize, FigmaFileKey)>,
+    pub(crate) teams: Vec<(usize, FigmaTeamId)>,
     pub(crate) duplicates: usize,
 }
 
@@ -124,9 +144,19 @@ impl FigmaScope {
                 files.push((position, key));
             }
         }
+        let mut seen_teams = BTreeSet::new();
+        let mut teams = Vec::new();
+        for (index, input) in config.teams.iter().flatten().enumerate() {
+            let position = index + 1;
+            let id = FigmaTeamId::from_input(input, position)?;
+            if seen_teams.insert(id.clone()) {
+                teams.push((position, id));
+            }
+        }
         Ok(Self {
             duplicates: items.len() - files.len(),
             files,
+            teams,
         })
     }
 }
