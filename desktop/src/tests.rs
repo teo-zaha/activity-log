@@ -37,7 +37,7 @@ fn call(webview: &tauri::WebviewWindow<MockRuntime>, name: &str) {
             cmd: name.into(),
             callback: CallbackFn(0),
             error: CallbackFn(1),
-            url: "tauri://localhost".parse().unwrap(),
+            url: webview.url().unwrap(),
             body: InvokeBody::Json(serde_json::json!({})),
             headers: Default::default(),
             invoke_key: INVOKE_KEY.to_string(),
@@ -107,7 +107,7 @@ fn local_fix_ipc_refuses_an_unrecognized_target_as_an_invalid_request() {
             cmd: "open_local_fix".into(),
             callback: CallbackFn(0),
             error: CallbackFn(1),
-            url: "tauri://localhost".parse().unwrap(),
+            url: window.url().unwrap(),
             body: InvokeBody::Json(json!({ "request": {
                     "connection": { "source": "outlook", "name": "work" },
                     "target": { "kind": "systemSettings", "pane": "fullDiskAccess" },
