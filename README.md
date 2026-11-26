@@ -693,6 +693,8 @@ Run **Actions → Release → Run workflow** on `main` after Linux CI passes at 
 
 Release prepares the version and changelog commit, then builds Windows x64 NSIS, macOS arm64 DMG, and Linux x64 AppImage, DEB and RPM from that commit. After all builds pass, it pushes the commit and tag together, attaches the installers and git-cliff notes to a draft, and publishes it.
 
+Artifact downloads verify the uploaded digest and fail the workflow if it differs.
+
 CI uses the repository's `GITHUB_TOKEN` to add GitHub usernames, pull request links, first-time contributors, and links comparing consecutive tags. The draft notes use the same template as `CHANGELOG.md` for the new version.
 
 - Turn on `draft` to edit the notes before publishing from Releases.

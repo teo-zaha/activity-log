@@ -213,6 +213,8 @@ CI (`.github/workflows/`) runs the Linux check (clippy, the backend's tests, the
 
 The macOS workflow compiles the real-store tests before creating and unlocking their temporary keychain. That keychain has no idle lock, and calls against it disable dialogs. The test execution step times out after two minutes.
 
+Checkout, Node and pnpm setup, and artifact actions run on Node 24. Release artifact downloads fail on a digest mismatch.
+
 `Cargo.toml` owns the workspace version. Every crate inherits it, as does Tauri, and the private JavaScript packages have no version. `pnpm release:check` checks this and the lockfile, and runs the release tests without needing Git history. Release runs by hand on `main` once Linux CI passes at its head. It uses a Cargo version newer than all tags or takes git-cliff's bump, then calls Desktop Build for that exact release commit. CI uses the repository's `GITHUB_TOKEN` to add GitHub usernames, pull request links, first-time contributors, and links comparing consecutive tags to the changelog and draft notes. Local previews run offline by default. Only after the builds pass does Release push the commit and tag and attach the installers to a draft before publishing. Desktop Build also runs by hand for a branch. The [README](README.md#releases) lists the release inputs.
 
 ## Change Rules
