@@ -15,6 +15,9 @@ use zeroize::Zeroizing;
 use super::{ItemName, Place, Search, bus_io_kind, key_of};
 use crate::secrets::{Created, DataKey, Interaction, Lookup, StoreError, StoreErrorKind};
 
+#[cfg(test)]
+mod tests;
+
 const CALL: Duration = Duration::from_secs(5);
 const LABEL: &str = "Activity Log config key";
 
@@ -208,7 +211,7 @@ fn error(err: DbusError, doing: &str, step: Step) -> StoreError {
         }
         _ => StoreErrorKind::Failed,
     };
-    StoreError::new(kind, anyhow!("{doing}: {err}"))
+    StoreError::new(kind, anyhow::Error::new(err).context(doing.to_owned()))
 }
 
 /// Building the connection and opening the session: no session bus (no address, nothing at
@@ -220,7 +223,9 @@ fn connect_kind(err: &zbus::Error) -> StoreErrorKind {
     const NAME_HAS_NO_OWNER: &str = "org.freedesktop.DBus.Error.NameHasNoOwner";
     let no_service = match err {
         zbus::Error::Address(_) => true,
-        zbus::Error::InputOutput(err) => return bus_io_kind(err.kind()),
+        zbus::Error::Connection(err, _) | zbus::Error::InputOutput(err) => {
+            return bus_io_kind(err.kind());
+        }
         zbus::Error::FDO(err) => matches!(
             **err,
             zbus::fdo::Error::ServiceUnknown(_) | zbus::fdo::Error::NameHasNoOwner(_)
