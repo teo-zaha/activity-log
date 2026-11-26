@@ -658,6 +658,8 @@ nix develop .#windows -c pnpm win:check       # full Windows target Clippy check
 
 See [`docs/testing-windows-on-mac.md`](docs/testing-windows-on-mac.md) for the full Windows testing workflow.
 
+Run the macOS workflow on a branch with `gh workflow run macos.yml --ref <branch>` to check the real Keychain integration. It builds the tests first, then runs them against a temporary keychain without dialogs, with a two-minute test timeout.
+
 ### Common tasks
 
 ```bash

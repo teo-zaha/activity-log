@@ -25,11 +25,10 @@ fn account(name: ItemName) -> &'static str {
 }
 
 pub(super) async fn read(place: Place, interaction: Interaction) -> Result<Lookup, StoreError> {
-    blocking(move || {
-        let _no_dialogs = no_dialogs(interaction)?;
+    blocking(place, interaction, |place| {
         // Opened first, so no default keychain is `Unavailable`, never an empty search; then
         // the tests' own keychain alone, or the search list.
-        let opened = keychain(&place)?;
+        let opened = keychain(place)?;
         let keychain = place.keychain.as_ref().map(|_| opened);
         match find_generic_password(
             keychain.as_ref().map(std::slice::from_ref),
@@ -51,9 +50,8 @@ pub(super) async fn create_if_absent(
     key: DataKey,
     interaction: Interaction,
 ) -> Result<Created, StoreError> {
-    blocking(move || {
-        let _no_dialogs = no_dialogs(interaction)?;
-        let keychain = keychain(&place)?;
+    blocking(place, interaction, move |place| {
+        let keychain = keychain(place)?;
         // Adding refuses an item that exists (`errSecDuplicateItem`): it never overwrites.
         match keychain.add_generic_password(SERVICE, account(place.name), key.bytes()) {
             Ok(()) => Ok(Created::Stored),
@@ -67,13 +65,16 @@ pub(super) async fn create_if_absent(
 }
 
 pub(super) async fn probe(place: Place) -> Result<(), StoreError> {
-    blocking(move || keychain(&place).map(drop)).await
+    blocking(place, Interaction::Allowed, |place| {
+        keychain(place).map(drop)
+    })
+    .await
 }
 
 #[cfg(feature = "real-store-tests")]
 pub(super) async fn delete(place: Place) -> Result<(), StoreError> {
-    blocking(move || {
-        let keychain = keychain(&place)?;
+    blocking(place, Interaction::Never, |place| {
+        let keychain = keychain(place)?;
         match keychain.find_generic_password(SERVICE, account(place.name)) {
             Ok((_password, item)) => {
                 item.delete();
@@ -86,17 +87,6 @@ pub(super) async fn delete(place: Place) -> Result<(), StoreError> {
         }
     })
     .await
-}
-
-/// Dialogs off for the whole process under `Never`, until the guard is dropped; the lock
-/// `blocking` holds keeps every other keychain call of this process out meanwhile.
-fn no_dialogs(interaction: Interaction) -> Result<Option<impl Drop>, StoreError> {
-    match interaction {
-        Interaction::Allowed => Ok(None),
-        Interaction::Never => SecKeychain::disable_user_interaction()
-            .map(Some)
-            .map_err(|err| error(err, "Turning keychain dialogs off")),
-    }
 }
 
 /// The default keychain, or the tests' own file. Opening a file does not check it exists, so
@@ -126,11 +116,22 @@ static KEYCHAIN: Mutex<()> = Mutex::new(());
 /// Keychain calls block while a dialog is open, so they run off the async threads, one at a
 /// time. A caller that stops waiting leaves the call to finish; it holds nothing but the answer.
 async fn blocking<T: Send + 'static>(
-    work: impl FnOnce() -> Result<T, StoreError> + Send + 'static,
+    place: Place,
+    interaction: Interaction,
+    work: impl FnOnce(&Place) -> Result<T, StoreError> + Send + 'static,
 ) -> Result<T, StoreError> {
     tokio::task::spawn_blocking(move || {
         let _one_at_a_time = KEYCHAIN.lock().unwrap_or_else(PoisonError::into_inner);
-        work()
+        // An isolated test keychain must never wait for someone to dismiss a prompt.
+        let _no_dialogs = if place.keychain.is_some() || matches!(interaction, Interaction::Never) {
+            Some(
+                SecKeychain::disable_user_interaction()
+                    .map_err(|err| error(err, "Turning keychain dialogs off"))?,
+            )
+        } else {
+            None
+        };
+        work(&place)
     })
     .await
     .unwrap_or_else(|err| {
